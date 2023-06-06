@@ -19,3 +19,11 @@ https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443
 
 # ✨ Full Demo
 
+
+
+https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/b9dc7cf0-abd3-46ef-b83e-0c313a0f12e9
+
+
+
+https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/6a802b00-13a6-4cae-b574-2aef9e66b792
+
