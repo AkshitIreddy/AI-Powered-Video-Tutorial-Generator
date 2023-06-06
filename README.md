@@ -25,3 +25,23 @@ https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443
 
 https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/b933a178-e8c1-4660-8b60-74a8d29faa2e
 
+
+# 🚨 Requirements
+Open up a terminal and go to backend directory
+```sh
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+Also install sadtalker(https://github.com/OpenTalker/SadTalker#%EF%B8%8F-1-installation), the sadtalker directory must be inside backend. Run the sadtalker webui once so that the venv environment is created.
+
+# 🔌 How to use
+
+Open up a terminal and go to frontend/topic2explanation
+```sh
+npm run dev
+```
+Open up another terminal and go to backend
+```sh
+uvicorn main:app
+```
