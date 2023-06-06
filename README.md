@@ -55,7 +55,7 @@ edge-tts --list-voices
 
 Once you find a voice you like add it in the create_audio_image function 
 ```sh
-    character_dict = {'Benjamin': "en-GB-RyanNeural",
-                      'Sophia': 'en-IE-EmilyNeural'}
+character_dict = {'Benjamin': "en-GB-RyanNeural",
+                  'Sophia': 'en-IE-EmilyNeural'}
 ``` 
 
