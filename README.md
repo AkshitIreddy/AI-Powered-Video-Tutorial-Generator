@@ -14,16 +14,12 @@ Give it a try for free! 🔥 It leverages the powerful capabilities of various t
 # ✨ Quick Demo
 
 
-https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/3aba62c3-338d-4f5a-9446-2495a6ddbc02
+
+https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/7a69135b-beb7-4f24-a0bf-9fe2bb565f08
+
 
 
 # ✨ Full Demo
 
 
-
-https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/b9dc7cf0-abd3-46ef-b83e-0c313a0f12e9
-
-
-
-https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/6a802b00-13a6-4cae-b574-2aef9e66b792
 
