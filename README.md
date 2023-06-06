@@ -4,10 +4,15 @@ This project empowers you to create captivating and informative AI-generated vid
 
 Give it a try for free! 🔥 It leverages the powerful capabilities of various tools.
 
-# Features
+# 🚀 Features
 - 🧠 The script is generated using Cohere's language model. (You can obtain a trial API key for free!)
 - 🗣️ Seamless integration with Edge TTS for high-quality voiceovers.
 - 😄 Engaging facial animation powered by SadTalker.
 - 🖼️ Eye-catching and relevant images from Google for slides.
 - 🎨 Customizable creativity, humor, explanation level, character appearance, and voice.
+
+# ✨ Demo
+
+
+https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/49fa2768-63a7-43c6-adfd-2c9b74bb0081
 
