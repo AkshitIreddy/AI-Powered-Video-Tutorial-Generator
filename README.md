@@ -45,6 +45,7 @@ Open up another terminal and go to backend
 ```sh
 uvicorn main:app
 ```
+Add your Cohere API key to apikeys.json
 
 # 🎨 Customizability 
 To change the character and voice, you need to put your desired character in characters directory. It must be in 640x720 resolution and for the voice you can choose a voice from the voice list which can be seen using this command.
