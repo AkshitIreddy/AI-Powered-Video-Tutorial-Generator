@@ -59,3 +59,8 @@ character_dict = {'Benjamin': "en-GB-RyanNeural",
                   'Sophia': 'en-IE-EmilyNeural'}
 ``` 
 
+# ❤️ Thanks
+If you found this interesting check out Alystria AI for more fun projects
+https://www.linkedin.com/company/alystria-ai
+
+
