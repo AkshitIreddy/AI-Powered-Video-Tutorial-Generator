@@ -76,7 +76,10 @@ https://www.linkedin.com/company/alystria-ai
 ```
 
 🌐 Github: https://github.com/AkshitIreddy
+
 💡 LinkedIn: https://www.linkedin.com/in/akshit-ireddy
+
 ✍️ Medium: https://medium.com/@akshit.r.ireddy
+
 🐤 Twitter: https://twitter.com/akshit_ireddy
 
