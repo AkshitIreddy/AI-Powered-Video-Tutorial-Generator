@@ -1,6 +1,6 @@
 # AI-Generated Video Tutorials with Character Animation and Slides! 🎥🤖📝🎨
 
-This project empowers you to create captivating and informative AI-generated video tutorials! With a charming character featuring facial animation and informative slides, you can explain any topic with ease. The best part? You have full control over the tutorial's creativity, humor, level of explanation, character appearance, and voice. ❤️✨
+This project empowers you to create captivating and informative AI-generated video tutorials! With a charming character featuring facial animation and informative slides, it can explain any topic with ease. The best part? You have full control over the tutorial's creativity, humor, level of explanation, character appearance, and voice. ❤️✨
 
 Give it a try for free! 🔥 It leverages the powerful capabilities of various tools.
 
