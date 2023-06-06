@@ -11,8 +11,11 @@ Give it a try for free! 🔥 It leverages the powerful capabilities of various t
 - 🖼️ Eye-catching and relevant images from Google for slides.
 - 🎨 Customizable creativity, humor, explanation level, character appearance, and voice.
 
-# ✨ Demo
+# ✨ Quick Demo
 
 
-https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/49fa2768-63a7-43c6-adfd-2c9b74bb0081
+https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/3aba62c3-338d-4f5a-9446-2495a6ddbc02
+
+
+# ✨ Full Demo
 
