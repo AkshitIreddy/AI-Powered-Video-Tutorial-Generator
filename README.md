@@ -44,6 +44,8 @@ pip install -r requirements.txt
 
 Also install sadtalker(https://github.com/OpenTalker/SadTalker#%EF%B8%8F-1-installation), the sadtalker directory must be inside backend. Run the sadtalker webui once so that the venv environment is created.
 
+Add your Cohere API key to backend/apikeys.json
+
 # 🔌 How to use
 
 Open up a terminal and go to frontend/topic2explanation
@@ -54,7 +56,7 @@ Open up another terminal and go to backend
 ```sh
 uvicorn main:app
 ```
-Add your Cohere API key to apikeys.json
+
 
 # 🎨 Customizability 
 To change the character and voice, you need to put your desired character in characters directory. It must be in 640x720 resolution and for the voice you can choose a voice from the voice list which can be seen using this command.
