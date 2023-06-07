@@ -35,9 +35,11 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 For Linux\Mac
+```sh
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
 
 Also install sadtalker(https://github.com/OpenTalker/SadTalker#%EF%B8%8F-1-installation), the sadtalker directory must be inside backend. Run the sadtalker webui once so that the venv environment is created.
 
