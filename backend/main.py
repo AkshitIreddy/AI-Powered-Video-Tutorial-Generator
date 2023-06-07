@@ -27,5 +27,5 @@ async def create_insights(request: Request, credentials: HTTPBasicCredentials = 
     humour = data['humour']
     characterName = data['characterName']
 
-    path = video_main_function(message, level, age, creative, humour, characterName)
+    path = video_main(message, level, age, creative, humour, characterName)
     return FileResponse(path, media_type="video/mp4")
