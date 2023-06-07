@@ -28,6 +28,7 @@ https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443
 
 # 🚨 Requirements
 Open up a terminal and go to backend directory
+
 For Windows
 ```sh
 python -m venv .venv
