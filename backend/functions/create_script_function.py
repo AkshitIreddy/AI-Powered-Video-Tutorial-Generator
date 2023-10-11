@@ -26,7 +26,7 @@ def create_script(topic_name, level_of_explanation, age, creativity_level, humou
 
     # Initialise model
     llm = Cohere(cohere_api_key=selected_key,
-                 model='command-xlarge-beta', temperature=1.2, max_tokens=1700)
+                 model='command', temperature=1.2, max_tokens=1700)
 
     # create the template string
     template = """Instructions:\nCreate a script for a self contained video about {topic_name} such that a {age} year old can understand. Explain the key concepts. {level_string} {creativity_string} {humour_string} It should be in first person. Be cheerful and happy while explaining. The Youtube channel is Alystria.\n"""
