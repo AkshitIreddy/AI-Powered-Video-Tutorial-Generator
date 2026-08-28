@@ -243,6 +243,38 @@ export interface ProviderSecretRef {
   updatedAt: string | null;
 }
 
+/**
+ * A saved no-secret creation preset. It cannot approve a provider or cause a
+ * fallback: a project still needs its own reviewed routing policy before a
+ * cloud call is possible.
+ */
+export interface ProfileRoute {
+  providerId: string;
+  modelId: string;
+}
+
+export interface ModelProfile {
+  id: string;
+  name: string;
+  description: string;
+  routes: Record<string, ProfileRoute>;
+}
+
+export interface LocalModelSetupSaveRequest {
+  activeProfileId: string;
+  selectedModelIds: string[];
+  lipSyncModelId?: string | null;
+  existingModelDirectory?: string | null;
+  profiles: ModelProfile[];
+}
+
+export interface LocalModelSetup extends Omit<LocalModelSetupSaveRequest, "lipSyncModelId" | "existingModelDirectory"> {
+  schemaVersion: number;
+  lipSyncModelId: string | null;
+  existingModelDirectory: string | null;
+  updatedAt: string;
+}
+
 export interface DiagnosticCheck {
   id: string;
   label: string;
@@ -272,6 +304,7 @@ const browserSecretRefs = new Set<string>();
 const browserJobs = new Map<string, JobReceipt>();
 const browserProjects = new Map<string, { handle: ProjectHandle; snapshot: ProjectSnapshotReceipt }>();
 const browserHistory = new Map<string, { undo: ProjectSnapshotReceipt[]; redo: ProjectSnapshotReceipt[] }>();
+let browserModelSetup: LocalModelSetup = defaultLocalModelSetup();
 
 export function desktopEnvironment(): DesktopEnvironment {
   try {
@@ -581,6 +614,48 @@ export function providerSecretDelete(input: ProviderSecretRequest): Promise<Prov
     browserSecretRefs.delete(secretKey(input));
     return browserSecretRef(input, "missing");
   });
+}
+
+export function localModelSetupGet(): Promise<LocalModelSetup> {
+  return command("local_model_setup_get", undefined, () => structuredClone(browserModelSetup));
+}
+
+export function localModelSetupSave(input: LocalModelSetupSaveRequest): Promise<LocalModelSetup> {
+  return command("local_model_setup_save", input, () => {
+    browserModelSetup = {
+      ...structuredClone(input),
+      lipSyncModelId: input.lipSyncModelId ?? null,
+      existingModelDirectory: input.existingModelDirectory ?? null,
+      schemaVersion: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    return structuredClone(browserModelSetup);
+  });
+}
+
+function defaultLocalModelSetup(): LocalModelSetup {
+  return {
+    schemaVersion: 1,
+    activeProfileId: "balanced-cloud",
+    selectedModelIds: [],
+    lipSyncModelId: null,
+    existingModelDirectory: null,
+    updatedAt: new Date().toISOString(),
+    profiles: [{
+      id: "balanced-cloud",
+      name: "Balanced cloud",
+      description: "Use configured APIs for most stages; keep local-model choices explicit.",
+      routes: {
+        writing: { providerId: "openai", modelId: "choose at generation" },
+        research: { providerId: "openai", modelId: "choose at generation" },
+        images: { providerId: "openai", modelId: "gpt-image-2" },
+        voice: { providerId: "elevenlabs", modelId: "choose a voice" },
+        transcription: { providerId: "openai", modelId: "choose at generation" },
+        presenter: { providerId: "local-runtime", modelId: "off by default" },
+        lipSync: { providerId: "local-runtime", modelId: "off by default" },
+      },
+    }],
+  };
 }
 
 function browserSecretRef(input: ProviderSecretRequest, availability: ProviderSecretRef["availability"], updatedAt: string | null = null): ProviderSecretRef {

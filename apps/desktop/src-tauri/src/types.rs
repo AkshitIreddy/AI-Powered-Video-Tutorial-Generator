@@ -398,6 +398,63 @@ pub struct ProviderSecretRef {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
+/// A no-secret, app-wide preset.  It is a user-facing setup preference, not a
+/// project approval or a provider routing policy; those remain durable project
+/// records validated by the pipeline service.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProfileRoute {
+    pub provider_id: String,
+    pub model_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ModelProfile {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub routes: BTreeMap<String, ProfileRoute>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LocalModelSetupSaveRequest {
+    pub active_profile_id: String,
+    pub selected_model_ids: Vec<String>,
+    #[serde(default)]
+    pub lip_sync_model_id: Option<String>,
+    #[serde(default)]
+    pub existing_model_directory: Option<String>,
+    pub profiles: Vec<ModelProfile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LocalModelSetup {
+    pub schema_version: u32,
+    pub active_profile_id: String,
+    pub selected_model_ids: Vec<String>,
+    #[serde(default)]
+    pub lip_sync_model_id: Option<String>,
+    #[serde(default)]
+    pub existing_model_directory: Option<String>,
+    pub profiles: Vec<ModelProfile>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<LocalModelSetup> for LocalModelSetupSaveRequest {
+    fn from(value: LocalModelSetup) -> Self {
+        Self {
+            active_profile_id: value.active_profile_id,
+            selected_model_ids: value.selected_model_ids,
+            lip_sync_model_id: value.lip_sync_model_id,
+            existing_model_directory: value.existing_model_directory,
+            profiles: value.profiles,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum SecretAvailability {

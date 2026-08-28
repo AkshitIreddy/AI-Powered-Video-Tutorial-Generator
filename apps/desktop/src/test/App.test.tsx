@@ -75,4 +75,21 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByText(/one key · public\/synthetic hosted previews/i)).toBeInTheDocument();
     expect(screen.getByText(/no silent fallback/i)).toBeInTheDocument();
   });
+
+  it("keeps local lip-sync choices and switchable provider profiles explicit", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /models & providers/i }));
+    expect(await screen.findByRole("heading", { name: /local models, without surprise downloads/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /echomimicv3 flash/i }));
+    expect(screen.getByRole("radio", { name: /echomimicv3 flash/i })).toBeChecked();
+    expect(screen.getByRole("button", { name: /verified download unavailable/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /add profile/i }));
+    await user.clear(screen.getByLabelText(/^name$/i));
+    await user.type(screen.getByLabelText(/^name$/i), "Local presenter test");
+    await user.click(screen.getByRole("button", { name: /save setup & active profile/i }));
+    expect(await screen.findByText(/setup saved locally/i)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Local presenter test" })).toHaveAttribute("aria-selected", "true");
+  });
 });

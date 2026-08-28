@@ -2,6 +2,7 @@ mod commands;
 mod diagnostics;
 mod error;
 pub mod generated;
+mod model_setup;
 mod project_store;
 mod runtime;
 mod secrets;
@@ -50,6 +51,8 @@ pub fn run() {
             provider_secret_set,
             provider_secret_status,
             provider_secret_delete,
+            local_model_setup_get,
+            local_model_setup_save,
             runtime_manifest,
             updater_status
         ])

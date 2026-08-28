@@ -105,6 +105,36 @@ user can install only the small retrieval/TTS/ASR profile first, then add
 Qwen3.5 or MuseTalk later. This keeps the initial setup useful on low-memory
 machines while making the RTX 4080 Laptop profile a deliberate opt-in.
 
+### Current RC setup surface
+
+The local RC now includes the first, deliberately non-destructive part of this
+assistant in **Models & Providers**:
+
+- a broad no-secret chooser for LLM/VLM, code, embedding/reranking, image,
+  TTS, ASR/alignment, pose, talking-head, and LipSync candidates;
+- a separate presenter/LipSync selector that can prefer EchoMimicV3 Flash,
+  MuseTalk 1.5, LatentSync 1.5, NVIDIA LipSync Private Access, or a future
+  verified external pack;
+- a local existing-folder field which proves only that a directory exists. It
+  does not read, execute, copy, trust, or activate its contents; and
+- named, switchable provider/model preference profiles per writing, research,
+  images, motion, voice, transcription, presenter, and LipSync medium.
+
+The preference file lives under application data, contains no credentials, and
+is not a project routing approval. API keys remain in the OS credential vault;
+every project still needs a separate payload/privacy/retention/region/budget
+approval before a cloud request can occur. Multiple packs may remain selected
+or eventually installed. Disk and safe system-RAM caching are acceptable for
+this non-latency-critical product, while the scheduler keeps one GPU-heavy
+family active at a time.
+
+The screen intentionally labels managed download as unavailable today. No
+signed immutable model manifests have been published for this RC, so enabling
+the button would fetch mutable upstream content and violate the trust model.
+The already-implemented model manager will only make a selected pack active
+after its signed manifest, license acceptance, hashes, hardware preflight,
+resumable download, atomic promotion, and rollback record pass.
+
 ### Presenter/LipSync model chooser
 
 The setup assistant must present these as separate user choices, with the

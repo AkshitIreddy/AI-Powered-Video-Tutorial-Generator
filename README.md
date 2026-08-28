@@ -8,7 +8,7 @@ Alystria Studio is a Windows-first, local-first desktop environment for research
 
 ![Alystria Studio home screen](docs/images/alystria-home.png)
 
-[Documentation](docs/README.md) · [Architecture](docs/architecture/overview.md) · [Local model profiles](docs/models/local-profiles.md) · [Security and privacy](docs/security/security-and-privacy.md) · [Evaluation](docs/testing/evaluation.md) · [Implementation ledger](IMPLEMENTATION_STATUS.md)
+[Documentation](docs/README.md) · [Architecture](docs/architecture/overview.md) · [Local model profiles](docs/models/local-profiles.md) · [Free/trial provider guide](docs/providers/free-and-trial.md) · [Security and privacy](docs/security/security-and-privacy.md) · [Evaluation](docs/testing/evaluation.md) · [Implementation ledger](IMPLEMENTATION_STATUS.md)
 
 ## What is in this worktree
 
@@ -18,7 +18,10 @@ This is still a **local RC candidate**, not a published installer. Clean-machine
 
 - HTTP provider contracts have offline tests; this README does **not** claim live API smoke tests.
 - Runtime manifests describe required signed packs, but no signed production FFmpeg/pipeline pack is shipped.
-- Local model weights are **not bundled**. They download on demand only after immutable revision, size, SHA-256, license, and hardware checks.
+- Local model weights are **not bundled**. The setup surface records broad local
+  choices and switchable provider/model profiles, but a managed download stays
+  disabled until an immutable revision, signed manifest, size, SHA-256,
+  license, and hardware check have been published and pass.
 
 ## Guided and Studio workflows
 

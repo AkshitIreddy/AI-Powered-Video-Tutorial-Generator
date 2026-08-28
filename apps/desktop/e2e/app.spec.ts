@@ -67,3 +67,18 @@ test("narrow desktop does not overflow horizontally", async ({ page }, testInfo)
   const projectOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
   expect(projectOverflow).toBe(false);
 });
+
+test("local model and provider profiles remain explicit and saveable", async ({ page }, testInfo) => {
+  await page.getByRole("button", { name: /models & providers/i }).click();
+  await expect(page.getByRole("heading", { name: /local models, without surprise downloads/i })).toBeVisible();
+  await page.getByRole("radio", { name: /echomimicv3 flash/i }).check();
+  await expect(page.getByRole("radio", { name: /echomimicv3 flash/i })).toBeChecked();
+  await expect(page.getByRole("button", { name: /verified download unavailable/i })).toBeDisabled();
+  await page.getByRole("button", { name: /add profile/i }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Offline presenter review");
+  await page.getByRole("button", { name: /save setup & active profile/i }).click();
+  await expect(page.getByText(/setup saved locally/i)).toBeVisible();
+  await page.locator(".toast button").click();
+  await page.locator(".model-setup-panel").screenshot({ path: testInfo.outputPath("local-model-setup.png") });
+  await page.locator(".profile-panel").screenshot({ path: testInfo.outputPath("provider-profiles.png") });
+});

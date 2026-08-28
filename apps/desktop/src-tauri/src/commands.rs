@@ -471,6 +471,19 @@ pub fn provider_secret_delete(
 }
 
 #[tauri::command]
+pub fn local_model_setup_get(state: State<'_, AppState>) -> Result<LocalModelSetup, CommandError> {
+    state.model_setup.get()
+}
+
+#[tauri::command]
+pub fn local_model_setup_save(
+    input: LocalModelSetupSaveRequest,
+    state: State<'_, AppState>,
+) -> Result<LocalModelSetup, CommandError> {
+    state.model_setup.save(input)
+}
+
+#[tauri::command]
 pub fn runtime_manifest(state: State<'_, AppState>) -> RuntimeManifest {
     state.runtimes.manifest()
 }

@@ -134,10 +134,10 @@ are correctness evidence, not release benchmarks.
 | Contracts | `52 passed` | Schema/runtime/provider-catalog/generated-binding contract tests |
 | Scene library | `12 passed` | Scene compiler and renderer tests |
 | Theme library | `22 passed` | Theme, contrast, brand-kit, and specimen tests |
-| Desktop unit/bridge | `16 passed` | React/native bridge/provider-key tests and production Vite build |
+| Desktop unit/bridge | `17 passed` | React/native bridge/provider-key/model-profile tests and production Vite build |
 | Renderer | `39 passed, 1 skipped` | Determinism, browser, FFmpeg, captions, range, and executor tests; opt-in real smoke skipped by default |
-| Desktop Playwright | `7 passed, 1 skipped` | Desktop and narrow-window interaction/visual coverage |
-| Tauri/Rust | `22 passed` | Formatting, check, Clippy, runtime-pack, command/sidecar/security tests |
+| Desktop Playwright | `9 passed, 1 skipped` | Desktop and narrow-window interaction/visual coverage, including model choices and profile save |
+| Tauri/Rust | `24 passed` | Formatting, check, model-setup persistence, runtime-pack, command/sidecar/security tests |
 | Tauri debug shell | passed | Headless `tauri build --debug --no-bundle`; native executable produced without opening a window |
 | Canonical fixture schemas | `11 validated` | Topic/course and EN/ES/HI fixture records |
 | Pipeline to real renderer | `1 passed` | Separate opt-in short integration smoke |
@@ -170,11 +170,14 @@ than measured release numbers.
 - [ ] Replace catalog-only local-model entries with reviewed immutable revisions,
   artifact hashes, licenses, and signed manifests; then download, resume,
   rollback, and benchmark them on the target 12 GB RTX 4080 Laptop GPU.
-- [ ] Add the first-run Local model setup assistant: hardware-aware profile
-  recommendations, existing-folder validation, resumable managed downloads,
-  license/hash/signature gates, rollback, one-heavy-family scheduling, and a
-  per-presenter LipSync model chooser that can retain multiple verified packs.
-  The evidence-backed candidate matrix is recorded in `docs/models/local-profiles.md`.
+- [~] Add the first-run Local model setup assistant. The desktop now persists
+  no-secret, switchable profiles per medium; presents broad local-model and
+  per-presenter LipSync choices; and rejects non-existent existing folders.
+  It deliberately does **not** activate or download a model without a signed
+  immutable manifest. Hardware-aware recommendation, full external-pack
+  inspection, managed download/resume, license/hash/signature activation,
+  rollback UI, and verified-pack scheduling await pinned artifacts and target
+  benchmarks. The candidate matrix is recorded in `docs/models/local-profiles.md`.
 - [ ] If LipSync is desired, obtain AI for Media Private Access, validate the
   NGC/container stack and target GPU, then add an authenticated local gRPC
   sidecar with presenter consent and lip-sync QA. The ordinary NIM hosted key

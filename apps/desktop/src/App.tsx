@@ -86,6 +86,8 @@ import {
   jobCancel,
   jobRetry,
   jobStatus,
+  localModelSetupGet,
+  localModelSetupSave,
   masterExport,
   projectCreate,
   projectExportArchive,
@@ -105,7 +107,9 @@ import {
   type DiagnosticReport,
   type GroundingMode,
   type JobReceipt,
+  type LocalModelSetup,
   type MasterExportRequest,
+  type ModelProfile,
   type ProviderSecretRef,
   type QualityPreset,
   type SourceImportReceipt,
@@ -163,11 +167,74 @@ const providerConfigs = [
   { id: "local", name: "Local models", icon: HardDrive, detail: "Qwen · Whisper · Kokoro", tone: "teal", local: true },
   { id: "openai", name: "OpenAI", icon: Sparkles, detail: "Language · images · speech", tone: "indigo" },
   { id: "anthropic", name: "Anthropic", icon: MessageSquareText, detail: "Language and structured review", tone: "amber" },
-  { id: "google", name: "Google AI", icon: Globe2, detail: "Language · images · video", tone: "neutral" },
+  { id: "gemini", name: "Google AI", icon: Globe2, detail: "Language · images · video", tone: "neutral" },
   { id: "nvidia-nim", name: "NVIDIA NIM (dev/test)", icon: Cpu, detail: "One key · public/synthetic hosted previews · per-model checks", tone: "teal" },
+  { id: "black-forest-labs", name: "Black Forest Labs", icon: Image, detail: "FLUX image generation and editing", tone: "neutral" },
+  { id: "recraft", name: "Recraft", icon: Sparkles, detail: "Illustration and design assets", tone: "indigo" },
   { id: "elevenlabs", name: "ElevenLabs", icon: Mic2, detail: "Voices and narration", tone: "neutral" },
+  { id: "azure-speech", name: "Azure Speech", icon: AudioLines, detail: "Speech, transcription, presenter", tone: "neutral" },
+  { id: "google-cloud-speech", name: "Google Cloud Speech", icon: Languages, detail: "Speech and alignment", tone: "neutral" },
   { id: "runway", name: "Runway", icon: Video, detail: "Selective generated motion", tone: "neutral" },
+  { id: "heygen", name: "HeyGen", icon: UserRoundCheck, detail: "Consent-gated presenter clips", tone: "amber" },
+  { id: "tavus", name: "Tavus", icon: Presentation, detail: "Consent-gated presenter clips", tone: "amber" },
 ] satisfies Array<{ id: string; name: string; icon: LucideIcon; detail: string; tone: string; local?: boolean }>;
+
+const localModelOptions = [
+  { id: "local/qwen3.5-9b-gguf", name: "Qwen3.5 9B", medium: "Writing & vision", detail: "GGUF profile · benchmark before enable" },
+  { id: "local/gemma-3-4b-it", name: "Gemma 3 4B IT", medium: "Writing & vision", detail: "Compact fallback · license review required" },
+  { id: "local/phi-4-mini-instruct", name: "Phi-4 mini", medium: "Writing & code", detail: "Small MIT candidate · pin before enable" },
+  { id: "local/qwen2.5-coder-7b", name: "Qwen2.5 Coder 7B", medium: "Code tutorials", detail: "Specialist candidate · load instead of main LLM" },
+  { id: "local/qwen3-embedding-0.6b", name: "Qwen3 Embedding 0.6B", medium: "Research retrieval", detail: "Small local index worker" },
+  { id: "local/bge-m3", name: "BGE-M3", medium: "Multilingual retrieval", detail: "Dense / sparse candidate" },
+  { id: "local/bge-reranker-v2-m3", name: "BGE reranker v2-m3", medium: "Research ranking", detail: "Small local reranker candidate" },
+  { id: "local/qwen3-reranker-0.6b", name: "Qwen3 Reranker 0.6B", medium: "Research ranking", detail: "Alternative local reranker" },
+  { id: "local/flux2-klein-4b", name: "FLUX.2 Klein 4B", medium: "Illustration", detail: "Optional 12 GB benchmark" },
+  { id: "local/qwen3-tts-0.6b", name: "Qwen3 TTS 0.6B", medium: "Narration", detail: "English / Spanish candidate" },
+  { id: "local/kokoro", name: "Kokoro", medium: "Draft narration", detail: "Small CPU-first draft voice" },
+  { id: "local/piper-voice-pack", name: "Piper voice pack", medium: "Legacy draft voice", detail: "Optional only · per-voice rights review" },
+  { id: "local/whisper-large-v3-turbo", name: "Whisper large-v3-turbo", medium: "Transcription", detail: "Local ASR & timing candidate" },
+  { id: "local/montreal-forced-aligner", name: "Montreal Forced Aligner", medium: "Caption alignment", detail: "Language-pack and license review" },
+  { id: "local/liveportrait", name: "LivePortrait", medium: "Pose & expression", detail: "Companion animation, not audio lip-sync" },
+  { id: "local/stableavatar", name: "StableAvatar", medium: "Talking-head research", detail: "Offload candidate · benchmark before enable" },
+  { id: "local/wav2lip-baseline", name: "Wav2Lip baseline", medium: "Lip-sync fallback", detail: "Legacy baseline · rights review required" },
+] as const;
+
+const lipSyncModelOptions = [
+  { id: "local/echomimicv3-flash", name: "EchoMimicV3 Flash", detail: "Expressive talking head · first 12 GB benchmark target", tag: "Recommended to benchmark" },
+  { id: "local/musetalk-1.5", name: "MuseTalk 1.5", detail: "Fast face-region lip-sync for short presenter shots", tag: "Fast fallback" },
+  { id: "local/latentsync-1.5", name: "LatentSync 1.5", detail: "Slower diffusion comparison · version 1.5 only", tag: "Quality comparison" },
+  { id: "local/nvidia-lipsync-private", name: "NVIDIA LipSync", detail: "Private-access local NIM sidecar; hosted NIM key does not unlock it", tag: "Separate access" },
+] as const;
+
+const profileMediums = [
+  ["writing", "Writing & review"],
+  ["research", "Research"],
+  ["images", "Images"],
+  ["motion", "Motion"],
+  ["voice", "Narration"],
+  ["transcription", "Transcription"],
+  ["presenter", "Presenter"],
+  ["lipSync", "Lip-sync"],
+] as const;
+
+const profileProviderOptions = [
+  ["local-runtime", "Local runtime"],
+  ["openai", "OpenAI"],
+  ["anthropic", "Anthropic"],
+  ["gemini", "Google Gemini"],
+  ["nvidia-nim", "NVIDIA NIM (public/synthetic preview)"],
+  ["elevenlabs", "ElevenLabs"],
+  ["azure-speech", "Azure Speech"],
+  ["google-cloud-speech", "Google Cloud Speech"],
+  ["runway", "Runway"],
+  ["heygen", "HeyGen"],
+  ["tavus", "Tavus"],
+  ["black-forest-labs", "Black Forest Labs"],
+  ["recraft", "Recraft"],
+  ["openverse", "Openverse licensed media"],
+  ["pexels", "Pexels licensed media"],
+  ["openai-compatible-local", "OpenAI-compatible local endpoint"],
+] as const;
 
 const SOURCE_FILE_ACCEPT = ".pdf,.docx,.pptx,.epub,.md,.markdown,.txt,.csv,.json";
 const MAX_SOURCE_FILE_BYTES = 8 * 1024 * 1024;
@@ -1006,6 +1073,9 @@ function ProvidersView({ environment, onNotify }: { environment: RuntimeState["e
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [secret, setSecret] = useState("");
   const [saving, setSaving] = useState(false);
+  const [setup, setSetup] = useState<LocalModelSetup | null>(null);
+  const [setupLoading, setSetupLoading] = useState(true);
+  const [setupSaving, setSetupSaving] = useState(false);
   const providers = providerConfigs;
 
   useEffect(() => {
@@ -1018,31 +1088,64 @@ function ProvidersView({ environment, onNotify }: { environment: RuntimeState["e
     return () => { active = false; };
   }, [environment]);
 
+  useEffect(() => {
+    let active = true;
+    void localModelSetupGet().then((value) => { if (active) setSetup(value); }).catch((error: unknown) => {
+      if (active) onNotify("Local model setup needs attention", errorMessage(error), "warning");
+    }).finally(() => { if (active) setSetupLoading(false); });
+    return () => { active = false; };
+  }, [environment, onNotify]);
+
+  const mutateSetup = (update: (current: LocalModelSetup) => LocalModelSetup) => setSetup((current) => current ? update(current) : current);
+  const activeProfile = setup?.profiles.find((profile) => profile.id === setup.activeProfileId) ?? setup?.profiles[0] ?? null;
+  const updateProfile = (profileId: string, update: (profile: ModelProfile) => ModelProfile) => mutateSetup((current) => ({ ...current, profiles: current.profiles.map((profile) => profile.id === profileId ? update(profile) : profile) }));
+  const createProfile = () => {
+    if (!setup || !activeProfile) return;
+    const index = setup.profiles.length + 1;
+    const id = `custom-profile-${index}`;
+    const clone: ModelProfile = { ...structuredClone(activeProfile), id, name: `My profile ${index}`, description: "An explicit, switchable provider and model preference." };
+    mutateSetup((current) => ({ ...current, activeProfileId: id, profiles: [...current.profiles, clone] }));
+  };
+  const removeProfile = () => {
+    if (!setup || !activeProfile || setup.profiles.length <= 1) return;
+    const next = setup.profiles.find((profile) => profile.id !== activeProfile.id)!;
+    mutateSetup((current) => ({ ...current, activeProfileId: next.id, profiles: current.profiles.filter((profile) => profile.id !== activeProfile.id) }));
+  };
+  const toggleLocalModel = (modelId: string, selected: boolean) => mutateSetup((current) => {
+    const next = new Set(current.selectedModelIds);
+    if (selected) next.add(modelId); else next.delete(modelId);
+    return { ...current, selectedModelIds: [...next], lipSyncModelId: current.lipSyncModelId === modelId && !selected ? null : current.lipSyncModelId };
+  });
+  const selectLipSync = (modelId: string) => mutateSetup((current) => ({ ...current, lipSyncModelId: modelId, selectedModelIds: [...new Set([...current.selectedModelIds, modelId])] }));
+  const saveSetup = async () => {
+    if (!setup) return;
+    setSetupSaving(true);
+    try {
+      const saved = await localModelSetupSave({ activeProfileId: setup.activeProfileId, selectedModelIds: setup.selectedModelIds, lipSyncModelId: setup.lipSyncModelId, existingModelDirectory: setup.existingModelDirectory, profiles: setup.profiles });
+      setSetup(saved);
+      onNotify("Setup saved locally", "Your model choices and no-secret profiles were saved. A project still asks for cloud, privacy, and budget approval before a provider call.", "success");
+    } catch (error) {
+      onNotify("Setup was not saved", errorMessage(error), "warning");
+    } finally { setSetupSaving(false); }
+  };
   const saveSecret = async () => {
     if (!editingProvider || !secret.trim()) return;
     setSaving(true);
     try {
       const reference = await providerSecretSet({ providerId: editingProvider, credentialKind: "api_key", secret });
       setSecretRefs((current) => ({ ...current, [editingProvider]: reference }));
-      setSecret("");
-      setEditingProvider(null);
+      setSecret(""); setEditingProvider(null);
       onNotify(environment === "native" ? "Credential stored in OS vault" : "Browser demo connection updated", environment === "native" ? "Only an opaque reference is visible to Alystria projects." : "The preview discarded the credential value and retained only session availability.", "success");
-    } catch (error) {
-      onNotify("Credential was not stored", errorMessage(error), "warning");
-    } finally {
-      setSaving(false);
-    }
+    } catch (error) { onNotify("Credential was not stored", errorMessage(error), "warning"); } finally { setSaving(false); }
   };
-
   const deleteSecret = async (providerId: string) => {
     try {
       const reference = await providerSecretDelete({ providerId, credentialKind: "api_key" });
       setSecretRefs((current) => ({ ...current, [providerId]: reference }));
       onNotify("Credential removed", environment === "native" ? "The OS vault entry was deleted." : "The browser demo availability flag was cleared.", "info");
-    } catch (error) {
-      onNotify("Credential could not be removed", errorMessage(error), "warning");
-    }
+    } catch (error) { onNotify("Credential could not be removed", errorMessage(error), "warning"); }
   };
+
   return <div className="page">
     <PageTitle kicker="Your compute, your choice" title="Models & providers" description="Alystria only routes work to providers you configure and approve. Local mode blocks project-content networking." />
     <section className="routing-card"><div><span className="section-kicker">Default routing boundary</span><h3>{mode} creation</h3><p>{mode === "Local" ? "All generation remains on this device. No cloud fallback." : mode === "Cloud" ? "Use only connected cloud providers after cost and privacy approval." : "Keep private sources local; route approved creative tasks to cloud providers."}</p></div><div className="segmented-large" role="group" aria-label="Provider routing mode">{["Local", "Hybrid", "Cloud"].map((item) => <button key={item} className={mode === item ? "active" : ""} onClick={() => setMode(item)}><span>{item === "Local" ? <HardDrive /> : item === "Cloud" ? <Cloud /> : <Network />}</span>{item}</button>)}</div><div className="routing-facts"><span><ShieldCheck /> No silent fallback</span><span><CircleDollarSign /> Hard budgets enabled</span><span><Lock /> Keys in OS vault</span></div></section>
@@ -1053,6 +1156,18 @@ function ProvidersView({ environment, onNotify }: { environment: RuntimeState["e
       return <article className="provider-card" key={name}><span className={`provider-icon ${tone}`}><Icon size={22} /></span><div><h3>{name}</h3><p>{detail}</p></div><span className={`provider-state ${connected || local ? "" : "add"}`}>{connected || local ? <Check size={13} /> : null}{local ? "Manager ready" : connected ? "Connected" : availability === "keyringUnavailable" ? "Vault unavailable" : "Add key"}</span>{local && <div className="model-meter"><span><b>On-demand profiles</b><small>Nothing bundled · download and verify before use</small></span><div><i style={{ width: "18%" }} /></div></div>}{!local && <button className="icon-button" aria-label={`${connected ? "Manage" : "Add"} ${name} credential`} onClick={() => { setEditingProvider(id); setSecret(""); }}><KeyRound size={17} /></button>}</article>;
     })}</div>
     {editingProvider && <section className="credential-panel" aria-labelledby="credential-title"><div><span className="section-kicker">Credential broker</span><h3 id="credential-title">Connect {providers.find((provider) => provider.id === editingProvider)?.name}</h3><p>{environment === "native" ? "The value goes directly to the operating-system vault. Project files receive only an opaque reference." : "Browser demo mode exercises the flow but immediately discards the value."}</p></div><label>API key<input autoFocus type="password" autoComplete="off" value={secret} onChange={(event) => setSecret(event.target.value)} /></label><div className="credential-actions">{secretRefs[editingProvider]?.availability === "present" && <button className="secondary-button danger-text" onClick={() => { void deleteSecret(editingProvider); setEditingProvider(null); }}><X size={15} /> Remove</button>}<button className="secondary-button" onClick={() => { setEditingProvider(null); setSecret(""); }}>Cancel</button><button className="primary-button" disabled={!secret.trim() || saving} onClick={() => { void saveSecret(); }}><KeyRound size={15} /> {saving ? "Saving…" : "Store securely"}</button></div></section>}
+    <section className="model-setup-panel" aria-labelledby="local-model-setup-title">
+      <div className="model-setup-heading"><div><span className="section-kicker">First-run setup</span><h2 id="local-model-setup-title">Local models, without surprise downloads.</h2><p>Pick a small local profile, bring a pre-existing model folder, or stay API-first. Model weights are never bundled or activated until a signed immutable manifest, license acceptance, hash check, and hardware preflight all pass.</p></div><span className="setup-state"><HardDrive size={15} /> {setupLoading ? "Loading setup" : `${setup?.selectedModelIds.length ?? 0} choices saved`}</span></div>
+      <div className="local-model-grid" aria-busy={setupLoading}>{localModelOptions.map((model) => { const selected = setup?.selectedModelIds.includes(model.id) ?? false; return <label className={`local-model-choice ${selected ? "selected" : ""}`} key={model.id}><input type="checkbox" checked={selected} disabled={!setup} onChange={(event) => toggleLocalModel(model.id, event.target.checked)} /><span><b>{model.name}</b><small>{model.medium} · {model.detail}</small></span><em>Manifest required</em></label>; })}</div>
+      <div className="existing-model-row"><div><b>Use an existing model folder</b><small>The native app verifies only that this is a local folder at save time. It does not execute, copy, trust, or activate anything in it until a future signed-manifest inspection succeeds.</small></div><label><span>Folder path</span><input value={setup?.existingModelDirectory ?? ""} disabled={!setup} placeholder={environment === "native" ? "C:\\Models\\Alystria" : "/your/local/model-folder"} onChange={(event) => mutateSetup((current) => ({ ...current, existingModelDirectory: event.target.value || null }))} /></label></div>
+      <div className="lipsync-chooser"><div><span className="section-kicker">Optional presenter pack</span><h3>Choose your local lip-sync model</h3><p>Presenter shots are selective. Choosing a pack records a setup preference only; no model is downloaded or made active in this RC.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onChange={() => selectLipSync(model.id)} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{model.tag}</em></label>)}</div></div>
+      <div className="model-setup-actions"><button className="secondary-button" disabled><Download size={16} /> Verified download unavailable</button><small>When signed packs are published, downloads resume into the managed model cache with hashes, license acceptance, atomic activation, and rollback.</small></div>
+    </section>
+    <section className="profile-panel" aria-labelledby="profile-title">
+      <div className="profile-heading"><div><span className="section-kicker">Switchable creation presets</span><h2 id="profile-title">Provider & model profiles</h2><p>Keep several named combinations for each medium and choose one before creation. The profile only records an explicit preference—routes never switch automatically, no key is stored here, and no cloud use occurs until a project approval gate is completed.</p></div><div className="profile-actions"><button className="secondary-button" disabled={!setup} onClick={createProfile}><Plus size={15} /> Add profile</button><button className="secondary-button danger-text" disabled={!setup || setup.profiles.length <= 1} onClick={removeProfile}><X size={15} /> Remove</button></div></div>
+      {setup && activeProfile ? <><div className="profile-tabs" role="tablist" aria-label="Provider profiles">{setup.profiles.map((profile) => <button role="tab" aria-selected={setup.activeProfileId === profile.id} className={setup.activeProfileId === profile.id ? "active" : ""} key={profile.id} onClick={() => mutateSetup((current) => ({ ...current, activeProfileId: profile.id }))}>{profile.name}</button>)}</div><div className="profile-editor"><div className="profile-copy-fields"><label>Name<input value={activeProfile.name} onChange={(event) => updateProfile(activeProfile.id, (profile) => ({ ...profile, name: event.target.value }))} /></label><label>Description<input value={activeProfile.description} onChange={(event) => updateProfile(activeProfile.id, (profile) => ({ ...profile, description: event.target.value }))} /></label></div><div className="profile-route-grid">{profileMediums.map(([medium, label]) => { const selection = activeProfile.routes[medium] ?? { providerId: "local-runtime", modelId: "choose before generation" }; return <label key={medium}><span>{label}</span><select value={selection.providerId} onChange={(event) => updateProfile(activeProfile.id, (profile) => ({ ...profile, routes: { ...profile.routes, [medium]: { ...selection, providerId: event.target.value } } }))}>{profileProviderOptions.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select><input value={selection.modelId} aria-label={`${label} model`} onChange={(event) => updateProfile(activeProfile.id, (profile) => ({ ...profile, routes: { ...profile.routes, [medium]: { ...selection, modelId: event.target.value } } }))} placeholder="Model or voice choice" /></label>; })}</div></div></> : <div className="profile-loading">Loading local profiles…</div>}
+      <div className="profile-save-row"><span><ShieldCheck size={15} /> Preferences only · credentials stay in the OS vault · project approval remains required</span><button className="primary-button" disabled={!setup || setupSaving} onClick={() => { void saveSetup(); }}>{setupSaving ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}{setupSaving ? "Saving…" : "Save setup & active profile"}</button></div>
+    </section>
   </div>;
 }
 
