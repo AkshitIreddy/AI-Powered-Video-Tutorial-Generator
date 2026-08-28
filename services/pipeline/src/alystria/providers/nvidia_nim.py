@@ -2,9 +2,9 @@
 
 The hosted catalog is a development and testing service, not a production
 entitlement. Alystria therefore uses one keyring credential, fixed NVIDIA
-hosts, exact visual endpoint allowlists, unbounded pricing, and no fallback.
-Model access and current per-model rate limits still have to be confirmed in
-build.nvidia.com when a model is selected.
+hosts, exact visual endpoint allowlists, zero-dollar preview budgeting, and no
+fallback. Model access and current per-model rate limits still have to be
+confirmed in build.nvidia.com when a model is selected.
 """
 
 from __future__ import annotations

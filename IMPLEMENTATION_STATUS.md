@@ -1,6 +1,7 @@
 # Alystria Studio 2.0 implementation ledger
 
-Status snapshot: **2026-08-28**, branch `feat/alystria-studio-v2`.
+Status snapshot: **2026-08-28**, branch `feat/alystria-studio-v2` (resumed after
+the local checkpoint pause).
 
 This is the durable source of truth for the 2.0 worktree. A checked item means
 the implementation exists and its relevant local verification passed. It does
@@ -96,8 +97,9 @@ or release distribution have been approved or verified.
 ### Providers, local models, narration, presenters, and product breadth
 
 - [x] Implement mocked/contract-tested OpenAI Responses, Anthropic Messages,
-  Gemini Interactions, and OpenAI-compatible local LLM adapters with structured
-  output revalidation, privacy scope, idempotency, and budget guards.
+  Gemini Interactions, NVIDIA NIM hosted chat/VLM/embedding/image preview, and
+  OpenAI-compatible local LLM adapters with structured output revalidation,
+  privacy scope, idempotency, and budget guards.
 - [x] Implement mocked/contract-tested request builders and async lifecycle for
   OpenAI/Gemini/BFL/Recraft images, Openverse/Pexels media, Runway/Gemini motion,
   OpenAI/ElevenLabs/Azure/Google speech, HeyGen/Tavus presenters, and local TTS,
@@ -127,20 +129,22 @@ are correctness evidence, not release benchmarks.
 
 | Area | Result | Scope |
 |---|---:|---|
-| Python pipeline | `251 passed, 1 skipped` | Full pytest suite; the skip is the opt-in real renderer smoke in the default run |
-| Python quality | clean | Ruff plus strict mypy over 105 source files |
-| Contracts | `47 passed` | Schema/runtime contract tests |
+| Python pipeline | `312 passed, 1 skipped` | Full pytest suite after source/grounding/QA/background/runtime/NIM integrations; the skip is the opt-in real-renderer smoke |
+| Python quality | clean | Ruff plus strict mypy over 113 source files |
+| Contracts | `52 passed` | Schema/runtime/provider-catalog/generated-binding contract tests |
 | Scene library | `12 passed` | Scene compiler and renderer tests |
 | Theme library | `22 passed` | Theme, contrast, brand-kit, and specimen tests |
-| Desktop unit/bridge | `12 passed` | React/native bridge tests and production Vite build |
+| Desktop unit/bridge | `16 passed` | React/native bridge/provider-key tests and production Vite build |
 | Renderer | `39 passed, 1 skipped` | Determinism, browser, FFmpeg, captions, range, and executor tests; opt-in real smoke skipped by default |
 | Desktop Playwright | `7 passed, 1 skipped` | Desktop and narrow-window interaction/visual coverage |
-| Tauri/Rust | `14 passed` | Formatting, check, command/sidecar/security tests |
+| Tauri/Rust | `22 passed` | Formatting, check, Clippy, runtime-pack, command/sidecar/security tests |
+| Tauri debug shell | passed | Headless `tauri build --debug --no-bundle`; native executable produced without opening a window |
 | Canonical fixture schemas | `11 validated` | Topic/course and EN/ES/HI fixture records |
 | Pipeline to real renderer | `1 passed` | Separate opt-in short integration smoke |
 | Real media smoke | passed | Short 640x360 Chromium to FFV1 to WebM render, probed and visually inspected |
 | Windows speech smoke | passed | 48 kHz mono, non-silent, zero clipped samples; not a voice-quality benchmark |
-| Packaged Python sidecar | passed | Development PyInstaller executable handshake, authenticated RPC, shutdown, and exit 0 |
+| Packaged Python sidecar | passed | Final development PyInstaller executable handshake, authenticated RPC, shutdown, exit 0; SHA-256 `0e61e37b98d5129b96ff0d864207778dcb19406e932b6f54df287a0b44a213a0` |
+| NVIDIA NIM live smoke | passed | Redacted key: model discovery 83 IDs, GPT-OSS-20B chat 200, Nemotron-3 Embed 1B 200/2,048 dims, FLUX.2 Klein 200/1024 JPEG; no project content sent |
 
 The correctness runs above were performed on the current development machine,
 whose Windows Node `20.20.2` and Python `3.12.2` do not match the release pins
@@ -156,9 +160,9 @@ than measured release numbers.
 
 ## Implemented surfaces that still need release-grade proof
 
-- [ ] Generate drift-checked Rust and Python bindings directly from the canonical
-  JSON Schemas; the current exhaustive TypeScript bindings and cross-language
-  domain models are implemented, but this generation/drift gate is not complete.
+- [x] Generate drift-checked Rust, Python, and TypeScript schema registries from
+  the canonical JSON Schemas. Rich domain models remain hand-authored over the
+  generated registry, with CI freshness checks.
 - [ ] Complete the DBOS 2.x packaged-Windows crash/recovery/upgrade/no-duplicate-
   charge spike. Until it passes, the deliberately selected and tested
   `SQLiteWorkflowRuntime` fallback remains active; DBOS is not claimed active.
@@ -167,10 +171,12 @@ than measured release numbers.
   rollback, and benchmark them on the target 12 GB RTX 4080 Laptop GPU.
 - [ ] Run live BYOK smoke/contract tests for every launch provider and reconcile
   real retention, region, capability, pricing, cancellation, and billable-request
-  behavior. Current provider evidence is mocked/contract-level only.
-- [ ] Complete functional advanced editing for every visible control. In
-  particular, full undo/redo, timeline authoring, candidate comparison, and all
-  responsive override controls are not yet release-proven end to end.
+  behavior. Current evidence includes an opt-in NVIDIA NIM smoke, while the
+  remaining launch-provider evidence is mocked/contract-level only.
+- [ ] Complete functional advanced editing for every visible control. Durable
+  undo/redo, scoped regeneration, render, repair, and export jobs are wired and
+  tested; timeline authoring, candidate comparison, and all responsive override
+  controls are not yet release-proven end to end.
 - [ ] Render and inspect the complete 16:9, 9:16, 1:1, custom, 1080p, 1440p, 4K,
   FPS/bitrate/codec matrix with the signed runtime. The current real render is a
   short 640x360 development smoke, not the final matrix.
@@ -190,11 +196,12 @@ than measured release numbers.
 
 ## External and release blockers
 
-1. **Rotate the supplied BYOK credentials before any live test.** Values from
-   the user-provided key file were exposed to an internal tool transcript during
-   a failed label-only inspection. The ignored workspace copy was deleted and
-   the original file was not modified, but all credentials from that file must
-   be treated as compromised and replaced. No live provider smoke was run.
+1. **Rotate the previously exposed non-NVIDIA BYOK credentials.** Cohere
+   trial/production, ElevenLabs, and AssemblyAI values from the earlier user
+   key file inspection remain compromised and must not be used. The newly added
+   NVIDIA NIM key was handled in-memory, never printed or committed, and was
+   used only for public/synthetic smoke requests. The original key file was
+   copied, not moved, to the ignored `.alystria/private/` path.
 2. **Production signing material is not available or authorized.** The desktop
    installer, update feed, LGPL FFmpeg/Chromium/Python runtime packs, and optional
    separate GPL x264 pack require immutable manifests, checksums, license review,
@@ -215,7 +222,8 @@ release gates above remain.
 
 - [x] Keep all current work local for user inspection.
 - [x] Do not change the Windows power profile or CPU boost automatically.
-- [x] Do not use the exposed credentials or run billable live-provider tests.
+- [x] Do not use previously exposed credentials or run unapproved/billable
+  live-provider tests.
 - [x] Do not push, merge, publish, deploy, sign a production feed, create a
   public release, distribute an installer, or announce Alystria Studio 2.0
   without explicit owner approval.

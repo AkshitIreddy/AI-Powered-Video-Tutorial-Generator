@@ -467,7 +467,13 @@ def test_hard_budget_fails_closed_when_price_is_unbounded() -> None:
 def test_versioned_catalog_covers_every_launch_modality_and_is_conservative() -> None:
     catalog = default_catalog()
     capabilities = set().union(*(entry.capabilities for entry in catalog.entries.values()))
-    assert set(Capability) <= capabilities
+    # Reranking remains an implemented contract, but its only current NIM
+    # route is dormant until NVIDIA confirms a hosted model for this account.
+    # A conservative catalog must not advertise a capability merely because a
+    # request type exists in the provider-neutral contract.
+    dormant = {Capability.RERANKING}
+    assert set(Capability) - dormant <= capabilities
+    assert Capability.RERANKING not in catalog.get("nvidia-nim").capabilities
     assert catalog.get("openai").catalog_version == catalog.version
     assert catalog.get("openai").data_policy.boundary is DataBoundary.CLOUD
     assert catalog.get("openai").data_policy.retention is RetentionMode.CONFIGURABLE

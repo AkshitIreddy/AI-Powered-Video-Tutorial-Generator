@@ -42,7 +42,8 @@ prohibit production and confidential, sensitive, or personal inputs; make
 credits/limits variable; and permit certain de-identified content and logging
 uses for product/AI improvement, security, and fraud handling. The UI must show
 that conflict instead of collapsing it to a “no training” badge. Explicit terms,
-region/retention, model-access, and unknown-price approvals are required.
+region/retention, model-access, and zero-dollar preview budget approvals are
+required; rate limits remain a separate availability gate.
 
 Downloaded/self-hosted NIM microservices require their own NVIDIA AI Enterprise
 entitlement, infrastructure, model license, and privacy assessment. They are a

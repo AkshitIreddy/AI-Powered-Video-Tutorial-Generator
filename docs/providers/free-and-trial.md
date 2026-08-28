@@ -43,7 +43,8 @@ cloud service.
    credential vault; do not paste the value into a project or `.env` file.
 4. Mark only public or synthetic payloads for this hosted-preview route, accept
    the current Trial Terms, approve the provider-managed region/retention and
-   unknown-price budget gate, and record when model access was checked.
+   zero-dollar preview budget, and record when model access was checked. Quotas
+   and rate limits are separate from financial cost and can still stop a job.
 5. Start with a small text or embedding fixture. Image/VLM endpoints
    remain exact-model capability gates; a missing, retired, paid, or changed
    endpoint stops with an error and never silently switches provider.
