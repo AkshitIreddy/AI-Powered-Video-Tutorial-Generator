@@ -100,6 +100,18 @@
       "launchStatus": "benchmark-and-artifact-pin-required",
       "hardBudgetEligible": true,
       "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
+    },
+    {
+      "id": "local/echomimicv3-flash",
+      "providerId": "local-runtime",
+      "providerModelId": "EchoMimicV3-Flash",
+      "revision": "pin-required-before-download",
+      "execution": "local",
+      "capabilities": ["presenter"],
+      "launchStatus": "benchmark-and-artifact-pin-required",
+      "hardBudgetEligible": true,
+      "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true },
+      "notes": "Official Flash profile reports 12 GB VRAM, 768x768 output, and five-step talking-head generation; benchmark with partial-video-length controls before enabling on the 12 GB laptop."
     }
   ]
 }

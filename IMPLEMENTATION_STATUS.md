@@ -172,8 +172,9 @@ than measured release numbers.
   rollback, and benchmark them on the target 12 GB RTX 4080 Laptop GPU.
 - [ ] Add the first-run Local model setup assistant: hardware-aware profile
   recommendations, existing-folder validation, resumable managed downloads,
-  license/hash/signature gates, rollback, and one-heavy-family scheduling. The
-  evidence-backed candidate matrix is recorded in `docs/models/local-profiles.md`.
+  license/hash/signature gates, rollback, one-heavy-family scheduling, and a
+  per-presenter LipSync model chooser that can retain multiple verified packs.
+  The evidence-backed candidate matrix is recorded in `docs/models/local-profiles.md`.
 - [ ] If LipSync is desired, obtain AI for Media Private Access, validate the
   NGC/container stack and target GPU, then add an authenticated local gRPC
   sidecar with presenter consent and lip-sync QA. The ordinary NIM hosted key

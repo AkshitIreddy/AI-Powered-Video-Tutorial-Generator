@@ -132,6 +132,7 @@ def test_catalog_covers_every_planned_local_capability_and_stays_unverified() ->
         "kokoro",
         "whisper-large-v3-turbo",
         "musetalk-1.5",
+        "echomimicv3-flash",
         "latentsync-1.5",
     }
     assert all(not entry.installable for entry in BUILTIN_CATALOG.entries())

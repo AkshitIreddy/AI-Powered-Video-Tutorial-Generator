@@ -9,8 +9,11 @@ installer or downloaded by this worktree.
 
 Ship a small Alystria installer, then offer a first-run **Local model setup**
 assistant with hardware/storage checks, a curated profile selector, an existing
-folder option, and a skip/cloud option. Downloaded weights belong in the
-managed app-data model cache, not the project repository or installer.
+folder option, and a skip/cloud option. API-backed LLM, TTS, ASR, research, and
+image stages remain usable without local weights; the only prominent optional
+download is a user-selected talking-head/LipSync pack. Downloaded weights
+belong in the managed app-data model cache, not the project repository or
+installer.
 
 Bundling weights would make the installer multi-gigabyte, couple every user to
 one GPU/runtime/license combination, and make updates and revocations unsafe.
@@ -39,7 +42,8 @@ license hash, and target fixture benchmark before activation.
 | Draft/CPU TTS | [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) with [ONNX](https://huggingface.co/onnx-community/Kokoro-82M-ONNX) | Apache-2.0, 82M parameters, voices and q8/q4 ONNX options | **Recommended always-available draft voice.** Verify the selected voice/language pack; do not assume Hindi coverage from the base card. |
 | Legacy TTS fallback | [Piper](https://github.com/rhasspy/piper) / successor project | Fast local neural TTS, but the original repository is archived and development moved; every voice pack needs its own license review | **Optional only.** Do not make archived Piper weights the default without a maintained, license-cleared pack. |
 | ASR/transcription | [Whisper large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) through [faster-whisper](https://github.com/SYSTRAN/faster-whisper) or [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | Turbo prunes the decoder from 32 to 4 layers for much faster inference with a minor quality trade-off; faster-whisper documents lower memory/8-bit paths; whisper.cpp supports Windows, NVIDIA, Vulkan, quantization, and CPU | **Recommended local ASR.** Use a quantized/runtime-specific artifact and keep WhisperX/MFA as separate alignment stages. |
-| Presenter lip-sync | [MuseTalk 1.5](https://github.com/TMElyralab/MuseTalk) | Official project reports 30fps+ on a Tesla V100, 256×256 face-region processing, and multilingual audio examples | **Primary 12 GB candidate; benchmark required.** Use fp16, batch 1–2, short chunks, and one GPU-heavy family at a time. |
+| Presenter lip-sync specialist | [MuseTalk 1.5](https://github.com/TMElyralab/MuseTalk) | Official project reports 30fps+ on a Tesla V100, 256×256 face-region processing, and multilingual audio examples | **Fast face-only candidate; benchmark required.** Use fp16, batch 1–2, short chunks, and one GPU-heavy family at a time. |
+| Expressive talking head / upper body | [EchoMimicV3 Flash](https://github.com/antgroup/echomimic_v3) | Official repo reports 1.3B parameters, 12G VRAM for Flash, 8-step high-quality generation, up to 768×768, Apache-2.0, and a quantified Windows package | **First benchmark target for this laptop.** Use five talking-head steps, partial clips (81/65 frames or shorter), and keep the 12 GB VRAM headroom gate strict. |
 | Diffusion lip-sync alternative | [LatentSync 1.5](https://github.com/bytedance/LatentSync) | Official README states 8 GB minimum VRAM for 1.5 and 18 GB for 1.6; 1.5 improves temporal consistency over earlier versions | **1.5 is a viable slower candidate; 1.6 is not a 12 GB target.** Chunk long clips and test seam behavior. |
 | Pose/expression animation | [LivePortrait](https://github.com/KwaiVGI/LivePortrait) | Official implementation supports portrait animation, pose/expression/lip regions, and Windows setup | **Complement, not audio LipSync.** It does not replace an audio-conditioned lip-sync model. |
 | Fast/older baseline | [Wav2Lip](https://github.com/Rudrabha/Wav2Lip) | Mature speech-to-lip baseline; model/checkpoint licensing and commercial restrictions need separate review | **Fallback benchmark only.** Do not ship it as the default without rights review. |
@@ -49,11 +53,20 @@ license hash, and target fixture benchmark before activation.
 
 ## LipSync decision for Alystria
 
-The local default should be **MuseTalk 1.5**, with LatentSync 1.5 as a quality
-comparison and NVIDIA LipSync as an optional private-access sidecar. The
-director should generate a clean portrait/short presenter clip, synthesize
-final dry narration, align it, then run lip-sync only for selected presenter
-scenes. It must not lip-sync every scene.
+The local default should be **EchoMimicV3 Flash if the 12 GB benchmark passes**;
+otherwise use **MuseTalk 1.5** for fast face-only presenter shots, with
+LatentSync 1.5 as a quality comparison and NVIDIA LipSync as an optional
+private-access sidecar. The director should generate a clean portrait/short
+presenter clip, synthesize final dry narration, align it, then run lip-sync
+only for selected presenter scenes. It must not lip-sync every scene.
+
+EchoMimicV3 is the strongest evidence-backed first test for this laptop: its
+official repository reports a 12G-VRAM Flash profile, 1.3B parameters, 8-step
+high-quality generation, up to 768×768, partial-video controls for reducing
+VRAM, Apache-2.0 licensing, and a quantified Windows package. Its tested GPUs
+are still A100/RTX4090D/V100, so the RTX 4080 Laptop result must be measured
+locally. It should be installed as an optional presenter pack, not loaded beside
+the LLM or image generator.
 
 NVIDIA LipSync is technically interesting for this laptop: its model card lists
 Lovelace/Ada compatibility and Windows 10/11, and it requires NVENC/NVDEC. The
@@ -91,6 +104,30 @@ The assistant can be reopened from **Models & Providers → Local models**. A
 user can install only the small retrieval/TTS/ASR profile first, then add
 Qwen3.5 or MuseTalk later. This keeps the initial setup useful on low-memory
 machines while making the RTX 4080 Laptop profile a deliberate opt-in.
+
+### Presenter/LipSync model chooser
+
+The setup assistant must present these as separate user choices, with the
+hardware probe's recommendation highlighted but never silently selected:
+
+- **EchoMimicV3 Flash** — expressive talking head/upper-body motion; official
+  12G-VRAM Flash profile; first benchmark target for this laptop.
+- **MuseTalk 1.5** — fast face-region lip-sync specialist; recommended fallback
+  when EchoMimicV3 does not fit or the user wants shorter presenter clips.
+- **LatentSync 1.5** — slower diffusion quality comparison; its official README
+  states an 8 GB inference minimum, while 1.6 requires 18 GB and is excluded
+  from this target profile.
+- **NVIDIA LipSync** — only after AI for Media Private Access and local NIM
+  runtime checks; it is not unlocked by the normal hosted NIM key.
+- **Use an existing folder** — validate the selected pack's manifest, revision,
+  hashes, license, runtime and path safety before it can be activated.
+
+The user can keep multiple verified packs installed and switch the active pack
+per project, lesson, or presenter profile. Switching a pack creates a new
+candidate revision and invalidates only presenter clips, alignment/timing
+descendants, scene renders, and final composition; it preserves narration and
+accepted scenes. The selector shows disk size, VRAM estimate, supported locales,
+rights/consent requirements, and exact reasons a pack is unavailable.
 
 ## Verification protocol before marking a profile supported
 
