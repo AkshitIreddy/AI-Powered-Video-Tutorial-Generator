@@ -57,7 +57,9 @@ gates below are still not approval to publish or release.
   not the global default for private projects. Reranking is dormant, video is a
   deprecated diagnostic tombstone, VoiceChat is not selectable-voice TTS, and
   NVIDIA LipSync requires the separate AI for Media Private Access Program and
-  a self-hosted Linux/gRPC NIM.
+  a GPU/container gRPC sidecar. The model card lists Windows compatibility, but
+  the optimized table omits the RTX 4080 Laptop and this target stack remains
+  unverified.
 
 ## Last verification state
 

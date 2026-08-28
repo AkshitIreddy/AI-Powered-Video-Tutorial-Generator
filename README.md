@@ -8,7 +8,7 @@ Alystria Studio is a Windows-first, local-first desktop environment for research
 
 ![Alystria Studio home screen](docs/images/alystria-home.png)
 
-[Documentation](docs/README.md) · [Architecture](docs/architecture/overview.md) · [Security and privacy](docs/security/security-and-privacy.md) · [Evaluation](docs/testing/evaluation.md) · [Implementation ledger](IMPLEMENTATION_STATUS.md)
+[Documentation](docs/README.md) · [Architecture](docs/architecture/overview.md) · [Local model profiles](docs/models/local-profiles.md) · [Security and privacy](docs/security/security-and-privacy.md) · [Evaluation](docs/testing/evaluation.md) · [Implementation ledger](IMPLEMENTATION_STATUS.md)
 
 ## What is in this worktree
 
@@ -88,6 +88,11 @@ Exact material prefers deterministic SVG/DOM graphics; real people/events/places
 The renderer uses one frame-driven scene path for preview and final output, independently compiles landscape/portrait/square/custom targets, represents time at 240,000 ticks/second, denies wall clock/remote assets/autonomous CSS/unseeded randomness, verifies Chromium version and hash, checkpoints frames, and invokes FFmpeg/ffprobe directly without a shell. WebVTT is canonical; SRT, overlays, transcripts, and descriptive output derive from common cues.
 
 The 48 kHz master target is −16 ±1 LUFS and no more than −1.5 dBTP. Music and effects default off. Voice cloning or a real-person presenter requires immutable consent, scope, proof, revocation, rights, and synthetic-media disclosure. Current code implements contracts, policy, deterministic fixtures, and Windows speech integration; it does not claim a live cloud voice or presenter smoke pass.
+
+NVIDIA LipSync remains a separate local-sidecar candidate rather than a normal
+NIM hosted capability: it needs NVIDIA's AI for Media Private Access Program,
+an NGC key, a Docker/NVIDIA GPU stack, and target-hardware verification. It
+animates an existing consented face against speech; it does not select voices.
 
 See [Rendering](docs/architecture/rendering.md) and [Accessibility](docs/accessibility.md).
 

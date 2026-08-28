@@ -50,6 +50,27 @@ entitlement, infrastructure, model license, and privacy assessment. They are a
 separate provider ID and execution boundary if implemented later; a hosted
 preview key never turns a cloud route into Local mode.
 
+### NVIDIA LipSync is a separate local candidate
+
+NVIDIA LipSync is not enabled by the ordinary `nvidia-nim` hosted-preview key.
+The model card marks it downloadable and requires the AI for Media Private
+Access Program. The current [support matrix](https://docs.nvidia.com/nim/maxine/lipsync/latest/support-matrix.html)
+requires an NVIDIA GPU with Tensor cores and NVENC/NVDEC, and lists Ada/Lovelace
+architecture compatibility; its optimized consumer table names RTX 4090, RTX
+5090, and RTX 5080 but not the RTX 4080 Laptop. NVIDIA's model card lists
+Windows 10/11 among preferred operating systems, while the deployment guide is
+container-oriented and requires Linux NVIDIA driver 571.21+, Docker, and the
+NVIDIA Container Toolkit. The published stack includes CUDA 12.8.1, cuDNN
+9.7.1.26, TensorRT 10.9.0.34, Triton 2.56.0, and DeepStream 8.0, with one GPU
+and gRPC normally exposed on port 8001. Alystria therefore keeps LipSync as a
+capability-gated local sidecar candidate: the Windows RTX 4080 Laptop/12 GB
+target has not been benchmarked, and no Docker/WSL/NIM runtime is installed or
+claimed supported in this RC.
+
+LipSync animates an existing face image/video against mono 16 kHz speech; it is
+not a voice selector or TTS engine. Presenter consent, source rights, and
+synthetic-media disclosure remain mandatory before a future adapter can run.
+
 ## Freshness and evidence
 
 Provider facts drift. Each catalog entry records adapter version, model identifier, capability flags, endpoint/region, payload limits, retention/training policy URI, price unit, price, currency, `lastVerifiedAt`, deprecation date, and evidence URI. The application must not infer a current model name or price from an older project.

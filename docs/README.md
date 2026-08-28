@@ -12,6 +12,7 @@ This documentation is both an implementation contract and an operator guide. Whe
 - [Rendering](architecture/rendering.md) — deterministic scenes, timing, responsive compilation, Chromium capture, and FFmpeg delivery.
 - [Security and privacy](security/security-and-privacy.md) — threats, trust boundaries, local mode, secrets, import quarantine, and export gates.
 - [Provider and model policy](providers/provider-and-model-policy.md) — capability contracts, cloud approvals, local model manifests, pricing freshness, and fallback rules.
+- [Local model profiles](models/local-profiles.md) — evidence-backed 12 GB RTX 4080 Laptop candidates, LipSync options, and first-run setup flow.
 - [Free and trial provider guide](providers/free-and-trial.md) — dated, caveated signup options for experiments; not an adapter-availability promise.
 - [Research and pedagogy](research/evidence-and-pedagogy.md) — safe ingestion, retrieval, atomic claims, instructional planning, grounding modes, and approval gates.
 - [Accessibility](accessibility.md) — WCAG 2.2 AA product targets and accessible-media requirements.

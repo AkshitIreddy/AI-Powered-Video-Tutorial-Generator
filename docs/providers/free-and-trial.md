@@ -68,6 +68,12 @@ production plan. [Self-hosted NIM microservices](https://www.nvidia.com/en-us/ai
 have different infrastructure, licensing/entitlement, privacy, and operating
 requirements and must be configured as a separate provider boundary.
 
+LipSync is a separate exception: NVIDIA marks it downloadable and requires the
+AI for Media Private Access Program, an NGC Catalog key, a GPU/container stack,
+and a gRPC sidecar. It is not unlocked by the ordinary hosted NIM key and does
+not provide TTS voices. See the [LipSync model card](https://build.nvidia.com/nvidia/lipsync/modelcard)
+and [support matrix](https://docs.nvidia.com/nim/maxine/lipsync/latest/support-matrix.html).
+
 ## Recurring free or open access
 
 | Provider | Useful Alystria capability | Current free access | Payment method | Production and rights caveat | Verified |

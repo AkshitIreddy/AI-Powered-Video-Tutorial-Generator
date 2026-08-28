@@ -145,6 +145,7 @@ are correctness evidence, not release benchmarks.
 | Windows speech smoke | passed | 48 kHz mono, non-silent, zero clipped samples; not a voice-quality benchmark |
 | Packaged Python sidecar | passed | Final development PyInstaller executable handshake, authenticated RPC, shutdown, exit 0; SHA-256 `0e61e37b98d5129b96ff0d864207778dcb19406e932b6f54df287a0b44a213a0` |
 | NVIDIA NIM live smoke | passed | Redacted key: model discovery 83 IDs, GPT-OSS-20B chat 200, Nemotron-3 Embed 1B 200/2,048 dims, FLUX.2 Klein 200/1024 JPEG; no project content sent |
+| NVIDIA LipSync local candidate | not enabled | Private Access Program/downloadable NIM; Ada-class compatibility is documented, but RTX 4080 Laptop/12 GB, Docker/WSL, and the required media stack are unverified |
 
 The correctness runs above were performed on the current development machine,
 whose Windows Node `20.20.2` and Python `3.12.2` do not match the release pins
@@ -169,6 +170,14 @@ than measured release numbers.
 - [ ] Replace catalog-only local-model entries with reviewed immutable revisions,
   artifact hashes, licenses, and signed manifests; then download, resume,
   rollback, and benchmark them on the target 12 GB RTX 4080 Laptop GPU.
+- [ ] Add the first-run Local model setup assistant: hardware-aware profile
+  recommendations, existing-folder validation, resumable managed downloads,
+  license/hash/signature gates, rollback, and one-heavy-family scheduling. The
+  evidence-backed candidate matrix is recorded in `docs/models/local-profiles.md`.
+- [ ] If LipSync is desired, obtain AI for Media Private Access, validate the
+  NGC/container stack and target GPU, then add an authenticated local gRPC
+  sidecar with presenter consent and lip-sync QA. The ordinary NIM hosted key
+  is insufficient.
 - [ ] Run live BYOK smoke/contract tests for every launch provider and reconcile
   real retention, region, capability, pricing, cancellation, and billable-request
   behavior. Current evidence includes an opt-in NVIDIA NIM smoke, while the

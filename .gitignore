@@ -30,6 +30,8 @@ runtime-packs/
 models/
 !services/pipeline/src/alystria/models/
 !services/pipeline/src/alystria/models/**
+!docs/models/
+!docs/models/**
 # The source-package exception above must never re-include generated Python files.
 **/__pycache__/
 **/*.py[cod]
