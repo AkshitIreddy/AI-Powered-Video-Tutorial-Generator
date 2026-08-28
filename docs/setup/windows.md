@@ -49,6 +49,25 @@ Live BYOK tests are opt-in. The default test suite uses mock providers and
 deterministic local fixtures. `package:desktop` creates a local artifact only
 and must not publish it.
 
+## Portable debug test handoff
+
+For an isolated local handoff (not an installer or a release), first build the
+desktop debug binary and the checked development sidecar, then run:
+
+```powershell
+corepack pnpm --filter @alystria/desktop build
+cargo build --manifest-path apps\desktop\src-tauri\Cargo.toml --bin alystria-studio
+.\scripts\create-portable-test-area.ps1
+```
+
+The script creates `..\Alystria Studio Test Area` beside the repository, copies
+only the exact debug desktop executable and pipeline sidecar, and creates a
+double-click launcher. The launcher sets debug-only `ALYSTRIA_APP_DATA_DIR` and
+`ALYSTRIA_PIPELINE_WORKER` values so its `Test Data` folder is isolated from
+normal Alystria app data. It does not copy project directories, model weights,
+or provider credentials. If the folder already exists, the script refuses to
+touch it unless it recognizes its own manifest and `-Force` is supplied.
+
 ## Pipeline sidecar
 
 Build the local Windows pipeline executable without model weights:
