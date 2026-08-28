@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.alystria.studio/v2/media.schema.json",
+  "title": "Alystria media, narration, rights, and provenance",
+  "$defs": {
+    "RightsGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "usage", "territories", "attributionRequired"],
+      "properties": {
+        "status": { "enum": ["cleared", "conditional", "unknown", "restricted", "expired", "revoked"] },
+        "usage": { "type": "array", "items": { "enum": ["preview", "edit", "render", "commercial", "redistribution", "model-input", "voice-clone", "presenter"] }, "uniqueItems": true },
+        "licenseExpression": { "type": "string", "maxLength": 500 },
+        "territories": { "type": "array", "items": { "type": "string", "minLength": 2, "maxLength": 80 } },
+        "validFrom": { "$ref": "common.schema.json#/$defs/IsoDate" },
+        "validUntil": { "$ref": "common.schema.json#/$defs/IsoDate" },
+        "attributionRequired": { "type": "boolean" },
+        "attributionText": { "type": "string", "maxLength": 2000 },
+        "restrictions": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+        "proofArtifactIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }
+      }
+    },
+    "ConsentRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "subject", "scope", "status", "recordedAt", "proofArtifactId", "syntheticDisclosureRequired"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "subject": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "subjectContactHash": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "scope": { "type": "array", "minItems": 1, "items": { "enum": ["voice-cloning", "lip-sync", "portrait-animation", "likeness-generation", "training", "distribution"] }, "uniqueItems": true },
+        "status": { "enum": ["active", "expired", "revoked"] },
+        "recordedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "expiresAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "revokedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "proofArtifactId": { "$ref": "common.schema.json#/$defs/Id" },
+        "syntheticDisclosureRequired": { "type": "boolean" }
+      }
+    },
+    "AssetProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "assetId", "origin", "contentHash", "createdAt", "rights", "c2paStatus"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "assetId": { "$ref": "common.schema.json#/$defs/Id" },
+        "origin": { "enum": ["user-import", "generated", "licensed-media", "public-domain", "derived", "screen-capture", "recording", "bundled"] },
+        "contentHash": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "creator": { "type": "string", "maxLength": 500 },
+        "sourceUri": { "$ref": "common.schema.json#/$defs/Uri" },
+        "providerId": { "$ref": "common.schema.json#/$defs/Id" },
+        "modelId": { "$ref": "common.schema.json#/$defs/Id" },
+        "modelRevision": { "type": "string", "maxLength": 500 },
+        "promptArtifactId": { "$ref": "common.schema.json#/$defs/Id" },
+        "ingredientAssetIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "rights": { "$ref": "#/$defs/RightsGrant" },
+        "consentRecordIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "c2paStatus": { "enum": ["signed", "verified", "absent", "invalid", "unsupported"] },
+        "c2paManifestArtifactId": { "$ref": "common.schema.json#/$defs/Id" }
+      }
+    },
+    "SpeechDelivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pace", "pitchSemitones", "energy", "style"],
+      "properties": {
+        "pace": { "type": "number", "minimum": 0.5, "maximum": 2 },
+        "pitchSemitones": { "type": "number", "minimum": -12, "maximum": 12 },
+        "energy": { "type": "number", "minimum": 0, "maximum": 1 },
+        "style": { "enum": ["neutral", "warm", "conversational", "authoritative", "enthusiastic", "empathetic", "dramatic", "instructional"] },
+        "emotion": { "type": "string", "maxLength": 100 }
+      }
+    },
+    "PronunciationReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "grapheme", "locale", "method", "value"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "grapheme": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "locale": { "$ref": "common.schema.json#/$defs/Locale" },
+        "method": { "enum": ["ipa", "alias", "phoneme", "provider-lexicon"] },
+        "value": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "providerId": { "$ref": "common.schema.json#/$defs/Id" }
+      }
+    },
+    "NarrationSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "kind"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 1 },
+        "kind": { "enum": ["emphasis", "strong-emphasis", "pause-before", "pause-after", "pronunciation", "aside"] },
+        "value": { "type": "string", "maxLength": 500 },
+        "referenceId": { "$ref": "common.schema.json#/$defs/Id" }
+      }
+    },
+    "NarrationSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "locale", "speakerId", "delivery", "spans"],
+      "properties": {
+        "text": { "$ref": "common.schema.json#/$defs/NonEmptyText" },
+        "locale": { "$ref": "common.schema.json#/$defs/Locale" },
+        "speakerId": { "$ref": "common.schema.json#/$defs/Id" },
+        "delivery": { "$ref": "#/$defs/SpeechDelivery" },
+        "spans": { "type": "array", "items": { "$ref": "#/$defs/NarrationSpan" } },
+        "contextBefore": { "type": "string", "maxLength": 5000 },
+        "contextAfter": { "type": "string", "maxLength": 5000 },
+        "pronunciationIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "audioArtifactId": { "$ref": "common.schema.json#/$defs/Id" },
+        "alignmentArtifactId": { "$ref": "common.schema.json#/$defs/Id" }
+      }
+    },
+    "CaptionCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "startTick", "endTick", "text", "speakerId", "position", "kind"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "startTick": { "type": "integer", "minimum": 0 },
+        "endTick": { "type": "integer", "minimum": 1 },
+        "text": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "speakerId": { "$ref": "common.schema.json#/$defs/Id" },
+        "position": { "enum": ["auto", "top", "bottom", "custom"] },
+        "box": { "$ref": "common.schema.json#/$defs/BoundingBox" },
+        "kind": { "enum": ["dialogue", "sound", "music", "speaker", "description"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "CaptionTrack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "locale", "kind", "cues"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "locale": { "$ref": "common.schema.json#/$defs/Locale" },
+        "kind": { "enum": ["standard", "sdh", "translation", "description"] },
+        "cues": { "type": "array", "items": { "$ref": "#/$defs/CaptionCue" } },
+        "artifactId": { "$ref": "common.schema.json#/$defs/Id" },
+        "burnIn": { "type": "boolean" }
+      }
+    },
+    "AudioMixSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sampleRate", "channels", "targetLufs", "maxTruePeakDbtp", "musicEnabled", "effectsEnabled"],
+      "properties": {
+        "sampleRate": { "enum": [44100, 48000, 96000] },
+        "channels": { "enum": [1, 2, 6] },
+        "targetLufs": { "type": "number", "minimum": -30, "maximum": -8 },
+        "maxTruePeakDbtp": { "type": "number", "minimum": -6, "maximum": 0 },
+        "musicEnabled": { "type": "boolean" },
+        "effectsEnabled": { "type": "boolean" },
+        "musicArtifactId": { "$ref": "common.schema.json#/$defs/Id" },
+        "duckingDb": { "type": "number", "minimum": -30, "maximum": 0 },
+        "audioDescriptionArtifactId": { "$ref": "common.schema.json#/$defs/Id" }
+      }
+    },
+    "PresenterSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "usage", "direction", "disclosure"],
+      "properties": {
+        "mode": { "enum": ["none", "auto", "avatar", "real-person", "illustrated"] },
+        "profileId": { "$ref": "common.schema.json#/$defs/Id" },
+        "usage": { "enum": ["none", "hook", "transition", "misconception", "recap", "full-scene"] },
+        "direction": { "type": "string", "maxLength": 3000 },
+        "gestureCues": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/TickRange" } },
+        "consentRecordId": { "$ref": "common.schema.json#/$defs/Id" },
+        "disclosure": { "enum": ["not-required", "visible-label", "credits", "visible-and-credits"] },
+        "clipArtifactId": { "$ref": "common.schema.json#/$defs/Id" }
+      }
+    },
+    "TimingPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "minimumTicks", "maximumTicks", "overflow"],
+      "properties": {
+        "mode": { "enum": ["narration-led", "visual-led", "fixed", "interactive"] },
+        "minimumTicks": { "type": "integer", "minimum": 1 },
+        "maximumTicks": { "type": "integer", "minimum": 1 },
+        "preferredTicks": { "type": "integer", "minimum": 1 },
+        "overflow": { "enum": ["extend", "split", "compress-pauses", "block"] }
+      }
+    },
+    "AccessibilitySpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "essentialVisuals", "readingOrder", "reducedMotionAlternative", "colorIndependent"],
+      "properties": {
+        "description": { "$ref": "common.schema.json#/$defs/NonEmptyText" },
+        "essentialVisuals": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+        "readingOrder": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "reducedMotionAlternative": { "enum": ["none-needed", "crossfade", "step", "static", "custom"] },
+        "colorIndependent": { "type": "boolean" },
+        "audioDescription": { "type": "string", "maxLength": 10000 }
+      }
+    }
+  }
+}

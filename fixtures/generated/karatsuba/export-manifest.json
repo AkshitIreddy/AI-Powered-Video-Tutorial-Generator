@@ -1,0 +1,158 @@
+{
+  "approvalRevisionId": "<run-local-approval-revision>",
+  "chapters": [
+    {
+      "chapterId": "section_f344bf36ce6094c3262edc52",
+      "endTicks": 57600000,
+      "sceneIds": [
+        "scene_5fffecc1fc7e8cc1bc9c8dc0"
+      ],
+      "startTicks": 0,
+      "title": "Start with a question why does this"
+    },
+    {
+      "chapterId": "section_e506a1b0b82b097875aaf01c",
+      "endTicks": 115200000,
+      "sceneIds": [
+        "scene_08a9c69a585f75fa1ccf670a"
+      ],
+      "startTicks": 57600000,
+      "title": "Now connect this to what you just"
+    },
+    {
+      "chapterId": "section_4ab12b3cf02fa5c137b332ae",
+      "endTicks": 172800000,
+      "sceneIds": [
+        "scene_81838b64a0d70f20a719bfa2"
+      ],
+      "startTicks": 115200000,
+      "title": "Now connect this to what you just"
+    }
+  ],
+  "description": "Alystria Studio tutorial about Karatsuba Multiplication: Three Products Instead of Four.",
+  "exportId": "export_e4a61d99a406d8d1bf0e224c",
+  "files": [
+    {
+      "artifactHash": "a6e637a7b16077a74cf051131e395233743c1ecbcae19339e0edd258a3001de3",
+      "role": "video"
+    },
+    {
+      "artifactHash": "58066f654c4f170b81051219e606e3ca1032679203d01f403e1f94ba41b742de",
+      "role": "captions"
+    },
+    {
+      "artifactHash": "da7c88838d6ff2734cbdcead5a432cfd3acbd14cafc0dfc7b23c11d3e3549c1f",
+      "role": "captions-srt"
+    },
+    {
+      "artifactHash": "15c857009e4b09815cf5fab52ffe5c85aee2765ebe0cc42fb85f719f1588460a",
+      "role": "transcript"
+    }
+  ],
+  "generationId": "19620000-0000-4000-8000-000000000002",
+  "locale": "en-US",
+  "projectId": "prj_fixture_karatsuba_v2",
+  "provenance": {
+    "manifestArtifactHash": "93cfb70de874ed0fb099114313d8e668f3e0fe262466dfa22f9878a58675daaf",
+    "modelRevision": "fixture-media-v1",
+    "provider": "local-deterministic",
+    "qaEvidenceArtifactHash": "f2ba0ca45872f0e744a5d31928ba4a10b56342ce770fea7074d997d23083a434",
+    "renderer": "alystria-deterministic-renderer",
+    "rendererVersion": "fixture-render-v1",
+    "seed": 1962
+  },
+  "qualityGate": {
+    "category": "multimodal",
+    "findings": [],
+    "gate_id": "generation.qa_final",
+    "metadata": {
+      "provenanceManifestHash": "93cfb70de874ed0fb099114313d8e668f3e0fe262466dfa22f9878a58675daaf",
+      "qaEvidenceHash": "f2ba0ca45872f0e744a5d31928ba4a10b56342ce770fea7074d997d23083a434",
+      "repairAttempts": 0,
+      "subgates": [
+        {
+          "category": "integrity",
+          "gateId": "generation.immutable_evidence",
+          "status": "PASS"
+        },
+        {
+          "category": "audio",
+          "gateId": "media.audio",
+          "status": "PASS"
+        },
+        {
+          "category": "timeline",
+          "gateId": "media.timeline",
+          "status": "PASS"
+        },
+        {
+          "category": "visual",
+          "gateId": "visual.renderer",
+          "status": "PASS"
+        },
+        {
+          "category": "content",
+          "gateId": "content.objectives",
+          "status": "PASS"
+        },
+        {
+          "category": "factuality",
+          "gateId": "content.claim_support",
+          "status": "PASS"
+        },
+        {
+          "category": "content",
+          "gateId": "content.terminology",
+          "status": "PASS"
+        },
+        {
+          "category": "content",
+          "gateId": "content.contradictions",
+          "status": "PASS"
+        },
+        {
+          "category": "provenance",
+          "gateId": "security.export",
+          "status": "PASS"
+        }
+      ]
+    },
+    "required": true,
+    "status": "PASS",
+    "summary": "Immutable renderer, audio, caption, factuality, rights, and timeline gate."
+  },
+  "repairAttempts": 0,
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "citation": "fixture:karatsuba/sources/karatsuba-derivation.md",
+      "creator": "Alystria fixture authors",
+      "licenseId": "CC0-1.0",
+      "sourceId": "src.karatsuba.note",
+      "title": "Karatsuba multiplication: deterministic teaching note"
+    }
+  ],
+  "summary": "A grounded tutorial for Undergraduate computer-science learners meeting divide-and-conquer multiplication for the first time..",
+  "syntheticMediaDisclosure": true,
+  "targets": [
+    {
+      "fps": 30,
+      "height": 1080,
+      "name": "landscape",
+      "width": 1920
+    },
+    {
+      "fps": 30,
+      "height": 1920,
+      "name": "portrait",
+      "width": 1080
+    },
+    {
+      "fps": 30,
+      "height": 1080,
+      "name": "square",
+      "width": 1080
+    }
+  ],
+  "title": "Karatsuba Multiplication: Three Products Instead of Four"
+}

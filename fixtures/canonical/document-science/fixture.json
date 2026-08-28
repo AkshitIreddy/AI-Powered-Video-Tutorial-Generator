@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture.science.greenhouse.document.en",
+  "title": "The Greenhouse Effect from One Grounding Document",
+  "domain": "science",
+  "purpose": "Document-grounded science fixture for exact source spans, mechanism-versus-feedback distinction, misconception handling, highlighted-document scenes, and Strict-mode export gating.",
+  "locale": "en-US",
+  "durationSeconds": 330,
+  "deterministicSeed": 2802,
+  "groundingMode": "strict",
+  "learner": { "audience": "General adult learners seeking a physically accurate, plain-language climate explanation.", "knowledgeLevel": "beginner", "prerequisites": ["Energy can be absorbed, emitted, and reflected", "Visible and infrared radiation are different wavelength ranges"], "accessibilityNeeds": ["captions", "descriptive-transcript", "reduced-motion", "plain-language", "high-contrast"] },
+  "objectives": [
+    { "id": "obj.greenhouse.mechanism", "statement": "Describe incoming sunlight, outgoing infrared radiation, and greenhouse-gas absorption/re-emission.", "criteria": ["Tracks energy rather than saying heat is permanently trapped", "Names infrared radiation"] },
+    { "id": "obj.greenhouse.change", "statement": "Explain why increasing greenhouse-gas concentration creates an energy imbalance and warming response.", "criteria": ["Connects concentration to outgoing energy rate", "Avoids a literal blanket mechanism"] },
+    { "id": "obj.greenhouse.feedback", "statement": "Distinguish the core greenhouse mechanism from feedbacks and redistribution.", "criteria": ["Names feedback components", "Does not imply a one-component climate system"] }
+  ],
+  "sources": [
+    { "id": "src.greenhouse.brief", "path": "sources/greenhouse-effect-brief.md", "sha256": "f479ab716b7e8a09565afa365b7f20014f7f6d58108d3bb1411961915087a891", "mimeType": "text/markdown", "title": "How the greenhouse effect works", "creator": "Alystria fixture authors", "licenseExpression": "CC0-1.0", "origin": "locally-authored", "storagePolicy": "copied", "rightsStatus": "cleared", "externalEvidenceUris": ["https://science.nasa.gov/climate-change/faq/what-is-the-greenhouse-effect/", "https://www.noaa.gov/education/resource-collections/climate/climate-change-impacts"] }
+  ],
+  "claims": [
+    { "id": "claim.greenhouse.mechanism", "statement": "Greenhouse gases absorb and re-emit infrared radiation, changing the rate at which energy escapes to space.", "claimType": "causal", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.greenhouse.brief", "locator": "First paragraph, infrared mechanism", "relationship": "entails" }] },
+    { "id": "claim.greenhouse.imbalance", "statement": "Increasing greenhouse-gas concentration strengthens the effect and creates an energy imbalance until warming increases outgoing energy.", "claimType": "causal", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.greenhouse.brief", "locator": "Second paragraph, energy imbalance", "relationship": "entails" }] },
+    { "id": "claim.greenhouse.feedbacks", "statement": "Clouds, water vapor, ice, oceans, land, and circulation participate in feedbacks or energy redistribution beyond the core mechanism.", "claimType": "fact", "importance": "major", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.greenhouse.brief", "locator": "Third paragraph", "relationship": "supports" }] }
+  ],
+  "scenes": [
+    { "id": "scene.greenhouse.document", "type": "document", "title": "Read the source before explaining", "objectiveIds": ["obj.greenhouse.mechanism"], "claimIds": [], "narration": "This tutorial is constrained to one local brief. Every physical claim links back to an exact paragraph.", "visualIntent": "A safe highlighted-document view shows paragraph headings and evidence markers without executing markup.", "captionText": "Strict grounding: each claim links to the local brief", "accessibilityDescription": "A document outline lists three paragraphs and their evidence markers." },
+    { "id": "scene.greenhouse.energy", "type": "diagram", "title": "Follow the energy", "objectiveIds": ["obj.greenhouse.mechanism"], "claimIds": ["claim.greenhouse.mechanism"], "narration": "Sunlight enters; some is reflected and some is absorbed. The warm Earth emits infrared radiation, which greenhouse gases absorb and re-emit.", "visualIntent": "Wavelength-labeled arrows and an energy ledger avoid the misleading solid-lid metaphor.", "captionText": "Incoming sunlight • outgoing infrared • absorption and re-emission", "accessibilityDescription": "A diagram traces incoming, reflected, absorbed, emitted, and re-emitted energy with labeled arrow styles.", "sourceLocator": "src.greenhouse.brief#First paragraph" },
+    { "id": "scene.greenhouse.imbalance", "type": "simulation", "title": "A changed escape rate", "objectiveIds": ["obj.greenhouse.change"], "claimIds": ["claim.greenhouse.imbalance"], "narration": "More greenhouse gas changes how efficiently infrared energy escapes. The imbalance drives warming until outgoing and incoming energy balance again.", "visualIntent": "A deterministic two-state energy-balance simulation changes one parameter and displays labeled totals.", "captionText": "Changed escape rate → energy imbalance → warming response", "accessibilityDescription": "Before-and-after tables list equal incoming energy and initially reduced outgoing energy in the changed state.", "sourceLocator": "src.greenhouse.brief#Second paragraph" },
+    { "id": "scene.greenhouse.misconception", "type": "comparison", "title": "Mechanism, metaphor, and feedback", "objectiveIds": ["obj.greenhouse.feedback"], "claimIds": ["claim.greenhouse.feedbacks"], "narration": "A blanket can be a loose analogy for reduced cooling, but not a literal mechanism. Feedbacks and circulation add important system responses.", "visualIntent": "A three-column comparison labels core radiative mechanism, limited metaphor, and feedback examples.", "captionText": "Mechanism ≠ literal blanket • feedbacks are additional responses", "accessibilityDescription": "A comparison table separates the supported physical mechanism from a limited metaphor and from feedbacks.", "sourceLocator": "src.greenhouse.brief#Second and third paragraphs" }
+  ],
+  "outputTargets": [{ "name": "landscape", "width": 1920, "height": 1080, "fps": 30 }, { "name": "square", "width": 1080, "height": 1080, "fps": 30 }],
+  "qualityAssertions": [
+    { "id": "qa.greenhouse.coverage", "category": "grounding", "severity": "release-blocking", "check": "grounding.strict-claim-coverage", "description": "All externally verifiable claims have exact local evidence spans.", "expected": 1.0 },
+    { "id": "qa.greenhouse.no-blanket", "category": "content", "severity": "release-blocking", "check": "science.no-literal-blanket", "description": "The output never presents a solid blanket or permanent heat trapping as the mechanism.", "expected": true },
+    { "id": "qa.greenhouse.document", "category": "security", "severity": "release-blocking", "check": "document.untrusted-content-inert", "description": "Source markup is displayed as inert content and cannot alter workflow instructions.", "expected": true },
+    { "id": "qa.greenhouse.energy", "category": "pedagogy", "severity": "release-blocking", "check": "science.energy-ledger-conserved", "description": "The deterministic simulation labels every energy flow and balances its steady states.", "expected": true },
+    { "id": "qa.greenhouse.captions", "category": "captions", "severity": "release-blocking", "check": "captions.no-essential-visual-collision", "description": "Captions do not cover the energy ledger or arrow labels.", "expected": true }
+  ],
+  "provenance": { "fixtureAuthor": "Alystria fixture authors", "createdAt": "2026-08-28T00:00:00Z", "licenseExpression": "CC0-1.0", "networkRequired": false, "containsPersonalData": false, "notes": "The local brief is the sole runtime grounding source; NASA and NOAA links are reviewer evidence only." }
+}

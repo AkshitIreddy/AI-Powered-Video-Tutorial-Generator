@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture.early-learning.fractions.en",
+  "title": "The Fraction Picnic",
+  "domain": "early-learning",
+  "purpose": "Child-friendly illustrated analogy fixture for equal parts, equivalent fractions, prediction, plain language, non-color cues, reduced motion, and creative-content provenance.",
+  "locale": "en-US",
+  "durationSeconds": 210,
+  "deterministicSeed": 4412,
+  "groundingMode": "creative",
+  "learner": { "audience": "Children approximately ages 7-9 learning introductory fractions.", "knowledgeLevel": "novice", "prerequisites": ["Counting to four", "Meaning of equal size"], "accessibilityNeeds": ["captions", "descriptive-transcript", "audio-description", "reduced-motion", "high-contrast", "plain-language"] },
+  "objectives": [
+    { "id": "obj.fractions.parts", "statement": "Identify one fourth as one of four equal parts of one whole.", "criteria": ["Pieces are equal in area", "Denominator is linked to equal parts in a whole"] },
+    { "id": "obj.fractions.equivalent", "statement": "Recognize that two fourths cover the same area as one half.", "criteria": ["Predicts before reveal", "Matches by area rather than color"] },
+    { "id": "obj.fractions.notation", "statement": "Explain numerator and denominator in age-appropriate language.", "criteria": ["Bottom number names equal parts in a whole", "Top number counts selected parts"] }
+  ],
+  "sources": [
+    { "id": "src.fractions.story", "path": "sources/fraction-picnic.md", "sha256": "67181873138ba1babb68abcc04c2fd4b5c1cb025f4d8af19a8b23902b35321a0", "mimeType": "text/markdown", "title": "The fraction picnic", "creator": "Alystria fixture authors", "licenseExpression": "CC0-1.0", "origin": "locally-authored", "storagePolicy": "copied", "rightsStatus": "cleared", "externalEvidenceUris": [] }
+  ],
+  "claims": [
+    { "id": "claim.fractions.fourth", "statement": "One of four equal parts of one whole is one fourth.", "claimType": "definition", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.fractions.story", "locator": "First paragraph", "relationship": "entails" }] },
+    { "id": "claim.fractions.equivalent", "statement": "Two fourths cover the same area as one half when the wholes are identical.", "claimType": "quantitative", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.fractions.story", "locator": "First paragraph", "relationship": "entails" }] },
+    { "id": "claim.fractions.story", "statement": "Mina and Ravi share identical flatbreads at a fraction picnic.", "claimType": "creative", "importance": "minor", "verifiability": "creative", "supports": [] }
+  ],
+  "scenes": [
+    { "id": "scene.fractions.whole", "type": "definition", "title": "One whole, four equal pieces", "objectiveIds": ["obj.fractions.parts"], "claimIds": ["claim.fractions.fourth", "claim.fractions.story"], "narration": "Mina and Ravi cut one identical round flatbread into four equal pieces. One piece is one fourth.", "visualIntent": "A friendly flat vector illustration uses four equal geometric sectors with outlines, hatch patterns, and labels.", "captionText": "1 whole ÷ 4 equal parts = 1/4 each", "accessibilityDescription": "A round flatbread is divided into four equal outlined pieces; one is labeled one fourth.", "sourceLocator": "src.fractions.story#First paragraph" },
+    { "id": "scene.fractions.numbers", "type": "diagram", "title": "What the two numbers tell us", "objectiveIds": ["obj.fractions.notation"], "claimIds": [], "narration": "The bottom number says how many equal pieces make one whole. The top number says how many pieces we count.", "visualIntent": "A large 2/4 label connects the 2 to two selected shapes and the 4 to the four-piece whole.", "captionText": "Top: pieces counted • Bottom: equal parts in one whole", "accessibilityDescription": "Two callouts connect the numerator two to selected pieces and denominator four to all equal pieces." },
+    { "id": "scene.fractions.predict", "type": "question", "title": "Do two fourths match one half?", "objectiveIds": ["obj.fractions.equivalent"], "claimIds": [], "narration": "Before we move the pieces, predict: will two fourths cover the same space as one half?", "visualIntent": "Two fourth sectors and one half shape appear side by side with a short, non-timed pause indicator.", "captionText": "Predict: does 2/4 cover the same area as 1/2?", "accessibilityDescription": "Two fourth-piece shapes and one half-circle are presented for comparison without revealing the answer." },
+    { "id": "scene.fractions.reveal", "type": "simulation", "title": "Same area, different names", "objectiveIds": ["obj.fractions.equivalent"], "claimIds": ["claim.fractions.equivalent"], "narration": "Yes. Two equal fourths fit exactly over one half. Two fourths and one half are equivalent fractions.", "visualIntent": "Default motion slides the pieces together slowly; reduced motion crossfades between before and exact-overlap states.", "captionText": "2/4 = 1/2", "accessibilityDescription": "The two fourth pieces exactly cover the same semicircle area as one half.", "sourceLocator": "src.fractions.story#First paragraph" },
+    { "id": "scene.fractions.recap", "type": "quiz", "title": "Show what you know", "objectiveIds": ["obj.fractions.parts", "obj.fractions.equivalent", "obj.fractions.notation"], "claimIds": [], "narration": "Point to one fourth, tell what the bottom four means, and choose the shape equal to two fourths.", "visualIntent": "Three untimed practice prompts have large targets, keyboard equivalents, shape labels, and no color-only answer.", "captionText": "Find 1/4 • explain the 4 • match 2/4", "accessibilityDescription": "Three plain-language questions are presented one at a time with large labeled choices." }
+  ],
+  "outputTargets": [{ "name": "landscape", "width": 1920, "height": 1080, "fps": 30 }, { "name": "portrait", "width": 1080, "height": 1920, "fps": 30 }, { "name": "square", "width": 1080, "height": 1080, "fps": 30 }],
+  "qualityAssertions": [
+    { "id": "qa.fractions.equal", "category": "content", "severity": "release-blocking", "check": "geometry.equal-area-parts", "description": "All fourth pieces have equal computed area and exactly tile the whole.", "expected": true },
+    { "id": "qa.fractions.equivalence", "category": "content", "severity": "release-blocking", "check": "geometry.exact-equivalence", "description": "Two fourth shapes exactly cover the half shape.", "expected": true },
+    { "id": "qa.fractions.plain", "category": "pedagogy", "severity": "release-blocking", "check": "language.child-plain", "description": "Narration defines terminology, uses short sentences, and avoids unexplained algebra.", "expected": true },
+    { "id": "qa.fractions.motion", "category": "accessibility", "severity": "release-blocking", "check": "accessibility.reduced-motion-alternative", "description": "Every spatial animation has an equivalent static or crossfade state.", "expected": true },
+    { "id": "qa.fractions.color", "category": "accessibility", "severity": "release-blocking", "check": "accessibility.color-independent", "description": "Outlines, patterns, text, and shape position convey every distinction without color.", "expected": true }
+  ],
+  "provenance": { "fixtureAuthor": "Alystria fixture authors", "createdAt": "2026-08-28T00:00:00Z", "licenseExpression": "CC0-1.0", "networkRequired": false, "containsPersonalData": false, "notes": "Named children and picnic scenario are fictional; all visuals must be generated deterministically from shapes, not remote media." }
+}

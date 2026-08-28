@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "catalogVersion": "2026.08.28.1",
+  "lastVerifiedAt": "2026-08-28",
+  "models": [
+    {
+      "id": "mock/deterministic-v1",
+      "providerId": "mock",
+      "providerModelId": "deterministic-v1",
+      "revision": "alystria-fixture-1",
+      "execution": "local",
+      "capabilities": ["llm", "image", "tts", "presenter", "alignment"],
+      "launchStatus": "supported",
+      "hardBudgetEligible": true
+    },
+    {
+      "id": "openai/gpt-image-2",
+      "providerId": "openai",
+      "providerModelId": "gpt-image-2",
+      "revision": "gpt-image-2",
+      "execution": "cloud",
+      "capabilities": ["image"],
+      "launchStatus": "catalog-only",
+      "hardBudgetEligible": false
+    },
+    {
+      "id": "local/qwen3.5-9b-gguf",
+      "providerId": "local-runtime",
+      "providerModelId": "Qwen3.5-9B-GGUF",
+      "revision": "pin-required-before-download",
+      "execution": "local",
+      "capabilities": ["llm", "vision"],
+      "launchStatus": "benchmark-and-artifact-pin-required",
+      "hardBudgetEligible": true,
+      "artifactPolicy": { "format": "gguf", "trustRemoteCode": false, "sha256Required": true }
+    },
+    {
+      "id": "local/qwen3-embedding-0.6b",
+      "providerId": "local-runtime",
+      "providerModelId": "Qwen3-Embedding-0.6B",
+      "revision": "pin-required-before-download",
+      "execution": "local",
+      "capabilities": ["embedding"],
+      "launchStatus": "artifact-pin-required",
+      "hardBudgetEligible": true,
+      "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
+    },
+    {
+      "id": "local/flux2-klein-4b",
+      "providerId": "local-runtime",
+      "providerModelId": "FLUX.2-klein-4B",
+      "revision": "pin-required-before-download",
+      "execution": "local",
+      "capabilities": ["image"],
+      "launchStatus": "benchmark-and-artifact-pin-required",
+      "hardBudgetEligible": true,
+      "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
+    },
+    {
+      "id": "local/qwen3-tts-0.6b",
+      "providerId": "local-runtime",
+      "providerModelId": "Qwen3-TTS-0.6B",
+      "revision": "pin-required-before-download",
+      "execution": "local",
+      "capabilities": ["tts"],
+      "launchStatus": "benchmark-and-artifact-pin-required",
+      "hardBudgetEligible": true,
+      "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
+    },
+    {
+      "id": "local/kokoro",
+      "providerId": "local-runtime",
+      "providerModelId": "Kokoro",
+      "revision": "pin-required-before-download",
+      "execution": "local",
+      "capabilities": ["tts"],
+      "launchStatus": "artifact-pin-required",
+      "hardBudgetEligible": true,
+      "artifactPolicy": { "format": "onnx", "trustRemoteCode": false, "sha256Required": true }
+    },
+    {
+      "id": "local/whisper-large-v3-turbo",
+      "providerId": "local-runtime",
+      "providerModelId": "whisper-large-v3-turbo",
+      "revision": "pin-required-before-download",
+      "execution": "local",
+      "capabilities": ["asr", "alignment"],
+      "launchStatus": "artifact-pin-required",
+      "hardBudgetEligible": true,
+      "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
+    },
+    {
+      "id": "local/musetalk-1.5",
+      "providerId": "local-runtime",
+      "providerModelId": "MuseTalk-1.5",
+      "revision": "pin-required-before-download",
+      "execution": "local",
+      "capabilities": ["presenter"],
+      "launchStatus": "benchmark-and-artifact-pin-required",
+      "hardBudgetEligible": true,
+      "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
+    }
+  ]
+}

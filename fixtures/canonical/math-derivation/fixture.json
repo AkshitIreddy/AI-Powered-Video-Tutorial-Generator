@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture.math.quadratic-formula.en",
+  "title": "Derive the Quadratic Formula",
+  "domain": "mathematics",
+  "purpose": "Symbolic-math fixture for semantic equation transitions, branch preservation, worked-example verification, narration, and accessible formula output.",
+  "locale": "en-US",
+  "durationSeconds": 420,
+  "deterministicSeed": 2401,
+  "groundingMode": "strict",
+  "learner": { "audience": "Secondary or first-year college learners comfortable with algebraic fractions.", "knowledgeLevel": "intermediate", "prerequisites": ["Factoring perfect squares", "Equivalent operations on equations", "Square roots with plus-or-minus branches"], "accessibilityNeeds": ["captions", "descriptive-transcript", "reduced-motion", "high-contrast", "screen-reader"] },
+  "objectives": [
+    { "id": "obj.quadratic.derive", "statement": "Derive the quadratic formula by completing the square without dropping a branch.", "criteria": ["States a is nonzero", "Adds the same square term to both sides", "Keeps the ± branch"] },
+    { "id": "obj.quadratic.verify", "statement": "Apply and verify the formula for 2x²−7x+3=0.", "criteria": ["Obtains roots 3 and 1/2", "Substitutes both roots"] }
+  ],
+  "sources": [
+    { "id": "src.quadratic.note", "path": "sources/quadratic-formula.md", "sha256": "d8d70f7a09472574019450799d683237d01515390c7600fefef58f0e7aebd280", "mimeType": "text/markdown", "title": "Deriving the quadratic formula by completing the square", "creator": "Alystria fixture authors", "licenseExpression": "CC0-1.0", "origin": "locally-authored", "storagePolicy": "copied", "rightsStatus": "cleared", "externalEvidenceUris": [] }
+  ],
+  "claims": [
+    { "id": "claim.quadratic.formula", "statement": "For ax²+bx+c=0 with a≠0, x=(-b±sqrt(b²-4ac))/(2a).", "claimType": "quantitative", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.quadratic.note", "locator": "Complete derivation", "relationship": "entails" }] },
+    { "id": "claim.quadratic.roots", "statement": "The roots of 2x²−7x+3 are 3 and 1/2.", "claimType": "quantitative", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.quadratic.note", "locator": "Worked example", "relationship": "entails" }] }
+  ],
+  "scenes": [
+    { "id": "scene.quadratic.start", "type": "definition", "title": "Start with a nonzero leading coefficient", "objectiveIds": ["obj.quadratic.derive"], "claimIds": [], "narration": "Begin with a x squared plus b x plus c equals zero, with a not equal to zero, so dividing by a is valid.", "visualIntent": "The condition a≠0 is pinned beside the equation and remains visible.", "captionText": "ax² + bx + c = 0, with a ≠ 0", "accessibilityDescription": "The general quadratic equation and nonzero condition are read before any transformation." },
+    { "id": "scene.quadratic.square", "type": "formula", "title": "Complete the square", "objectiveIds": ["obj.quadratic.derive"], "claimIds": ["claim.quadratic.formula"], "narration": "Divide, move the constant, and add b squared over four a squared to both sides. The left becomes one perfect square.", "visualIntent": "Semantic terms preserve identity while moving; reduced-motion mode uses discrete equations.", "captionText": "(x + b/2a)² = (b² − 4ac) / 4a²", "accessibilityDescription": "Five numbered equation rows expose each legal transformation in reading order.", "sourceLocator": "src.quadratic.note#Derivation" },
+    { "id": "scene.quadratic.branches", "type": "diagram", "title": "Keep both square-root branches", "objectiveIds": ["obj.quadratic.derive"], "claimIds": ["claim.quadratic.formula"], "narration": "Taking a square root creates both a positive and a negative branch. Isolating x gives the familiar formula.", "visualIntent": "One equation branches into plus and minus paths, then recombines with a ± symbol.", "captionText": "Square root step ⇒ both + and − branches", "accessibilityDescription": "A branching diagram lists the positive and negative square-root cases explicitly.", "sourceLocator": "src.quadratic.note#Take both square-root branches" },
+    { "id": "scene.quadratic.example", "type": "worked-example", "title": "Verify two roots", "objectiveIds": ["obj.quadratic.verify"], "claimIds": ["claim.quadratic.roots"], "narration": "For two x squared minus seven x plus three, the discriminant is twenty-five. The two roots are three and one half, and both make the original polynomial zero.", "visualIntent": "The discriminant calculation feeds two substitution cards with exact rational arithmetic.", "captionText": "Δ = 25 • roots: 3 and 1/2 • both verify", "accessibilityDescription": "Two labeled substitution rows each simplify the polynomial to zero.", "sourceLocator": "src.quadratic.note#Worked example" }
+  ],
+  "outputTargets": [{ "name": "landscape", "width": 1920, "height": 1080, "fps": 30 }, { "name": "portrait", "width": 1080, "height": 1920, "fps": 30 }],
+  "qualityAssertions": [
+    { "id": "qa.quadratic.symbolic", "category": "content", "severity": "release-blocking", "check": "math.symbolic-equivalence", "description": "Every displayed transformation is symbolically equivalent under a≠0.", "expected": true },
+    { "id": "qa.quadratic.branches", "category": "content", "severity": "release-blocking", "check": "math.preserves-plus-minus", "description": "The square-root step preserves both solution branches.", "expected": true },
+    { "id": "qa.quadratic.roots", "category": "content", "severity": "release-blocking", "check": "math.example-roots", "description": "Exact symbolic substitution verifies both roots.", "expected": ["3", "1/2"] },
+    { "id": "qa.quadratic.a11y", "category": "accessibility", "severity": "release-blocking", "check": "accessibility.math-reading-order", "description": "Equations have semantic text and a transformation reading order.", "expected": true },
+    { "id": "qa.quadratic.render", "category": "render", "severity": "release-blocking", "check": "render.no-formula-overflow", "description": "Formulae fit all targets without scale below the legibility floor.", "expected": true }
+  ],
+  "provenance": { "fixtureAuthor": "Alystria fixture authors", "createdAt": "2026-08-28T00:00:00Z", "licenseExpression": "CC0-1.0", "networkRequired": false, "containsPersonalData": false, "notes": "All derivation text is locally authored and intended for exact symbolic verification." }
+}

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.alystria.studio/v2/common.schema.json",
+  "title": "Alystria common primitives",
+  "$defs": {
+    "Id": { "type": "string", "pattern": "^[a-zA-Z][a-zA-Z0-9._:-]{2,127}$" },
+    "Sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "IsoDateTime": { "type": "string", "format": "date-time" },
+    "IsoDate": { "type": "string", "format": "date" },
+    "Locale": { "type": "string", "pattern": "^[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*$" },
+    "Uri": { "type": "string", "format": "uri", "maxLength": 4096 },
+    "RelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$)).+$"
+    },
+    "NonEmptyText": { "type": "string", "minLength": 1, "maxLength": 200000 },
+    "ShortText": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "JsonValue": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "array", "items": { "$ref": "#/$defs/JsonValue" } },
+        { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } }
+      ]
+    },
+    "Rational": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "type": "integer" },
+        "denominator": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "TickRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startTick", "durationTicks"],
+      "properties": {
+        "startTick": { "type": "integer", "minimum": 0 },
+        "durationTicks": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "Dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 64, "maximum": 16384 },
+        "height": { "type": "integer", "minimum": 64, "maximum": 16384 }
+      }
+    },
+    "BoundingBox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height", "unit"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "unit": { "enum": ["normalized", "pixel", "point"] }
+      }
+    },
+    "Money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "micros"],
+      "properties": {
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "micros": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "Diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": { "$ref": "#/$defs/Id" },
+        "severity": { "enum": ["info", "warning", "error", "fatal"] },
+        "message": { "$ref": "#/$defs/ShortText" },
+        "path": { "type": "string", "maxLength": 1024 },
+        "details": { "$ref": "#/$defs/JsonValue" },
+        "remediation": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "EntityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entityType", "entityId"],
+      "properties": {
+        "entityType": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "entityId": { "$ref": "#/$defs/Id" },
+        "revisionId": { "$ref": "#/$defs/Id" }
+      }
+    },
+    "Lock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "reason", "createdAt"],
+      "properties": {
+        "scope": { "enum": ["content", "visual", "timing", "narration", "audio", "citations", "all"] },
+        "reason": { "$ref": "#/$defs/ShortText" },
+        "createdAt": { "$ref": "#/$defs/IsoDateTime" },
+        "createdBy": { "enum": ["user", "system", "policy"] }
+      }
+    }
+  }
+}

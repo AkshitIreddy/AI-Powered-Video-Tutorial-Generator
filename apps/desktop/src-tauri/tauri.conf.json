@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Alystria Studio",
+  "version": "2.0.0-rc.0",
+  "identifier": "studio.alystria.desktop",
+  "build": {
+    "beforeDevCommand": "node ../../scripts/run-pnpm.mjs --filter @alystria/desktop dev",
+    "devUrl": "http://127.0.0.1:1438",
+    "beforeBuildCommand": "node ../../scripts/run-pnpm.mjs --filter @alystria/desktop build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Alystria Studio",
+        "width": 1440,
+        "height": 940,
+        "minWidth": 860,
+        "minHeight": 640,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'",
+      "capabilities": ["main-window"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "targets": ["nsis", "msi"],
+    "category": "Education",
+    "shortDescription": "Local-first professional tutorial studio",
+    "longDescription": "Alystria Studio creates and edits source-grounded educational video projects on your computer.",
+    "copyright": "Copyright Alystria Studio contributors",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.alystria.studio/v2/research.schema.json",
+  "title": "Alystria research, sources, and grounding",
+  "$defs": {
+    "LearnerProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "audience", "knowledgeLevel", "locale", "accessibilityNeeds"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "audience": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "ageBand": { "enum": ["child", "teen", "adult", "mixed", "unspecified"] },
+        "knowledgeLevel": { "enum": ["novice", "beginner", "intermediate", "advanced", "expert"] },
+        "locale": { "$ref": "common.schema.json#/$defs/Locale" },
+        "goals": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" }, "uniqueItems": true },
+        "priorKnowledge": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" }, "uniqueItems": true },
+        "constraints": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+        "accessibilityNeeds": {
+          "type": "array",
+          "items": { "enum": ["captions", "descriptive-transcript", "audio-description", "reduced-motion", "high-contrast", "plain-language", "screen-reader", "none"] },
+          "uniqueItems": true
+        }
+      }
+    },
+    "SourceLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["url", "doi", "isbn", "arxiv", "pmid", "file", "user-note", "dataset", "api-record"] },
+        "value": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "canonicalUri": { "$ref": "common.schema.json#/$defs/Uri" },
+        "localPath": { "$ref": "common.schema.json#/$defs/RelativePath" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "file" } }, "required": ["kind"] },
+          "then": { "required": ["localPath"] },
+          "else": { "required": ["value"] }
+        }
+      ]
+    },
+    "SourceVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sourceId", "locator", "title", "retrievedAt", "contentHash", "trust", "storagePolicy", "rightsStatus"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "sourceId": { "$ref": "common.schema.json#/$defs/Id" },
+        "locator": { "$ref": "#/$defs/SourceLocator" },
+        "title": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "authors": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+        "publisher": { "type": "string", "maxLength": 500 },
+        "publishedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "retrievedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "contentHash": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "mimeType": { "type": "string", "pattern": "^[a-z0-9.+-]+/[a-zA-Z0-9.+-]+$" },
+        "language": { "$ref": "common.schema.json#/$defs/Locale" },
+        "trust": { "enum": ["primary", "authoritative", "peer-reviewed", "reputable-secondary", "community", "user-provided", "unknown"] },
+        "storagePolicy": { "enum": ["copied", "cached", "transient", "link-only", "quarantined"] },
+        "rightsStatus": { "enum": ["cleared", "attribution-required", "link-only", "unknown", "restricted", "expired"] },
+        "licenseExpression": { "type": "string", "maxLength": 500 },
+        "metadata": { "$ref": "common.schema.json#/$defs/JsonValue" }
+      }
+    },
+    "EvidenceLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method"],
+      "properties": {
+        "method": { "enum": ["text-offset", "page-box", "time-range", "table-cell", "figure", "section", "record"] },
+        "startOffset": { "type": "integer", "minimum": 0 },
+        "endOffset": { "type": "integer", "minimum": 0 },
+        "page": { "type": "integer", "minimum": 1 },
+        "boundingBoxes": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/BoundingBox" } },
+        "startMs": { "type": "integer", "minimum": 0 },
+        "endMs": { "type": "integer", "minimum": 0 },
+        "label": { "type": "string", "maxLength": 500 },
+        "recordId": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "EvidenceChunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sourceVersionId", "text", "locator", "contentHash", "createdAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "sourceVersionId": { "$ref": "common.schema.json#/$defs/Id" },
+        "text": { "$ref": "common.schema.json#/$defs/NonEmptyText" },
+        "locator": { "$ref": "#/$defs/EvidenceLocator" },
+        "headingPath": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+        "contentHash": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "embeddingArtifactId": { "$ref": "common.schema.json#/$defs/Id" }
+      }
+    },
+    "AtomicClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "claimType", "verifiability", "supportStatus", "importance"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "statement": { "$ref": "common.schema.json#/$defs/NonEmptyText" },
+        "claimType": { "enum": ["fact", "definition", "causal", "quantitative", "procedural", "interpretive", "quotation", "creative"] },
+        "verifiability": { "enum": ["externally-verifiable", "source-dependent", "subjective", "creative"] },
+        "supportStatus": { "enum": ["unsupported", "partially-supported", "supported", "contradicted", "not-required"] },
+        "importance": { "enum": ["minor", "major", "critical"] },
+        "supportIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "notes": { "type": "string", "maxLength": 5000 }
+      }
+    },
+    "ClaimSupport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "claimId", "evidenceChunkId", "relationship", "assessment", "assessedBy", "assessedAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "claimId": { "$ref": "common.schema.json#/$defs/Id" },
+        "evidenceChunkId": { "$ref": "common.schema.json#/$defs/Id" },
+        "relationship": { "enum": ["entails", "supports", "contextualizes", "qualifies", "contradicts"] },
+        "assessment": { "type": "number", "minimum": 0, "maximum": 1 },
+        "rationale": { "type": "string", "maxLength": 5000 },
+        "assessedBy": { "enum": ["human", "model", "rule"] },
+        "assessedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }
+      }
+    },
+    "LearningObjective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "taxonomyLevel", "assessmentCriteria"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "statement": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "taxonomyLevel": { "enum": ["remember", "understand", "apply", "analyze", "evaluate", "create"] },
+        "prerequisiteObjectiveIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "assessmentCriteria": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/ShortText" } }
+      }
+    },
+    "ConceptNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "kind", "objectiveIds", "prerequisiteIds"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "label": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "kind": { "enum": ["concept", "skill", "misconception", "example", "assessment"] },
+        "objectiveIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "prerequisiteIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "description": { "type": "string", "maxLength": 5000 }
+      }
+    },
+    "LearningPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "learnerProfileId", "groundingMode", "objectives", "concepts", "misconceptions", "createdAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "learnerProfileId": { "$ref": "common.schema.json#/$defs/Id" },
+        "groundingMode": { "enum": ["creative", "grounded", "strict"] },
+        "objectives": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/LearningObjective" } },
+        "concepts": { "type": "array", "items": { "$ref": "#/$defs/ConceptNode" } },
+        "misconceptions": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+        "estimatedDurationSeconds": { "type": "integer", "minimum": 15, "maximum": 14400 },
+        "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }
+      }
+    },
+    "ResearchBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["learnerProfile", "learningPlan", "sources", "evidence", "claims", "supports"],
+      "properties": {
+        "learnerProfile": { "$ref": "#/$defs/LearnerProfile" },
+        "learningPlan": { "$ref": "#/$defs/LearningPlan" },
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/SourceVersion" } },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/EvidenceChunk" } },
+        "claims": { "type": "array", "items": { "$ref": "#/$defs/AtomicClaim" } },
+        "supports": { "type": "array", "items": { "$ref": "#/$defs/ClaimSupport" } }
+      }
+    }
+  }
+}

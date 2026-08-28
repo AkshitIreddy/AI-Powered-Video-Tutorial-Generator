@@ -10,16 +10,21 @@
   },
   "scripts": {
     "setup": "node scripts/setup.mjs",
-    "dev": "pnpm --filter @alystria/desktop dev",
-    "build": "pnpm -r --if-present build",
-    "test": "pnpm -r --if-present test && python3 -m pytest services/pipeline/tests",
-    "test:unit": "pnpm -r --if-present test:unit && python3 -m pytest services/pipeline/tests/unit",
-    "test:e2e": "pnpm --filter @alystria/desktop test:e2e",
-    "lint": "pnpm -r --if-present lint && python3 -m ruff check services/pipeline",
-    "typecheck": "pnpm -r --if-present typecheck && python3 -m mypy services/pipeline/src",
-    "render-test": "pnpm --filter @alystria/renderer test:render",
+    "contracts:generate": "node packages/contracts/scripts/generate-bindings.mjs --write",
+    "contracts:check": "node packages/contracts/scripts/generate-bindings.mjs --check",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "node scripts/run-pnpm.mjs --filter @alystria/desktop dev",
+    "build": "node scripts/run-pnpm.mjs -r --if-present build",
+    "test": "node scripts/run-pnpm.mjs -r --if-present test && node scripts/run-python.mjs -m pytest services/pipeline/tests",
+    "test:unit": "node scripts/run-pnpm.mjs -r --if-present test:unit && node scripts/run-python.mjs -m pytest services/pipeline/tests/unit",
+    "test:python": "node scripts/run-python.mjs -m pytest services/pipeline/tests",
+    "test:fixtures": "node scripts/run-python.mjs fixtures/validate.py",
+    "test:e2e": "node scripts/run-pnpm.mjs --filter @alystria/desktop test:e2e",
+    "lint": "node scripts/run-pnpm.mjs -r --if-present lint && node scripts/run-python.mjs -m ruff check services/pipeline",
+    "typecheck": "node scripts/run-pnpm.mjs -r --if-present typecheck && node scripts/run-python.mjs -m mypy --strict services/pipeline/src",
+    "render-test": "node scripts/run-pnpm.mjs --filter @alystria/renderer test:render",
     "benchmark": "node scripts/benchmark.mjs",
     "doctor": "node scripts/doctor.mjs",
-    "package:desktop": "pnpm --filter @alystria/desktop tauri build"
+    "package:desktop": "node scripts/run-pnpm.mjs --filter @alystria/desktop tauri build"
   }
 }

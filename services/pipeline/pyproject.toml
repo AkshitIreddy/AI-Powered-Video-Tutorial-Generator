@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alystria-pipeline"
+version = "2.0.0rc0"
+description = "Local-first project and workflow service for Alystria Studio"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Alystria contributors" }]
+dependencies = []
+
+[project.optional-dependencies]
+dbos = ["dbos>=2,<3"]
+documents = ["docling>=2.123.1,<3"]
+signatures = ["cryptography>=46,<47"]
+full = [
+  "cryptography>=46,<47",
+  "dbos>=2,<3",
+  "docling>=2.123.1,<3",
+]
+dev = [
+  "mypy>=1.15,<2",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<7",
+  "ruff>=0.11,<1",
+]
+
+[project.scripts]
+alystria-pipeline = "alystria.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alystria"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["alystria"]

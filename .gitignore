@@ -2,6 +2,7 @@
 node_modules/
 .pnpm-store/
 dist/
+artifacts/
 coverage/
 playwright-report/
 test-results/
@@ -17,7 +18,9 @@ __pycache__/
 
 # Rust and Tauri
 target/
-src-tauri/gen/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/icons/android/
+apps/desktop/src-tauri/icons/ios/
 
 # Local projects, runtime packs, models, and generated media
 *.alytutorial
@@ -25,6 +28,11 @@ src-tauri/gen/
 .alystria/
 runtime-packs/
 models/
+!services/pipeline/src/alystria/models/
+!services/pipeline/src/alystria/models/**
+# The source-package exception above must never re-include generated Python files.
+**/__pycache__/
+**/*.py[cod]
 staging/
 exports/
 screenshots/
@@ -35,8 +43,11 @@ screenshots/
 !.env.example
 *.pem
 *.key
+*.p12
+*.pfx
 credentials.json
 apikeys.json
+[Cc]ommonly [Uu]sed [Kk]eys.txt
 
 # Editors and operating systems
 .DS_Store

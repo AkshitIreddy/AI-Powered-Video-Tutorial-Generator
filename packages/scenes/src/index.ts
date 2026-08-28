@@ -1,0 +1,10 @@
+export { SceneView, type SceneViewProps } from "./SceneView.js";
+export { animationStyle, standardChoreography, staggeredReveal, trackValue } from "./choreography.js";
+export { compileScene, lintScene, preflightScene } from "./compiler.js";
+export { createLayoutMetrics, targetProfile } from "./layout.js";
+export { createSceneRegistry, validateScenePlugin } from "./plugins.js";
+export { PRECISION_THEME } from "./primitives.js";
+export { SeededRandom, stableHash, stableHashNumber } from "./random.js";
+export { builtinSceneDefinitions, builtinSceneRegistry } from "./registry.js";
+export { SPECIMEN_SCENES, SPECIMENS_BY_KIND, specimenFor } from "./specimens.js";
+export * from "./types.js";

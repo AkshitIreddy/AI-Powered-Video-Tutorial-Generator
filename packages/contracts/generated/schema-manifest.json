@@ -1,0 +1,2698 @@
+{
+  "generatorVersion": 1,
+  "draft": "https://json-schema.org/draft/2020-12/schema",
+  "contractSetSha256": "d6f711440b36c68f36965e96d7842d87261bc6cb00fd7ced0b766999c38ee748",
+  "schemas": [
+    {
+      "key": "common",
+      "file": "common.schema.json",
+      "id": "https://schemas.alystria.studio/v2/common.schema.json",
+      "title": "Alystria common primitives",
+      "sha256": "611af1e6d1d6390a787f80e38c8855ac9d831f78bd73a7bddf8512fcf86829d0",
+      "root": {
+        "name": "$root",
+        "types": [
+          "unspecified"
+        ],
+        "required": [],
+        "properties": [],
+        "refs": [
+          "#/$defs/Id",
+          "#/$defs/IsoDateTime",
+          "#/$defs/JsonValue",
+          "#/$defs/ShortText"
+        ]
+      },
+      "definitions": [
+        {
+          "name": "BoundingBox",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "height",
+            "unit",
+            "width",
+            "x",
+            "y"
+          ],
+          "properties": [
+            "height",
+            "unit",
+            "width",
+            "x",
+            "y"
+          ],
+          "refs": []
+        },
+        {
+          "name": "Diagnostic",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "code",
+            "message",
+            "severity"
+          ],
+          "properties": [
+            "code",
+            "details",
+            "message",
+            "path",
+            "remediation",
+            "severity"
+          ],
+          "refs": [
+            "#/$defs/Id",
+            "#/$defs/JsonValue",
+            "#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "Dimensions",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "height",
+            "width"
+          ],
+          "properties": [
+            "height",
+            "width"
+          ],
+          "refs": []
+        },
+        {
+          "name": "EntityRef",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "entityId",
+            "entityType"
+          ],
+          "properties": [
+            "entityId",
+            "entityType",
+            "revisionId"
+          ],
+          "refs": [
+            "#/$defs/Id"
+          ]
+        },
+        {
+          "name": "Id",
+          "types": [
+            "string"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": []
+        },
+        {
+          "name": "IsoDate",
+          "types": [
+            "string"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": []
+        },
+        {
+          "name": "IsoDateTime",
+          "types": [
+            "string"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": []
+        },
+        {
+          "name": "JsonValue",
+          "types": [
+            "composition"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": [
+            "#/$defs/JsonValue"
+          ]
+        },
+        {
+          "name": "Locale",
+          "types": [
+            "string"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": []
+        },
+        {
+          "name": "Lock",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "createdAt",
+            "reason",
+            "scope"
+          ],
+          "properties": [
+            "createdAt",
+            "createdBy",
+            "reason",
+            "scope"
+          ],
+          "refs": [
+            "#/$defs/IsoDateTime",
+            "#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "Money",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "currency",
+            "micros"
+          ],
+          "properties": [
+            "currency",
+            "micros"
+          ],
+          "refs": []
+        },
+        {
+          "name": "NonEmptyText",
+          "types": [
+            "string"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": []
+        },
+        {
+          "name": "Rational",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "denominator",
+            "numerator"
+          ],
+          "properties": [
+            "denominator",
+            "numerator"
+          ],
+          "refs": []
+        },
+        {
+          "name": "RelativePath",
+          "types": [
+            "string"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": []
+        },
+        {
+          "name": "Sha256",
+          "types": [
+            "string"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": []
+        },
+        {
+          "name": "ShortText",
+          "types": [
+            "string"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": []
+        },
+        {
+          "name": "TickRange",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "durationTicks",
+            "startTick"
+          ],
+          "properties": [
+            "durationTicks",
+            "startTick"
+          ],
+          "refs": []
+        },
+        {
+          "name": "Uri",
+          "types": [
+            "string"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": []
+        }
+      ]
+    },
+    {
+      "key": "execution",
+      "file": "execution.schema.json",
+      "id": "https://schemas.alystria.studio/v2/execution.schema.json",
+      "title": "Alystria artifacts, providers, jobs, QA, export, and plugins",
+      "sha256": "4731ec09a9c81108c8c2260ea1c5211975b37a0de9a26980b6d3ea19fb4df66e",
+      "root": {
+        "name": "$root",
+        "types": [
+          "unspecified"
+        ],
+        "required": [],
+        "properties": [],
+        "refs": [
+          "#/$defs/BudgetPolicy",
+          "#/$defs/PluginPermission",
+          "#/$defs/ProviderCapability",
+          "common.schema.json#/$defs/Diagnostic",
+          "common.schema.json#/$defs/Dimensions",
+          "common.schema.json#/$defs/EntityRef",
+          "common.schema.json#/$defs/Id",
+          "common.schema.json#/$defs/IsoDateTime",
+          "common.schema.json#/$defs/JsonValue",
+          "common.schema.json#/$defs/Money",
+          "common.schema.json#/$defs/Rational",
+          "common.schema.json#/$defs/RelativePath",
+          "common.schema.json#/$defs/Sha256",
+          "common.schema.json#/$defs/ShortText",
+          "common.schema.json#/$defs/Uri"
+        ]
+      },
+      "definitions": [
+        {
+          "name": "Artifact",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "contentHash",
+            "createdAt",
+            "id",
+            "kind",
+            "mimeType",
+            "sizeBytes",
+            "state",
+            "storage"
+          ],
+          "properties": [
+            "contentHash",
+            "createdAt",
+            "id",
+            "kind",
+            "metadata",
+            "mimeType",
+            "provenanceId",
+            "sizeBytes",
+            "state",
+            "storage"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/JsonValue",
+            "common.schema.json#/$defs/RelativePath",
+            "common.schema.json#/$defs/Sha256",
+            "common.schema.json#/$defs/Uri"
+          ]
+        },
+        {
+          "name": "BudgetPolicy",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "approvalThreshold",
+            "limit",
+            "mode",
+            "onUnknownPrice"
+          ],
+          "properties": [
+            "approvalThreshold",
+            "limit",
+            "mode",
+            "onUnknownPrice",
+            "reserved",
+            "spent"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Money"
+          ]
+        },
+        {
+          "name": "ExportSpec",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "audioCodec",
+            "captions",
+            "colorSpace",
+            "dimensions",
+            "frameRate",
+            "id",
+            "projectId",
+            "quality",
+            "revisionId",
+            "sidecars",
+            "target",
+            "videoCodec"
+          ],
+          "properties": [
+            "audioCodec",
+            "bitrateKbps",
+            "captions",
+            "colorSpace",
+            "dimensions",
+            "frameRate",
+            "gplRuntimePackApproved",
+            "hardwareEncoder",
+            "id",
+            "outputPath",
+            "projectId",
+            "quality",
+            "revisionId",
+            "sidecars",
+            "target",
+            "videoCodec"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Dimensions",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/Rational",
+            "common.schema.json#/$defs/RelativePath"
+          ]
+        },
+        {
+          "name": "GenerationRun",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "budget",
+            "createdAt",
+            "id",
+            "mode",
+            "privacyApproval",
+            "projectId",
+            "revisionId",
+            "status",
+            "taskIds"
+          ],
+          "properties": [
+            "budget",
+            "completedAt",
+            "createdAt",
+            "id",
+            "mode",
+            "privacyApproval",
+            "projectId",
+            "revisionId",
+            "status",
+            "taskIds"
+          ],
+          "refs": [
+            "#/$defs/BudgetPolicy",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime"
+          ]
+        },
+        {
+          "name": "JobEvent",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "id",
+            "jobId",
+            "kind",
+            "occurredAt",
+            "payload",
+            "sequence"
+          ],
+          "properties": [
+            "id",
+            "jobId",
+            "kind",
+            "occurredAt",
+            "payload",
+            "sequence",
+            "taskId"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/JsonValue"
+          ]
+        },
+        {
+          "name": "JobRun",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "cancellationRequested",
+            "createdAt",
+            "diagnostics",
+            "id",
+            "kind",
+            "progress",
+            "projectId",
+            "state",
+            "taskIds"
+          ],
+          "properties": [
+            "cancellationRequested",
+            "completedAt",
+            "createdAt",
+            "diagnostics",
+            "etaMaximumSeconds",
+            "etaMinimumSeconds",
+            "generationRunId",
+            "id",
+            "kind",
+            "progress",
+            "projectId",
+            "startedAt",
+            "state",
+            "taskIds"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Diagnostic",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime"
+          ]
+        },
+        {
+          "name": "ModelDescriptor",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "capability",
+            "id",
+            "lastVerifiedAt",
+            "licenseStatus",
+            "locality",
+            "name",
+            "providerId",
+            "revision",
+            "status"
+          ],
+          "properties": [
+            "capability",
+            "contentHash",
+            "downloadUri",
+            "id",
+            "lastVerifiedAt",
+            "licenseExpression",
+            "licenseStatus",
+            "locality",
+            "minimumRamMiB",
+            "minimumVramMiB",
+            "name",
+            "providerId",
+            "revision",
+            "sizeBytes",
+            "status"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/Sha256",
+            "common.schema.json#/$defs/ShortText",
+            "common.schema.json#/$defs/Uri"
+          ]
+        },
+        {
+          "name": "PluginManifest",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "contributes",
+            "description",
+            "entrypoint",
+            "id",
+            "integrity",
+            "licenseExpression",
+            "manifestVersion",
+            "name",
+            "permissions",
+            "publisher",
+            "runtime",
+            "version"
+          ],
+          "properties": [
+            "contributes",
+            "description",
+            "entrypoint",
+            "id",
+            "integrity",
+            "licenseExpression",
+            "manifestVersion",
+            "minimumAlystriaVersion",
+            "name",
+            "permissions",
+            "publisher",
+            "runtime",
+            "signature",
+            "version"
+          ],
+          "refs": [
+            "#/$defs/PluginPermission",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/RelativePath",
+            "common.schema.json#/$defs/Sha256",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "PluginPermission",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "capability",
+            "required",
+            "scope"
+          ],
+          "properties": [
+            "capability",
+            "reason",
+            "required",
+            "scope"
+          ],
+          "refs": []
+        },
+        {
+          "name": "PricingRule",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "effectiveAt",
+            "id",
+            "lastVerifiedAt",
+            "meter",
+            "modelId",
+            "price",
+            "providerId",
+            "unitSize"
+          ],
+          "properties": [
+            "effectiveAt",
+            "expiresAt",
+            "id",
+            "lastVerifiedAt",
+            "meter",
+            "modelId",
+            "price",
+            "providerId",
+            "unitSize"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/Money"
+          ]
+        },
+        {
+          "name": "ProviderCapability",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "dataClasses",
+            "kind",
+            "locality",
+            "models",
+            "regions",
+            "retention"
+          ],
+          "properties": [
+            "dataClasses",
+            "kind",
+            "locality",
+            "models",
+            "regions",
+            "retention",
+            "supportsCancellation",
+            "supportsStreaming",
+            "supportsStructuredOutput"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id"
+          ]
+        },
+        {
+          "name": "ProviderDescriptor",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "adapterVersion",
+            "capabilities",
+            "credentialMode",
+            "id",
+            "lastVerifiedAt",
+            "name",
+            "status"
+          ],
+          "properties": [
+            "adapterVersion",
+            "baseUri",
+            "capabilities",
+            "credentialMode",
+            "credentialRef",
+            "id",
+            "lastVerifiedAt",
+            "name",
+            "privacyPolicyUri",
+            "status",
+            "termsUri"
+          ],
+          "refs": [
+            "#/$defs/ProviderCapability",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/ShortText",
+            "common.schema.json#/$defs/Uri"
+          ]
+        },
+        {
+          "name": "QualityGate",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "checks",
+            "evaluatedAt",
+            "id",
+            "kind",
+            "policyVersion",
+            "repairAttempts",
+            "scope",
+            "severity",
+            "status"
+          ],
+          "properties": [
+            "checks",
+            "evaluatedAt",
+            "id",
+            "kind",
+            "policyVersion",
+            "repairAttempts",
+            "scope",
+            "severity",
+            "status",
+            "waiverReason"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Diagnostic",
+            "common.schema.json#/$defs/EntityRef",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime"
+          ]
+        },
+        {
+          "name": "TaskAttempt",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "createdAt",
+            "diagnostics",
+            "id",
+            "number",
+            "stagingPath",
+            "state",
+            "taskId",
+            "usageIds"
+          ],
+          "properties": [
+            "completedAt",
+            "createdAt",
+            "diagnostics",
+            "id",
+            "idempotencyKey",
+            "leaseExpiresAt",
+            "leaseOwner",
+            "number",
+            "providerRequestId",
+            "stagingPath",
+            "startedAt",
+            "state",
+            "taskId",
+            "usageIds"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Diagnostic",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/RelativePath",
+            "common.schema.json#/$defs/Sha256"
+          ]
+        },
+        {
+          "name": "TaskRun",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "attemptIds",
+            "createdAt",
+            "dependencyTaskIds",
+            "id",
+            "implementationVersion",
+            "inputArtifactIds",
+            "jobId",
+            "kind",
+            "maxAttempts",
+            "parameters",
+            "state",
+            "taskKey"
+          ],
+          "properties": [
+            "attemptIds",
+            "completedAt",
+            "createdAt",
+            "dependencyTaskIds",
+            "diagnostics",
+            "id",
+            "implementationVersion",
+            "inputArtifactIds",
+            "jobId",
+            "kind",
+            "maxAttempts",
+            "outputArtifactIds",
+            "parameters",
+            "progress",
+            "retryAt",
+            "startedAt",
+            "state",
+            "taskKey"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Diagnostic",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/JsonValue",
+            "common.schema.json#/$defs/Sha256"
+          ]
+        },
+        {
+          "name": "UsageRecord",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "cost",
+            "estimated",
+            "id",
+            "meter",
+            "modelId",
+            "providerId",
+            "quantity",
+            "recordedAt",
+            "taskAttemptId"
+          ],
+          "properties": [
+            "cost",
+            "estimated",
+            "id",
+            "meter",
+            "modelId",
+            "providerId",
+            "providerRequestId",
+            "quantity",
+            "recordedAt",
+            "taskAttemptId"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/Money"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "media",
+      "file": "media.schema.json",
+      "id": "https://schemas.alystria.studio/v2/media.schema.json",
+      "title": "Alystria media, narration, rights, and provenance",
+      "sha256": "076a6757d1863f2d830afb644de5604a3610e0024db089c1b1d65f47bc8df61d",
+      "root": {
+        "name": "$root",
+        "types": [
+          "unspecified"
+        ],
+        "required": [],
+        "properties": [],
+        "refs": [
+          "#/$defs/CaptionCue",
+          "#/$defs/NarrationSpan",
+          "#/$defs/RightsGrant",
+          "#/$defs/SpeechDelivery",
+          "common.schema.json#/$defs/BoundingBox",
+          "common.schema.json#/$defs/Id",
+          "common.schema.json#/$defs/IsoDate",
+          "common.schema.json#/$defs/IsoDateTime",
+          "common.schema.json#/$defs/Locale",
+          "common.schema.json#/$defs/NonEmptyText",
+          "common.schema.json#/$defs/Sha256",
+          "common.schema.json#/$defs/ShortText",
+          "common.schema.json#/$defs/TickRange",
+          "common.schema.json#/$defs/Uri"
+        ]
+      },
+      "definitions": [
+        {
+          "name": "AccessibilitySpec",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "colorIndependent",
+            "description",
+            "essentialVisuals",
+            "readingOrder",
+            "reducedMotionAlternative"
+          ],
+          "properties": [
+            "audioDescription",
+            "colorIndependent",
+            "description",
+            "essentialVisuals",
+            "readingOrder",
+            "reducedMotionAlternative"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/NonEmptyText",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "AssetProvenance",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "assetId",
+            "c2paStatus",
+            "contentHash",
+            "createdAt",
+            "id",
+            "origin",
+            "rights"
+          ],
+          "properties": [
+            "assetId",
+            "c2paManifestArtifactId",
+            "c2paStatus",
+            "consentRecordIds",
+            "contentHash",
+            "createdAt",
+            "creator",
+            "id",
+            "ingredientAssetIds",
+            "modelId",
+            "modelRevision",
+            "origin",
+            "promptArtifactId",
+            "providerId",
+            "rights",
+            "sourceUri"
+          ],
+          "refs": [
+            "#/$defs/RightsGrant",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/Sha256",
+            "common.schema.json#/$defs/Uri"
+          ]
+        },
+        {
+          "name": "AudioMixSpec",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "channels",
+            "effectsEnabled",
+            "maxTruePeakDbtp",
+            "musicEnabled",
+            "sampleRate",
+            "targetLufs"
+          ],
+          "properties": [
+            "audioDescriptionArtifactId",
+            "channels",
+            "duckingDb",
+            "effectsEnabled",
+            "maxTruePeakDbtp",
+            "musicArtifactId",
+            "musicEnabled",
+            "sampleRate",
+            "targetLufs"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id"
+          ]
+        },
+        {
+          "name": "CaptionCue",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "endTick",
+            "id",
+            "kind",
+            "position",
+            "speakerId",
+            "startTick",
+            "text"
+          ],
+          "properties": [
+            "box",
+            "confidence",
+            "endTick",
+            "id",
+            "kind",
+            "position",
+            "speakerId",
+            "startTick",
+            "text"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/BoundingBox",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "CaptionTrack",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "cues",
+            "id",
+            "kind",
+            "locale"
+          ],
+          "properties": [
+            "artifactId",
+            "burnIn",
+            "cues",
+            "id",
+            "kind",
+            "locale"
+          ],
+          "refs": [
+            "#/$defs/CaptionCue",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/Locale"
+          ]
+        },
+        {
+          "name": "ConsentRecord",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "id",
+            "proofArtifactId",
+            "recordedAt",
+            "scope",
+            "status",
+            "subject",
+            "syntheticDisclosureRequired"
+          ],
+          "properties": [
+            "expiresAt",
+            "id",
+            "proofArtifactId",
+            "recordedAt",
+            "revokedAt",
+            "scope",
+            "status",
+            "subject",
+            "subjectContactHash",
+            "syntheticDisclosureRequired"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/Sha256",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "NarrationSpan",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "end",
+            "kind",
+            "start"
+          ],
+          "properties": [
+            "end",
+            "kind",
+            "referenceId",
+            "start",
+            "value"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id"
+          ]
+        },
+        {
+          "name": "NarrationSpec",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "delivery",
+            "locale",
+            "spans",
+            "speakerId",
+            "text"
+          ],
+          "properties": [
+            "alignmentArtifactId",
+            "audioArtifactId",
+            "contextAfter",
+            "contextBefore",
+            "delivery",
+            "locale",
+            "pronunciationIds",
+            "spans",
+            "speakerId",
+            "text"
+          ],
+          "refs": [
+            "#/$defs/NarrationSpan",
+            "#/$defs/SpeechDelivery",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/Locale",
+            "common.schema.json#/$defs/NonEmptyText"
+          ]
+        },
+        {
+          "name": "PresenterSpec",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "direction",
+            "disclosure",
+            "mode",
+            "usage"
+          ],
+          "properties": [
+            "clipArtifactId",
+            "consentRecordId",
+            "direction",
+            "disclosure",
+            "gestureCues",
+            "mode",
+            "profileId",
+            "usage"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/TickRange"
+          ]
+        },
+        {
+          "name": "PronunciationReference",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "grapheme",
+            "id",
+            "locale",
+            "method",
+            "value"
+          ],
+          "properties": [
+            "grapheme",
+            "id",
+            "locale",
+            "method",
+            "providerId",
+            "value"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/Locale",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "RightsGrant",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "attributionRequired",
+            "status",
+            "territories",
+            "usage"
+          ],
+          "properties": [
+            "attributionRequired",
+            "attributionText",
+            "licenseExpression",
+            "proofArtifactIds",
+            "restrictions",
+            "status",
+            "territories",
+            "usage",
+            "validFrom",
+            "validUntil"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDate",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "SpeechDelivery",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "energy",
+            "pace",
+            "pitchSemitones",
+            "style"
+          ],
+          "properties": [
+            "emotion",
+            "energy",
+            "pace",
+            "pitchSemitones",
+            "style"
+          ],
+          "refs": []
+        },
+        {
+          "name": "TimingPolicy",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "maximumTicks",
+            "minimumTicks",
+            "mode",
+            "overflow"
+          ],
+          "properties": [
+            "maximumTicks",
+            "minimumTicks",
+            "mode",
+            "overflow",
+            "preferredTicks"
+          ],
+          "refs": []
+        }
+      ]
+    },
+    {
+      "key": "project",
+      "file": "project.schema.json",
+      "id": "https://schemas.alystria.studio/v2/project.schema.json",
+      "title": "Alystria project and course hierarchy",
+      "sha256": "e3e09fb8db5758c3cde4f69f9aa77e6208e8f39f05a2620cbf2f01a68e85a9ae",
+      "root": {
+        "name": "$root",
+        "types": [
+          "reference"
+        ],
+        "required": [],
+        "properties": [],
+        "refs": [
+          "#/$defs/Course",
+          "#/$defs/CourseModule",
+          "#/$defs/Lesson",
+          "#/$defs/Project",
+          "#/$defs/ProjectBundle",
+          "#/$defs/ProjectManifest",
+          "#/$defs/ProjectRevision",
+          "#/$defs/ProjectSettings",
+          "#/$defs/RevisionChange",
+          "#/$defs/Section",
+          "common.schema.json#/$defs/EntityRef",
+          "common.schema.json#/$defs/Id",
+          "common.schema.json#/$defs/IsoDateTime",
+          "common.schema.json#/$defs/Locale",
+          "common.schema.json#/$defs/RelativePath",
+          "common.schema.json#/$defs/Sha256",
+          "common.schema.json#/$defs/ShortText",
+          "execution.schema.json#/$defs/Artifact",
+          "execution.schema.json#/$defs/ExportSpec",
+          "execution.schema.json#/$defs/GenerationRun",
+          "execution.schema.json#/$defs/JobEvent",
+          "execution.schema.json#/$defs/JobRun",
+          "execution.schema.json#/$defs/ModelDescriptor",
+          "execution.schema.json#/$defs/PluginManifest",
+          "execution.schema.json#/$defs/PricingRule",
+          "execution.schema.json#/$defs/ProviderDescriptor",
+          "execution.schema.json#/$defs/QualityGate",
+          "execution.schema.json#/$defs/TaskAttempt",
+          "execution.schema.json#/$defs/TaskRun",
+          "execution.schema.json#/$defs/UsageRecord",
+          "media.schema.json#/$defs/AssetProvenance",
+          "media.schema.json#/$defs/ConsentRecord",
+          "research.schema.json#/$defs/ResearchBundle",
+          "storyboard.schema.json#/$defs/RenderManifest",
+          "storyboard.schema.json#/$defs/StoryboardSnapshot"
+        ]
+      },
+      "definitions": [
+        {
+          "name": "Course",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "description",
+            "id",
+            "learnerProfileId",
+            "locale",
+            "moduleIds",
+            "projectId",
+            "title"
+          ],
+          "properties": [
+            "description",
+            "id",
+            "learnerProfileId",
+            "locale",
+            "moduleIds",
+            "projectId",
+            "tags",
+            "title"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/Locale",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "CourseModule",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "courseId",
+            "id",
+            "lessonIds",
+            "position",
+            "title"
+          ],
+          "properties": [
+            "courseId",
+            "description",
+            "id",
+            "lessonIds",
+            "position",
+            "title"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "Lesson",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "id",
+            "locale",
+            "moduleId",
+            "objectiveIds",
+            "position",
+            "sectionIds",
+            "title"
+          ],
+          "properties": [
+            "estimatedDurationSeconds",
+            "id",
+            "locale",
+            "moduleId",
+            "objectiveIds",
+            "position",
+            "sectionIds",
+            "title"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/Locale",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "Project",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "courseIds",
+            "createdAt",
+            "headRevisionId",
+            "id",
+            "name",
+            "schemaVersion",
+            "settings",
+            "status",
+            "updatedAt"
+          ],
+          "properties": [
+            "courseIds",
+            "createdAt",
+            "defaultThemeId",
+            "description",
+            "headRevisionId",
+            "id",
+            "name",
+            "projectRootHint",
+            "schemaVersion",
+            "settings",
+            "status",
+            "updatedAt"
+          ],
+          "refs": [
+            "#/$defs/ProjectSettings",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "ProjectBundle",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "artifacts",
+            "attempts",
+            "consents",
+            "courses",
+            "events",
+            "exports",
+            "generationRuns",
+            "jobs",
+            "lessons",
+            "manifest",
+            "models",
+            "modules",
+            "plugins",
+            "pricing",
+            "project",
+            "provenance",
+            "providers",
+            "qualityGates",
+            "renderManifests",
+            "research",
+            "revisions",
+            "sections",
+            "storyboards",
+            "tasks",
+            "usage"
+          ],
+          "properties": [
+            "artifacts",
+            "attempts",
+            "consents",
+            "courses",
+            "events",
+            "exports",
+            "generationRuns",
+            "jobs",
+            "lessons",
+            "manifest",
+            "models",
+            "modules",
+            "plugins",
+            "pricing",
+            "project",
+            "provenance",
+            "providers",
+            "qualityGates",
+            "renderManifests",
+            "research",
+            "revisions",
+            "sections",
+            "storyboards",
+            "tasks",
+            "usage"
+          ],
+          "refs": [
+            "#/$defs/Course",
+            "#/$defs/CourseModule",
+            "#/$defs/Lesson",
+            "#/$defs/Project",
+            "#/$defs/ProjectManifest",
+            "#/$defs/ProjectRevision",
+            "#/$defs/Section",
+            "execution.schema.json#/$defs/Artifact",
+            "execution.schema.json#/$defs/ExportSpec",
+            "execution.schema.json#/$defs/GenerationRun",
+            "execution.schema.json#/$defs/JobEvent",
+            "execution.schema.json#/$defs/JobRun",
+            "execution.schema.json#/$defs/ModelDescriptor",
+            "execution.schema.json#/$defs/PluginManifest",
+            "execution.schema.json#/$defs/PricingRule",
+            "execution.schema.json#/$defs/ProviderDescriptor",
+            "execution.schema.json#/$defs/QualityGate",
+            "execution.schema.json#/$defs/TaskAttempt",
+            "execution.schema.json#/$defs/TaskRun",
+            "execution.schema.json#/$defs/UsageRecord",
+            "media.schema.json#/$defs/AssetProvenance",
+            "media.schema.json#/$defs/ConsentRecord",
+            "research.schema.json#/$defs/ResearchBundle",
+            "storyboard.schema.json#/$defs/RenderManifest",
+            "storyboard.schema.json#/$defs/StoryboardSnapshot"
+          ]
+        },
+        {
+          "name": "ProjectManifest",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "createdAt",
+            "databasePath",
+            "exportsPath",
+            "format",
+            "minimumAppVersion",
+            "objectsPath",
+            "projectId",
+            "schemaVersion",
+            "sourcesPath",
+            "stagingPath"
+          ],
+          "properties": [
+            "createdAt",
+            "databasePath",
+            "exportsPath",
+            "format",
+            "minimumAppVersion",
+            "objectsPath",
+            "projectId",
+            "readOnlyReason",
+            "schemaVersion",
+            "sourcesPath",
+            "stagingPath"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/RelativePath"
+          ]
+        },
+        {
+          "name": "ProjectRevision",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "approvalStatus",
+            "author",
+            "changes",
+            "createdAt",
+            "id",
+            "kind",
+            "message",
+            "number",
+            "parentRevisionIds",
+            "projectId",
+            "rootHash"
+          ],
+          "properties": [
+            "approvalStatus",
+            "author",
+            "changes",
+            "createdAt",
+            "id",
+            "kind",
+            "message",
+            "number",
+            "parentRevisionIds",
+            "projectId",
+            "rootHash",
+            "snapshotName"
+          ],
+          "refs": [
+            "#/$defs/RevisionChange",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/Sha256",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "ProjectSettings",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "budgetProfile",
+            "captionsEnabled",
+            "executionMode",
+            "groundingMode",
+            "musicEnabled",
+            "presenterMode",
+            "privacyClassification",
+            "quality",
+            "repairLimit"
+          ],
+          "properties": [
+            "budgetProfile",
+            "captionsEnabled",
+            "crossProviderCritique",
+            "executionMode",
+            "groundingMode",
+            "musicEnabled",
+            "presenterMode",
+            "privacyClassification",
+            "quality",
+            "repairLimit"
+          ],
+          "refs": []
+        },
+        {
+          "name": "RevisionChange",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "afterHash",
+            "beforeHash",
+            "entity",
+            "invalidatedTaskKinds",
+            "operation"
+          ],
+          "properties": [
+            "afterHash",
+            "beforeHash",
+            "entity",
+            "invalidatedTaskKinds",
+            "operation"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/EntityRef",
+            "common.schema.json#/$defs/Sha256"
+          ]
+        },
+        {
+          "name": "Section",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "id",
+            "lessonId",
+            "objectiveIds",
+            "position",
+            "sceneIds",
+            "title"
+          ],
+          "properties": [
+            "id",
+            "lessonId",
+            "notes",
+            "objectiveIds",
+            "position",
+            "sceneIds",
+            "title"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "research",
+      "file": "research.schema.json",
+      "id": "https://schemas.alystria.studio/v2/research.schema.json",
+      "title": "Alystria research, sources, and grounding",
+      "sha256": "ef79bafafd15f94a099dbf6cf0713f7354b80793d368106db432df8b5c9f2682",
+      "root": {
+        "name": "$root",
+        "types": [
+          "unspecified"
+        ],
+        "required": [],
+        "properties": [],
+        "refs": [
+          "#/$defs/AtomicClaim",
+          "#/$defs/ClaimSupport",
+          "#/$defs/ConceptNode",
+          "#/$defs/EvidenceChunk",
+          "#/$defs/EvidenceLocator",
+          "#/$defs/LearnerProfile",
+          "#/$defs/LearningObjective",
+          "#/$defs/LearningPlan",
+          "#/$defs/SourceLocator",
+          "#/$defs/SourceVersion",
+          "common.schema.json#/$defs/BoundingBox",
+          "common.schema.json#/$defs/Id",
+          "common.schema.json#/$defs/IsoDateTime",
+          "common.schema.json#/$defs/JsonValue",
+          "common.schema.json#/$defs/Locale",
+          "common.schema.json#/$defs/NonEmptyText",
+          "common.schema.json#/$defs/RelativePath",
+          "common.schema.json#/$defs/Sha256",
+          "common.schema.json#/$defs/ShortText",
+          "common.schema.json#/$defs/Uri"
+        ]
+      },
+      "definitions": [
+        {
+          "name": "AtomicClaim",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "claimType",
+            "id",
+            "importance",
+            "statement",
+            "supportStatus",
+            "verifiability"
+          ],
+          "properties": [
+            "claimType",
+            "id",
+            "importance",
+            "notes",
+            "statement",
+            "supportIds",
+            "supportStatus",
+            "verifiability"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/NonEmptyText"
+          ]
+        },
+        {
+          "name": "ClaimSupport",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "assessedAt",
+            "assessedBy",
+            "assessment",
+            "claimId",
+            "evidenceChunkId",
+            "id",
+            "relationship"
+          ],
+          "properties": [
+            "assessedAt",
+            "assessedBy",
+            "assessment",
+            "claimId",
+            "evidenceChunkId",
+            "id",
+            "rationale",
+            "relationship"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime"
+          ]
+        },
+        {
+          "name": "ConceptNode",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "id",
+            "kind",
+            "label",
+            "objectiveIds",
+            "prerequisiteIds"
+          ],
+          "properties": [
+            "description",
+            "id",
+            "kind",
+            "label",
+            "objectiveIds",
+            "prerequisiteIds"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "EvidenceChunk",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "contentHash",
+            "createdAt",
+            "id",
+            "locator",
+            "sourceVersionId",
+            "text"
+          ],
+          "properties": [
+            "contentHash",
+            "createdAt",
+            "embeddingArtifactId",
+            "headingPath",
+            "id",
+            "locator",
+            "sourceVersionId",
+            "text"
+          ],
+          "refs": [
+            "#/$defs/EvidenceLocator",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/NonEmptyText",
+            "common.schema.json#/$defs/Sha256",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "EvidenceLocator",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "method"
+          ],
+          "properties": [
+            "boundingBoxes",
+            "endMs",
+            "endOffset",
+            "label",
+            "method",
+            "page",
+            "recordId",
+            "startMs",
+            "startOffset"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/BoundingBox"
+          ]
+        },
+        {
+          "name": "LearnerProfile",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "accessibilityNeeds",
+            "audience",
+            "id",
+            "knowledgeLevel",
+            "locale"
+          ],
+          "properties": [
+            "accessibilityNeeds",
+            "ageBand",
+            "audience",
+            "constraints",
+            "goals",
+            "id",
+            "knowledgeLevel",
+            "locale",
+            "priorKnowledge"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/Locale",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "LearningObjective",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "assessmentCriteria",
+            "id",
+            "statement",
+            "taxonomyLevel"
+          ],
+          "properties": [
+            "assessmentCriteria",
+            "id",
+            "prerequisiteObjectiveIds",
+            "statement",
+            "taxonomyLevel"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "LearningPlan",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "concepts",
+            "createdAt",
+            "groundingMode",
+            "id",
+            "learnerProfileId",
+            "misconceptions",
+            "objectives"
+          ],
+          "properties": [
+            "concepts",
+            "createdAt",
+            "estimatedDurationSeconds",
+            "groundingMode",
+            "id",
+            "learnerProfileId",
+            "misconceptions",
+            "objectives"
+          ],
+          "refs": [
+            "#/$defs/ConceptNode",
+            "#/$defs/LearningObjective",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "ResearchBundle",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "claims",
+            "evidence",
+            "learnerProfile",
+            "learningPlan",
+            "sources",
+            "supports"
+          ],
+          "properties": [
+            "claims",
+            "evidence",
+            "learnerProfile",
+            "learningPlan",
+            "sources",
+            "supports"
+          ],
+          "refs": [
+            "#/$defs/AtomicClaim",
+            "#/$defs/ClaimSupport",
+            "#/$defs/EvidenceChunk",
+            "#/$defs/LearnerProfile",
+            "#/$defs/LearningPlan",
+            "#/$defs/SourceVersion"
+          ]
+        },
+        {
+          "name": "SourceLocator",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "kind"
+          ],
+          "properties": [
+            "canonicalUri",
+            "kind",
+            "localPath",
+            "value"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/RelativePath",
+            "common.schema.json#/$defs/Uri"
+          ]
+        },
+        {
+          "name": "SourceVersion",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "contentHash",
+            "id",
+            "locator",
+            "retrievedAt",
+            "rightsStatus",
+            "sourceId",
+            "storagePolicy",
+            "title",
+            "trust"
+          ],
+          "properties": [
+            "authors",
+            "contentHash",
+            "id",
+            "language",
+            "licenseExpression",
+            "locator",
+            "metadata",
+            "mimeType",
+            "publishedAt",
+            "publisher",
+            "retrievedAt",
+            "rightsStatus",
+            "sourceId",
+            "storagePolicy",
+            "title",
+            "trust"
+          ],
+          "refs": [
+            "#/$defs/SourceLocator",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/JsonValue",
+            "common.schema.json#/$defs/Locale",
+            "common.schema.json#/$defs/Sha256",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "storyboard",
+      "file": "storyboard.schema.json",
+      "id": "https://schemas.alystria.studio/v2/storyboard.schema.json",
+      "title": "Alystria storyboard, scenes, and visual system",
+      "sha256": "f56095b9b1f2eadf6375ae68e308fa4417aadf701e7e0723730804c8b2943e3e",
+      "root": {
+        "name": "$root",
+        "types": [
+          "unspecified"
+        ],
+        "required": [],
+        "properties": [],
+        "refs": [
+          "#/$defs/ChoreographyCue",
+          "#/$defs/CodeVisual",
+          "#/$defs/ColorToken",
+          "#/$defs/ComparisonVisual",
+          "#/$defs/CompiledScene",
+          "#/$defs/DataVisual",
+          "#/$defs/DiagramVisual",
+          "#/$defs/InstructionVisual",
+          "#/$defs/LayoutOverride",
+          "#/$defs/MathVisual",
+          "#/$defs/MediaVisual",
+          "#/$defs/PresenterVisual",
+          "#/$defs/Scene",
+          "#/$defs/SimulationVisual",
+          "#/$defs/SourcesVisual",
+          "#/$defs/TextVisual",
+          "#/$defs/ThemeSpec",
+          "#/$defs/TimelineVisual",
+          "#/$defs/TypographyToken",
+          "#/$defs/VisualBible",
+          "#/$defs/VisualContent",
+          "common.schema.json#/$defs/BoundingBox",
+          "common.schema.json#/$defs/Dimensions",
+          "common.schema.json#/$defs/Id",
+          "common.schema.json#/$defs/IsoDateTime",
+          "common.schema.json#/$defs/JsonValue",
+          "common.schema.json#/$defs/Lock",
+          "common.schema.json#/$defs/NonEmptyText",
+          "common.schema.json#/$defs/Rational",
+          "common.schema.json#/$defs/Sha256",
+          "common.schema.json#/$defs/ShortText",
+          "media.schema.json#/$defs/AccessibilitySpec",
+          "media.schema.json#/$defs/AudioMixSpec",
+          "media.schema.json#/$defs/CaptionTrack",
+          "media.schema.json#/$defs/NarrationSpec",
+          "media.schema.json#/$defs/PresenterSpec",
+          "media.schema.json#/$defs/TimingPolicy"
+        ]
+      },
+      "definitions": [
+        {
+          "name": "ChoreographyCue",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "action",
+            "durationTicks",
+            "easing",
+            "id",
+            "startTick",
+            "targetId"
+          ],
+          "properties": [
+            "action",
+            "durationTicks",
+            "easing",
+            "id",
+            "parameters",
+            "reducedMotionAction",
+            "startTick",
+            "targetId"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/JsonValue"
+          ]
+        },
+        {
+          "name": "CodeVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "content",
+            "kind",
+            "language"
+          ],
+          "properties": [
+            "content",
+            "executionAllowed",
+            "fileName",
+            "highlights",
+            "kind",
+            "language",
+            "traceArtifactId"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/NonEmptyText",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "ColorToken",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "name",
+            "role",
+            "value"
+          ],
+          "properties": [
+            "name",
+            "role",
+            "value"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id"
+          ]
+        },
+        {
+          "name": "ComparisonVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "columns",
+            "heading",
+            "kind"
+          ],
+          "properties": [
+            "columns",
+            "heading",
+            "kind"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "CompiledScene",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "artifactIds",
+            "compileHash",
+            "dimensions",
+            "durationTicks",
+            "frameRate",
+            "id",
+            "layout",
+            "sourceRevisionId",
+            "sourceSceneId",
+            "target",
+            "tickRate"
+          ],
+          "properties": [
+            "artifactIds",
+            "compileHash",
+            "dimensions",
+            "durationTicks",
+            "frameRate",
+            "id",
+            "layout",
+            "sourceRevisionId",
+            "sourceSceneId",
+            "target",
+            "tickRate"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Dimensions",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/JsonValue",
+            "common.schema.json#/$defs/Rational",
+            "common.schema.json#/$defs/Sha256"
+          ]
+        },
+        {
+          "name": "DataVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "data",
+            "encoding",
+            "kind",
+            "title"
+          ],
+          "properties": [
+            "data",
+            "encoding",
+            "kind",
+            "mapProjection",
+            "sourceClaimIds",
+            "title"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/JsonValue",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "DiagramVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "edges",
+            "kind",
+            "layout",
+            "nodes"
+          ],
+          "properties": [
+            "edges",
+            "kind",
+            "layout",
+            "nodes"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "InstructionVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "kind",
+            "prompt",
+            "steps"
+          ],
+          "properties": [
+            "answer",
+            "choices",
+            "explanation",
+            "kind",
+            "prompt",
+            "steps"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/NonEmptyText",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "LayoutOverride",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "strategy",
+            "target"
+          ],
+          "properties": [
+            "parameters",
+            "safeArea",
+            "strategy",
+            "target",
+            "templateId"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/BoundingBox",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/JsonValue"
+          ]
+        },
+        {
+          "name": "MathVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "expressions",
+            "kind"
+          ],
+          "properties": [
+            "expressions",
+            "graphSpec",
+            "kind"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/JsonValue",
+            "common.schema.json#/$defs/NonEmptyText"
+          ]
+        },
+        {
+          "name": "MediaVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "assetIds",
+            "fit",
+            "kind"
+          ],
+          "properties": [
+            "annotations",
+            "assetIds",
+            "crop",
+            "fit",
+            "kind"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/BoundingBox",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "PresenterVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "kind",
+            "layout",
+            "presenter"
+          ],
+          "properties": [
+            "kind",
+            "layout",
+            "presenter",
+            "slideAssetId"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "media.schema.json#/$defs/PresenterSpec"
+          ]
+        },
+        {
+          "name": "RenderManifest",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "audioMix",
+            "colorSpace",
+            "compiledScenes",
+            "createdAt",
+            "dimensions",
+            "frameRate",
+            "id",
+            "projectId",
+            "renderHash",
+            "revisionId",
+            "target",
+            "tickRate",
+            "totalDurationTicks"
+          ],
+          "properties": [
+            "audioMix",
+            "captionTrackIds",
+            "colorSpace",
+            "compiledScenes",
+            "createdAt",
+            "dimensions",
+            "frameRate",
+            "id",
+            "projectId",
+            "renderHash",
+            "revisionId",
+            "target",
+            "tickRate",
+            "totalDurationTicks"
+          ],
+          "refs": [
+            "#/$defs/CompiledScene",
+            "common.schema.json#/$defs/Dimensions",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/Rational",
+            "common.schema.json#/$defs/Sha256",
+            "media.schema.json#/$defs/AudioMixSpec"
+          ]
+        },
+        {
+          "name": "Scene",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "accessibility",
+            "artifactIds",
+            "audio",
+            "captions",
+            "choreography",
+            "citationSupportIds",
+            "claimIds",
+            "id",
+            "layouts",
+            "locks",
+            "narration",
+            "objectiveIds",
+            "prerequisiteIds",
+            "revisionId",
+            "sectionId",
+            "timing",
+            "title",
+            "visual"
+          ],
+          "properties": [
+            "accessibility",
+            "artifactIds",
+            "audio",
+            "captions",
+            "choreography",
+            "citationSupportIds",
+            "claimIds",
+            "id",
+            "layouts",
+            "locks",
+            "narration",
+            "objectiveIds",
+            "prerequisiteIds",
+            "revisionId",
+            "sectionId",
+            "timing",
+            "title",
+            "visual"
+          ],
+          "refs": [
+            "#/$defs/ChoreographyCue",
+            "#/$defs/LayoutOverride",
+            "#/$defs/VisualContent",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/Lock",
+            "common.schema.json#/$defs/ShortText",
+            "media.schema.json#/$defs/AccessibilitySpec",
+            "media.schema.json#/$defs/AudioMixSpec",
+            "media.schema.json#/$defs/CaptionTrack",
+            "media.schema.json#/$defs/NarrationSpec",
+            "media.schema.json#/$defs/TimingPolicy"
+          ]
+        },
+        {
+          "name": "SimulationVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "capturePolicy",
+            "kind",
+            "parameters",
+            "simulationId"
+          ],
+          "properties": [
+            "capturePolicy",
+            "kind",
+            "parameters",
+            "seed",
+            "simulationId"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/JsonValue"
+          ]
+        },
+        {
+          "name": "SourcesVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "kind",
+            "sourceVersionIds",
+            "style"
+          ],
+          "properties": [
+            "kind",
+            "sourceVersionIds",
+            "style"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id"
+          ]
+        },
+        {
+          "name": "StoryboardSnapshot",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "createdAt",
+            "id",
+            "projectId",
+            "revisionId",
+            "scenes",
+            "status",
+            "theme",
+            "visualBible"
+          ],
+          "properties": [
+            "createdAt",
+            "id",
+            "projectId",
+            "revisionId",
+            "scenes",
+            "status",
+            "theme",
+            "visualBible"
+          ],
+          "refs": [
+            "#/$defs/Scene",
+            "#/$defs/ThemeSpec",
+            "#/$defs/VisualBible",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime"
+          ]
+        },
+        {
+          "name": "TextVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "blocks",
+            "heading",
+            "kind"
+          ],
+          "properties": [
+            "attribution",
+            "blocks",
+            "eyebrow",
+            "heading",
+            "icon",
+            "kind"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/NonEmptyText",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "ThemeSpec",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "colors",
+            "cornerStyle",
+            "id",
+            "motionStyle",
+            "name",
+            "spacingScale",
+            "typography",
+            "version"
+          ],
+          "properties": [
+            "colors",
+            "cornerStyle",
+            "customProperties",
+            "fontArtifactIds",
+            "id",
+            "logoAssetId",
+            "motionStyle",
+            "name",
+            "spacingScale",
+            "typography",
+            "version"
+          ],
+          "refs": [
+            "#/$defs/ColorToken",
+            "#/$defs/TypographyToken",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "TimelineVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "events",
+            "kind",
+            "orientation"
+          ],
+          "properties": [
+            "events",
+            "kind",
+            "orientation"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "TypographyToken",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "family",
+            "lineHeight",
+            "name",
+            "sizePx",
+            "weight"
+          ],
+          "properties": [
+            "fallbacks",
+            "family",
+            "letterSpacingEm",
+            "lineHeight",
+            "name",
+            "sizePx",
+            "weight"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id"
+          ]
+        },
+        {
+          "name": "VisualBible",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "compositionRules",
+            "direction",
+            "doNotUse",
+            "id",
+            "imageRules",
+            "motionRules",
+            "seed",
+            "themeId"
+          ],
+          "properties": [
+            "characterAssetIds",
+            "compositionRules",
+            "direction",
+            "doNotUse",
+            "id",
+            "imageRules",
+            "motionRules",
+            "seed",
+            "themeId"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/NonEmptyText",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "VisualContent",
+          "types": [
+            "composition"
+          ],
+          "required": [],
+          "properties": [],
+          "refs": [
+            "#/$defs/CodeVisual",
+            "#/$defs/ComparisonVisual",
+            "#/$defs/DataVisual",
+            "#/$defs/DiagramVisual",
+            "#/$defs/InstructionVisual",
+            "#/$defs/MathVisual",
+            "#/$defs/MediaVisual",
+            "#/$defs/PresenterVisual",
+            "#/$defs/SimulationVisual",
+            "#/$defs/SourcesVisual",
+            "#/$defs/TextVisual",
+            "#/$defs/TimelineVisual"
+          ]
+        }
+      ]
+    }
+  ]
+}

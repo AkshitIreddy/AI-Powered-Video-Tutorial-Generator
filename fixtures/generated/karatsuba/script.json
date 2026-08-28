@@ -1,0 +1,322 @@
+{
+  "final": {
+    "id": "script_2f064bdabac4209cf3447e79",
+    "locale": "en-US",
+    "metadata": {
+      "grounding": "strict",
+      "provider": "offline",
+      "reviewed": [
+        "pedagogy",
+        "factuality",
+        "clarity",
+        "redundancy",
+        "pacing"
+      ]
+    },
+    "revision": 6,
+    "sections": [
+      {
+        "claimIds": [
+          "claim.karatsuba.identity"
+        ],
+        "narration": "Start with a question: why does this idea matter? Derive the three-product identity from place-value expansion. We will use activate prior knowledge, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+        "outlineSectionId": "section_f344bf36ce6094c3262edc52",
+        "visualIntent": "Use a precise visual progression for derive the three-product identity from place-value expansion."
+      },
+      {
+        "claimIds": [
+          "claim.karatsuba.answer"
+        ],
+        "narration": "Now connect this to what you just learned. Apply the method to 1234 × 5678 and recombine exactly. We will use worked explanation, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+        "outlineSectionId": "section_e506a1b0b82b097875aaf01c",
+        "visualIntent": "Use a precise visual progression for apply the method to 1234 × 5678 and recombine exactly."
+      },
+      {
+        "claimIds": [
+          "claim.karatsuba.complexity"
+        ],
+        "narration": "Now connect this to what you just learned. Compare Karatsuba and grade-school asymptotic multiplication costs. We will use guided practice, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+        "outlineSectionId": "section_4ab12b3cf02fa5c137b332ae",
+        "visualIntent": "Use a precise visual progression for compare karatsuba and grade-school asymptotic multiplication costs."
+      }
+    ],
+    "wordCount": 154
+  },
+  "initial": {
+    "id": "script_1831e775b95ff1d2eae1b38b",
+    "locale": "en-US",
+    "metadata": {
+      "grounding": "strict",
+      "provider": "offline"
+    },
+    "revision": 1,
+    "sections": [
+      {
+        "claimIds": [
+          "claim.karatsuba.identity"
+        ],
+        "narration": "Start with a question: why does this idea matter? Derive the three-product identity from place-value expansion. We will use activate prior knowledge, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+        "outlineSectionId": "section_f344bf36ce6094c3262edc52",
+        "visualIntent": "Use a precise visual progression for derive the three-product identity from place-value expansion."
+      },
+      {
+        "claimIds": [
+          "claim.karatsuba.answer"
+        ],
+        "narration": "Now connect this to what you just learned. Apply the method to 1234 × 5678 and recombine exactly. We will use worked explanation, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+        "outlineSectionId": "section_e506a1b0b82b097875aaf01c",
+        "visualIntent": "Use a precise visual progression for apply the method to 1234 × 5678 and recombine exactly."
+      },
+      {
+        "claimIds": [
+          "claim.karatsuba.complexity"
+        ],
+        "narration": "Now connect this to what you just learned. Compare Karatsuba and grade-school asymptotic multiplication costs. We will use guided practice, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+        "outlineSectionId": "section_4ab12b3cf02fa5c137b332ae",
+        "visualIntent": "Use a precise visual progression for compare karatsuba and grade-school asymptotic multiplication costs."
+      }
+    ],
+    "wordCount": 115
+  },
+  "reviews": [
+    {
+      "dimension": "pedagogy",
+      "issues": [],
+      "passed": true
+    },
+    {
+      "dimension": "factuality",
+      "issues": [],
+      "passed": true
+    },
+    {
+      "dimension": "clarity",
+      "issues": [],
+      "passed": true
+    },
+    {
+      "dimension": "redundancy",
+      "issues": [],
+      "passed": true
+    },
+    {
+      "dimension": "pacing",
+      "issues": [
+        {
+          "code": "pacing.too_sparse",
+          "message": "Add explanatory detail for the target duration.",
+          "section_id": null,
+          "severity": "warning"
+        }
+      ],
+      "passed": true
+    }
+  ],
+  "revisions": [
+    {
+      "id": "script_5b3c53c0c03f12fc84555b2d",
+      "locale": "en-US",
+      "metadata": {
+        "grounding": "strict",
+        "provider": "offline",
+        "reviewed": [
+          "pedagogy"
+        ]
+      },
+      "revision": 2,
+      "sections": [
+        {
+          "claimIds": [
+            "claim.karatsuba.identity"
+          ],
+          "narration": "Start with a question: why does this idea matter? Derive the three-product identity from place-value expansion. We will use activate prior knowledge, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_f344bf36ce6094c3262edc52",
+          "visualIntent": "Use a precise visual progression for derive the three-product identity from place-value expansion."
+        },
+        {
+          "claimIds": [
+            "claim.karatsuba.answer"
+          ],
+          "narration": "Now connect this to what you just learned. Apply the method to 1234 × 5678 and recombine exactly. We will use worked explanation, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_e506a1b0b82b097875aaf01c",
+          "visualIntent": "Use a precise visual progression for apply the method to 1234 × 5678 and recombine exactly."
+        },
+        {
+          "claimIds": [
+            "claim.karatsuba.complexity"
+          ],
+          "narration": "Now connect this to what you just learned. Compare Karatsuba and grade-school asymptotic multiplication costs. We will use guided practice, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_4ab12b3cf02fa5c137b332ae",
+          "visualIntent": "Use a precise visual progression for compare karatsuba and grade-school asymptotic multiplication costs."
+        }
+      ],
+      "wordCount": 115
+    },
+    {
+      "id": "script_ebb3d461c59342233fe73fd3",
+      "locale": "en-US",
+      "metadata": {
+        "grounding": "strict",
+        "provider": "offline",
+        "reviewed": [
+          "pedagogy",
+          "factuality"
+        ]
+      },
+      "revision": 3,
+      "sections": [
+        {
+          "claimIds": [
+            "claim.karatsuba.identity"
+          ],
+          "narration": "Start with a question: why does this idea matter? Derive the three-product identity from place-value expansion. We will use activate prior knowledge, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_f344bf36ce6094c3262edc52",
+          "visualIntent": "Use a precise visual progression for derive the three-product identity from place-value expansion."
+        },
+        {
+          "claimIds": [
+            "claim.karatsuba.answer"
+          ],
+          "narration": "Now connect this to what you just learned. Apply the method to 1234 × 5678 and recombine exactly. We will use worked explanation, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_e506a1b0b82b097875aaf01c",
+          "visualIntent": "Use a precise visual progression for apply the method to 1234 × 5678 and recombine exactly."
+        },
+        {
+          "claimIds": [
+            "claim.karatsuba.complexity"
+          ],
+          "narration": "Now connect this to what you just learned. Compare Karatsuba and grade-school asymptotic multiplication costs. We will use guided practice, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_4ab12b3cf02fa5c137b332ae",
+          "visualIntent": "Use a precise visual progression for compare karatsuba and grade-school asymptotic multiplication costs."
+        }
+      ],
+      "wordCount": 115
+    },
+    {
+      "id": "script_6525586947d31a5cd30e9b86",
+      "locale": "en-US",
+      "metadata": {
+        "grounding": "strict",
+        "provider": "offline",
+        "reviewed": [
+          "pedagogy",
+          "factuality",
+          "clarity"
+        ]
+      },
+      "revision": 4,
+      "sections": [
+        {
+          "claimIds": [
+            "claim.karatsuba.identity"
+          ],
+          "narration": "Start with a question: why does this idea matter? Derive the three-product identity from place-value expansion. We will use activate prior knowledge, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_f344bf36ce6094c3262edc52",
+          "visualIntent": "Use a precise visual progression for derive the three-product identity from place-value expansion."
+        },
+        {
+          "claimIds": [
+            "claim.karatsuba.answer"
+          ],
+          "narration": "Now connect this to what you just learned. Apply the method to 1234 × 5678 and recombine exactly. We will use worked explanation, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_e506a1b0b82b097875aaf01c",
+          "visualIntent": "Use a precise visual progression for apply the method to 1234 × 5678 and recombine exactly."
+        },
+        {
+          "claimIds": [
+            "claim.karatsuba.complexity"
+          ],
+          "narration": "Now connect this to what you just learned. Compare Karatsuba and grade-school asymptotic multiplication costs. We will use guided practice, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_4ab12b3cf02fa5c137b332ae",
+          "visualIntent": "Use a precise visual progression for compare karatsuba and grade-school asymptotic multiplication costs."
+        }
+      ],
+      "wordCount": 115
+    },
+    {
+      "id": "script_19de1d1a7c8502b22385659d",
+      "locale": "en-US",
+      "metadata": {
+        "grounding": "strict",
+        "provider": "offline",
+        "reviewed": [
+          "pedagogy",
+          "factuality",
+          "clarity",
+          "redundancy"
+        ]
+      },
+      "revision": 5,
+      "sections": [
+        {
+          "claimIds": [
+            "claim.karatsuba.identity"
+          ],
+          "narration": "Start with a question: why does this idea matter? Derive the three-product identity from place-value expansion. We will use activate prior knowledge, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_f344bf36ce6094c3262edc52",
+          "visualIntent": "Use a precise visual progression for derive the three-product identity from place-value expansion."
+        },
+        {
+          "claimIds": [
+            "claim.karatsuba.answer"
+          ],
+          "narration": "Now connect this to what you just learned. Apply the method to 1234 × 5678 and recombine exactly. We will use worked explanation, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_e506a1b0b82b097875aaf01c",
+          "visualIntent": "Use a precise visual progression for apply the method to 1234 × 5678 and recombine exactly."
+        },
+        {
+          "claimIds": [
+            "claim.karatsuba.complexity"
+          ],
+          "narration": "Now connect this to what you just learned. Compare Karatsuba and grade-school asymptotic multiplication costs. We will use guided practice, then test the idea with a concrete example. Pause and predict the result before the explanation continues.",
+          "outlineSectionId": "section_4ab12b3cf02fa5c137b332ae",
+          "visualIntent": "Use a precise visual progression for compare karatsuba and grade-school asymptotic multiplication costs."
+        }
+      ],
+      "wordCount": 115
+    },
+    {
+      "id": "script_2f064bdabac4209cf3447e79",
+      "locale": "en-US",
+      "metadata": {
+        "grounding": "strict",
+        "provider": "offline",
+        "reviewed": [
+          "pedagogy",
+          "factuality",
+          "clarity",
+          "redundancy",
+          "pacing"
+        ]
+      },
+      "revision": 6,
+      "sections": [
+        {
+          "claimIds": [
+            "claim.karatsuba.identity"
+          ],
+          "narration": "Start with a question: why does this idea matter? Derive the three-product identity from place-value expansion. We will use activate prior knowledge, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+          "outlineSectionId": "section_f344bf36ce6094c3262edc52",
+          "visualIntent": "Use a precise visual progression for derive the three-product identity from place-value expansion."
+        },
+        {
+          "claimIds": [
+            "claim.karatsuba.answer"
+          ],
+          "narration": "Now connect this to what you just learned. Apply the method to 1234 × 5678 and recombine exactly. We will use worked explanation, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+          "outlineSectionId": "section_e506a1b0b82b097875aaf01c",
+          "visualIntent": "Use a precise visual progression for apply the method to 1234 × 5678 and recombine exactly."
+        },
+        {
+          "claimIds": [
+            "claim.karatsuba.complexity"
+          ],
+          "narration": "Now connect this to what you just learned. Compare Karatsuba and grade-school asymptotic multiplication costs. We will use guided practice, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+          "outlineSectionId": "section_4ab12b3cf02fa5c137b332ae",
+          "visualIntent": "Use a precise visual progression for compare karatsuba and grade-school asymptotic multiplication costs."
+        }
+      ],
+      "wordCount": 154
+    }
+  ]
+}

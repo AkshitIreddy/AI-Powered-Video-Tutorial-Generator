@@ -1,0 +1,1 @@
+"""Synthetic presenter pipeline tests."""

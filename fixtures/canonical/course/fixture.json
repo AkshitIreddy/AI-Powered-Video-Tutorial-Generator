@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture.course.searching-sorting.en",
+  "title": "Searching and Sorting: A Three-Lesson Course",
+  "domain": "course",
+  "purpose": "Multi-lesson fixture for course/module/lesson hierarchy, prerequisite continuity, cross-lesson vocabulary and visual consistency, cumulative assessment, and partial lesson regeneration.",
+  "locale": "en-US",
+  "durationSeconds": 1080,
+  "deterministicSeed": 3173,
+  "groundingMode": "strict",
+  "learner": { "audience": "Beginning computer-science learners progressing from search to sorting trade-offs.", "knowledgeLevel": "beginner", "prerequisites": ["Arrays", "Comparison", "Loops", "Basic growth-rate intuition"], "accessibilityNeeds": ["captions", "descriptive-transcript", "reduced-motion", "high-contrast", "screen-reader"] },
+  "objectives": [
+    { "id": "obj.course.binary", "statement": "Explain why sorted order enables binary search and trace one lookup.", "criteria": ["States the candidate interval", "Connects comparison to side elimination"] },
+    { "id": "obj.course.insertion", "statement": "Trace insertion sort's sorted-prefix invariant.", "criteria": ["Identifies the sorted prefix", "Shows shift then insert"], "prerequisiteObjectiveIds": ["obj.course.binary"] },
+    { "id": "obj.course.choose", "statement": "Choose search/sort strategies from data state and number of queries.", "criteria": ["Compares one lookup with repeated lookups", "Rejects one-algorithm-is-always-best claims"], "prerequisiteObjectiveIds": ["obj.course.binary", "obj.course.insertion"] }
+  ],
+  "sources": [
+    { "id": "src.course.note", "path": "sources/searching-sorting-course.md", "sha256": "09d6e4d3882303c6cd1de2155a5655790d5cce9e6abacd4d69dc1b01504d58db", "mimeType": "text/markdown", "title": "Searching and sorting: three-lesson course note", "creator": "Alystria fixture authors", "licenseExpression": "CC0-1.0", "origin": "locally-authored", "storagePolicy": "copied", "rightsStatus": "cleared", "externalEvidenceUris": [] }
+  ],
+  "claims": [
+    { "id": "claim.course.binary", "statement": "Sorted order lets a binary-search comparison rule out one side of the candidate interval.", "claimType": "procedural", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.course.note", "locator": "Lesson 1", "relationship": "entails" }] },
+    { "id": "claim.course.insertion", "statement": "Insertion sort maintains a sorted prefix by shifting larger prefix items before inserting the next item.", "claimType": "procedural", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.course.note", "locator": "Lesson 2", "relationship": "entails" }] },
+    { "id": "claim.course.tradeoff", "statement": "Sorting once can benefit many later searches, while sorting for one lookup may cost more than a linear scan.", "claimType": "interpretive", "importance": "major", "verifiability": "source-dependent", "supports": [{ "sourceId": "src.course.note", "locator": "Lesson 3", "relationship": "qualifies" }] }
+  ],
+  "scenes": [
+    { "id": "scene.course.map", "type": "diagram", "title": "Course concept thread", "objectiveIds": ["obj.course.binary", "obj.course.insertion", "obj.course.choose"], "claimIds": [], "narration": "The course connects ordered data, maintaining order, and choosing when preprocessing pays off.", "visualIntent": "A persistent three-lesson concept thread marks prerequisite edges and current location.", "captionText": "Ordered data → maintain order → choose by workload", "accessibilityDescription": "A three-node prerequisite graph lists each lesson and its required prior objectives." },
+    { "id": "scene.course.lesson1", "type": "execution-trace", "title": "Lesson 1: binary search", "objectiveIds": ["obj.course.binary"], "claimIds": ["claim.course.binary"], "narration": "Sorted order turns each comparison into a safe elimination of one side.", "visualIntent": "A short array trace uses the same index typography and color-independent markers used throughout the course.", "captionText": "Sorted order makes side elimination valid", "accessibilityDescription": "An array trace identifies the remaining candidate interval after each comparison.", "sourceLocator": "src.course.note#Lesson 1" },
+    { "id": "scene.course.lesson2", "type": "execution-trace", "title": "Lesson 2: insertion sort", "objectiveIds": ["obj.course.insertion"], "claimIds": ["claim.course.insertion"], "narration": "Insertion sort grows a sorted prefix. It shifts larger items right, then inserts the next value into the gap.", "visualIntent": "A variable-state table marks sorted prefix, key, shifts, and insertion using the lesson-one visual vocabulary.", "captionText": "Maintain a sorted prefix: shift, then insert", "accessibilityDescription": "A four-step table narrates the prefix, selected key, shifts, and final insertion.", "sourceLocator": "src.course.note#Lesson 2" },
+    { "id": "scene.course.lesson3", "type": "comparison", "title": "Lesson 3: choose by workload", "objectiveIds": ["obj.course.choose"], "claimIds": ["claim.course.tradeoff"], "narration": "For one lookup, a linear scan may be enough. For many lookups, sorting once can make later binary searches worthwhile. Context decides.", "visualIntent": "A scenario matrix compares existing order, input size, number of queries, mutation, memory, and risk.", "captionText": "No algorithm is always best—choose for the workload", "accessibilityDescription": "A text-first decision matrix compares one lookup and many-lookups scenarios.", "sourceLocator": "src.course.note#Lesson 3" },
+    { "id": "scene.course.quiz", "type": "quiz", "title": "Cumulative practice", "objectiveIds": ["obj.course.binary", "obj.course.insertion", "obj.course.choose"], "claimIds": [], "narration": "Choose an approach for three data workloads, then justify each choice using order, query count, and update cost.", "visualIntent": "Three untimed scenario cards preserve keyboard navigation and show feedback tied to objectives.", "captionText": "Choose and justify using data state and workload", "accessibilityDescription": "Three scenario prompts each provide labeled choices and text feedback." }
+  ],
+  "outputTargets": [{ "name": "landscape", "width": 1920, "height": 1080, "fps": 30 }, { "name": "portrait", "width": 1080, "height": 1920, "fps": 30 }],
+  "qualityAssertions": [
+    { "id": "qa.course.prerequisites", "category": "pedagogy", "severity": "release-blocking", "check": "course.prerequisite-order", "description": "No lesson depends on an objective introduced later in the course.", "expected": true },
+    { "id": "qa.course.consistency", "category": "render", "severity": "release-blocking", "check": "course.visual-bible-consistency", "description": "Index, value, current state, and prerequisite visual tokens remain consistent across lessons.", "expected": true },
+    { "id": "qa.course.vocabulary", "category": "content", "severity": "release-blocking", "check": "course.term-consistency", "description": "Candidate interval and sorted prefix retain one definition throughout.", "expected": true },
+    { "id": "qa.course.partial", "category": "persistence", "severity": "release-blocking", "check": "invalidation.lesson-local", "description": "Editing lesson two narration preserves lesson one rendered artifacts byte-for-byte while invalidating cumulative review.", "expected": true },
+    { "id": "qa.course.assessment", "category": "pedagogy", "severity": "release-blocking", "check": "assessment.objective-coverage", "description": "Cumulative practice traces feedback to all three objectives.", "expected": 1.0 }
+  ],
+  "provenance": { "fixtureAuthor": "Alystria fixture authors", "createdAt": "2026-08-28T00:00:00Z", "licenseExpression": "CC0-1.0", "networkRequired": false, "containsPersonalData": false, "notes": "The course note and every scenario are locally authored for deterministic cross-lesson tests." }
+}

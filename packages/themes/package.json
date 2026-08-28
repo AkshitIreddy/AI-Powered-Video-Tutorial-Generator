@@ -1,0 +1,39 @@
+{
+  "name": "@alystria/themes",
+  "version": "2.0.0-rc.0",
+  "private": true,
+  "description": "Deterministic visual-bible, theme-pack, and brand-kit compiler for Alystria Studio.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./specimen": {
+      "types": "./dist/specimen.d.ts",
+      "import": "./dist/specimen.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "specimen": "node scripts/write-specimen.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.0",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

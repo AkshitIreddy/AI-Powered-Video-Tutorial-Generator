@@ -1,0 +1,48 @@
+{
+  "audio": {
+    "duration_seconds": 10.0,
+    "sample_rate_hz": 48000,
+    "channels": 2,
+    "integrated_lufs": -11.5,
+    "true_peak_dbtp": -0.2,
+    "clipped_samples": 17,
+    "asr_wer": 0.08,
+    "aligned_token_ratio": 0.91
+  },
+  "visual": {
+    "scene_id": "fault-layout",
+    "tick": 120000,
+    "width": 1920,
+    "height": 1080,
+    "elements": [
+      {
+        "element_id": "essential-formula",
+        "kind": "visual",
+        "bounds": [400, 820, 1120, 180],
+        "essential": true
+      },
+      {
+        "element_id": "captions",
+        "kind": "caption",
+        "bounds": [300, 850, 1320, 190],
+        "foreground": "#777777",
+        "background": "#888888"
+      },
+      {
+        "element_id": "overflow-title",
+        "kind": "text",
+        "bounds": [-12, 10, 400, 60],
+        "foreground": "#151827",
+        "background": "#F7F8FC"
+      }
+    ]
+  },
+  "rights": {
+    "asset_id": "portrait-legacy",
+    "license_id": "unknown",
+    "attribution_required": true,
+    "attribution": null,
+    "real_person": true,
+    "consent_record_id": null
+  }
+}

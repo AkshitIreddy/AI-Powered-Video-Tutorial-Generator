@@ -1,0 +1,98 @@
+{
+  "id": "storyboard_bd5baa6bba9c746142725d38",
+  "locale": "en-US",
+  "scenes": [
+    {
+      "accessibilityDescription": "A precise explanatory composition presents start with a question why does this",
+      "claimIds": [
+        "claim.karatsuba.identity"
+      ],
+      "durationTicks": 57600000,
+      "id": "scene_5fffecc1fc7e8cc1bc9c8dc0",
+      "locks": [],
+      "narration": "Start with a question: why does this idea matter? Derive the three-product identity from place-value expansion. We will use activate prior knowledge, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+      "objectiveIds": [
+        "obj.karatsuba.derive"
+      ],
+      "sectionId": "section_f344bf36ce6094c3262edc52",
+      "title": "Start with a question why does this",
+      "type": "question",
+      "visualIntent": "Use a precise visual progression for derive the three-product identity from place-value expansion."
+    },
+    {
+      "accessibilityDescription": "A precise explanatory composition presents now connect this to what you just",
+      "claimIds": [
+        "claim.karatsuba.answer"
+      ],
+      "durationTicks": 57600000,
+      "id": "scene_08a9c69a585f75fa1ccf670a",
+      "locks": [],
+      "narration": "Now connect this to what you just learned. Apply the method to 1234 × 5678 and recombine exactly. We will use worked explanation, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+      "objectiveIds": [
+        "obj.karatsuba.apply"
+      ],
+      "sectionId": "section_e506a1b0b82b097875aaf01c",
+      "title": "Now connect this to what you just",
+      "type": "definition",
+      "visualIntent": "Use a precise visual progression for apply the method to 1234 × 5678 and recombine exactly."
+    },
+    {
+      "accessibilityDescription": "A precise explanatory composition presents now connect this to what you just",
+      "claimIds": [
+        "claim.karatsuba.complexity"
+      ],
+      "durationTicks": 57600000,
+      "id": "scene_81838b64a0d70f20a719bfa2",
+      "locks": [],
+      "narration": "Now connect this to what you just learned. Compare Karatsuba and grade-school asymptotic multiplication costs. We will use guided practice, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+      "objectiveIds": [
+        "obj.karatsuba.compare"
+      ],
+      "sectionId": "section_4ab12b3cf02fa5c137b332ae",
+      "title": "Now connect this to what you just",
+      "type": "worked_example",
+      "visualIntent": "Use a precise visual progression for compare karatsuba and grade-school asymptotic multiplication costs."
+    }
+  ],
+  "targets": [
+    {
+      "fps": 30,
+      "height": 1080,
+      "name": "landscape",
+      "width": 1920
+    },
+    {
+      "fps": 30,
+      "height": 1920,
+      "name": "portrait",
+      "width": 1080
+    },
+    {
+      "fps": 30,
+      "height": 1080,
+      "name": "square",
+      "width": 1080
+    }
+  ],
+  "timebase": 240000,
+  "visualBible": {
+    "illustration_style": "precise vector diagrams and restrained evidence-led illustration",
+    "layout_density": "balanced",
+    "motion_style": "frame-driven concept threads with reduced-motion alternatives",
+    "name": "Precision Studio",
+    "palette": {
+      "accent": "#5658E8",
+      "critical": "#C94B67",
+      "evidence": "#168F88",
+      "ink": "#151827",
+      "paper": "#F7F8FC",
+      "review": "#DF922E"
+    },
+    "tokens": {},
+    "typography": {
+      "body": "Atkinson Hyperlegible Next",
+      "display": "Bricolage Grotesque",
+      "mono": "JetBrains Mono"
+    }
+  }
+}

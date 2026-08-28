@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture.localization.binary-search.hi-in",
+  "variantOf": "fixture.binary-search.trace.en",
+  "title": "बाइनरी सर्च का क्रम — हिंदी",
+  "domain": "localization",
+  "purpose": "हिंदी रूपांतर में अर्थ की समानता, संख्याओं और कोड का संरक्षण, देवनागरी रेंडरिंग, कैप्शन, वॉइस अलाइनमेंट और स्थानीय लेआउट की जाँच।",
+  "locale": "hi-IN",
+  "durationSeconds": 150,
+  "deterministicSeed": 52305,
+  "groundingMode": "strict",
+  "learner": { "audience": "हिंदी में प्रोग्रामिंग सीखने वाले शुरुआती विद्यार्थी।", "knowledgeLevel": "beginner", "prerequisites": ["क्रमबद्ध सूची", "शून्य से शुरू होने वाला इंडेक्स"], "accessibilityNeeds": ["captions", "descriptive-transcript", "reduced-motion", "high-contrast"] },
+  "objectives": [
+    { "id": "obj.locale.explain", "statement": "समझाना कि क्रमबद्ध सूची बाइनरी सर्च को संभव क्यों बनाती है।", "criteria": ["क्रमबद्ध होने की शर्त बताता है", "मध्य मान से तुलना समझाता है"] },
+    { "id": "obj.locale.trace", "statement": "हर भाषा में तीनों चरण और परिणाम बिल्कुल समान रखना।", "criteria": ["मध्य मान 16, 56 और 23 हैं", "परिणाम इंडेक्स 5 है"] }
+  ],
+  "sources": [
+    { "id": "src.locale.brief", "path": "sources/localization-brief.md", "sha256": "e785133a569666726c2dbd77933c27dace44f4626edf7d993a75fe02615f113a", "mimeType": "text/markdown", "title": "Localization parity brief", "creator": "Alystria fixture authors", "licenseExpression": "CC0-1.0", "origin": "locally-authored", "storagePolicy": "copied", "rightsStatus": "cleared", "externalEvidenceUris": [] }
+  ],
+  "claims": [
+    { "id": "claim.locale.requirement", "statement": "हर तुलना के बाद एक हिस्सा हटाने के लिए बाइनरी सर्च को क्रमबद्ध सूची चाहिए।", "claimType": "procedural", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.locale.brief", "locator": "Opening sentence and invariant list", "relationship": "supports" }] },
+    { "id": "claim.locale.trace", "statement": "क्रम में 16, 56 और 23 की तुलना होती है, फिर इंडेक्स 5 मिलता है।", "claimType": "quantitative", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.locale.brief", "locator": "Invariant values", "relationship": "entails" }] }
+  ],
+  "scenes": [
+    { "id": "scene.locale.intro", "type": "definition", "title": "क्रम क्यों ज़रूरी है", "objectiveIds": ["obj.locale.explain"], "claimIds": ["claim.locale.requirement"], "narration": "बाइनरी सर्च इसलिए काम करती है क्योंकि सूची क्रमबद्ध है। लक्ष्य की तुलना मध्य मान से करें, फिर वह हिस्सा हटाएँ जिसमें लक्ष्य नहीं हो सकता।", "visualIntent": "क्रमबद्ध सूची में संख्याएँ अपरिवर्तित रहती हैं और लो, मिड तथा हाई के स्थानीय लेबल दिखते हैं।", "captionText": "क्रमबद्ध सूची से एक हिस्सा सुरक्षित रूप से हटता है।", "accessibilityDescription": "एक क्रमबद्ध सूची में संभावित इंडेक्स का समावेशी अंतराल और एक मध्य बिंदु दिखता है।" },
+    { "id": "scene.locale.trace", "type": "execution-trace", "title": "23 को खोजें", "objectiveIds": ["obj.locale.trace"], "claimIds": ["claim.locale.trace"], "narration": "पहले 16 से तुलना करें। लक्ष्य बड़ा है। फिर 56 से तुलना करें। लक्ष्य छोटा है। अंत में 23 मिलता है और इंडेक्स 5 लौटता है।", "visualIntent": "तीन पंक्तियाँ हर भाषा में मान, इंडेक्स और कोड टोकन बिल्कुल समान रखती हैं।", "captionText": "16 → 56 → 23 • परिणाम: इंडेक्स 5", "accessibilityDescription": "तीन पंक्तियाँ तुलना का मान, लक्ष्य से उसका संबंध और अंतराल में बदलाव बताती हैं।", "sourceLocator": "src.locale.brief#Invariant values" },
+    { "id": "scene.locale.recap", "type": "recap", "title": "संभावनाएँ आधी करें", "objectiveIds": ["obj.locale.explain", "obj.locale.trace"], "claimIds": [], "narration": "क्रमबद्ध होने की शर्त बनाए रखें, मध्य मान से तुलना करें और संभावित स्थान आधे करें। समय जटिलता O log n है।", "visualIntent": "छोटा कॉन्सेप्ट थ्रेड O(log n) को बिना बदले हुए गणितीय टोकन के रूप में दिखाता है।", "captionText": "क्रमबद्ध सूची • मध्य मान • आधी संभावनाएँ • O(log n)", "accessibilityDescription": "चार चरणों का सार क्रम, मध्य तुलना, छोटा अंतराल और समय जटिलता बताता है।" }
+  ],
+  "outputTargets": [{ "name": "landscape", "width": 1920, "height": 1080, "fps": 30 }, { "name": "portrait", "width": 1080, "height": 1920, "fps": 30 }],
+  "qualityAssertions": [
+    { "id": "qa.locale.hi.invariants", "category": "localization", "severity": "release-blocking", "check": "localization.glossary-invariants", "description": "संख्याएँ, कोड और समय जटिलता बिल्कुल समान रहते हैं।", "expected": [16, 56, 23, 5, "O(log n)"] },
+    { "id": "qa.locale.hi.glyphs", "category": "localization", "severity": "release-blocking", "check": "localization.caption-glyphs", "description": "देवनागरी मात्रा, संयुक्त अक्षर और गणितीय चिह्न बिना टूटे रेंडर होते हैं।", "expected": true },
+    { "id": "qa.locale.hi.parity", "category": "localization", "severity": "release-blocking", "check": "localization.semantic-parity", "description": "यह रूपांतर दोनों उद्देश्यों और क्रम के ठीक अर्थ को बनाए रखता है।", "expected": 1.0 },
+    { "id": "qa.locale.hi.render", "category": "render", "severity": "release-blocking", "check": "render.deterministic-all-targets", "description": "दोनों आकारों में देवनागरी के सही पंक्ति-विभाजन के साथ स्थिर रेंडर मिलता है।", "expected": true }
+  ],
+  "provenance": { "fixtureAuthor": "Alystria fixture authors", "createdAt": "2026-08-28T00:00:00Z", "licenseExpression": "CC0-1.0", "networkRequired": false, "containsPersonalData": false, "notes": "हिंदी पाठ स्थानीय रूप से लिखा गया है और जाँच क्रम अंग्रेज़ी व स्पेनिश रूपांतर से मेल खाता है।" }
+}

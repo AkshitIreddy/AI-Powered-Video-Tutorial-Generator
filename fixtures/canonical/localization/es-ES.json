@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture.localization.binary-search.es-es",
+  "variantOf": "fixture.binary-search.trace.en",
+  "title": "Recorrido de búsqueda binaria — español",
+  "domain": "localization",
+  "purpose": "Variante en español para comprobar la equivalencia semántica, la conservación de números y código, los subtítulos, la alineación de voz y la composición localizada.",
+  "locale": "es-ES",
+  "durationSeconds": 150,
+  "deterministicSeed": 52305,
+  "groundingMode": "strict",
+  "learner": { "audience": "Personas que empiezan a programar y usan español de España.", "knowledgeLevel": "beginner", "prerequisites": ["Listas ordenadas", "Índices que empiezan en cero"], "accessibilityNeeds": ["captions", "descriptive-transcript", "reduced-motion", "high-contrast"] },
+  "objectives": [
+    { "id": "obj.locale.explain", "statement": "Explicar por qué el orden permite usar la búsqueda binaria.", "criteria": ["Indica que la lista debe estar ordenada", "Describe la comparación con el punto medio"] },
+    { "id": "obj.locale.trace", "statement": "Conservar exactamente los tres pasos y el resultado en todos los idiomas.", "criteria": ["Los valores centrales son 16, 56 y 23", "El resultado es el índice 5"] }
+  ],
+  "sources": [
+    { "id": "src.locale.brief", "path": "sources/localization-brief.md", "sha256": "e785133a569666726c2dbd77933c27dace44f4626edf7d993a75fe02615f113a", "mimeType": "text/markdown", "title": "Localization parity brief", "creator": "Alystria fixture authors", "licenseExpression": "CC0-1.0", "origin": "locally-authored", "storagePolicy": "copied", "rightsStatus": "cleared", "externalEvidenceUris": [] }
+  ],
+  "claims": [
+    { "id": "claim.locale.requirement", "statement": "La búsqueda binaria depende del orden para descartar un lado después de cada comparación.", "claimType": "procedural", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.locale.brief", "locator": "Opening sentence and invariant list", "relationship": "supports" }] },
+    { "id": "claim.locale.trace", "statement": "El recorrido compara 16, 56 y 23, y devuelve el índice 5.", "claimType": "quantitative", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.locale.brief", "locator": "Invariant values", "relationship": "entails" }] }
+  ],
+  "scenes": [
+    { "id": "scene.locale.intro", "type": "definition", "title": "Por qué importa el orden", "objectiveIds": ["obj.locale.explain"], "claimIds": ["claim.locale.requirement"], "narration": "La búsqueda binaria funciona porque la lista está ordenada. Compara el objetivo con el punto medio y descarta el lado que no puede contenerlo.", "visualIntent": "Una lista ordenada conserva los números y muestra marcadores bajo, medio y alto con etiquetas localizadas.", "captionText": "El orden permite descartar un lado con seguridad.", "accessibilityDescription": "Una lista ordenada muestra el intervalo candidato inclusivo y un punto medio." },
+    { "id": "scene.locale.trace", "type": "execution-trace", "title": "Encontrar 23", "objectiveIds": ["obj.locale.trace"], "claimIds": ["claim.locale.trace"], "narration": "Primero comparamos 16. El objetivo es mayor. Después comparamos 56. El objetivo es menor. Por último comparamos 23 y devolvemos el índice 5.", "visualIntent": "Tres filas conservan exactamente valores, índices y elementos de código en los tres idiomas.", "captionText": "16 → 56 → 23 • resultado: índice 5", "accessibilityDescription": "Tres filas indican el valor comparado, su relación con el objetivo y la actualización del intervalo.", "sourceLocator": "src.locale.brief#Invariant values" },
+    { "id": "scene.locale.recap", "type": "recap", "title": "Reducir los candidatos a la mitad", "objectiveIds": ["obj.locale.explain", "obj.locale.trace"], "claimIds": [], "narration": "Mantén el orden, compara el punto medio y reduce los candidatos a la mitad. El tiempo de ejecución es O log n.", "visualIntent": "Un hilo conceptual breve termina con O(log n) como elemento matemático sin traducir.", "captionText": "Lista ordenada • punto medio • queda la mitad • O(log n)", "accessibilityDescription": "Un resumen de cuatro pasos enumera el orden, la comparación central, el intervalo reducido y la complejidad." }
+  ],
+  "outputTargets": [{ "name": "landscape", "width": 1920, "height": 1080, "fps": 30 }, { "name": "portrait", "width": 1080, "height": 1920, "fps": 30 }],
+  "qualityAssertions": [
+    { "id": "qa.locale.es.invariants", "category": "localization", "severity": "release-blocking", "check": "localization.glossary-invariants", "description": "Los números, el código y la complejidad se conservan exactamente.", "expected": [16, 56, 23, 5, "O(log n)"] },
+    { "id": "qa.locale.es.glyphs", "category": "localization", "severity": "release-blocking", "check": "localization.caption-glyphs", "description": "Se muestran correctamente letras acentuadas, eñe, signos y glifos matemáticos.", "expected": true },
+    { "id": "qa.locale.es.parity", "category": "localization", "severity": "release-blocking", "check": "localization.semantic-parity", "description": "La variante conserva los dos objetivos y el significado exacto del recorrido.", "expected": 1.0 },
+    { "id": "qa.locale.es.render", "category": "render", "severity": "release-blocking", "check": "render.deterministic-all-targets", "description": "Ambos formatos se generan de forma determinista con cortes de línea adecuados.", "expected": true }
+  ],
+  "provenance": { "fixtureAuthor": "Alystria fixture authors", "createdAt": "2026-08-28T00:00:00Z", "licenseExpression": "CC0-1.0", "networkRequired": false, "containsPersonalData": false, "notes": "Traducción al español redactada localmente y emparejada por secuencia de comprobaciones con inglés e hindi." }
+}

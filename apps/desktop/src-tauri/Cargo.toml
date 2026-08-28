@@ -1,0 +1,49 @@
+[package]
+name = "alystria-desktop"
+version = "2.0.0-rc.0"
+description = "Minimal-privilege desktop broker for Alystria Studio"
+authors = ["Alystria Studio contributors"]
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+publish = false
+
+[lib]
+name = "alystria_desktop"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "alystria-studio"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+directories = "6"
+ed25519-dalek = "2"
+fs2 = "0.4"
+keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
+parking_lot = "0.12"
+rand = "0.9"
+semver = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_jcs = "0.1"
+serde_json = "1"
+sha2 = "0.10"
+sysinfo = "0.37"
+tauri = { version = "2", features = [] }
+uuid = { version = "1", features = ["serde", "v7"] }
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "s"
+panic = "abort"
+strip = "symbols"

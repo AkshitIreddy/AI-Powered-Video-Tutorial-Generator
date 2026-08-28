@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.alystria.studio/v2/project.schema.json",
+  "title": "Alystria project and course hierarchy",
+  "$defs": {
+    "Section": {
+      "type": "object", "additionalProperties": false, "required": ["id", "lessonId", "title", "position", "objectiveIds", "sceneIds"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "lessonId": { "$ref": "common.schema.json#/$defs/Id" }, "title": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "position": { "type": "integer", "minimum": 0 }, "objectiveIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "sceneIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "notes": { "type": "string", "maxLength": 10000 }
+      }
+    },
+    "Lesson": {
+      "type": "object", "additionalProperties": false, "required": ["id", "moduleId", "title", "position", "locale", "sectionIds", "objectiveIds"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "moduleId": { "$ref": "common.schema.json#/$defs/Id" }, "title": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "position": { "type": "integer", "minimum": 0 }, "locale": { "$ref": "common.schema.json#/$defs/Locale" }, "sectionIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "objectiveIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "estimatedDurationSeconds": { "type": "integer", "minimum": 1, "maximum": 14400 }
+      }
+    },
+    "CourseModule": {
+      "type": "object", "additionalProperties": false, "required": ["id", "courseId", "title", "position", "lessonIds"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "courseId": { "$ref": "common.schema.json#/$defs/Id" }, "title": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "position": { "type": "integer", "minimum": 0 }, "lessonIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "description": { "type": "string", "maxLength": 5000 }
+      }
+    },
+    "Course": {
+      "type": "object", "additionalProperties": false, "required": ["id", "projectId", "title", "description", "locale", "moduleIds", "learnerProfileId"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "projectId": { "$ref": "common.schema.json#/$defs/Id" }, "title": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "description": { "type": "string", "maxLength": 10000 }, "locale": { "$ref": "common.schema.json#/$defs/Locale" }, "moduleIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "learnerProfileId": { "$ref": "common.schema.json#/$defs/Id" }, "tags": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 100 }, "uniqueItems": true }
+      }
+    },
+    "ProjectSettings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["groundingMode", "quality", "budgetProfile", "executionMode", "captionsEnabled", "musicEnabled", "presenterMode", "repairLimit", "privacyClassification"],
+      "properties": {
+        "groundingMode": { "enum": ["creative", "grounded", "strict"] }, "quality": { "enum": ["draft", "standard", "high", "maximum"] }, "budgetProfile": { "enum": ["economy", "balanced", "quality", "custom"] },
+        "executionMode": { "enum": ["cloud", "local", "hybrid"] }, "captionsEnabled": { "type": "boolean" }, "musicEnabled": { "type": "boolean" }, "presenterMode": { "enum": ["none", "auto", "always"] },
+        "repairLimit": { "type": "integer", "minimum": 0, "maximum": 2 }, "privacyClassification": { "enum": ["public", "internal", "private", "restricted"] }, "crossProviderCritique": { "type": "boolean" }
+      }
+    },
+    "Project": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "schemaVersion", "name", "status", "createdAt", "updatedAt", "headRevisionId", "courseIds", "settings"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "schemaVersion": { "const": "2.0.0" }, "name": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "description": { "type": "string", "maxLength": 10000 }, "status": { "enum": ["draft", "active", "archived", "read-only", "migration-required", "corrupt"] },
+        "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "updatedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "headRevisionId": { "$ref": "common.schema.json#/$defs/Id" },
+        "courseIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "settings": { "$ref": "#/$defs/ProjectSettings" },
+        "defaultThemeId": { "$ref": "common.schema.json#/$defs/Id" }, "projectRootHint": { "type": "string", "maxLength": 1024 }
+      }
+    },
+    "RevisionChange": {
+      "type": "object", "additionalProperties": false, "required": ["operation", "entity", "beforeHash", "afterHash", "invalidatedTaskKinds"],
+      "properties": {
+        "operation": { "enum": ["create", "update", "delete", "restore", "approve", "lock", "unlock"] }, "entity": { "$ref": "common.schema.json#/$defs/EntityRef" },
+        "beforeHash": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Sha256" }, { "type": "null" }] }, "afterHash": { "anyOf": [{ "$ref": "common.schema.json#/$defs/Sha256" }, { "type": "null" }] },
+        "invalidatedTaskKinds": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 100 }, "uniqueItems": true }
+      }
+    },
+    "ProjectRevision": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "projectId", "parentRevisionIds", "number", "kind", "message", "author", "createdAt", "rootHash", "changes", "approvalStatus"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "projectId": { "$ref": "common.schema.json#/$defs/Id" }, "parentRevisionIds": { "type": "array", "maxItems": 2, "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "number": { "type": "integer", "minimum": 1 }, "kind": { "enum": ["manual", "generation", "regeneration", "restore", "migration", "approval", "import"] }, "message": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "author": { "enum": ["user", "system", "provider", "migration"] }, "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "rootHash": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "changes": { "type": "array", "items": { "$ref": "#/$defs/RevisionChange" } }, "approvalStatus": { "enum": ["draft", "proposed", "approved", "rejected", "superseded"] }, "snapshotName": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "ProjectManifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format", "schemaVersion", "projectId", "databasePath", "objectsPath", "sourcesPath", "stagingPath", "exportsPath", "createdAt", "minimumAppVersion"],
+      "properties": {
+        "format": { "const": "alystria-project" }, "schemaVersion": { "const": "2.0.0" }, "projectId": { "$ref": "common.schema.json#/$defs/Id" },
+        "databasePath": { "$ref": "common.schema.json#/$defs/RelativePath" }, "objectsPath": { "$ref": "common.schema.json#/$defs/RelativePath" }, "sourcesPath": { "$ref": "common.schema.json#/$defs/RelativePath" },
+        "stagingPath": { "$ref": "common.schema.json#/$defs/RelativePath" }, "exportsPath": { "$ref": "common.schema.json#/$defs/RelativePath" }, "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "minimumAppVersion": { "type": "string", "maxLength": 100 }, "readOnlyReason": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "ProjectBundle": {
+      "type": "object", "additionalProperties": false,
+      "required": ["manifest", "project", "courses", "modules", "lessons", "sections", "revisions", "research", "storyboards", "renderManifests", "artifacts", "provenance", "consents", "providers", "models", "pricing", "usage", "generationRuns", "jobs", "tasks", "attempts", "events", "qualityGates", "exports", "plugins"],
+      "properties": {
+        "manifest": { "$ref": "#/$defs/ProjectManifest" }, "project": { "$ref": "#/$defs/Project" }, "courses": { "type": "array", "items": { "$ref": "#/$defs/Course" } },
+        "modules": { "type": "array", "items": { "$ref": "#/$defs/CourseModule" } }, "lessons": { "type": "array", "items": { "$ref": "#/$defs/Lesson" } }, "sections": { "type": "array", "items": { "$ref": "#/$defs/Section" } },
+        "revisions": { "type": "array", "items": { "$ref": "#/$defs/ProjectRevision" } }, "research": { "$ref": "research.schema.json#/$defs/ResearchBundle" }, "storyboards": { "type": "array", "items": { "$ref": "storyboard.schema.json#/$defs/StoryboardSnapshot" } }, "renderManifests": { "type": "array", "items": { "$ref": "storyboard.schema.json#/$defs/RenderManifest" } },
+        "artifacts": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/Artifact" } }, "provenance": { "type": "array", "items": { "$ref": "media.schema.json#/$defs/AssetProvenance" } }, "consents": { "type": "array", "items": { "$ref": "media.schema.json#/$defs/ConsentRecord" } },
+        "providers": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/ProviderDescriptor" } }, "models": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/ModelDescriptor" } }, "pricing": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/PricingRule" } },
+        "usage": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/UsageRecord" } }, "generationRuns": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/GenerationRun" } }, "jobs": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/JobRun" } }, "tasks": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/TaskRun" } },
+        "attempts": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/TaskAttempt" } }, "events": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/JobEvent" } }, "qualityGates": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/QualityGate" } },
+        "exports": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/ExportSpec" } }, "plugins": { "type": "array", "items": { "$ref": "execution.schema.json#/$defs/PluginManifest" } }
+      }
+    }
+  },
+  "$ref": "#/$defs/ProjectBundle"
+}

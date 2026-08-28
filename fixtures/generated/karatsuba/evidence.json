@@ -1,0 +1,114 @@
+{
+  "claims": [
+    {
+      "evidenceChunkIds": [
+        "evspan_d79be9b972b27062400a6d34"
+      ],
+      "evidenceLinks": [
+        {
+          "confidence": 0.9023489932885906,
+          "evidenceChunkId": "evspan_d79be9b972b27062400a6d34",
+          "rationale": "Exact span substantively matches the claim (lexical=1.000, structured=1.000).",
+          "relation": "supports"
+        }
+      ],
+      "externallyVerifiable": true,
+      "id": "claim.karatsuba.identity",
+      "importance": "critical",
+      "statement": "The middle coefficient ad+bc equals (a+b)(c+d)-ac-bd.",
+      "status": "supported"
+    },
+    {
+      "evidenceChunkIds": [
+        "evspan_544776b62f9ccc4dfd5f3345"
+      ],
+      "evidenceLinks": [
+        {
+          "confidence": 0.8735074626865672,
+          "evidenceChunkId": "evspan_544776b62f9ccc4dfd5f3345",
+          "rationale": "Exact span substantively matches the claim (lexical=1.000, structured=1.000).",
+          "relation": "supports"
+        }
+      ],
+      "externallyVerifiable": true,
+      "id": "claim.karatsuba.answer",
+      "importance": "critical",
+      "statement": "1234 × 5678 equals 7,006,652.",
+      "status": "supported"
+    },
+    {
+      "evidenceChunkIds": [
+        "evspan_ae34fb87ce5a6f5ea722c66e"
+      ],
+      "evidenceLinks": [
+        {
+          "confidence": 0.8891557223264541,
+          "evidenceChunkId": "evspan_ae34fb87ce5a6f5ea722c66e",
+          "rationale": "Exact span substantively matches the claim (lexical=0.923, structured=1.000).",
+          "relation": "supports"
+        }
+      ],
+      "externallyVerifiable": true,
+      "id": "claim.karatsuba.complexity",
+      "importance": "high",
+      "statement": "The recurrence T(n)=3T(n/2)+O(n) solves to O(n^log2(3)), approximately O(n^1.585).",
+      "status": "supported"
+    }
+  ],
+  "evidenceChunks": [
+    {
+      "id": "ev_42d2d3b49c65eab098fb9b3f",
+      "locator": "fixture:karatsuba/sources/karatsuba-derivation.md#chars=0-1118",
+      "ordinal": 0,
+      "sha256": "d68c8d151fce614dc30688e5aa932500dcd0562dbb112883bb2eb2b7b2fa4f82",
+      "sourceId": "src_d46f74a6134f61124efff7bf",
+      "sourceVersionId": "srcv_7ad4c6cf9e13cbb3c7a8e640",
+      "text": "# Karatsuba multiplication: deterministic teaching note\n\nLet a base-ten integer be split at `m` digits:\n\n`x = a × 10^m + b` and `y = c × 10^m + d`.\n\nDirect expansion is\n\n`xy = ac × 10^(2m) + (ad + bc) × 10^m + bd`.\n\nDefine three recursive products:\n\n- `z2 = ac`\n- `z0 = bd`\n- `p = (a + b)(c + d)`\n\nBecause `p = ac + ad + bc + bd`, the middle coefficient is\n\n`z1 = p − z2 − z0 = ad + bc`.\n\nTherefore\n\n`xy = z2 × 10^(2m) + z1 × 10^m + z0`.\n\n## Worked example: 1234 × 5678\n\nSplit at two digits: `a=12`, `b=34`, `c=56`, `d=78`, and `10^m=100`.\n\n- `z2 = 12 × 56 = 672`\n- `z0 = 34 × 78 = 2652`\n- `p = 46 × 134 = 6164`\n- `z1 = 6164 − 672 − 2652 = 2840`\n\nRecombine:\n\n`672 × 10000 + 2840 × 100 + 2652 = 6,720,000 + 284,000 + 2,652 = 7,006,652`.\n\nThe recurrence for equal-sized operands is `T(n)=3T(n/2)+O(n)`, giving `O(n^(log2 3))`, approximately `O(n^1.585)`, compared with grade-school `O(n^2)` single-digit multiplications.\n\nThis note is locally authored test material. Reviewer context: Karatsuba and Ofman's original 1962 result is discussed in standard algorithms literature; the fixture does not require network access."
+    },
+    {
+      "id": "evspan_d79be9b972b27062400a6d34",
+      "locator": "fixture:karatsuba/sources/karatsuba-derivation.md#chars=250-387",
+      "ordinal": 0,
+      "sha256": "cf129659cb711c6802224a30578125369c86959370c85410c6748b3d7af82ec7",
+      "sourceId": "src_d46f74a6134f61124efff7bf",
+      "sourceVersionId": "srcv_7ad4c6cf9e13cbb3c7a8e640",
+      "text": "- `z2 = ac`\n- `z0 = bd`\n- `p = (a + b)(c + d)`\n\nBecause `p = ac + ad + bc + bd`, the middle coefficient is\n\n`z1 = p − z2 − z0 = ad + bc`."
+    },
+    {
+      "id": "evspan_544776b62f9ccc4dfd5f3345",
+      "locator": "fixture:karatsuba/sources/karatsuba-derivation.md#chars=439-735",
+      "ordinal": 0,
+      "sha256": "6ba79c3a4621124f9362164a541d682a96dc9347d078b1e4823ce05dd4a3ef56",
+      "sourceId": "src_d46f74a6134f61124efff7bf",
+      "sourceVersionId": "srcv_7ad4c6cf9e13cbb3c7a8e640",
+      "text": "## Worked example: 1234 × 5678\n\nSplit at two digits: `a=12`, `b=34`, `c=56`, `d=78`, and `10^m=100`.\n\n- `z2 = 12 × 56 = 672`\n- `z0 = 34 × 78 = 2652`\n- `p = 46 × 134 = 6164`\n- `z1 = 6164 − 672 − 2652 = 2840`\n\nRecombine:\n\n`672 × 10000 + 2840 × 100 + 2652 = 6,720,000 + 284,000 + 2,652 = 7,006,652`."
+    },
+    {
+      "id": "evspan_ae34fb87ce5a6f5ea722c66e",
+      "locator": "fixture:karatsuba/sources/karatsuba-derivation.md#chars=737-918",
+      "ordinal": 0,
+      "sha256": "dc53e98657be1fa0cdbe5fc73abd93431ca87c6d6aaa9ac4af311792cf4f0e07",
+      "sourceId": "src_d46f74a6134f61124efff7bf",
+      "sourceVersionId": "srcv_7ad4c6cf9e13cbb3c7a8e640",
+      "text": "The recurrence for equal-sized operands is `T(n)=3T(n/2)+O(n)`, giving `O(n^(log2 3))`, approximately `O(n^1.585)`, compared with grade-school `O(n^2)` single-digit multiplications."
+    }
+  ],
+  "policy": {
+    "accepted": true,
+    "findings": [],
+    "mode": "strict"
+  },
+  "sources": [
+    {
+      "artifactHash": null,
+      "creator": "Alystria fixture authors",
+      "id": "src.karatsuba.note",
+      "licenseId": "CC0-1.0",
+      "locator": "fixture:karatsuba/sources/karatsuba-derivation.md",
+      "locatorMetadata": {},
+      "sha256": "f41b99dc57296129f0d5466585de0542146c52bf7af3e12f2c297eef764d62d1",
+      "title": "Karatsuba multiplication: deterministic teaching note",
+      "versionId": "srcv_7ad4c6cf9e13cbb3c7a8e640"
+    }
+  ]
+}

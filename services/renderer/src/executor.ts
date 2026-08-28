@@ -1,0 +1,719 @@
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { constants } from "node:fs";
+import {
+  access,
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { dirname, extname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import {
+  createPlaywrightChromiumDriver,
+  PinnedBrowserCapture,
+  sha256File,
+  type CaptureResult,
+  type ChromiumDriver,
+} from "./browser.js";
+import { toSrt, toWebVtt } from "./captions.js";
+import { assertRenderManifest, type AudioInput, type CaptionCue, type RenderManifest } from "./contracts.js";
+import {
+  planAudioMaster,
+  planDecodeValidation,
+  planDeliveryEncode,
+  planFrameSequenceToFfv1,
+  planProbe,
+  planSilentAudio,
+  type CommandPlan,
+  type DeliveryOptions,
+} from "./ffmpeg.js";
+import { missingRanges, planRenderChunks, type FrameRange } from "./ranges.js";
+import { FrameRenderer, RENDERER_VERSION, totalFrames } from "./runtime.js";
+import { frameToTick, tickToFrameCeil, ticksPerFrame, ticksToSeconds } from "./timebase.js";
+
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const OUTPUT_SCHEMA_VERSION = 1;
+const DEFAULT_CHUNK_FRAMES = 120;
+const DEFAULT_CONCURRENCY = 2;
+const MAX_CAPTURE_CONCURRENCY = 8;
+const MAX_PROCESS_OUTPUT_BYTES = 16 * 1024 * 1024;
+let atomicWriteSequence = 0;
+
+export type RenderSelection =
+  | Readonly<{ kind: "full" }>
+  | Readonly<{ kind: "draft"; maximumDimension?: number }>
+  | Readonly<{ kind: "range"; startFrame: number; endFrame: number }>
+  | Readonly<{ kind: "scene"; sceneId: string }>;
+
+export interface ExecutablePaths {
+  /** Omit to use the Chromium revision owned by playwright-core. */
+  readonly browser?: string;
+  readonly ffmpeg: string;
+  readonly ffprobe: string;
+}
+
+export interface ProcessResult {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export interface CommandRunner {
+  run(executable: string, args: readonly string[], options: Readonly<{ signal?: AbortSignal; cwd?: string }>): Promise<ProcessResult>;
+}
+
+export interface RenderProgressEvent {
+  readonly schemaVersion: 1;
+  readonly sequence: number;
+  readonly manifestId: string;
+  readonly phase: "prepare" | "capture" | "mezzanine" | "audio" | "delivery" | "qa" | "complete" | "cancelled" | "failed";
+  readonly status: "started" | "progress" | "completed" | "failed";
+  readonly message: string;
+  readonly completed?: number;
+  readonly total?: number;
+  readonly frame?: number;
+  readonly chunk?: number;
+  readonly outputPath?: string;
+}
+
+export interface RenderOutputFile {
+  readonly kind: "mezzanine" | "delivery" | "audio-master" | "captions-vtt" | "captions-srt";
+  readonly path: string;
+  readonly bytes: number;
+  readonly sha256: string;
+}
+
+export interface RenderProbeSummary {
+  readonly videoCodec: string;
+  readonly width: number;
+  readonly height: number;
+  readonly frameRate: string;
+  readonly durationSeconds: number;
+  readonly audioCodec: string;
+  readonly audioSampleRate: number;
+  readonly audioChannels: number;
+  readonly captionCodec: string;
+  readonly colorSpace: string;
+  readonly colorTransfer: string;
+  readonly colorPrimaries: string;
+}
+
+export interface RenderOutputManifest {
+  readonly schemaVersion: 1;
+  readonly manifestId: string;
+  readonly inputManifestSha256: string;
+  readonly renderKey: string;
+  readonly selection: RenderSelection;
+  readonly frameRange: FrameRange;
+  readonly frameCount: number;
+  readonly startTick: number;
+  readonly durationTicks: number;
+  readonly target: RenderManifest["target"];
+  readonly browser: Readonly<{ executablePath: string; version: string; sha256: string; networkPolicy: "deny" }>;
+  readonly executables: Readonly<{ ffmpeg: string; ffprobe: string }>;
+  readonly frames: readonly Readonly<{ frame: number; contentSha256: string; pngSha256: string }>[];
+  readonly files: readonly RenderOutputFile[];
+  readonly probe: RenderProbeSummary;
+  readonly progressPath: string;
+  readonly outputManifestPath: string;
+}
+
+export interface RenderExecutorDependencies {
+  readonly commandRunner?: CommandRunner;
+  readonly browserFactory?: (options: Readonly<{
+    executablePath?: string;
+    width: number;
+    height: number;
+    deviceScaleFactor: number;
+  }>) => Promise<ChromiumDriver>;
+  readonly frameRenderer?: FrameRenderer;
+}
+
+export interface RenderExecutorOptions {
+  readonly manifest: RenderManifest;
+  readonly selection?: RenderSelection;
+  readonly outputDirectory?: string;
+  readonly outputName?: string;
+  readonly executables: ExecutablePaths;
+  readonly expectedBrowserVersion?: string;
+  readonly expectedBrowserSha256?: string;
+  readonly concurrency?: number;
+  readonly maximumFramesPerChunk?: number;
+  readonly resume?: boolean;
+  readonly keepFrameCache?: boolean;
+  readonly delivery?: DeliveryOptions;
+  readonly progressPath?: string;
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (event: RenderProgressEvent) => void | Promise<void>;
+  readonly dependencies?: RenderExecutorDependencies;
+}
+
+interface CaptureCheckpoint {
+  readonly schemaVersion: 1;
+  readonly renderKey: string;
+  readonly frames: Readonly<Record<string, Readonly<{ contentHash: string; outputSha256: string; browserVersion: string }>>>;
+}
+
+interface ProbeDocument {
+  readonly streams?: readonly Readonly<Record<string, unknown>>[];
+  readonly format?: Readonly<Record<string, unknown>>;
+  readonly error?: unknown;
+}
+
+function abortError(): Error {
+  const error = new Error("Render cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw abortError();
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, part]) => part !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([key, part]) => `${JSON.stringify(key)}:${stableJson(part)}`).join(",")}}`;
+}
+
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function atomicWrite(path: string, contents: string | Uint8Array): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const sequence = atomicWriteSequence;
+  atomicWriteSequence += 1;
+  const temporary = `${path}.tmp-${process.pid}-${sequence}`;
+  await writeFile(temporary, contents);
+  await rm(path, { force: true });
+  await rename(temporary, path);
+}
+
+function positiveInteger(value: number, label: string, maximum = Number.MAX_SAFE_INTEGER): number {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) {
+    throw new RangeError(`${label} must be a positive safe integer no greater than ${maximum}`);
+  }
+  return value;
+}
+
+function sanitizeOutputName(value: string): string {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(value) || value === "." || value === "..") {
+    throw new TypeError("outputName must be a plain filename containing only letters, digits, dot, underscore, or dash");
+  }
+  return value;
+}
+
+function scaleDraftManifest(manifest: RenderManifest, selection: Extract<RenderSelection, { kind: "draft" }>): RenderManifest {
+  const maximumDimension = positiveInteger(selection.maximumDimension ?? 960, "draft maximumDimension", 2160);
+  const largest = Math.max(manifest.target.width, manifest.target.height);
+  if (largest <= maximumDimension && manifest.target.pixelRatio === 1) return manifest;
+  const scale = Math.min(1, maximumDimension / largest);
+  const even = (value: number): number => Math.max(64, Math.round(value / 2) * 2);
+  return {
+    ...manifest,
+    target: {
+      ...manifest.target,
+      width: even(manifest.target.width * scale),
+      height: even(manifest.target.height * scale),
+      pixelRatio: 1,
+    },
+  };
+}
+
+function resolveFrameRange(manifest: RenderManifest, selection: RenderSelection): FrameRange {
+  const allFrames = totalFrames(manifest);
+  if (selection.kind === "full" || selection.kind === "draft") return { startFrame: 0, endFrame: allFrames };
+  if (selection.kind === "range") {
+    if (!Number.isSafeInteger(selection.startFrame) || !Number.isSafeInteger(selection.endFrame) || selection.startFrame < 0 || selection.endFrame <= selection.startFrame || selection.endFrame > allFrames) {
+      throw new RangeError(`Requested frame range [${selection.startFrame}, ${selection.endFrame}) is outside [0, ${allFrames})`);
+    }
+    return { startFrame: selection.startFrame, endFrame: selection.endFrame };
+  }
+  let startTick = 0;
+  for (const scene of manifest.scenes) {
+    const endTick = startTick + scene.durationTicks;
+    if (scene.id === selection.sceneId) {
+      return {
+        startFrame: tickToFrameCeil(startTick, manifest.target.frameRate),
+        endFrame: tickToFrameCeil(endTick, manifest.target.frameRate),
+      };
+    }
+    startTick = endTick;
+  }
+  throw new TypeError(`Unknown scene ${selection.sceneId}`);
+}
+
+function collectCaptions(manifest: RenderManifest, range: FrameRange): readonly CaptionCue[] {
+  const rangeStartTick = frameToTick(range.startFrame, manifest.target.frameRate);
+  const rangeEndTick = frameToTick(range.endFrame, manifest.target.frameRate);
+  const cues: CaptionCue[] = [];
+  let sceneStartTick = 0;
+  for (const scene of manifest.scenes) {
+    for (const cue of scene.captions ?? []) {
+      const globalStart = sceneStartTick + cue.startTick;
+      const globalEnd = sceneStartTick + cue.endTick;
+      const clippedStart = Math.max(globalStart, rangeStartTick);
+      const clippedEnd = Math.min(globalEnd, rangeEndTick);
+      if (clippedEnd <= clippedStart) continue;
+      cues.push({
+        ...cue,
+        id: `${scene.id}-${cue.id}`,
+        startTick: clippedStart - rangeStartTick,
+        endTick: clippedEnd - rangeStartTick,
+      });
+    }
+    sceneStartTick += scene.durationTicks;
+  }
+  return cues;
+}
+
+function deliveryExtension(codec: DeliveryOptions["codec"]): ".mp4" | ".webm" {
+  return codec === "vp9" || codec === "av1" ? ".webm" : ".mp4";
+}
+
+function assertOutputExtension(path: string, codec: DeliveryOptions["codec"]): void {
+  const suffix = extname(path).toLowerCase();
+  if (codec === "vp9" || codec === "av1") {
+    if (suffix !== ".webm" && suffix !== ".mkv") throw new TypeError(`${codec} delivery output must use .webm or .mkv`);
+  } else if (suffix !== ".mp4" && suffix !== ".mov" && suffix !== ".m4v") {
+    throw new TypeError(`${codec} delivery output must use .mp4, .mov, or .m4v`);
+  }
+}
+
+async function isValidPng(path: string): Promise<boolean> {
+  try {
+    const bytes = await readFile(path);
+    return bytes.length > PNG_SIGNATURE.length && bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE);
+  } catch {
+    return false;
+  }
+}
+
+async function outputFile(kind: RenderOutputFile["kind"], path: string): Promise<RenderOutputFile> {
+  const info = await stat(path);
+  if (!info.isFile() || info.size <= 0) throw new Error(`Expected ${kind} output is missing or empty: ${path}`);
+  return { kind, path, bytes: info.size, sha256: await sha256File(path) };
+}
+
+function numberField(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return fallback;
+}
+
+function stringField(value: unknown, fallback = "unknown"): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function validateProbe(document: ProbeDocument, manifest: RenderManifest, expectedDurationSeconds: number): RenderProbeSummary {
+  if (document.error) throw new Error(`ffprobe reported an error: ${JSON.stringify(document.error)}`);
+  const streams = document.streams ?? [];
+  const video = streams.find((stream) => stream.codec_type === "video");
+  const audio = streams.find((stream) => stream.codec_type === "audio");
+  const subtitle = streams.find((stream) => stream.codec_type === "subtitle");
+  if (!video) throw new Error("Delivery QA failed: video stream is missing");
+  if (!audio) throw new Error("Delivery QA failed: 48 kHz audio stream is missing");
+  if (!subtitle) throw new Error("Delivery QA failed: embedded caption stream is missing");
+  const width = numberField(video.width);
+  const height = numberField(video.height);
+  if (width !== manifest.target.width || height !== manifest.target.height) {
+    throw new Error(`Delivery QA failed: expected ${manifest.target.width}x${manifest.target.height}, got ${width}x${height}`);
+  }
+  const audioSampleRate = numberField(audio.sample_rate);
+  if (audioSampleRate !== 48_000) throw new Error(`Delivery QA failed: expected 48000 Hz audio, got ${audioSampleRate}`);
+  const audioChannels = numberField(audio.channels);
+  if (audioChannels < 1) throw new Error("Delivery QA failed: audio channel count is missing or zero");
+  const frameRate = stringField(video.avg_frame_rate, stringField(video.r_frame_rate));
+  const [rateNumeratorText, rateDenominatorText] = frameRate.split("/");
+  const actualRate = Number(rateNumeratorText) / Number(rateDenominatorText);
+  const expectedRate = manifest.target.frameRate.numerator / manifest.target.frameRate.denominator;
+  if (!Number.isFinite(actualRate) || Math.abs(actualRate - expectedRate) > 0.000_001) {
+    throw new Error(`Delivery QA failed: expected ${manifest.target.frameRate.numerator}/${manifest.target.frameRate.denominator} fps, got ${frameRate}`);
+  }
+  const colorSpace = stringField(video.color_space);
+  const colorTransfer = stringField(video.color_transfer);
+  const colorPrimaries = stringField(video.color_primaries);
+  if (colorSpace !== "bt709" || colorTransfer !== "iec61966-2-1" || colorPrimaries !== "bt709") {
+    throw new Error(`Delivery QA failed: expected Rec.709/sRGB tags, got ${colorSpace}/${colorTransfer}/${colorPrimaries}`);
+  }
+  const durationSeconds = numberField(document.format?.duration, numberField(video.duration));
+  const tolerance = (manifest.target.frameRate.denominator / manifest.target.frameRate.numerator) * 2 + 0.002;
+  if (durationSeconds <= 0 || Math.abs(durationSeconds - expectedDurationSeconds) > tolerance) {
+    throw new Error(`Delivery QA failed: expected duration ${expectedDurationSeconds.toFixed(6)}s, got ${durationSeconds.toFixed(6)}s`);
+  }
+  return {
+    videoCodec: stringField(video.codec_name),
+    width,
+    height,
+    frameRate,
+    durationSeconds,
+    audioCodec: stringField(audio.codec_name),
+    audioSampleRate,
+    audioChannels,
+    captionCodec: stringField(subtitle.codec_name),
+    colorSpace,
+    colorTransfer,
+    colorPrimaries,
+  };
+}
+
+export class SpawnCommandRunner implements CommandRunner {
+  async run(executable: string, args: readonly string[], options: Readonly<{ signal?: AbortSignal; cwd?: string }>): Promise<ProcessResult> {
+    if (!executable.trim() || /[\u0000\r\n]/.test(executable)) throw new TypeError("Executable path is empty or contains control characters");
+    throwIfAborted(options.signal);
+    return await new Promise<ProcessResult>((resolvePromise, reject) => {
+      const child = spawn(executable, [...args], {
+        cwd: options.cwd,
+        env: process.env,
+        shell: false,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = Buffer.alloc(0);
+      let stderr = Buffer.alloc(0);
+      const append = (current: Buffer, next: Buffer): Buffer => {
+        const combined = Buffer.concat([current, next]);
+        return combined.length <= MAX_PROCESS_OUTPUT_BYTES ? combined : combined.subarray(combined.length - MAX_PROCESS_OUTPUT_BYTES);
+      };
+      child.stdout.on("data", (chunk: Buffer) => { stdout = append(stdout, chunk); });
+      child.stderr.on("data", (chunk: Buffer) => { stderr = append(stderr, chunk); });
+      const abort = (): void => {
+        child.kill("SIGTERM");
+        const timer = setTimeout(() => child.kill("SIGKILL"), 2_000);
+        timer.unref();
+      };
+      options.signal?.addEventListener("abort", abort, { once: true });
+      child.once("error", reject);
+      child.once("close", (code) => {
+        options.signal?.removeEventListener("abort", abort);
+        if (options.signal?.aborted) {
+          reject(abortError());
+          return;
+        }
+        resolvePromise({ exitCode: code ?? -1, stdout: stdout.toString("utf8"), stderr: stderr.toString("utf8") });
+      });
+    });
+  }
+}
+
+class ProgressReporter {
+  readonly #path: string;
+  readonly #manifestId: string;
+  readonly #listener: RenderExecutorOptions["onProgress"];
+  #sequence = 0;
+  #pending = Promise.resolve();
+
+  constructor(path: string, manifestId: string, listener: RenderExecutorOptions["onProgress"]) {
+    this.#path = path;
+    this.#manifestId = manifestId;
+    this.#listener = listener;
+  }
+
+  async initialize(): Promise<void> {
+    await mkdir(dirname(this.#path), { recursive: true });
+    await writeFile(this.#path, "", "utf8");
+  }
+
+  async emit(event: Omit<RenderProgressEvent, "schemaVersion" | "sequence" | "manifestId">): Promise<void> {
+    const complete: RenderProgressEvent = {
+      schemaVersion: 1,
+      sequence: this.#sequence,
+      manifestId: this.#manifestId,
+      ...event,
+    };
+    this.#sequence += 1;
+    this.#pending = this.#pending.then(async () => {
+      await appendFile(this.#path, `${JSON.stringify(complete)}\n`, "utf8");
+      await this.#listener?.(complete);
+    });
+    await this.#pending;
+  }
+}
+
+async function runPlan(
+  plan: CommandPlan,
+  executables: ExecutablePaths,
+  runner: CommandRunner,
+  signal: AbortSignal | undefined,
+  cwd: string,
+): Promise<ProcessResult> {
+  throwIfAborted(signal);
+  const executable = plan.executable === "ffmpeg" ? executables.ffmpeg : executables.ffprobe;
+  const result = await runner.run(executable, plan.args, { ...(signal === undefined ? {} : { signal }), cwd });
+  if (result.exitCode !== 0) {
+    throw new Error(`${plan.description} failed with exit code ${result.exitCode}: ${result.stderr.slice(-4_000)}`);
+  }
+  for (const expected of plan.expectedOutputs) {
+    const info = await stat(expected).catch(() => undefined);
+    if (!info?.isFile() || info.size <= 0) throw new Error(`${plan.description} did not create a non-empty output: ${expected}`);
+  }
+  return result;
+}
+
+async function loadCheckpoint(path: string, renderKey: string): Promise<CaptureCheckpoint> {
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf8")) as CaptureCheckpoint;
+    if (parsed.schemaVersion === 1 && parsed.renderKey === renderKey && parsed.frames && typeof parsed.frames === "object") return parsed;
+  } catch {
+    // A missing, truncated, or stale checkpoint is safely rebuilt from scratch.
+  }
+  return { schemaVersion: 1, renderKey, frames: {} };
+}
+
+async function completedFrameSet(checkpoint: CaptureCheckpoint, frameDirectory: string): Promise<Set<number>> {
+  const complete = new Set<number>();
+  for (const [frameText, record] of Object.entries(checkpoint.frames)) {
+    const frame = Number(frameText);
+    if (!Number.isSafeInteger(frame) || frame < 0) continue;
+    const path = join(frameDirectory, `frame-${String(frame).padStart(8, "0")}.png`);
+    if (await isValidPng(path) && await sha256File(path) === record.outputSha256) complete.add(frame);
+  }
+  return complete;
+}
+
+async function captureWithConcurrency(
+  frames: readonly number[],
+  concurrency: number,
+  capture: PinnedBrowserCapture,
+  manifest: RenderManifest,
+  frameDirectory: string,
+  signal: AbortSignal | undefined,
+  onCaptured: (result: CaptureResult) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (true) {
+      throwIfAborted(signal);
+      const index = cursor;
+      cursor += 1;
+      const frame = frames[index];
+      if (frame === undefined) return;
+      const path = join(frameDirectory, `frame-${String(frame).padStart(8, "0")}.png`);
+      const result = await capture.captureFrame(manifest, frame, path);
+      throwIfAborted(signal);
+      await onCaptured(result);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, frames.length) }, worker));
+}
+
+function audioInputsForRange(manifest: RenderManifest, startTick: number, endTick: number): readonly AudioInput[] {
+  return (manifest.audioInputs ?? []).filter((input) => input.startTick < endTick && (input.endTick === undefined || input.endTick > startTick));
+}
+
+export async function executeRender(options: RenderExecutorOptions): Promise<RenderOutputManifest> {
+  assertRenderManifest(options.manifest);
+  if (options.manifest.rendererVersion !== RENDERER_VERSION) {
+    throw new TypeError(`Manifest requires renderer ${options.manifest.rendererVersion}; this executor is ${RENDERER_VERSION}`);
+  }
+  const selection = options.selection ?? { kind: "full" };
+  const manifest = selection.kind === "draft" ? scaleDraftManifest(options.manifest, selection) : options.manifest;
+  assertRenderManifest(manifest);
+  const frameRange = resolveFrameRange(manifest, selection);
+  const frameCount = frameRange.endFrame - frameRange.startFrame;
+  const startTick = frameToTick(frameRange.startFrame, manifest.target.frameRate);
+  const durationTicks = frameCount * ticksPerFrame(manifest.target.frameRate);
+  const endTick = startTick + durationTicks;
+  const concurrency = positiveInteger(options.concurrency ?? DEFAULT_CONCURRENCY, "concurrency", MAX_CAPTURE_CONCURRENCY);
+  const maximumFramesPerChunk = positiveInteger(options.maximumFramesPerChunk ?? DEFAULT_CHUNK_FRAMES, "maximumFramesPerChunk");
+  const inputManifestSha256 = sha256Text(stableJson(options.manifest));
+  const renderKey = sha256Text(stableJson({ inputManifestSha256, selection, target: manifest.target, rendererVersion: manifest.rendererVersion }));
+  const outputDirectory = resolve(options.outputDirectory ?? manifest.outputDirectory);
+  const progressPath = resolve(options.progressPath ?? join(outputDirectory, "render-progress.jsonl"));
+  const deliveryOptions: DeliveryOptions = options.delivery ?? { codec: "vp9" };
+  const outputName = sanitizeOutputName(options.outputName ?? `delivery${deliveryExtension(deliveryOptions.codec)}`);
+  const deliveryPath = join(outputDirectory, outputName);
+  assertOutputExtension(deliveryPath, deliveryOptions.codec);
+  const reporter = new ProgressReporter(progressPath, manifest.id, options.onProgress);
+  const commandRunner = options.dependencies?.commandRunner ?? new SpawnCommandRunner();
+  const browserFactory = options.dependencies?.browserFactory ?? (async (input) => createPlaywrightChromiumDriver({
+    ...(input.executablePath === undefined ? {} : { executablePath: input.executablePath }),
+    width: input.width,
+    height: input.height,
+    deviceScaleFactor: input.deviceScaleFactor,
+  }));
+  const cacheDirectory = join(outputDirectory, ".render-cache", renderKey);
+  const frameDirectory = join(cacheDirectory, "frames");
+  const checkpointPath = join(cacheDirectory, "capture-state.json");
+  const attemptDirectory = await mkdtemp(join(tmpdir(), `alystria-render-${manifest.id.replace(/[^a-zA-Z0-9_-]/g, "_")}-`));
+  const mezzaninePath = join(outputDirectory, "mezzanine.mkv");
+  const audioPath = join(outputDirectory, "audio-master.wav");
+  const captionsVttPath = join(outputDirectory, "captions.vtt");
+  const captionsSrtPath = join(outputDirectory, "captions.srt");
+  const outputManifestPath = join(outputDirectory, "render-output.json");
+  let capture: PinnedBrowserCapture | undefined;
+  let abortBrowser: (() => void) | undefined;
+
+  await mkdir(frameDirectory, { recursive: true });
+  await reporter.initialize();
+  await reporter.emit({ phase: "prepare", status: "started", message: "Validating render inputs and executable boundaries", total: frameCount });
+
+  try {
+    throwIfAborted(options.signal);
+    for (const path of [options.executables.ffmpeg, options.executables.ffprobe]) {
+      if (path.includes("/") || path.includes("\\")) await access(path, constants.R_OK);
+    }
+    const driver = await browserFactory({
+      ...(options.executables.browser === undefined ? {} : { executablePath: options.executables.browser }),
+      width: manifest.target.width,
+      height: manifest.target.height,
+      deviceScaleFactor: manifest.target.pixelRatio,
+    });
+    const browserSha256 = await sha256File(driver.executablePath);
+    const expectedBrowserVersion = options.expectedBrowserVersion ?? driver.version;
+    const expectedBrowserSha256 = options.expectedBrowserSha256 ?? browserSha256;
+    capture = new PinnedBrowserCapture(driver, {
+      expectedVersion: expectedBrowserVersion,
+      expectedSha256: expectedBrowserSha256,
+    }, options.dependencies?.frameRenderer ?? new FrameRenderer({ verifyRepeatability: true }));
+    abortBrowser = (): void => { void capture?.close(); };
+    options.signal?.addEventListener("abort", abortBrowser, { once: true });
+    await capture.verifyBrowser();
+
+    let checkpoint = options.resume === false
+      ? { schemaVersion: 1 as const, renderKey, frames: {} }
+      : await loadCheckpoint(checkpointPath, renderKey);
+    if (options.resume === false) await rm(frameDirectory, { recursive: true, force: true });
+    await mkdir(frameDirectory, { recursive: true });
+    const completed = options.resume === false ? new Set<number>() : await completedFrameSet(checkpoint, frameDirectory);
+    const initiallyComplete = [...completed].filter((frame) => frame >= frameRange.startFrame && frame < frameRange.endFrame).length;
+    await reporter.emit({ phase: "prepare", status: "completed", message: `Browser pinned at ${driver.version}; ${initiallyComplete} frames resumable`, completed: initiallyComplete, total: frameCount });
+    await reporter.emit({ phase: "capture", status: "started", message: "Capturing authoritative PNG frames with network denied", completed: initiallyComplete, total: frameCount });
+
+    let completedCount = initiallyComplete;
+    let checkpointWrite = Promise.resolve();
+    const chunks = planRenderChunks(frameRange, maximumFramesPerChunk, "frames");
+    for (const chunk of chunks) {
+      throwIfAborted(options.signal);
+      const absentRanges = missingRanges(chunk, completed);
+      const frames = absentRanges.flatMap((range) => Array.from({ length: range.endFrame - range.startFrame }, (_, index) => range.startFrame + index));
+      if (frames.length === 0) continue;
+      await captureWithConcurrency(frames, concurrency, capture, manifest, frameDirectory, options.signal, async (result) => {
+        completed.add(result.frame);
+        completedCount += 1;
+        checkpoint = {
+          ...checkpoint,
+          frames: {
+            ...checkpoint.frames,
+            [String(result.frame)]: {
+              contentHash: result.contentHash,
+              outputSha256: result.outputSha256,
+              browserVersion: result.browserVersion,
+            },
+          },
+        };
+        checkpointWrite = checkpointWrite.then(async () => atomicWrite(checkpointPath, `${stableJson(checkpoint)}\n`));
+        await checkpointWrite;
+        await reporter.emit({
+          phase: "capture",
+          status: "progress",
+          message: `Captured frame ${result.frame}`,
+          frame: result.frame,
+          chunk: chunk.index,
+          completed: completedCount,
+          total: frameCount,
+          outputPath: result.outputPath,
+        });
+      });
+    }
+    await checkpointWrite;
+    await reporter.emit({ phase: "capture", status: "completed", message: `Captured ${frameCount} authoritative frames`, completed: frameCount, total: frameCount });
+
+    const framePattern = join(frameDirectory, "frame-%08d.png");
+    await reporter.emit({ phase: "mezzanine", status: "started", message: "Encoding lossless FFV1 mezzanine" });
+    await runPlan(planFrameSequenceToFfv1(framePattern, mezzaninePath, manifest.target, frameRange.startFrame), options.executables, commandRunner, options.signal, attemptDirectory);
+    await reporter.emit({ phase: "mezzanine", status: "completed", message: "Lossless FFV1 mezzanine encoded", outputPath: mezzaninePath });
+
+    const cues = collectCaptions(manifest, frameRange);
+    await atomicWrite(captionsVttPath, toWebVtt(cues));
+    await atomicWrite(captionsSrtPath, toSrt(cues));
+
+    await reporter.emit({ phase: "audio", status: "started", message: "Building exact-duration 48 kHz audio master" });
+    const selectedAudio = audioInputsForRange(manifest, startTick, endTick);
+    const audioPlan = selectedAudio.length === 0
+      ? planSilentAudio(durationTicks, audioPath)
+      : planAudioMaster(selectedAudio, audioPath, { timelineStartTick: startTick, durationTicks });
+    await runPlan(audioPlan, options.executables, commandRunner, options.signal, attemptDirectory);
+    await reporter.emit({ phase: "audio", status: "completed", message: selectedAudio.length === 0 ? "48 kHz silent master created" : "48 kHz program master created", outputPath: audioPath });
+
+    await reporter.emit({ phase: "delivery", status: "started", message: `Encoding ${deliveryOptions.codec} delivery with embedded captions` });
+    const deliveryPlan = planDeliveryEncode(mezzaninePath, audioPath, deliveryPath, { ...deliveryOptions, captionPath: captionsVttPath });
+    await runPlan(deliveryPlan, options.executables, commandRunner, options.signal, attemptDirectory);
+    await reporter.emit({ phase: "delivery", status: "completed", message: "Delivery encode completed", outputPath: deliveryPath });
+
+    await reporter.emit({ phase: "qa", status: "started", message: "Probing streams and decoding every output packet" });
+    const probeResult = await runPlan(planProbe(deliveryPath), options.executables, commandRunner, options.signal, attemptDirectory);
+    let probeDocument: ProbeDocument;
+    try {
+      probeDocument = JSON.parse(probeResult.stdout) as ProbeDocument;
+    } catch (error) {
+      throw new Error(`ffprobe returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const probe = validateProbe(probeDocument, manifest, ticksToSeconds(durationTicks));
+    await runPlan(planDecodeValidation(deliveryPath), options.executables, commandRunner, options.signal, attemptDirectory);
+    await reporter.emit({ phase: "qa", status: "completed", message: `QA passed: ${probe.width}x${probe.height}, ${probe.audioSampleRate} Hz, ${probe.durationSeconds.toFixed(3)}s` });
+
+    const frameRecords = Object.entries(checkpoint.frames)
+      .map(([frame, record]) => ({ frame: Number(frame), contentSha256: record.contentHash, pngSha256: record.outputSha256 }))
+      .filter((record) => record.frame >= frameRange.startFrame && record.frame < frameRange.endFrame)
+      .sort((left, right) => left.frame - right.frame);
+    if (frameRecords.length !== frameCount) throw new Error(`Capture checkpoint has ${frameRecords.length} frames; expected ${frameCount}`);
+    const files = await Promise.all([
+      outputFile("mezzanine", mezzaninePath),
+      outputFile("delivery", deliveryPath),
+      outputFile("audio-master", audioPath),
+      outputFile("captions-vtt", captionsVttPath),
+      outputFile("captions-srt", captionsSrtPath),
+    ]);
+    const output: RenderOutputManifest = {
+      schemaVersion: OUTPUT_SCHEMA_VERSION,
+      manifestId: manifest.id,
+      inputManifestSha256,
+      renderKey,
+      selection,
+      frameRange,
+      frameCount,
+      startTick,
+      durationTicks,
+      target: manifest.target,
+      browser: {
+        executablePath: driver.executablePath,
+        version: driver.version,
+        sha256: browserSha256,
+        networkPolicy: "deny",
+      },
+      executables: { ffmpeg: options.executables.ffmpeg, ffprobe: options.executables.ffprobe },
+      frames: frameRecords,
+      files,
+      probe,
+      progressPath,
+      outputManifestPath,
+    };
+    await atomicWrite(outputManifestPath, `${stableJson(output)}\n`);
+    await reporter.emit({ phase: "complete", status: "completed", message: "Authoritative render completed", completed: frameCount, total: frameCount, outputPath: outputManifestPath });
+    if (options.keepFrameCache === false) await rm(cacheDirectory, { recursive: true, force: true });
+    return output;
+  } catch (error) {
+    const cancelled = error instanceof Error && error.name === "AbortError";
+    await reporter.emit({
+      phase: cancelled ? "cancelled" : "failed",
+      status: "failed",
+      message: cancelled ? "Render cancelled; completed frame checkpoint preserved" : (error instanceof Error ? error.message : String(error)),
+    }).catch(() => undefined);
+    throw error;
+  } finally {
+    if (abortBrowser) options.signal?.removeEventListener("abort", abortBrowser);
+    await capture?.close().catch(() => undefined);
+    await rm(attemptDirectory, { recursive: true, force: true });
+  }
+}

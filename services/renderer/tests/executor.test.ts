@@ -1,0 +1,240 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { BrowserPage, ChromiumDriver } from "../src/browser.js";
+import {
+  executeRender,
+  type CommandRunner,
+  type ProcessResult,
+} from "../src/executor.js";
+import { fixtureManifest, fixtureTarget } from "../src/fixture.js";
+
+const ONE_PIXEL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
+
+class FakeCommandRunner implements CommandRunner {
+  readonly calls: Array<Readonly<{ executable: string; args: readonly string[] }>> = [];
+  readonly #ffmpeg: string;
+  readonly #ffprobe: string;
+  readonly #width: number;
+  readonly #height: number;
+  readonly #duration: number;
+  readonly #frameRate: string;
+
+  constructor(input: Readonly<{ ffmpeg: string; ffprobe: string; width: number; height: number; duration: number; frameRate?: string }>) {
+    this.#ffmpeg = input.ffmpeg;
+    this.#ffprobe = input.ffprobe;
+    this.#width = input.width;
+    this.#height = input.height;
+    this.#duration = input.duration;
+    this.#frameRate = input.frameRate ?? "2/1";
+  }
+
+  async run(executable: string, args: readonly string[]): Promise<ProcessResult> {
+    this.calls.push({ executable, args: [...args] });
+    if (executable === this.#ffprobe) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          streams: [
+            { codec_type: "video", codec_name: "vp9", width: this.#width, height: this.#height, avg_frame_rate: this.#frameRate, color_space: "bt709", color_transfer: "iec61966-2-1", color_primaries: "bt709" },
+            { codec_type: "audio", codec_name: "opus", sample_rate: "48000", channels: 2 },
+            { codec_type: "subtitle", codec_name: "webvtt" },
+          ],
+          format: { duration: String(this.#duration) },
+        }),
+        stderr: "",
+      };
+    }
+    assert.equal(executable, this.#ffmpeg);
+    const output = args.at(-1);
+    if (output && output !== "-") await writeFile(output, Buffer.from(`fake media ${this.calls.length}`));
+    return { exitCode: 0, stdout: "", stderr: "" };
+  }
+}
+
+test("executor uses exact injected tools, resumes captured frames, and writes measured output manifest", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "alystria-executor-test-"));
+  try {
+    const browserPath = join(directory, "exact-browser.bin");
+    const ffmpegPath = join(directory, "exact-ffmpeg.bin");
+    const ffprobePath = join(directory, "exact-ffprobe.bin");
+    await Promise.all([
+      writeFile(browserPath, "browser"),
+      writeFile(ffmpegPath, "ffmpeg"),
+      writeFile(ffprobePath, "ffprobe"),
+    ]);
+    const outputDirectory = join(directory, "output");
+    const manifest = fixtureManifest(fixtureTarget({ width: 320, height: 180, frameRate: { numerator: 2, denominator: 1 } }));
+    let captures = 0;
+    let injectedBrowserPath = "";
+    const browserFactory = async (options: Readonly<{ executablePath?: string }>): Promise<ChromiumDriver> => {
+      injectedBrowserPath = options.executablePath ?? "";
+      return {
+        name: "fake-playwright",
+        executablePath: browserPath,
+        version: "fixture-chromium-1",
+        networkPolicy: "deny",
+        async newPage(): Promise<BrowserPage> {
+          let html = "";
+          return {
+            async setViewportSize() {},
+            async setContent(value) { html = value; },
+            async waitForRenderReady() { assert.match(html, /data-render-ready="true"/); },
+            async screenshot(options) { captures += 1; await writeFile(options.path, ONE_PIXEL_PNG); },
+            async close() {},
+          };
+        },
+        async close() {},
+      };
+    };
+    const firstRunner = new FakeCommandRunner({ ffmpeg: ffmpegPath, ffprobe: ffprobePath, width: 320, height: 180, duration: 1 });
+    const first = await executeRender({
+      manifest,
+      selection: { kind: "range", startFrame: 1, endFrame: 3 },
+      outputDirectory,
+      executables: { browser: browserPath, ffmpeg: ffmpegPath, ffprobe: ffprobePath },
+      delivery: { codec: "vp9" },
+      concurrency: 2,
+      maximumFramesPerChunk: 1,
+      dependencies: { commandRunner: firstRunner, browserFactory },
+    });
+    assert.equal(injectedBrowserPath, browserPath);
+    assert.equal(captures, 2);
+    assert.deepEqual(new Set(firstRunner.calls.map((call) => call.executable)), new Set([ffmpegPath, ffprobePath]));
+    assert.equal(first.frameCount, 2);
+    assert.equal(first.probe.audioSampleRate, 48_000);
+    assert.equal(first.files.find((file) => file.kind === "delivery")?.path, join(outputDirectory, "delivery.webm"));
+    assert.ok(firstRunner.calls.some((call) => call.args.includes("ffv1")));
+    assert.ok(firstRunner.calls.some((call) => call.args.includes("anullsrc=r=48000:cl=stereo")));
+    assert.ok(firstRunner.calls.some((call) => call.args.includes("webvtt")));
+    assert.ok(firstRunner.calls.some((call) => call.args.includes("-xerror")));
+
+    const progress = (await readFile(first.progressPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { sequence: number; phase: string });
+    assert.deepEqual(progress.map((event) => event.sequence), progress.map((_, index) => index));
+    assert.equal(progress.at(-1)?.phase, "complete");
+    const written = JSON.parse(await readFile(first.outputManifestPath, "utf8")) as { renderKey: string; files: unknown[] };
+    assert.equal(written.renderKey, first.renderKey);
+    assert.equal(written.files.length, 5);
+
+    const secondRunner = new FakeCommandRunner({ ffmpeg: ffmpegPath, ffprobe: ffprobePath, width: 320, height: 180, duration: 1 });
+    await executeRender({
+      manifest,
+      selection: { kind: "range", startFrame: 1, endFrame: 3 },
+      outputDirectory,
+      executables: { browser: browserPath, ffmpeg: ffmpegPath, ffprobe: ffprobePath },
+      delivery: { codec: "vp9" },
+      dependencies: { commandRunner: secondRunner, browserFactory },
+    });
+    assert.equal(captures, 2, "the second run must trust only hash-verified checkpoint frames and avoid recapture");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("scene and draft selections compile to explicit frame and responsive target contracts", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "alystria-selection-test-"));
+  try {
+    const browserPath = join(directory, "browser.bin");
+    const ffmpegPath = join(directory, "ffmpeg.bin");
+    const ffprobePath = join(directory, "ffprobe.bin");
+    await Promise.all([writeFile(browserPath, "browser"), writeFile(ffmpegPath, "ffmpeg"), writeFile(ffprobePath, "ffprobe")]);
+    const browserFactory = async (): Promise<ChromiumDriver> => ({
+      name: "selection-browser",
+      executablePath: browserPath,
+      version: "selection-1",
+      networkPolicy: "deny",
+      async newPage(): Promise<BrowserPage> {
+        return {
+          async setViewportSize() {},
+          async setContent() {},
+          async waitForRenderReady() {},
+          async screenshot(options) { await writeFile(options.path, ONE_PIXEL_PNG); },
+          async close() {},
+        };
+      },
+      async close() {},
+    });
+    const manifest = fixtureManifest(fixtureTarget({ width: 320, height: 180, frameRate: { numerator: 1, denominator: 1 } }));
+    const sceneRunner = new FakeCommandRunner({ ffmpeg: ffmpegPath, ffprobe: ffprobePath, width: 320, height: 180, duration: 5, frameRate: "1/1" });
+    const scene = await executeRender({
+      manifest,
+      selection: { kind: "scene", sceneId: "scene-title" },
+      outputDirectory: join(directory, "scene"),
+      executables: { browser: browserPath, ffmpeg: ffmpegPath, ffprobe: ffprobePath },
+      dependencies: { browserFactory, commandRunner: sceneRunner },
+    });
+    assert.deepEqual(scene.frameRange, { startFrame: 0, endFrame: 5 });
+    assert.equal(scene.frameCount, 5);
+
+    const draftRunner = new FakeCommandRunner({ ffmpeg: ffmpegPath, ffprobe: ffprobePath, width: 160, height: 90, duration: 5, frameRate: "1/1" });
+    const draft = await executeRender({
+      manifest,
+      selection: { kind: "draft", maximumDimension: 160 },
+      outputDirectory: join(directory, "draft"),
+      executables: { browser: browserPath, ffmpeg: ffmpegPath, ffprobe: ffprobePath },
+      dependencies: { browserFactory, commandRunner: draftRunner },
+    });
+    assert.equal(draft.target.width, 160);
+    assert.equal(draft.target.height, 90);
+    assert.equal(draft.target.pixelRatio, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("executor honors an already-aborted cancellation signal", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "alystria-cancel-test-"));
+  try {
+    const ffmpegPath = join(directory, "ffmpeg.bin");
+    const ffprobePath = join(directory, "ffprobe.bin");
+    await writeFile(ffmpegPath, "ffmpeg");
+    await writeFile(ffprobePath, "ffprobe");
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(executeRender({
+      manifest: fixtureManifest(fixtureTarget({ frameRate: { numerator: 1, denominator: 1 } })),
+      outputDirectory: join(directory, "output"),
+      executables: { ffmpeg: ffmpegPath, ffprobe: ffprobePath },
+      signal: controller.signal,
+    }), (error: unknown) => error instanceof Error && error.name === "AbortError");
+    const events = (await readFile(join(directory, "output", "render-progress.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { phase: string });
+    assert.equal(events.at(-1)?.phase, "cancelled");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+const realBrowser = process.env.ALYSTRIA_TEST_CHROMIUM_PATH;
+const realFfmpeg = process.env.ALYSTRIA_TEST_FFMPEG_PATH;
+const realFfprobe = process.env.ALYSTRIA_TEST_FFPROBE_PATH;
+
+test("short real Chromium and FFmpeg render", { skip: !(realBrowser && realFfmpeg && realFfprobe), timeout: 120_000 }, async () => {
+  const requestedOutput = process.env.ALYSTRIA_TEST_OUTPUT_DIRECTORY;
+  const directory = requestedOutput ?? await mkdtemp(join(tmpdir(), "alystria-real-render-"));
+  try {
+    const base = fixtureManifest(fixtureTarget({ width: 640, height: 360, frameRate: { numerator: 2, denominator: 1 } }));
+    const manifest = { ...base, scenes: [{ ...base.scenes[0]!, durationTicks: 240_000, captions: [] }] };
+    const output = await executeRender({
+      manifest,
+      outputDirectory: directory,
+      executables: { ffmpeg: realFfmpeg!, ffprobe: realFfprobe! },
+      delivery: { codec: "vp9", quality: 32 },
+      concurrency: 1,
+      maximumFramesPerChunk: 2,
+      keepFrameCache: requestedOutput === undefined ? false : true,
+    });
+    assert.equal(output.frameCount, 2);
+    assert.equal(output.probe.width, 640);
+    assert.equal(output.probe.height, 360);
+    assert.equal(output.probe.audioSampleRate, 48_000);
+    assert.equal(output.browser.executablePath.toLowerCase(), realBrowser!.toLowerCase());
+    assert.ok(output.files.find((file) => file.kind === "delivery")!.bytes > 0);
+  } finally {
+    if (requestedOutput === undefined) await rm(directory, { recursive: true, force: true });
+  }
+});

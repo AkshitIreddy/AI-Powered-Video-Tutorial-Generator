@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-28",
+  "sourceRevision": "0db30d717da63b24790f2299941b953c2c721cf1",
+  "sourceTag": "v1.0.0",
+  "notes": [
+    "Files were downloaded from the historical GitHub asset links for local evaluation only.",
+    "The prototype did not retain prompts, storyboards, sources, captions, provider metadata, or reproducible generation settings for these videos.",
+    "The local copies live under ignored dist/evaluation/v1 and are not release assets."
+  ],
+  "demos": [
+    {
+      "id": "quick",
+      "url": "https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/0a1fb05a-8290-4391-b329-96f04dcae7a1",
+      "sha256": "225586a66baaf9bb33f0656aa902c4e8291e762c47089cc1ab504afbe6f633fb",
+      "sizeBytes": 8542594,
+      "durationSeconds": 88.833333,
+      "width": 1920,
+      "height": 1080,
+      "fps": "30/1",
+      "videoCodec": "h264"
+    },
+    {
+      "id": "full-a",
+      "url": "https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/9eb78053-dd53-4fac-b0da-6139e21943e8",
+      "sha256": "e9866d7e74e4d5605da669c900af53af0315e941d90b275eb01e70b422cb4aa2",
+      "sizeBytes": 7248192,
+      "durationSeconds": 298.36,
+      "width": 852,
+      "height": 480,
+      "fps": "25/1",
+      "videoCodec": "h264"
+    },
+    {
+      "id": "full-b",
+      "url": "https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/assets/90443032/b933a178-e8c1-4660-8b60-74a8d29faa2e",
+      "sha256": "fd3392a25d190d5f43bda8daac94abce00c17198f0b6a8b9f2e1f2fe0d2798c6",
+      "sizeBytes": 5118423,
+      "durationSeconds": 133.6,
+      "width": 852,
+      "height": 480,
+      "fps": "25/1",
+      "videoCodec": "h264"
+    }
+  ]
+}

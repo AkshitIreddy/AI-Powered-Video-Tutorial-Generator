@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture.localization.binary-search.en-us",
+  "variantOf": "fixture.binary-search.trace.en",
+  "title": "Binary Search Trace — English",
+  "domain": "localization",
+  "purpose": "English baseline for semantic localization parity, number/code preservation, caption layout, speech alignment, and locale-safe rendering.",
+  "locale": "en-US",
+  "durationSeconds": 150,
+  "deterministicSeed": 52305,
+  "groundingMode": "strict",
+  "learner": { "audience": "Beginning programmers using US English.", "knowledgeLevel": "beginner", "prerequisites": ["Sorted arrays", "Zero-based indexing"], "accessibilityNeeds": ["captions", "descriptive-transcript", "reduced-motion", "high-contrast"] },
+  "objectives": [
+    { "id": "obj.locale.explain", "statement": "Explain why sorted order enables binary search.", "criteria": ["States sorted-order requirement", "Describes midpoint comparison"] },
+    { "id": "obj.locale.trace", "statement": "Preserve the exact three-step trace and result across locales.", "criteria": ["Midpoint values are 16, 56, 23", "Result is index 5"] }
+  ],
+  "sources": [
+    { "id": "src.locale.brief", "path": "sources/localization-brief.md", "sha256": "e785133a569666726c2dbd77933c27dace44f4626edf7d993a75fe02615f113a", "mimeType": "text/markdown", "title": "Localization parity brief", "creator": "Alystria fixture authors", "licenseExpression": "CC0-1.0", "origin": "locally-authored", "storagePolicy": "copied", "rightsStatus": "cleared", "externalEvidenceUris": [] }
+  ],
+  "claims": [
+    { "id": "claim.locale.requirement", "statement": "Binary search depends on sorted order to eliminate one side after a comparison.", "claimType": "procedural", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.locale.brief", "locator": "Opening sentence and invariant list", "relationship": "supports" }] },
+    { "id": "claim.locale.trace", "statement": "The trace compares 16, 56, and 23, then returns index 5.", "claimType": "quantitative", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.locale.brief", "locator": "Invariant values", "relationship": "entails" }] }
+  ],
+  "scenes": [
+    { "id": "scene.locale.intro", "type": "definition", "title": "Why sorted order matters", "objectiveIds": ["obj.locale.explain"], "claimIds": ["claim.locale.requirement"], "narration": "Binary search works because the list is sorted. Compare the target with the midpoint, then discard the side that cannot contain it.", "visualIntent": "A sorted array uses locale-independent numerals and labeled low, mid, and high markers.", "captionText": "Sorted order lets us safely discard one side.", "accessibilityDescription": "A sorted array shows an inclusive candidate interval and one midpoint." },
+    { "id": "scene.locale.trace", "type": "execution-trace", "title": "Find 23", "objectiveIds": ["obj.locale.trace"], "claimIds": ["claim.locale.trace"], "narration": "First compare 16. The target is larger. Next compare 56. The target is smaller. Finally compare 23 and return index 5.", "visualIntent": "Three trace rows preserve values, indices, and code tokens exactly across locales.", "captionText": "16 → 56 → 23 • result: index 5", "accessibilityDescription": "Three rows state the compared value, relation to the target, and interval update.", "sourceLocator": "src.locale.brief#Invariant values" },
+    { "id": "scene.locale.recap", "type": "recap", "title": "Halve the candidates", "objectiveIds": ["obj.locale.explain", "obj.locale.trace"], "claimIds": [], "narration": "Keep the sorted-order invariant, compare the midpoint, and halve the candidates. The running time is O log n.", "visualIntent": "A short concept thread ends with O(log n) as an unchanged mathematical token.", "captionText": "Sorted list • midpoint • half remains • O(log n)", "accessibilityDescription": "A four-step recap lists the invariant, midpoint comparison, reduced interval, and complexity." }
+  ],
+  "outputTargets": [{ "name": "landscape", "width": 1920, "height": 1080, "fps": 30 }, { "name": "portrait", "width": 1080, "height": 1920, "fps": 30 }],
+  "qualityAssertions": [
+    { "id": "qa.locale.en.invariants", "category": "localization", "severity": "release-blocking", "check": "localization.glossary-invariants", "description": "Numbers, code tokens, and complexity stay exact.", "expected": [16, 56, 23, 5, "O(log n)"] },
+    { "id": "qa.locale.en.glyphs", "category": "localization", "severity": "release-blocking", "check": "localization.caption-glyphs", "description": "All required glyphs render without missing-glyph boxes.", "expected": true },
+    { "id": "qa.locale.en.parity", "category": "localization", "severity": "release-blocking", "check": "localization.semantic-parity", "description": "The localized version preserves the two objectives and exact trace meaning.", "expected": 1.0 },
+    { "id": "qa.locale.en.render", "category": "render", "severity": "release-blocking", "check": "render.deterministic-all-targets", "description": "Both targets render deterministically with locale-safe line breaks.", "expected": true }
+  ],
+  "provenance": { "fixtureAuthor": "Alystria fixture authors", "createdAt": "2026-08-28T00:00:00Z", "licenseExpression": "CC0-1.0", "networkRequired": false, "containsPersonalData": false, "notes": "English baseline authored locally and paired by assertion sequence with Spanish and Hindi variants." }
+}

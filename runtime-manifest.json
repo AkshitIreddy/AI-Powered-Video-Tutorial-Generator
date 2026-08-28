@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "manifestVersion": "2026.08.28.1",
+  "toolchains": {
+    "node": {
+      "version": "24.20.0",
+      "releaseLine": "Krypton LTS"
+    },
+    "pnpm": {
+      "version": "10.15.1",
+      "integrity": "sha512-NOU4wym1VTAUyo6PRTWZf5YYCh0PYUM5NXRJk1NQ2STiL4YUaCGRJk7DPRRirCFWGv+X9rsYBlNRwWLH6PbeZw=="
+    },
+    "python": {
+      "version": "3.12.13"
+    },
+    "uv": {
+      "version": "0.12.7"
+    },
+    "rust": {
+      "version": "1.96.1",
+      "profile": "minimal",
+      "components": ["clippy", "rustfmt"]
+    }
+  },
+  "renderer": {
+    "playwright": {
+      "version": "1.62.1",
+      "integrity": "sha512-0M+L3LAD8/nm554LOla9Ayx0j0tmFZ0FBcoQ7F1VuVHpM/XpiC8RcDzBQB8W5+hA8L22THxELzeF+2WcUzvcLg=="
+    },
+    "chromium": {
+      "revision": "1234",
+      "browserVersion": "151.0.7922.34",
+      "executableSha256": "409805a16d6416087e6b2f778df1cf8f7bbb267d6b99f6b5bb0a618eace234f2"
+    }
+  },
+  "media": {
+    "ffmpeg": {
+      "version": "9.0.1",
+      "coreRuntimeLicense": "LGPL-2.1-or-later",
+      "distribution": "signed-runtime-pack",
+      "bundled": false
+    },
+    "gplCodecPack": {
+      "version": "9.0.1",
+      "license": "GPL-2.0-or-later",
+      "optional": true,
+      "bundled": false
+    }
+  },
+  "policies": {
+    "exactToolchainVersions": true,
+    "remoteAssetsDuringRender": false,
+    "localFfmpegIsDevelopmentOnly": true,
+    "runtimePackRequiresSignatureAndSha256": true,
+    "modelDownloadRequiresImmutableRevisionAndSha256": true
+  }
+}

@@ -1,72 +1,224 @@
 # Alystria Studio 2.0 implementation ledger
 
-This file is the durable source of truth for the full 2.0 implementation. An
-item is complete only after its implementation and relevant verification pass.
+Status snapshot: **2026-08-28**, branch `feat/alystria-studio-v2`.
 
-## Repository and foundation
+This is the durable source of truth for the 2.0 worktree. A checked item means
+the implementation exists and its relevant local verification passed. It does
+not mean that live cloud providers, production signing, every export profile,
+or release distribution have been approved or verified.
 
-- [x] Flatten the nested repository without changing HEAD, remote, or semantic status.
-- [x] Create the isolated `feat/alystria-studio-v2` branch.
-- [x] Preserve the v1 prototype under `legacy/v1` and establish an LF policy.
-- [x] Replace the root license with MIT and ignore secrets/generated artifacts.
-- [ ] Establish pnpm, Python, Rust, Chromium, FFmpeg, and model/runtime locks.
-- [ ] Provide one-command setup, development, testing, diagnostics, benchmark, and package flows.
+## Implemented and locally verified
 
-## Contracts, persistence, jobs, and security
+### Repository, architecture, and development foundation
 
-- [ ] Implement versioned JSON Schema 2020-12 contracts and generated bindings.
-- [ ] Implement `.alytutorial` project storage, SQLite migrations, revision history, and CAS.
-- [ ] Implement durable jobs, task states, retries, cancellation, crash recovery, events, and budgets.
-- [ ] Implement secure credential references, privacy routing, provenance, rights, and export gates.
-- [ ] Implement hardware, model, provider, FFmpeg, storage, and project diagnostics.
+- [x] Flatten the nested repository without changing HEAD, remote, or semantic
+  content, then preserve the v1 prototype under `legacy/v1`.
+- [x] Isolate 2.0 work on `feat/alystria-studio-v2`, replace the license with
+  MIT, establish EOL/ignore policy, remove the tracked key workflow, and
+  quarantine legacy media whose rights are not established.
+- [x] Establish pnpm, uv, Cargo, Node, Python, Rust, Playwright/Chromium, FFmpeg,
+  provider, and model lock/catalog declarations.
+- [x] Provide repository commands for setup, development, build, test, lint,
+  typecheck, render testing, diagnostics, benchmarks, fixture/catalog checks,
+  SBOM/notices generation, and desktop/sidecar packaging.
+- [x] Implement the Tauri 2 desktop shell, narrow typed Rust commands, OS
+  credential-vault references, authenticated loopback sidecar protocol, and a
+  supervised Python worker entry point.
 
-## Research and education
+### Contracts, projects, jobs, and trust boundaries
 
-- [ ] Implement modular source ingestion for topics, files, URLs, repositories, scripts, slides, and datasets.
-- [ ] Implement academic/documentation/web discovery and an evidence/claim graph.
-- [ ] Implement Creative, Grounded, and Strict research modes.
-- [ ] Implement learner profiles, prerequisites, objectives, misconceptions, examples, and concept ordering.
-- [ ] Implement outline, script, critique, verification, pacing, and storyboard stages.
+- [x] Implement versioned JSON Schema 2020-12 contracts, exhaustive TypeScript
+  domain types, runtime validation, and schema tests.
+- [x] Implement the local project directory, SQLite schema/migrations, immutable
+  SHA-256 CAS, revisions, optimistic snapshot saves, portable `.alytutorial`
+  archives, and source import.
+- [x] Implement the active `SQLiteWorkflowRuntime` lease scheduler with explicit
+  job states, dependencies, task keys, attempts, events, retries, cancellation,
+  recovery, approval waits, costs, and usage records.
+- [x] Implement file/archive quarantine, path and SVG validation, URL SSRF and
+  DNS-pin protections, project-content egress policy, privacy classifications,
+  rights/provenance/consent checks, and fail-closed export gates.
+- [x] Implement hardware, storage, FFmpeg, provider, model, runtime, and project
+  diagnostics without changing machine settings.
 
-## Studio UI and editing
+### Research, education, and generation
 
-- [ ] Implement Home, Projects, New Tutorial, Templates, Library, Providers, and Diagnostics.
-- [ ] Implement Plan, Storyboard, Studio, Review, and Export workspaces.
-- [ ] Implement Guided/Studio disclosure, durable jobs drawer, cost/privacy indicators, and recovery states.
-- [ ] Implement scene/section/project editing, scoped regeneration, locks, alternatives, versions, and undo/redo.
-- [ ] Meet keyboard, contrast, reduced-motion, narrow-window, 1440p, and 4K requirements.
+- [x] Implement typed loaders for topics, questions, notes, scripts, files,
+  URLs, repositories, presentations, and datasets, with optional isolated
+  Docling extraction for structured documents.
+- [x] Implement OpenAlex, Crossref, DataCite, OpenCitations, Europe PMC, and arXiv
+  discovery adapters, reciprocal-rank fusion, immutable evidence chunks,
+  atomic claims, and claim-support validation.
+- [x] Implement Creative, Grounded, and Strict policies, including Strict-mode
+  export blocking for unsupported externally verifiable claims.
+- [x] Implement learner profiles, prerequisites, objectives, misconceptions,
+  concept ordering, outline/script/storyboard stages, and pedagogy/factuality/
+  pacing reviews.
+- [x] Implement the durable 16-stage `GenerationCoordinator`, scoped dependency
+  invalidation, immutable candidates/revisions, approval pauses, and a hard
+  maximum of two automatic repair attempts.
 
-## Scene and render systems
+### Precision-studio desktop experience
 
-- [ ] Implement the full typed educational scene catalog and ten theme packs.
-- [ ] Implement the VisualBible, responsive layout compiler, choreography, and 240 kHz timeline.
-- [ ] Implement deterministic Chromium rendering, partial previews, mezzanine cache, and FFmpeg assembly.
-- [ ] Implement 16:9, 9:16, 1:1, custom, 1080p, 1440p, 4K, FPS, bitrate, and codec exports.
-- [ ] Implement diagrams, math, code, terminal, traces, charts, maps, documents, simulations, and UI demos.
+- [x] Implement Home, Projects, New Tutorial, Templates, Library, Models &
+  Providers, and Settings & Diagnostics.
+- [x] Implement Plan, Storyboard, Studio, Review, and Export workspaces, plus
+  Guided/Studio disclosure, the durable Jobs drawer, provider privacy/cost
+  indicators, recovery states, and credential-vault flows.
+- [x] Implement durable project creation/opening, source import, snapshot saves,
+  scene edits, preservation locks, regeneration impact/cost preview, approval,
+  cancellation/retry, and archive export bridges.
+- [x] Implement the bright precision-studio visual system, reduced-motion and
+  high-contrast styles, keyboard-visible controls, responsive narrow-window
+  behavior, and shared scene preview components.
+- [x] Capture and inspect the final Home, Studio, Providers, New Tutorial, and
+  narrow-window screenshots under `docs/images/`.
 
-## Providers, local models, narration, and presenter
+### Scene, renderer, media, and sandbox systems
 
-- [ ] Implement OpenAI, Anthropic, Gemini, and OpenAI-compatible LLM adapters.
-- [ ] Implement image, licensed-media, motion, TTS, alignment, transcription, and presenter adapters.
-- [ ] Implement model manager, checksums, licenses, capability routing, and GPU scheduling.
-- [ ] Implement voice preview, pronunciation dictionaries, alignment, captions, transcript, and mastering.
-- [ ] Implement optional presenter direction, consent, lip-sync/identity QA, music, SFX, and audio description.
+- [x] Implement all 36 built-in educational scene kinds and ten hand-authored
+  theme packs, with VisualBible/brand-kit contracts, responsive compilation,
+  deterministic choreography, accessibility descriptions, and extension
+  collision checks.
+- [x] Implement the canonical frame-driven React/SVG renderer with a 240,000
+  tick timebase, seeded randomness, CAS-only assets, remote-network denial,
+  pinned-Chromium execution, captions, partial ranges, resumable frames, FFV1
+  mezzanines, FFmpeg assembly, cancellation, progress, and output probing.
+- [x] Implement render contracts for landscape, portrait, square, and custom
+  dimensions; 24/25/30/48/50/60 fps; 1080p/1440p/4K-sized targets; bitrate
+  control; VP9, AV1, H.264 NVENC/Media Foundation/x264, and HEVC NVENC paths.
+- [x] Implement deterministic diagrams, math, code, terminal, trace, chart,
+  table, map, document, simulation, presenter, quiz, and media scene renderers.
+- [x] Implement capability-limited Wasmtime/WASI, Pyodide, and QuickJS-WASM
+  workers with deterministic inputs, process/resource limits, Windows Job
+  Objects, output validation, and no `node:vm` execution.
 
-## Full product breadth
+### Providers, local models, narration, presenters, and product breadth
 
-- [ ] Implement course hierarchy, interactions, quizzes, exercises, and chapter exports.
-- [ ] Deeply verify English, Spanish, and Hindi localization and capability-gate other locales.
-- [ ] Implement thumbnail, title, description, tags, summary, chapters, sources, and project archive exports.
-- [ ] Implement internal extension registries and out-of-process capability-scoped plugin contracts.
-- [ ] Rewrite README, architecture, provider, privacy, troubleshooting, contribution, and roadmap docs.
+- [x] Implement mocked/contract-tested OpenAI Responses, Anthropic Messages,
+  Gemini Interactions, and OpenAI-compatible local LLM adapters with structured
+  output revalidation, privacy scope, idempotency, and budget guards.
+- [x] Implement mocked/contract-tested request builders and async lifecycle for
+  OpenAI/Gemini/BFL/Recraft images, Openverse/Pexels media, Runway/Gemini motion,
+  OpenAI/ElevenLabs/Azure/Google speech, HeyGen/Tavus presenters, and local TTS,
+  ASR, alignment, and presenter worker boundaries.
+- [x] Implement model manifests, checksum/signature/license policy, safe download
+  and resume logic, compatibility checks, and one-heavy-family-at-a-time
+  resource scheduling. Models are not bundled.
+- [x] Implement Windows System.Speech fallback, voice discovery/preview,
+  pronunciation transforms, 48 kHz narration contracts, WebVTT/SRT/transcript
+  derivation, mastering/ducking, music/SFX rights, audio descriptions, presenter
+  direction, immutable consent, disclosure, and lip-sync/identity QA contracts.
+- [x] Implement course hierarchy, practice/quiz models, English/Spanish/Hindi
+  fixtures and locale validation, metadata/title/tag/chapter/thumbnail bundles,
+  source sidecars, and capability-scoped extension contracts.
+- [x] Implement content, citation, math, code, visual, audio, timeline,
+  accessibility, privacy, licensing, and release-evaluation QA policies.
+- [x] Build and schema-validate deterministic history, math, programming,
+  science, statistics, child-analogy, multi-lesson course, and locale fixtures.
+- [x] Replace the root README and add architecture, setup, provider/free-trial,
+  privacy/security, accessibility, evaluation, troubleshooting, contributing,
+  roadmap, and release-policy documentation.
 
-## QA, examples, and release candidate
+## Latest local verification evidence
 
-- [ ] Implement content, citation, math, code, visual, audio, timeline, accessibility, and licensing QA.
-- [ ] Limit automatic repair to two attempts before human review.
-- [ ] Build deterministic history, math, programming, science, data, analogy, course, and locale fixtures.
-- [ ] Render and inspect the Karatsuba flagship and all canonical examples.
-- [ ] Compare 2.0 with preserved 1.0 evidence using the agreed rubric.
-- [ ] Run unit, property, contract, migration, cache, crash, visual, audio, security, and package tests.
-- [ ] Produce a local Windows-first release candidate, screenshots, demos, change summary, and test instructions.
-- [ ] Do not push, merge, publish, deploy, or release without explicit approval.
+These are the most recent completed checks in this implementation pass. They
+are correctness evidence, not release benchmarks.
+
+| Area | Result | Scope |
+|---|---:|---|
+| Python pipeline | `251 passed, 1 skipped` | Full pytest suite; the skip is the opt-in real renderer smoke in the default run |
+| Python quality | clean | Ruff plus strict mypy over 105 source files |
+| Contracts | `47 passed` | Schema/runtime contract tests |
+| Scene library | `12 passed` | Scene compiler and renderer tests |
+| Theme library | `22 passed` | Theme, contrast, brand-kit, and specimen tests |
+| Desktop unit/bridge | `12 passed` | React/native bridge tests and production Vite build |
+| Renderer | `39 passed, 1 skipped` | Determinism, browser, FFmpeg, captions, range, and executor tests; opt-in real smoke skipped by default |
+| Desktop Playwright | `7 passed, 1 skipped` | Desktop and narrow-window interaction/visual coverage |
+| Tauri/Rust | `14 passed` | Formatting, check, command/sidecar/security tests |
+| Canonical fixture schemas | `11 validated` | Topic/course and EN/ES/HI fixture records |
+| Pipeline to real renderer | `1 passed` | Separate opt-in short integration smoke |
+| Real media smoke | passed | Short 640x360 Chromium to FFV1 to WebM render, probed and visually inspected |
+| Windows speech smoke | passed | 48 kHz mono, non-silent, zero clipped samples; not a voice-quality benchmark |
+| Packaged Python sidecar | passed | Development PyInstaller executable handshake, authenticated RPC, shutdown, and exit 0 |
+
+The correctness runs above were performed on the current development machine,
+whose Windows Node `20.20.2` and Python `3.12.2` do not match the release pins
+Node `24.20.0` and Python `3.12.13`; Rust `1.96.1` matches. The local FFmpeg is
+an older GPL-enabled development build and must never be substituted for the
+declared signed LGPL core runtime pack in release evidence.
+
+The machine remained in G-Helper **Silent** mode with CPU boost disabled, while
+other workloads were present. No power setting was changed. Short render/audio
+checks under that profile prove behavior only; there is no canonical RTX 4080
+Laptop performance benchmark yet, and UI time/cost ranges are estimates rather
+than measured release numbers.
+
+## Implemented surfaces that still need release-grade proof
+
+- [ ] Generate drift-checked Rust and Python bindings directly from the canonical
+  JSON Schemas; the current exhaustive TypeScript bindings and cross-language
+  domain models are implemented, but this generation/drift gate is not complete.
+- [ ] Complete the DBOS 2.x packaged-Windows crash/recovery/upgrade/no-duplicate-
+  charge spike. Until it passes, the deliberately selected and tested
+  `SQLiteWorkflowRuntime` fallback remains active; DBOS is not claimed active.
+- [ ] Replace catalog-only local-model entries with reviewed immutable revisions,
+  artifact hashes, licenses, and signed manifests; then download, resume,
+  rollback, and benchmark them on the target 12 GB RTX 4080 Laptop GPU.
+- [ ] Run live BYOK smoke/contract tests for every launch provider and reconcile
+  real retention, region, capability, pricing, cancellation, and billable-request
+  behavior. Current provider evidence is mocked/contract-level only.
+- [ ] Complete functional advanced editing for every visible control. In
+  particular, full undo/redo, timeline authoring, candidate comparison, and all
+  responsive override controls are not yet release-proven end to end.
+- [ ] Render and inspect the complete 16:9, 9:16, 1:1, custom, 1080p, 1440p, 4K,
+  FPS/bitrate/codec matrix with the signed runtime. The current real render is a
+  short 640x360 development smoke, not the final matrix.
+- [ ] Deeply verify full English, Spanish, and Hindi tutorials, caption timing,
+  ASR WER/alignment targets, audio descriptions, presenters, music/SFX, and all
+  export sidecars. Current locale fixtures and component tests are not that gate.
+- [ ] Complete long-form renders and human inspection for Karatsuba and every
+  canonical example. The deterministic fixtures validate, but a complete
+  twelve-minute flagship and the full canonical render set have not passed.
+- [ ] Finish the blind v1-versus-v2 evaluation and prove the required scores and
+  nine-dimension advantage. Preserved v1 demo hashes/inspection are baseline
+  evidence only.
+- [ ] Complete installer/update/rollback and clean-machine tests, production
+  runtime-pack installation, macOS/Linux build smokes, dependency/model SBOM and
+  notice resolution, FFmpeg license report, provenance/C2PA packet, and the final
+  release-candidate evidence bundle.
+
+## External and release blockers
+
+1. **Rotate the supplied BYOK credentials before any live test.** Values from
+   the user-provided key file were exposed to an internal tool transcript during
+   a failed label-only inspection. The ignored workspace copy was deleted and
+   the original file was not modified, but all credentials from that file must
+   be treated as compromised and replaced. No live provider smoke was run.
+2. **Production signing material is not available or authorized.** The desktop
+   installer, update feed, LGPL FFmpeg/Chromium/Python runtime packs, and optional
+   separate GPL x264 pack require immutable manifests, checksums, license review,
+   and production signatures.
+3. **The exact pinned clean environment is not installed.** Reproducible RC
+   verification must be rerun with Node `24.20.0`, Python `3.12.13`, the pinned
+   Chromium, the signed FFmpeg runtime, and reviewed model artifacts.
+4. **Hardware/load-sensitive evidence is intentionally deferred.** A controlled
+   benchmark profile and workload window must be agreed before measurements;
+   Alystria will not silently change G-Helper mode, enable CPU boost, or stop the
+   user's other workloads.
+
+## Release status and authorization boundary
+
+The source tree is a **local, unreleased RC worktree**. It is not yet a
+production-signed or distributable release candidate because the unchecked
+release gates above remain.
+
+- [x] Keep all current work local for user inspection.
+- [x] Do not change the Windows power profile or CPU boost automatically.
+- [x] Do not use the exposed credentials or run billable live-provider tests.
+- [x] Do not push, merge, publish, deploy, sign a production feed, create a
+  public release, distribute an installer, or announce Alystria Studio 2.0
+  without explicit owner approval.
+
+Silence, passing tests, local commits, or a locally built package are not release
+approval.

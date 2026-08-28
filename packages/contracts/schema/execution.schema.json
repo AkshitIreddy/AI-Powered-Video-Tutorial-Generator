@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.alystria.studio/v2/execution.schema.json",
+  "title": "Alystria artifacts, providers, jobs, QA, export, and plugins",
+  "$defs": {
+    "Artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "contentHash", "sizeBytes", "mimeType", "storage", "createdAt", "state"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "kind": { "enum": ["source", "evidence-index", "prompt", "script", "image", "audio", "video", "caption", "transcript", "font", "model", "render-frame", "scene-mezzanine", "export", "manifest", "consent-proof", "diagnostic", "other"] },
+        "contentHash": { "$ref": "common.schema.json#/$defs/Sha256" }, "sizeBytes": { "type": "integer", "minimum": 0 },
+        "mimeType": { "type": "string", "pattern": "^[a-z0-9.+-]+/[a-zA-Z0-9.+-]+$" },
+        "storage": { "type": "object", "additionalProperties": false, "required": ["algorithm", "relativePath"], "properties": { "algorithm": { "const": "sha256" }, "relativePath": { "$ref": "common.schema.json#/$defs/RelativePath" }, "externalUri": { "$ref": "common.schema.json#/$defs/Uri" } } },
+        "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "state": { "enum": ["staged", "verified", "promoted", "quarantined", "missing", "corrupt"] },
+        "provenanceId": { "$ref": "common.schema.json#/$defs/Id" }, "metadata": { "$ref": "common.schema.json#/$defs/JsonValue" }
+      }
+    },
+    "ProviderCapability": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "models", "locality", "dataClasses", "retention", "regions"],
+      "properties": {
+        "kind": { "enum": ["llm", "embedding", "reranking", "image", "video", "tts", "asr", "alignment", "presenter", "media-search", "research", "render", "code-execution"] },
+        "models": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "locality": { "enum": ["local", "cloud", "hybrid"] }, "dataClasses": { "type": "array", "items": { "enum": ["public", "project-metadata", "source-text", "media", "biometric", "private", "secret"] }, "uniqueItems": true },
+        "retention": { "enum": ["none", "transient", "provider-default", "configurable", "unknown"] }, "regions": { "type": "array", "items": { "type": "string", "minLength": 2, "maxLength": 100 } },
+        "supportsStructuredOutput": { "type": "boolean" }, "supportsStreaming": { "type": "boolean" }, "supportsCancellation": { "type": "boolean" }
+      }
+    },
+    "ProviderDescriptor": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "adapterVersion", "status", "capabilities", "credentialMode", "lastVerifiedAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "name": { "$ref": "common.schema.json#/$defs/ShortText" }, "adapterVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$" },
+        "status": { "enum": ["available", "unconfigured", "disabled", "degraded", "unavailable", "deprecated"] }, "capabilities": { "type": "array", "items": { "$ref": "#/$defs/ProviderCapability" } },
+        "credentialMode": { "enum": ["none", "api-key", "oauth", "service-account", "local-endpoint"] }, "credentialRef": { "$ref": "common.schema.json#/$defs/Id" },
+        "baseUri": { "$ref": "common.schema.json#/$defs/Uri" }, "lastVerifiedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "privacyPolicyUri": { "$ref": "common.schema.json#/$defs/Uri" },
+        "termsUri": { "$ref": "common.schema.json#/$defs/Uri" }
+      }
+    },
+    "ModelDescriptor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "providerId", "name", "revision", "capability", "status", "locality", "licenseStatus", "lastVerifiedAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "providerId": { "$ref": "common.schema.json#/$defs/Id" }, "name": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "revision": { "type": "string", "minLength": 1, "maxLength": 500 }, "capability": { "enum": ["llm", "embedding", "reranking", "image", "video", "tts", "asr", "alignment", "presenter"] },
+        "status": { "enum": ["available", "not-installed", "downloading", "incompatible", "disabled", "deprecated"] }, "locality": { "enum": ["local", "cloud"] },
+        "downloadUri": { "$ref": "common.schema.json#/$defs/Uri" }, "contentHash": { "$ref": "common.schema.json#/$defs/Sha256" }, "sizeBytes": { "type": "integer", "minimum": 0 },
+        "minimumVramMiB": { "type": "integer", "minimum": 0 }, "minimumRamMiB": { "type": "integer", "minimum": 0 }, "licenseExpression": { "type": "string", "maxLength": 500 },
+        "licenseStatus": { "enum": ["approved", "review-required", "restricted", "unknown"] }, "lastVerifiedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }
+      }
+    },
+    "PricingRule": {
+      "type": "object", "additionalProperties": false, "required": ["id", "providerId", "modelId", "meter", "unitSize", "price", "effectiveAt", "lastVerifiedAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "providerId": { "$ref": "common.schema.json#/$defs/Id" }, "modelId": { "$ref": "common.schema.json#/$defs/Id" },
+        "meter": { "enum": ["input-token", "output-token", "character", "second", "image", "video-second", "request", "compute-second", "storage-byte-month"] },
+        "unitSize": { "type": "integer", "minimum": 1 }, "price": { "$ref": "common.schema.json#/$defs/Money" }, "effectiveAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "expiresAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "lastVerifiedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }
+      }
+    },
+    "UsageRecord": {
+      "type": "object", "additionalProperties": false, "required": ["id", "taskAttemptId", "providerId", "modelId", "meter", "quantity", "estimated", "cost", "recordedAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "taskAttemptId": { "$ref": "common.schema.json#/$defs/Id" }, "providerId": { "$ref": "common.schema.json#/$defs/Id" }, "modelId": { "$ref": "common.schema.json#/$defs/Id" },
+        "meter": { "enum": ["input-token", "output-token", "character", "second", "image", "video-second", "request", "compute-second", "storage-byte-month"] }, "quantity": { "type": "number", "minimum": 0 },
+        "estimated": { "type": "boolean" }, "cost": { "$ref": "common.schema.json#/$defs/Money" }, "providerRequestId": { "type": "string", "maxLength": 500 }, "recordedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }
+      }
+    },
+    "BudgetPolicy": {
+      "type": "object", "additionalProperties": false, "required": ["mode", "limit", "onUnknownPrice", "approvalThreshold"],
+      "properties": {
+        "mode": { "enum": ["off", "warn", "hard"] }, "limit": { "$ref": "common.schema.json#/$defs/Money" }, "approvalThreshold": { "$ref": "common.schema.json#/$defs/Money" },
+        "onUnknownPrice": { "enum": ["allow", "warn", "block"] }, "spent": { "$ref": "common.schema.json#/$defs/Money" }, "reserved": { "$ref": "common.schema.json#/$defs/Money" }
+      }
+    },
+    "TaskRun": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "jobId", "kind", "taskKey", "implementationVersion", "state", "parameters", "inputArtifactIds", "dependencyTaskIds", "attemptIds", "createdAt", "maxAttempts"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "jobId": { "$ref": "common.schema.json#/$defs/Id" }, "kind": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "taskKey": { "$ref": "common.schema.json#/$defs/Sha256" }, "implementationVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "state": { "enum": ["BLOCKED", "READY", "QUEUED", "RUNNING", "SUCCEEDED", "RETRY_WAIT", "FAILED", "CANCELLED", "STALE"] },
+        "parameters": { "$ref": "common.schema.json#/$defs/JsonValue" }, "inputArtifactIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" } },
+        "outputArtifactIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" } }, "dependencyTaskIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "attemptIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "startedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "completedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "retryAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "progress": { "type": "number", "minimum": 0, "maximum": 1 }, "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 100 }, "diagnostics": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Diagnostic" } }
+      }
+    },
+    "TaskAttempt": {
+      "type": "object", "additionalProperties": false, "required": ["id", "taskId", "number", "state", "stagingPath", "createdAt", "usageIds", "diagnostics"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "taskId": { "$ref": "common.schema.json#/$defs/Id" }, "number": { "type": "integer", "minimum": 1 },
+        "state": { "enum": ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED", "ABANDONED"] }, "stagingPath": { "$ref": "common.schema.json#/$defs/RelativePath" },
+        "leaseOwner": { "type": "string", "maxLength": 500 }, "leaseExpiresAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "providerRequestId": { "type": "string", "maxLength": 500 },
+        "idempotencyKey": { "$ref": "common.schema.json#/$defs/Sha256" }, "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "startedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "completedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "usageIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" } }, "diagnostics": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Diagnostic" } }
+      }
+    },
+    "GenerationRun": {
+      "type": "object", "additionalProperties": false, "required": ["id", "projectId", "revisionId", "status", "mode", "taskIds", "budget", "privacyApproval", "createdAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "projectId": { "$ref": "common.schema.json#/$defs/Id" }, "revisionId": { "$ref": "common.schema.json#/$defs/Id" },
+        "status": { "enum": ["draft", "awaiting-approval", "queued", "running", "paused", "succeeded", "partially-succeeded", "failed", "cancelled"] },
+        "mode": { "enum": ["cloud", "local", "hybrid"] }, "taskIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "budget": { "$ref": "#/$defs/BudgetPolicy" },
+        "privacyApproval": { "enum": ["not-required", "pending", "approved", "rejected", "expired"] }, "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "completedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }
+      }
+    },
+    "JobRun": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "projectId", "kind", "state", "taskIds", "createdAt", "progress", "cancellationRequested", "diagnostics"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "projectId": { "$ref": "common.schema.json#/$defs/Id" }, "generationRunId": { "$ref": "common.schema.json#/$defs/Id" },
+        "kind": { "enum": ["research", "plan", "script", "storyboard", "generate", "regenerate", "render", "export", "import", "migration", "model-download", "diagnostic"] },
+        "state": { "enum": ["BLOCKED", "READY", "QUEUED", "RUNNING", "SUCCEEDED", "PARTIALLY_SUCCEEDED", "FAILED", "CANCELLING", "CANCELLED", "PAUSED", "RECOVERING"] },
+        "taskIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "startedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "completedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+        "etaMinimumSeconds": { "type": "integer", "minimum": 0 }, "etaMaximumSeconds": { "type": "integer", "minimum": 0 }, "cancellationRequested": { "type": "boolean" },
+        "diagnostics": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Diagnostic" } }
+      }
+    },
+    "JobEvent": {
+      "type": "object", "additionalProperties": false, "required": ["id", "jobId", "sequence", "kind", "occurredAt", "payload"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "jobId": { "$ref": "common.schema.json#/$defs/Id" }, "taskId": { "$ref": "common.schema.json#/$defs/Id" }, "sequence": { "type": "integer", "minimum": 0 },
+        "kind": { "enum": ["created", "state-changed", "progress", "diagnostic", "usage", "artifact-staged", "artifact-promoted", "approval-requested", "approval-resolved", "cancel-requested", "heartbeat", "recovered"] },
+        "occurredAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "payload": { "$ref": "common.schema.json#/$defs/JsonValue" }
+      }
+    },
+    "QualityGate": {
+      "type": "object", "additionalProperties": false, "required": ["id", "kind", "scope", "status", "severity", "policyVersion", "checks", "repairAttempts", "evaluatedAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "kind": { "enum": ["content", "factual", "citation", "math", "code", "visual", "audio", "timeline", "accessibility", "privacy", "licensing", "multimodal", "export"] },
+        "scope": { "$ref": "common.schema.json#/$defs/EntityRef" }, "status": { "enum": ["pending", "running", "passed", "warning", "failed", "waived", "blocked"] }, "severity": { "enum": ["info", "minor", "major", "critical"] },
+        "policyVersion": { "type": "string", "maxLength": 100 }, "checks": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Diagnostic" } },
+        "repairAttempts": { "type": "integer", "minimum": 0, "maximum": 2 }, "evaluatedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "waiverReason": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "ExportSpec": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "projectId", "revisionId", "target", "dimensions", "frameRate", "videoCodec", "audioCodec", "quality", "captions", "sidecars", "colorSpace"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "projectId": { "$ref": "common.schema.json#/$defs/Id" }, "revisionId": { "$ref": "common.schema.json#/$defs/Id" },
+        "target": { "enum": ["landscape", "portrait", "square", "custom"] }, "dimensions": { "$ref": "common.schema.json#/$defs/Dimensions" }, "frameRate": { "$ref": "common.schema.json#/$defs/Rational" },
+        "videoCodec": { "enum": ["h264", "hevc", "av1", "prores", "vp9", "ffv1"] }, "audioCodec": { "enum": ["aac", "opus", "flac", "pcm"] }, "quality": { "enum": ["draft", "standard", "high", "maximum", "lossless"] },
+        "bitrateKbps": { "type": "integer", "minimum": 100, "maximum": 500000 }, "hardwareEncoder": { "enum": ["auto", "none", "nvenc", "qsv", "amf", "videotoolbox", "vaapi"] },
+        "captions": { "enum": ["none", "sidecar", "burned-in", "both"] }, "sidecars": { "type": "array", "items": { "enum": ["vtt", "srt", "transcript", "descriptive-transcript", "bibliography", "chapters", "provenance", "c2pa", "thumbnail", "metadata", "audio-description"] }, "uniqueItems": true },
+        "colorSpace": { "const": "rec709-sdr" }, "gplRuntimePackApproved": { "type": "boolean" }, "outputPath": { "$ref": "common.schema.json#/$defs/RelativePath" }
+      }
+    },
+    "PluginPermission": {
+      "type": "object", "additionalProperties": false, "required": ["capability", "scope", "required"],
+      "properties": {
+        "capability": { "enum": ["read-artifact", "write-artifact", "network", "provider", "render-scene", "run-sandbox", "model-inference", "project-metadata"] },
+        "scope": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 500 } }, "required": { "type": "boolean" }, "reason": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "PluginManifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["manifestVersion", "id", "name", "version", "description", "publisher", "entrypoint", "runtime", "permissions", "contributes", "integrity", "licenseExpression"],
+      "properties": {
+        "manifestVersion": { "const": 1 }, "id": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)+$" }, "name": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$" }, "description": { "$ref": "common.schema.json#/$defs/ShortText" }, "publisher": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "entrypoint": { "$ref": "common.schema.json#/$defs/RelativePath" }, "runtime": { "enum": ["wasm-wasi", "process-jsonrpc"] }, "permissions": { "type": "array", "items": { "$ref": "#/$defs/PluginPermission" } },
+        "contributes": { "type": "object", "additionalProperties": false, "properties": { "sceneKinds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "providers": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "exporters": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "qualityGates": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true } } },
+        "integrity": { "$ref": "common.schema.json#/$defs/Sha256" }, "signature": { "type": "string", "maxLength": 8192 }, "licenseExpression": { "type": "string", "maxLength": 500 }, "minimumAlystriaVersion": { "type": "string", "maxLength": 100 }
+      }
+    }
+  }
+}

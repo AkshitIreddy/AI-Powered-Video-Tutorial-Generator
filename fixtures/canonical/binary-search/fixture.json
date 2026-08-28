@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture.binary-search.trace.en",
+  "title": "Binary Search with an Executable Trace",
+  "domain": "algorithms",
+  "purpose": "Programming fixture for invariants, code display, execution trace, variable state, missing-target behavior, and deterministic sandbox verification.",
+  "locale": "en-US",
+  "durationSeconds": 360,
+  "deterministicSeed": 2305,
+  "groundingMode": "strict",
+  "learner": {
+    "audience": "Beginning programmers who understand arrays, comparison, and loops.",
+    "knowledgeLevel": "beginner",
+    "prerequisites": ["Zero-based array indexing", "Ascending sort order", "While loops"],
+    "accessibilityNeeds": ["captions", "descriptive-transcript", "reduced-motion", "high-contrast", "screen-reader"]
+  },
+  "objectives": [
+    { "id": "obj.binary.invariant", "statement": "Explain the candidate-interval invariant and why sorted order is required.", "criteria": ["Keeps the target in the remaining interval", "Does not claim binary search works on arbitrary unsorted input"] },
+    { "id": "obj.binary.trace", "statement": "Trace low, mid, high, and the compared value until index 5 is found.", "criteria": ["Visits midpoints 4, 7, and 5", "Returns index 5"] },
+    { "id": "obj.binary.edge", "statement": "Handle missing targets and empty input without out-of-bounds access.", "criteria": ["Returns not found when low exceeds high", "Performs no access for an empty list"] }
+  ],
+  "sources": [
+    { "id": "src.binary.note", "path": "sources/binary-search.md", "sha256": "986f5d4f6be493ad2a7064d3b012b1934b838c5e4d73fdace2dc21d4587d1d18", "mimeType": "text/markdown", "title": "Binary search: deterministic teaching note", "creator": "Alystria fixture authors", "licenseExpression": "CC0-1.0", "origin": "locally-authored", "storagePolicy": "copied", "rightsStatus": "cleared", "externalEvidenceUris": [] }
+  ],
+  "claims": [
+    { "id": "claim.binary.invariant", "statement": "If the target exists, each update keeps it inside the inclusive interval [low, high].", "claimType": "procedural", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.binary.note", "locator": "Opening algorithm and invariant", "relationship": "entails" }] },
+    { "id": "claim.binary.result", "statement": "The declared trace finds target 23 at zero-based index 5 after midpoint values 16, 56, and 23.", "claimType": "quantitative", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.binary.note", "locator": "Trace", "relationship": "entails" }] },
+    { "id": "claim.binary.complexity", "statement": "Iterative binary search runs in O(log n) time and O(1) auxiliary space.", "claimType": "quantitative", "importance": "major", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.binary.note", "locator": "Complexity paragraph", "relationship": "entails" }] }
+  ],
+  "scenes": [
+    { "id": "scene.binary.requirement", "type": "definition", "title": "The sorted-data promise", "objectiveIds": ["obj.binary.invariant"], "claimIds": ["claim.binary.invariant"], "narration": "Binary search can discard a side only because the values are sorted. The candidate interval keeps every possible target position.", "visualIntent": "An ordered array and a bracketed inclusive interval; arrows and labels, not color alone, mark discarded positions.", "captionText": "Invariant: if target exists, it remains in [low, high].", "accessibilityDescription": "A sorted ten-item array has low and high brackets around all remaining candidates.", "sourceLocator": "src.binary.note#Opening" },
+    { "id": "scene.binary.code", "type": "code", "title": "Safe midpoint and updates", "objectiveIds": ["obj.binary.invariant", "obj.binary.edge"], "claimIds": [], "narration": "Compute mid from the current interval, compare once, then remove mid from the next interval. Stop when low is greater than high.", "visualIntent": "Syntax-highlighted inert pseudocode with a line-by-line reading order and no executable HTML.", "captionText": "mid = low + floor((high − low) / 2)", "accessibilityDescription": "Pseudocode is available as text and highlights the current line without relying on color." },
+    { "id": "scene.binary.trace", "type": "execution-trace", "title": "Find 23", "objectiveIds": ["obj.binary.trace"], "claimIds": ["claim.binary.result"], "narration": "Compare 16 at index 4, then 56 at index 7, then 23 at index 5. Return 5.", "visualIntent": "A deterministic variable table and array pointer advance through exactly three steps.", "captionText": "mid values: 16 → 56 → 23; result index: 5", "accessibilityDescription": "A three-row table lists low, mid, high, compared value, and update for every step.", "sourceLocator": "src.binary.note#Trace" },
+    { "id": "scene.binary.edges", "type": "comparison", "title": "Found, missing, and empty", "objectiveIds": ["obj.binary.edge"], "claimIds": ["claim.binary.complexity"], "narration": "A missing target eventually leaves an empty interval. Empty input starts empty and never accesses an element. Each comparison halves the candidates.", "visualIntent": "Three labeled cases show result, not-found termination, and zero array accesses.", "captionText": "Stop when low > high • O(log n) time • O(1) space", "accessibilityDescription": "A comparison table describes found, absent, and empty-input outcomes.", "sourceLocator": "src.binary.note#Missing target" }
+  ],
+  "outputTargets": [
+    { "name": "landscape", "width": 1920, "height": 1080, "fps": 30 },
+    { "name": "portrait", "width": 1080, "height": 1920, "fps": 30 }
+  ],
+  "qualityAssertions": [
+    { "id": "qa.binary.trace", "category": "content", "severity": "release-blocking", "check": "code.trace-exact", "description": "Sandbox and authored trace agree on all low/mid/high states and result index.", "expected": [[0,4,9,16],[5,7,9,56],[5,5,6,23]] },
+    { "id": "qa.binary.empty", "category": "security", "severity": "release-blocking", "check": "code.empty-input-no-access", "description": "Empty input executes no element access and returns not found.", "expected": true },
+    { "id": "qa.binary.support", "category": "grounding", "severity": "release-blocking", "check": "grounding.strict-claim-coverage", "description": "Every factual claim has exact local support.", "expected": 1.0 },
+    { "id": "qa.binary.code-a11y", "category": "accessibility", "severity": "release-blocking", "check": "accessibility.code-reading-order", "description": "Highlighted code is also exposed in a deterministic textual reading order.", "expected": true },
+    { "id": "qa.binary.render", "category": "render", "severity": "release-blocking", "check": "render.deterministic-all-targets", "description": "Trace visuals reflow rather than crop on portrait output.", "expected": true }
+  ],
+  "provenance": { "fixtureAuthor": "Alystria fixture authors", "createdAt": "2026-08-28T00:00:00Z", "licenseExpression": "CC0-1.0", "networkRequired": false, "containsPersonalData": false, "notes": "Algorithm, trace, and edge cases are locally authored and verified by exact assertions." }
+}

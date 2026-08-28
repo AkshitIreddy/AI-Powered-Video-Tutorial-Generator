@@ -1,0 +1,42 @@
+{
+  "name": "@alystria/contracts",
+  "version": "2.0.0-rc.0",
+  "private": true,
+  "description": "Canonical JSON contracts and TypeScript bindings for Alystria Studio.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema/*": "./schema/*"
+  },
+  "files": [
+    "dist",
+    "schema"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "generate": "node scripts/generate-bindings.mjs --write",
+    "check:generated": "node scripts/generate-bindings.mjs --check",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/generate-bindings.mjs --check && vitest run",
+    "test:unit": "node scripts/generate-bindings.mjs --check && vitest run",
+    "lint": "node scripts/generate-bindings.mjs --check && tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.0",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

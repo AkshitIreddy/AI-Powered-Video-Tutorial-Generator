@@ -1,0 +1,116 @@
+{
+  "learner": {
+    "accessibilityNeeds": [
+      "captions",
+      "descriptive-transcript",
+      "reduced-motion",
+      "high-contrast",
+      "screen-reader"
+    ],
+    "ageRange": null,
+    "audience": "Undergraduate computer-science learners meeting divide-and-conquer multiplication for the first time.",
+    "experience": "intermediate",
+    "goals": [],
+    "locale": "en-US",
+    "priorKnowledge": [
+      "Place-value decomposition",
+      "Algebraic expansion",
+      "Basic recurrence notation"
+    ]
+  },
+  "misconceptions": [
+    {
+      "belief": "Karatsuba Multiplication: Three Products Instead of Four can be learned by memorizing labels alone.",
+      "correction": "Understanding requires connecting the idea to a concrete example.",
+      "diagnostic_question": "Can you explain why the example works?",
+      "id": "mis_b6578a01e588ca59d98ac178"
+    }
+  ],
+  "objectives": [
+    {
+      "assessment": "Explain or apply the objective without hidden steps.",
+      "claimIds": [
+        "claim.karatsuba.identity"
+      ],
+      "id": "obj.karatsuba.derive",
+      "level": "analyze",
+      "statement": "Derive the three-product identity from place-value expansion."
+    },
+    {
+      "assessment": "Explain or apply the objective without hidden steps.",
+      "claimIds": [
+        "claim.karatsuba.answer"
+      ],
+      "id": "obj.karatsuba.apply",
+      "level": "apply",
+      "statement": "Apply the method to 1234 × 5678 and recombine exactly."
+    },
+    {
+      "assessment": "Explain or apply the objective without hidden steps.",
+      "claimIds": [
+        "claim.karatsuba.complexity"
+      ],
+      "id": "obj.karatsuba.compare",
+      "level": "analyze",
+      "statement": "Compare Karatsuba and grade-school asymptotic multiplication costs."
+    }
+  ],
+  "outline": [
+    {
+      "estimatedSeconds": 240,
+      "evidenceClaimIds": [
+        "claim.karatsuba.identity"
+      ],
+      "id": "section_f344bf36ce6094c3262edc52",
+      "objectiveIds": [
+        "obj.karatsuba.derive"
+      ],
+      "teachingStrategy": "activate prior knowledge",
+      "title": "1. Derive the three-product identity from place-value expansion."
+    },
+    {
+      "estimatedSeconds": 240,
+      "evidenceClaimIds": [
+        "claim.karatsuba.answer"
+      ],
+      "id": "section_e506a1b0b82b097875aaf01c",
+      "objectiveIds": [
+        "obj.karatsuba.apply"
+      ],
+      "teachingStrategy": "worked explanation",
+      "title": "2. Apply the method to 1234 × 5678 and recombine exactly."
+    },
+    {
+      "estimatedSeconds": 240,
+      "evidenceClaimIds": [
+        "claim.karatsuba.complexity"
+      ],
+      "id": "section_4ab12b3cf02fa5c137b332ae",
+      "objectiveIds": [
+        "obj.karatsuba.compare"
+      ],
+      "teachingStrategy": "guided practice",
+      "title": "3. Compare Karatsuba and grade-school asymptotic multiplication costs."
+    }
+  ],
+  "prerequisiteEdges": [],
+  "prerequisites": [
+    {
+      "assumed": true,
+      "id": "pre_364943aa83bc27e009fb6508",
+      "label": "Place-value decomposition"
+    },
+    {
+      "assumed": true,
+      "id": "pre_af7f1e0837fa15fe086bd6d5",
+      "label": "Algebraic expansion"
+    },
+    {
+      "assumed": true,
+      "id": "pre_5a0d9feb06ed8be8edacd511",
+      "label": "Basic recurrence notation"
+    }
+  ],
+  "targetDurationSeconds": 720,
+  "topic": "Karatsuba Multiplication: Three Products Instead of Four"
+}

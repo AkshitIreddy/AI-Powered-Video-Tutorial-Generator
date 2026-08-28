@@ -1,3 +1,12 @@
+# Archived Alystria v1 prototype — unsafe historical source
+
+> **Do not run this prototype or add credentials to it.** It is preserved only
+> for source-level and demo comparison. The archived server uses public sample
+> Basic credentials, permissive CORS, unsafe shell construction, unverified
+> remote media, and a plaintext key-file workflow. Those defects are not
+> compatible with Alystria Studio 2.0's trust model. The setup and run commands
+> below are historical documentation, not supported instructions.
+
 # AI-Generated Video Tutorials with Character Animation and Slides! 🎥🤖📝🎨
 
 This AI tool helps you create captivating and informative AI-generated video tutorials on any topic! With a charming character featuring facial animation and informative slides, it can explain any topic with ease. The best part? You have full control over the tutorial's creativity, humor, level of explanation, character appearance, and voice. ❤️✨

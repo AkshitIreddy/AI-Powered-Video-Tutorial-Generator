@@ -1,0 +1,170 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate manifests and clean checkout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.15.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.12.7
+          python-version: 3.12.13
+          enable-cache: true
+      - name: Validate catalogs and clean-machine inputs
+        run: |
+          node packages/contracts/scripts/generate-bindings.mjs --check
+          node scripts/validate-catalogs.mjs
+          node scripts/clean-machine-check.mjs
+          node scripts/generate-sbom.mjs --check
+          node scripts/generate-third-party-notices.mjs --check
+      - name: Reproducible dependency install
+        run: |
+          pnpm install --frozen-lockfile
+          uv sync --frozen --project services/pipeline --extra dev --extra dbos
+      - name: Confirm install did not rewrite tracked files
+        run: node scripts/clean-machine-check.mjs --strict-worktree
+
+  build-test:
+    name: Build and test (${{ matrix.os }})
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.15.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.12.7
+          python-version: 3.12.13
+          enable-cache: true
+      - name: Install Rust toolchain
+        shell: bash
+        run: rustup toolchain install 1.96.1 --profile minimal --component clippy,rustfmt
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install locked pipeline dependencies
+        run: uv sync --frozen --project services/pipeline --extra dev --extra dbos
+      - name: Expose pipeline environment
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp "$GITHUB_WORKSPACE/services/pipeline/.venv/Scripts/python.exe" "$GITHUB_WORKSPACE/services/pipeline/.venv/Scripts/python3.exe"
+            echo "$GITHUB_WORKSPACE/services/pipeline/.venv/Scripts" >> "$GITHUB_PATH"
+          else
+            echo "$GITHUB_WORKSPACE/services/pipeline/.venv/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Doctor
+        run: node scripts/doctor.mjs
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Compile native desktop shell without packaging
+        run: pnpm --filter @alystria/desktop tauri build --debug --no-bundle
+      - name: Rust formatting
+        run: cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - name: Rust lint
+        run: cargo clippy --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Rust tests
+        run: cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - name: Build and authenticate packaged pipeline sidecar
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $sidecarRoot = Join-Path $env:RUNNER_TEMP "alystria-sidecar"
+          .\scripts\build-windows-sidecar.ps1 -OutputDirectory $sidecarRoot -Force
+          & .\services\pipeline\.venv\Scripts\python.exe .\scripts\smoke-sidecar.py (Join-Path $sidecarRoot "alystria-pipeline.exe")
+
+  deterministic-render:
+    name: Deterministic fixture and render contracts
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.15.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate fixtures and render snapshots
+        run: node scripts/test-fixtures.mjs --require-fixtures --require-renderer
+
+  compliance:
+    name: Compliance evidence preview
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.15.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.12.7
+          python-version: 3.12.13
+          enable-cache: true
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.96.1 --profile minimal
+      - name: Install locked inventories
+        run: |
+          pnpm install --frozen-lockfile
+          uv sync --frozen --project services/pipeline --extra dev --extra dbos
+          cargo fetch --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - name: Generate local-only evidence
+        run: |
+          node scripts/generate-sbom.mjs
+          node scripts/generate-third-party-notices.mjs
+      - name: Validate generated evidence
+        run: |
+          test -s dist/compliance/alystria-studio.spdx.json
+          test -s dist/compliance/THIRD_PARTY_NOTICES.md

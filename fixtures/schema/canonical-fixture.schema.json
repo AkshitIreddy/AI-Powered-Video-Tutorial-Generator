@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.alystria.studio/fixtures/canonical-fixture.schema.json",
+  "title": "Alystria deterministic canonical fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "title", "domain", "purpose", "locale", "durationSeconds", "deterministicSeed", "groundingMode", "learner", "objectives", "sources", "claims", "scenes", "outputTargets", "qualityAssertions", "provenance"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "variantOf": { "$ref": "#/$defs/id" },
+    "title": { "$ref": "#/$defs/text" },
+    "domain": { "enum": ["algorithms", "mathematics", "history", "science", "statistics", "early-learning", "course", "localization"] },
+    "purpose": { "$ref": "#/$defs/text" },
+    "locale": { "type": "string", "pattern": "^[a-z]{2,3}(?:-[A-Z]{2})?$" },
+    "durationSeconds": { "type": "integer", "minimum": 30, "maximum": 14400 },
+    "deterministicSeed": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+    "groundingMode": { "enum": ["creative", "grounded", "strict"] },
+    "learner": { "$ref": "#/$defs/learner" },
+    "objectives": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/objective" } },
+    "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/source" } },
+    "claims": { "type": "array", "items": { "$ref": "#/$defs/claim" } },
+    "scenes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scene" } },
+    "outputTargets": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/target" } },
+    "qualityAssertions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/assertion" } },
+    "provenance": { "$ref": "#/$defs/provenance" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9._:-]{2,127}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 10000 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "learner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["audience", "knowledgeLevel", "prerequisites", "accessibilityNeeds"],
+      "properties": {
+        "audience": { "$ref": "#/$defs/text" },
+        "knowledgeLevel": { "enum": ["novice", "beginner", "intermediate", "advanced"] },
+        "prerequisites": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+        "accessibilityNeeds": { "type": "array", "items": { "enum": ["captions", "descriptive-transcript", "audio-description", "reduced-motion", "high-contrast", "plain-language", "screen-reader"] }, "uniqueItems": true }
+      }
+    },
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "criteria"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "statement": { "$ref": "#/$defs/text" },
+        "criteria": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } },
+        "prerequisiteObjectiveIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "sha256", "mimeType", "title", "creator", "licenseExpression", "origin", "storagePolicy", "rightsStatus", "externalEvidenceUris"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "path": { "type": "string", "pattern": "^sources/[A-Za-z0-9._/-]+$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "mimeType": { "type": "string", "pattern": "^[a-z0-9.+-]+/[A-Za-z0-9.+-]+$" },
+        "title": { "$ref": "#/$defs/text" },
+        "creator": { "$ref": "#/$defs/text" },
+        "licenseExpression": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "origin": { "enum": ["locally-authored", "synthetic-dataset", "public-domain", "user-provided"] },
+        "storagePolicy": { "enum": ["copied", "link-only"] },
+        "rightsStatus": { "enum": ["cleared", "attribution-required", "link-only"] },
+        "externalEvidenceUris": { "type": "array", "items": { "type": "string", "format": "uri" }, "uniqueItems": true }
+      }
+    },
+    "support": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "locator", "relationship"],
+      "properties": {
+        "sourceId": { "$ref": "#/$defs/id" },
+        "locator": { "$ref": "#/$defs/text" },
+        "relationship": { "enum": ["entails", "supports", "contextualizes", "qualifies"] }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "claimType", "importance", "verifiability", "supports"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "statement": { "$ref": "#/$defs/text" },
+        "claimType": { "enum": ["fact", "definition", "causal", "quantitative", "procedural", "interpretive", "creative"] },
+        "importance": { "enum": ["minor", "major", "critical"] },
+        "verifiability": { "enum": ["externally-verifiable", "source-dependent", "creative"] },
+        "supports": { "type": "array", "items": { "$ref": "#/$defs/support" } }
+      }
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "objectiveIds", "claimIds", "narration", "visualIntent", "captionText", "accessibilityDescription"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "enum": ["title", "section-intro", "definition", "comparison", "diagram", "timeline", "formula", "worked-example", "code", "execution-trace", "chart", "table", "map", "document", "simulation", "question", "quiz", "recap", "summary", "sources", "outro"] },
+        "title": { "$ref": "#/$defs/text" },
+        "objectiveIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true },
+        "claimIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true },
+        "narration": { "$ref": "#/$defs/text" },
+        "visualIntent": { "$ref": "#/$defs/text" },
+        "captionText": { "$ref": "#/$defs/text" },
+        "accessibilityDescription": { "$ref": "#/$defs/text" },
+        "sourceLocator": { "$ref": "#/$defs/text" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "width", "height", "fps"],
+      "properties": {
+        "name": { "enum": ["landscape", "portrait", "square", "custom"] },
+        "width": { "type": "integer", "minimum": 320, "maximum": 7680 },
+        "height": { "type": "integer", "minimum": 320, "maximum": 7680 },
+        "fps": { "enum": [24, 25, 30, 50, 60] }
+      }
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "severity", "check", "description", "expected"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "category": { "enum": ["content", "grounding", "pedagogy", "render", "audio", "captions", "accessibility", "localization", "security", "rights", "persistence", "performance"] },
+        "severity": { "enum": ["advisory", "release-blocking"] },
+        "check": { "$ref": "#/$defs/id" },
+        "description": { "$ref": "#/$defs/text" },
+        "expected": {}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixtureAuthor", "createdAt", "licenseExpression", "networkRequired", "containsPersonalData", "notes"],
+      "properties": {
+        "fixtureAuthor": { "$ref": "#/$defs/text" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "licenseExpression": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "networkRequired": { "const": false },
+        "containsPersonalData": { "const": false },
+        "notes": { "$ref": "#/$defs/text" }
+      }
+    }
+  }
+}

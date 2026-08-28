@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture.statistics.synthetic-scores.en",
+  "title": "Read a Small Dataset Without Overclaiming",
+  "domain": "statistics",
+  "purpose": "Structured-data fixture for CSV ingestion, exact descriptive statistics, chart/table parity, axis integrity, correlation-versus-causation language, and synthetic-data provenance.",
+  "locale": "en-US",
+  "durationSeconds": 300,
+  "deterministicSeed": 2910,
+  "groundingMode": "strict",
+  "learner": { "audience": "Beginning statistics learners using a small tabular dataset.", "knowledgeLevel": "beginner", "prerequisites": ["Addition and division", "Ordered values", "Coordinate plots"], "accessibilityNeeds": ["captions", "descriptive-transcript", "reduced-motion", "high-contrast", "screen-reader"] },
+  "objectives": [
+    { "id": "obj.stats.describe", "statement": "Compute count, mean, median, minimum, maximum, and range exactly.", "criteria": ["Mean is 72", "Median is 72.5", "Range is 38"] },
+    { "id": "obj.stats.visualize", "statement": "Build an honest labeled chart that preserves all ten observations.", "criteria": ["Both axes labeled", "No observation omitted", "Axis choice does not exaggerate differences"] },
+    { "id": "obj.stats.infer", "statement": "Describe positive association without claiming causation.", "criteria": ["Uses association language", "States synthetic data cannot establish cause"] }
+  ],
+  "sources": [
+    { "id": "src.stats.csv", "path": "sources/class-scores.csv", "sha256": "296696e2528a44171037b396910ceddcffc02a7800f0cd4365419128efb54007", "mimeType": "text/csv", "title": "Synthetic class scores", "creator": "Alystria fixture authors", "licenseExpression": "CC0-1.0", "origin": "synthetic-dataset", "storagePolicy": "copied", "rightsStatus": "cleared", "externalEvidenceUris": [] },
+    { "id": "src.stats.note", "path": "sources/analysis-note.md", "sha256": "d1ce29cd861b0efd4256138181c3e0200e00c56e89c64cf0ec949395fa400176", "mimeType": "text/markdown", "title": "Descriptive analysis for the synthetic class-score dataset", "creator": "Alystria fixture authors", "licenseExpression": "CC0-1.0", "origin": "locally-authored", "storagePolicy": "copied", "rightsStatus": "cleared", "externalEvidenceUris": [] }
+  ],
+  "claims": [
+    { "id": "claim.stats.summary", "statement": "The ten scores have mean 72, median 72.5, minimum 52, maximum 90, and range 38.", "claimType": "quantitative", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.stats.csv", "locator": "score column, rows A-J", "relationship": "entails" }, { "sourceId": "src.stats.note", "locator": "Summary list", "relationship": "entails" }] },
+    { "id": "claim.stats.association", "statement": "The synthetic observations show a positive association between study hours and score but cannot establish causation.", "claimType": "interpretive", "importance": "major", "verifiability": "source-dependent", "supports": [{ "sourceId": "src.stats.note", "locator": "Final paragraph", "relationship": "qualifies" }] }
+  ],
+  "scenes": [
+    { "id": "scene.stats.table", "type": "table", "title": "Inspect all ten rows", "objectiveIds": ["obj.stats.describe"], "claimIds": [], "narration": "The table contains ten synthetic students, study hours, and scores. No row represents a real person.", "visualIntent": "A sortable-looking but inert table preserves source order and marks the synthetic provenance.", "captionText": "10 synthetic rows • no personal data", "accessibilityDescription": "A three-column table exposes headers and all ten rows to assistive technology." },
+    { "id": "scene.stats.summary", "type": "worked-example", "title": "Compute descriptive statistics", "objectiveIds": ["obj.stats.describe"], "claimIds": ["claim.stats.summary"], "narration": "The scores sum to seven hundred twenty, so the mean is seventy-two. The middle pair, seventy-one and seventy-four, gives median seventy-two point five. The range is thirty-eight.", "visualIntent": "Exact arithmetic cards keep the source values visible beside each statistic.", "captionText": "n=10 • mean=72 • median=72.5 • range=38", "accessibilityDescription": "A labeled list gives each statistic, formula, and exact result.", "sourceLocator": "src.stats.note#Summary list" },
+    { "id": "scene.stats.chart", "type": "chart", "title": "See association, not cause", "objectiveIds": ["obj.stats.visualize", "obj.stats.infer"], "claimIds": ["claim.stats.association"], "narration": "Scores tend to rise with study hours in this synthetic table. The plot shows association, not proof that hours alone caused each score.", "visualIntent": "A scatter plot labels axes, shows all ten points, begins score context at a non-deceptive baseline, and has a text alternative.", "captionText": "Positive association in synthetic data—not causal proof", "accessibilityDescription": "A point-by-point table alternative lists study hours and score, followed by a qualified trend summary.", "sourceLocator": "src.stats.note#Final paragraph" },
+    { "id": "scene.stats.recap", "type": "recap", "title": "Describe, visualize, qualify", "objectiveIds": ["obj.stats.describe", "obj.stats.visualize", "obj.stats.infer"], "claimIds": ["claim.stats.summary", "claim.stats.association"], "narration": "Check the rows, compute exact summaries, visualize every observation, and state only the inference the data support.", "visualIntent": "A four-step concept thread connects table, arithmetic, chart, and qualification.", "captionText": "Rows → summaries → chart → qualified interpretation", "accessibilityDescription": "A numbered recap lists the four analysis steps." }
+  ],
+  "outputTargets": [{ "name": "landscape", "width": 1920, "height": 1080, "fps": 30 }, { "name": "portrait", "width": 1080, "height": 1920, "fps": 30 }, { "name": "square", "width": 1080, "height": 1080, "fps": 30 }],
+  "qualityAssertions": [
+    { "id": "qa.stats.values", "category": "content", "severity": "release-blocking", "check": "statistics.summary-exact", "description": "Computed values match exact expected summaries.", "expected": { "count": 10, "mean": 72, "median": 72.5, "minimum": 52, "maximum": 90, "range": 38 } },
+    { "id": "qa.stats.rows", "category": "content", "severity": "release-blocking", "check": "chart.preserves-observations", "description": "Table and chart contain all ten source observations with no invented row.", "expected": 10 },
+    { "id": "qa.stats.causation", "category": "pedagogy", "severity": "release-blocking", "check": "statistics.no-causal-overclaim", "description": "No narration or label claims that study hours caused scores.", "expected": true },
+    { "id": "qa.stats.axes", "category": "accessibility", "severity": "release-blocking", "check": "chart.axes-and-text-alternative", "description": "Both axes are labeled and a complete text/table alternative exists.", "expected": true },
+    { "id": "qa.stats.provenance", "category": "rights", "severity": "release-blocking", "check": "provenance.synthetic-no-personal-data", "description": "Dataset is visibly marked synthetic and contains no personal data.", "expected": true }
+  ],
+  "provenance": { "fixtureAuthor": "Alystria fixture authors", "createdAt": "2026-08-28T00:00:00Z", "licenseExpression": "CC0-1.0", "networkRequired": false, "containsPersonalData": false, "notes": "Every record is synthetic and intentionally minimal for deterministic exact arithmetic." }
+}

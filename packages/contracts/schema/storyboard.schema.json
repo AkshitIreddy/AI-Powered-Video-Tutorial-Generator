@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.alystria.studio/v2/storyboard.schema.json",
+  "title": "Alystria storyboard, scenes, and visual system",
+  "$defs": {
+    "ColorToken": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value", "role"],
+      "properties": {
+        "name": { "$ref": "common.schema.json#/$defs/Id" },
+        "value": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$" },
+        "role": { "enum": ["background", "surface", "text", "muted-text", "primary", "secondary", "accent", "positive", "warning", "critical", "data"] }
+      }
+    },
+    "TypographyToken": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "family", "weight", "sizePx", "lineHeight"],
+      "properties": {
+        "name": { "$ref": "common.schema.json#/$defs/Id" },
+        "family": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "fallbacks": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 200 } },
+        "weight": { "type": "integer", "minimum": 100, "maximum": 1000, "multipleOf": 50 },
+        "sizePx": { "type": "number", "minimum": 8, "maximum": 400 },
+        "lineHeight": { "type": "number", "minimum": 0.8, "maximum": 3 },
+        "letterSpacingEm": { "type": "number", "minimum": -0.2, "maximum": 1 }
+      }
+    },
+    "ThemeSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version", "colors", "typography", "spacingScale", "cornerStyle", "motionStyle"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "name": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$" },
+        "colors": { "type": "array", "minItems": 5, "items": { "$ref": "#/$defs/ColorToken" } },
+        "typography": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/TypographyToken" } },
+        "spacingScale": { "type": "array", "minItems": 4, "items": { "type": "number", "minimum": 0, "maximum": 512 } },
+        "cornerStyle": { "enum": ["square", "subtle", "rounded", "pill", "mixed"] },
+        "motionStyle": { "enum": ["none", "precise", "gentle", "energetic", "cinematic", "playful"] },
+        "logoAssetId": { "$ref": "common.schema.json#/$defs/Id" },
+        "fontArtifactIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "customProperties": {
+          "type": "object",
+          "propertyNames": { "pattern": "^--[a-z][a-z0-9-]*$" },
+          "additionalProperties": { "type": ["string", "number"] }
+        }
+      }
+    },
+    "VisualBible": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "themeId", "direction", "compositionRules", "imageRules", "motionRules", "doNotUse", "seed"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "themeId": { "$ref": "common.schema.json#/$defs/Id" },
+        "direction": { "$ref": "common.schema.json#/$defs/NonEmptyText" },
+        "compositionRules": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+        "imageRules": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+        "motionRules": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+        "doNotUse": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+        "characterAssetIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+      }
+    },
+    "LayoutOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "strategy"],
+      "properties": {
+        "target": { "enum": ["landscape", "portrait", "square", "custom"] },
+        "strategy": { "enum": ["reflow", "alternate", "simplify", "manual"] },
+        "templateId": { "$ref": "common.schema.json#/$defs/Id" },
+        "safeArea": { "$ref": "common.schema.json#/$defs/BoundingBox" },
+        "parameters": { "$ref": "common.schema.json#/$defs/JsonValue" }
+      }
+    },
+    "ChoreographyCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "targetId", "action", "startTick", "durationTicks", "easing"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "targetId": { "$ref": "common.schema.json#/$defs/Id" },
+        "action": { "enum": ["enter", "exit", "emphasize", "transform", "highlight", "focus", "draw", "count", "camera", "custom"] },
+        "startTick": { "type": "integer", "minimum": 0 },
+        "durationTicks": { "type": "integer", "minimum": 1 },
+        "easing": { "enum": ["linear", "ease-in", "ease-out", "ease-in-out", "spring", "step"] },
+        "parameters": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "reducedMotionAction": { "enum": ["none", "crossfade", "step", "instant"] }
+      }
+    },
+    "TextVisual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "heading", "blocks"],
+      "properties": {
+        "kind": { "enum": ["title", "section-intro", "definition", "bullets", "quote", "question", "recap", "summary", "outro"] },
+        "heading": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "eyebrow": { "type": "string", "maxLength": 200 },
+        "blocks": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/NonEmptyText" } },
+        "attribution": { "type": "string", "maxLength": 500 },
+        "icon": { "type": "string", "maxLength": 100 }
+      }
+    },
+    "ComparisonVisual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "heading", "columns"],
+      "properties": {
+        "kind": { "enum": ["comparison", "image-comparison"] },
+        "heading": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "columns": {
+          "type": "array", "minItems": 2, "maxItems": 6,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["id", "label", "points"],
+            "properties": {
+              "id": { "$ref": "common.schema.json#/$defs/Id" }, "label": { "$ref": "common.schema.json#/$defs/ShortText" },
+              "points": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+              "assetId": { "$ref": "common.schema.json#/$defs/Id" }, "emphasis": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "DiagramVisual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "nodes", "edges", "layout"],
+      "properties": {
+        "kind": { "const": "diagram" },
+        "nodes": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["id", "label", "shape"], "properties": { "id": { "$ref": "common.schema.json#/$defs/Id" }, "label": { "$ref": "common.schema.json#/$defs/ShortText" }, "description": { "type": "string", "maxLength": 1000 }, "shape": { "enum": ["rectangle", "rounded", "circle", "diamond", "capsule", "icon", "image"] }, "assetId": { "$ref": "common.schema.json#/$defs/Id" } } } },
+        "edges": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["id", "from", "to", "directed"], "properties": { "id": { "$ref": "common.schema.json#/$defs/Id" }, "from": { "$ref": "common.schema.json#/$defs/Id" }, "to": { "$ref": "common.schema.json#/$defs/Id" }, "label": { "type": "string", "maxLength": 300 }, "directed": { "type": "boolean" } } } },
+        "layout": { "enum": ["layered", "tree", "radial", "force", "manual"] }
+      }
+    },
+    "TimelineVisual": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "events", "orientation"],
+      "properties": {
+        "kind": { "const": "timeline" }, "orientation": { "enum": ["horizontal", "vertical"] },
+        "events": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["id", "label", "dateLabel"], "properties": { "id": { "$ref": "common.schema.json#/$defs/Id" }, "label": { "$ref": "common.schema.json#/$defs/ShortText" }, "dateLabel": { "$ref": "common.schema.json#/$defs/ShortText" }, "description": { "type": "string", "maxLength": 2000 }, "assetId": { "$ref": "common.schema.json#/$defs/Id" } } } }
+      }
+    },
+    "MathVisual": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "expressions"],
+      "properties": {
+        "kind": { "enum": ["formula", "derivation", "graph"] },
+        "expressions": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["id", "latex"], "properties": { "id": { "$ref": "common.schema.json#/$defs/Id" }, "latex": { "$ref": "common.schema.json#/$defs/NonEmptyText" }, "spokenText": { "type": "string", "maxLength": 3000 }, "justification": { "type": "string", "maxLength": 3000 }, "verified": { "type": "boolean" } } } },
+        "graphSpec": { "$ref": "common.schema.json#/$defs/JsonValue" }
+      }
+    },
+    "CodeVisual": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "language", "content"],
+      "properties": {
+        "kind": { "enum": ["code", "code-walkthrough", "diff", "file-tree", "terminal", "execution-trace", "variable-state"] },
+        "language": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "content": { "$ref": "common.schema.json#/$defs/NonEmptyText" },
+        "fileName": { "type": "string", "maxLength": 500 },
+        "highlights": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["startLine", "endLine", "label"], "properties": { "startLine": { "type": "integer", "minimum": 1 }, "endLine": { "type": "integer", "minimum": 1 }, "label": { "$ref": "common.schema.json#/$defs/ShortText" } } } },
+        "traceArtifactId": { "$ref": "common.schema.json#/$defs/Id" },
+        "executionAllowed": { "type": "boolean" }
+      }
+    },
+    "DataVisual": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "title", "data", "encoding"],
+      "properties": {
+        "kind": { "enum": ["chart", "table", "map"] }, "title": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "data": { "$ref": "common.schema.json#/$defs/JsonValue" }, "encoding": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "sourceClaimIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "mapProjection": { "type": "string", "maxLength": 100 }
+      }
+    },
+    "MediaVisual": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "assetIds", "fit"],
+      "properties": {
+        "kind": { "enum": ["image-focus", "highlighted-document", "ui-demonstration", "screen-recording"] },
+        "assetIds": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "fit": { "enum": ["contain", "cover", "actual-size"] },
+        "annotations": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["id", "box", "label"], "properties": { "id": { "$ref": "common.schema.json#/$defs/Id" }, "box": { "$ref": "common.schema.json#/$defs/BoundingBox" }, "label": { "$ref": "common.schema.json#/$defs/ShortText" } } } },
+        "crop": { "$ref": "common.schema.json#/$defs/BoundingBox" }
+      }
+    },
+    "SimulationVisual": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "simulationId", "parameters", "capturePolicy"],
+      "properties": {
+        "kind": { "const": "simulation" }, "simulationId": { "$ref": "common.schema.json#/$defs/Id" },
+        "parameters": { "$ref": "common.schema.json#/$defs/JsonValue" }, "capturePolicy": { "enum": ["deterministic-frames", "recorded-run", "keyframes"] },
+        "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+      }
+    },
+    "PresenterVisual": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "presenter", "layout"],
+      "properties": {
+        "kind": { "enum": ["presenter", "presenter-with-slide"] }, "presenter": { "$ref": "media.schema.json#/$defs/PresenterSpec" },
+        "layout": { "enum": ["full", "picture-in-picture", "split-left", "split-right"] }, "slideAssetId": { "$ref": "common.schema.json#/$defs/Id" }
+      }
+    },
+    "InstructionVisual": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "prompt", "steps"],
+      "properties": {
+        "kind": { "enum": ["worked-example", "quiz"] }, "prompt": { "$ref": "common.schema.json#/$defs/NonEmptyText" },
+        "steps": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/NonEmptyText" } },
+        "choices": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" } },
+        "answer": { "type": "string", "maxLength": 10000 }, "explanation": { "type": "string", "maxLength": 10000 }
+      }
+    },
+    "SourcesVisual": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "sourceVersionIds", "style"],
+      "properties": { "kind": { "const": "sources" }, "sourceVersionIds": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "style": { "enum": ["bibliography", "cards", "compact"] } }
+    },
+    "VisualContent": {
+      "oneOf": [
+        { "$ref": "#/$defs/TextVisual" }, { "$ref": "#/$defs/ComparisonVisual" }, { "$ref": "#/$defs/DiagramVisual" },
+        { "$ref": "#/$defs/TimelineVisual" }, { "$ref": "#/$defs/MathVisual" }, { "$ref": "#/$defs/CodeVisual" },
+        { "$ref": "#/$defs/DataVisual" }, { "$ref": "#/$defs/MediaVisual" }, { "$ref": "#/$defs/SimulationVisual" },
+        { "$ref": "#/$defs/PresenterVisual" }, { "$ref": "#/$defs/InstructionVisual" }, { "$ref": "#/$defs/SourcesVisual" }
+      ]
+    },
+    "Scene": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "sectionId", "title", "objectiveIds", "prerequisiteIds", "visual", "layouts", "choreography", "narration", "claimIds", "citationSupportIds", "captions", "audio", "timing", "accessibility", "artifactIds", "locks", "revisionId"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "sectionId": { "$ref": "common.schema.json#/$defs/Id" }, "title": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "objectiveIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "prerequisiteIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "visual": { "$ref": "#/$defs/VisualContent" }, "layouts": { "type": "array", "items": { "$ref": "#/$defs/LayoutOverride" } },
+        "choreography": { "type": "array", "items": { "$ref": "#/$defs/ChoreographyCue" } }, "narration": { "$ref": "media.schema.json#/$defs/NarrationSpec" },
+        "claimIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "citationSupportIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "captions": { "type": "array", "items": { "$ref": "media.schema.json#/$defs/CaptionTrack" } }, "audio": { "$ref": "media.schema.json#/$defs/AudioMixSpec" },
+        "timing": { "$ref": "media.schema.json#/$defs/TimingPolicy" }, "accessibility": { "$ref": "media.schema.json#/$defs/AccessibilitySpec" },
+        "artifactIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "locks": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Lock" } }, "revisionId": { "$ref": "common.schema.json#/$defs/Id" }
+      }
+    },
+    "StoryboardSnapshot": {
+      "type": "object", "additionalProperties": false, "required": ["id", "projectId", "revisionId", "visualBible", "theme", "scenes", "createdAt", "status"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "projectId": { "$ref": "common.schema.json#/$defs/Id" }, "revisionId": { "$ref": "common.schema.json#/$defs/Id" },
+        "visualBible": { "$ref": "#/$defs/VisualBible" }, "theme": { "$ref": "#/$defs/ThemeSpec" }, "scenes": { "type": "array", "items": { "$ref": "#/$defs/Scene" } },
+        "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "status": { "enum": ["draft", "proposed", "approved", "superseded"] }
+      }
+    },
+    "CompiledScene": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "sourceSceneId", "sourceRevisionId", "target", "dimensions", "frameRate", "tickRate", "durationTicks", "layout", "artifactIds", "compileHash"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "sourceSceneId": { "$ref": "common.schema.json#/$defs/Id" }, "sourceRevisionId": { "$ref": "common.schema.json#/$defs/Id" },
+        "target": { "enum": ["landscape", "portrait", "square", "custom"] }, "dimensions": { "$ref": "common.schema.json#/$defs/Dimensions" }, "frameRate": { "$ref": "common.schema.json#/$defs/Rational" },
+        "tickRate": { "const": 240000 }, "durationTicks": { "type": "integer", "minimum": 1 }, "layout": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "artifactIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }, "compileHash": { "$ref": "common.schema.json#/$defs/Sha256" }
+      }
+    },
+    "RenderManifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "projectId", "revisionId", "target", "dimensions", "frameRate", "tickRate", "compiledScenes", "totalDurationTicks", "colorSpace", "audioMix", "createdAt", "renderHash"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" }, "projectId": { "$ref": "common.schema.json#/$defs/Id" }, "revisionId": { "$ref": "common.schema.json#/$defs/Id" },
+        "target": { "enum": ["landscape", "portrait", "square", "custom"] }, "dimensions": { "$ref": "common.schema.json#/$defs/Dimensions" }, "frameRate": { "$ref": "common.schema.json#/$defs/Rational" },
+        "tickRate": { "const": 240000 }, "compiledScenes": { "type": "array", "items": { "$ref": "#/$defs/CompiledScene" } }, "totalDurationTicks": { "type": "integer", "minimum": 1 },
+        "colorSpace": { "const": "rec709-sdr" }, "audioMix": { "$ref": "media.schema.json#/$defs/AudioMixSpec" }, "captionTrackIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "createdAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "renderHash": { "$ref": "common.schema.json#/$defs/Sha256" }
+      }
+    }
+  }
+}

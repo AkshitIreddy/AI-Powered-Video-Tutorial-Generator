@@ -1,0 +1,106 @@
+{
+  "artifacts": [
+    {
+      "bytes": 977,
+      "mediaType": "text/plain",
+      "originalName": "transcript.txt",
+      "sha256": "15c857009e4b09815cf5fab52ffe5c85aee2765ebe0cc42fb85f719f1588460a"
+    },
+    {
+      "bytes": 384044,
+      "mediaType": "audio/wav",
+      "originalName": "scene_5fffecc1fc7e8cc1bc9c8dc0.wav",
+      "sha256": "2ba2aa0d1355c18d54f24672b61dfee6c1fa570f1e7f6f5abde25f571495d60d"
+    },
+    {
+      "bytes": 182,
+      "mediaType": "application/vnd.alystria.presenter+json",
+      "originalName": "scene_5fffecc1fc7e8cc1bc9c8dc0.presenter.json",
+      "sha256": "31432eb14bc5cc97d244c9d851af3cb25f597a73b370660ea10d409bfe84b3fe"
+    },
+    {
+      "bytes": 423,
+      "mediaType": "image/svg+xml",
+      "originalName": "scene_5fffecc1fc7e8cc1bc9c8dc0.svg",
+      "sha256": "3c3dbcd945db999a7f1656f59912e6ea3ed5831f0f91194b5eca183716e85eba"
+    },
+    {
+      "bytes": 2155,
+      "mediaType": "text/vtt",
+      "originalName": "captions.vtt",
+      "sha256": "58066f654c4f170b81051219e606e3ca1032679203d01f403e1f94ba41b742de"
+    },
+    {
+      "bytes": 421,
+      "mediaType": "image/svg+xml",
+      "originalName": "scene_08a9c69a585f75fa1ccf670a.svg",
+      "sha256": "79b1fae80d3c17a0c809bb191e77a0bf7181113b53f244a8a08270b50a6e3592"
+    },
+    {
+      "bytes": 4521,
+      "mediaType": "application/vnd.alystria.provenance+json",
+      "originalName": "provenance-manifest.json",
+      "sha256": "93cfb70de874ed0fb099114313d8e668f3e0fe262466dfa22f9878a58675daaf"
+    },
+    {
+      "bytes": 362,
+      "mediaType": "application/vnd.alystria.render+json",
+      "originalName": "tutorial.render.json",
+      "sha256": "a6e637a7b16077a74cf051131e395233743c1ecbcae19339e0edd258a3001de3"
+    },
+    {
+      "bytes": 421,
+      "mediaType": "image/svg+xml",
+      "originalName": "scene_81838b64a0d70f20a719bfa2.svg",
+      "sha256": "d5a3a2bab59d6c50d2635c9ee79a9b046b952e60950e3ff02ee325ef20ec6562"
+    },
+    {
+      "bytes": 1852,
+      "mediaType": "application/x-subrip",
+      "originalName": "captions.srt",
+      "sha256": "da7c88838d6ff2734cbdcead5a432cfd3acbd14cafc0dfc7b23c11d3e3549c1f"
+    },
+    {
+      "bytes": 384044,
+      "mediaType": "audio/wav",
+      "originalName": "scene_81838b64a0d70f20a719bfa2.wav",
+      "sha256": "dcdba08c8fc7dd544dde8ee9ddd34a0161a1e628424f4977b9269cf4bb06ee00"
+    },
+    {
+      "bytes": 18300,
+      "mediaType": "application/vnd.alystria.qa-evidence+json",
+      "originalName": "qa-evidence.json",
+      "sha256": "f2ba0ca45872f0e744a5d31928ba4a10b56342ce770fea7074d997d23083a434"
+    },
+    {
+      "bytes": 384044,
+      "mediaType": "audio/wav",
+      "originalName": "scene_08a9c69a585f75fa1ccf670a.wav",
+      "sha256": "f3fccda806dca54edc3d11c21d5122c210b459c632a75da2d01e689b7e4baebc"
+    }
+  ],
+  "fixture": {
+    "id": "fixture.karatsuba.undergraduate.en",
+    "sha256": "0f864013b894f8ce689c778f6139dd8cd655e619e8254a93f77cf3f80d90768f",
+    "sourceFiles": [
+      {
+        "id": "src.karatsuba.note",
+        "licenseExpression": "CC0-1.0",
+        "path": "sources/karatsuba-derivation.md",
+        "rightsStatus": "cleared",
+        "sha256": "f41b99dc57296129f0d5466585de0542146c52bf7af3e12f2c297eef764d62d1"
+      }
+    ]
+  },
+  "generation": {
+    "id": "19620000-0000-4000-8000-000000000002",
+    "modelRevision": "fixture-media-v1",
+    "networkAccess": "denied",
+    "provider": "local-deterministic",
+    "providerCredentialsUsed": false,
+    "renderer": "alystria-deterministic-renderer",
+    "rendererVersion": "fixture-render-v1",
+    "seed": 1962
+  },
+  "schemaVersion": 1
+}

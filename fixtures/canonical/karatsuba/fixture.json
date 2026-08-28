@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture.karatsuba.undergraduate.en",
+  "title": "Karatsuba Multiplication: Three Products Instead of Four",
+  "domain": "algorithms",
+  "purpose": "Flagship twelve-minute fixture for grounded pedagogy, exact mathematics, scene-local regeneration, captions, sources, and multi-target rendering.",
+  "locale": "en-US",
+  "durationSeconds": 720,
+  "deterministicSeed": 1962,
+  "groundingMode": "strict",
+  "learner": {
+    "audience": "Undergraduate computer-science learners meeting divide-and-conquer multiplication for the first time.",
+    "knowledgeLevel": "intermediate",
+    "prerequisites": ["Place-value decomposition", "Algebraic expansion", "Basic recurrence notation"],
+    "accessibilityNeeds": ["captions", "descriptive-transcript", "reduced-motion", "high-contrast", "screen-reader"]
+  },
+  "objectives": [
+    { "id": "obj.karatsuba.derive", "statement": "Derive the three-product identity from place-value expansion.", "criteria": ["Names z2, z0, and z1", "Explains why the cross term needs no fourth recursive multiplication"] },
+    { "id": "obj.karatsuba.apply", "statement": "Apply the method to 1234 × 5678 and recombine exactly.", "criteria": ["Gets z2=672, z0=2652, p=6164, z1=2840", "Gets 7006652"] },
+    { "id": "obj.karatsuba.compare", "statement": "Compare Karatsuba and grade-school asymptotic multiplication costs.", "criteria": ["States T(n)=3T(n/2)+O(n)", "Contrasts n^log2(3) with n^2"] }
+  ],
+  "sources": [
+    {
+      "id": "src.karatsuba.note",
+      "path": "sources/karatsuba-derivation.md",
+      "sha256": "f41b99dc57296129f0d5466585de0542146c52bf7af3e12f2c297eef764d62d1",
+      "mimeType": "text/markdown",
+      "title": "Karatsuba multiplication: deterministic teaching note",
+      "creator": "Alystria fixture authors",
+      "licenseExpression": "CC0-1.0",
+      "origin": "locally-authored",
+      "storagePolicy": "copied",
+      "rightsStatus": "cleared",
+      "externalEvidenceUris": ["https://doi.org/10.1016/S0019-9958(62)80020-3"]
+    }
+  ],
+  "claims": [
+    { "id": "claim.karatsuba.identity", "statement": "The middle coefficient ad+bc equals (a+b)(c+d)-ac-bd.", "claimType": "procedural", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.karatsuba.note", "locator": "Direct expansion through three recursive products", "relationship": "entails" }] },
+    { "id": "claim.karatsuba.answer", "statement": "1234 × 5678 equals 7,006,652.", "claimType": "quantitative", "importance": "critical", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.karatsuba.note", "locator": "Worked example: 1234 × 5678", "relationship": "entails" }] },
+    { "id": "claim.karatsuba.complexity", "statement": "The recurrence T(n)=3T(n/2)+O(n) solves to O(n^log2(3)), approximately O(n^1.585).", "claimType": "quantitative", "importance": "major", "verifiability": "externally-verifiable", "supports": [{ "sourceId": "src.karatsuba.note", "locator": "Final complexity paragraph", "relationship": "entails" }] }
+  ],
+  "scenes": [
+    { "id": "scene.karatsuba.hook", "type": "question", "title": "Can four products become three?", "objectiveIds": ["obj.karatsuba.derive"], "claimIds": [], "narration": "A direct split seems to need four smaller multiplications. Karatsuba finds the same cross term with only three.", "visualIntent": "Two two-digit blocks split into a, b, c, d; four product links collapse into three highlighted links.", "captionText": "Can four smaller products become three?", "accessibilityDescription": "A diagram changes from four multiplication links to three, with labels read in order." },
+    { "id": "scene.karatsuba.derive", "type": "formula", "title": "Build the identity", "objectiveIds": ["obj.karatsuba.derive"], "claimIds": ["claim.karatsuba.identity"], "narration": "Expand place values, then compute z two, z zero, and one combined product. Subtract the outer products to isolate a d plus b c.", "visualIntent": "Semantic equation segments transform in discrete, reduced-motion-safe steps.", "captionText": "z1 = (a+b)(c+d) − z2 − z0 = ad+bc", "accessibilityDescription": "The equation expansion is read step by step, ending with the derived middle coefficient.", "sourceLocator": "src.karatsuba.note#Direct expansion" },
+    { "id": "scene.karatsuba.example", "type": "worked-example", "title": "Work 1234 × 5678", "objectiveIds": ["obj.karatsuba.apply"], "claimIds": ["claim.karatsuba.answer"], "narration": "Split at two digits. The three products are 672, 2652, and 6164. Their adjusted middle is 2840, and recombination gives 7,006,652.", "visualIntent": "Place-value columns keep all intermediate values visible and align the final addition.", "captionText": "672×10000 + 2840×100 + 2652 = 7,006,652", "accessibilityDescription": "A four-row arithmetic table lists the split, three products, middle term, and final recombination.", "sourceLocator": "src.karatsuba.note#Worked example" },
+    { "id": "scene.karatsuba.complexity", "type": "comparison", "title": "Why three matters", "objectiveIds": ["obj.karatsuba.compare"], "claimIds": ["claim.karatsuba.complexity"], "narration": "Three half-size recursive products yield n to log base two of three, about n to 1.585, versus quadratic grade-school multiplication.", "visualIntent": "Log-scale curves and recurrence trees use labels and line patterns in addition to color.", "captionText": "Karatsuba: O(n^1.585) • Grade school: O(n²)", "accessibilityDescription": "Two labeled growth curves show Karatsuba rising more slowly than quadratic multiplication.", "sourceLocator": "src.karatsuba.note#Final complexity paragraph" },
+    { "id": "scene.karatsuba.recap", "type": "recap", "title": "Three products, one recombination", "objectiveIds": ["obj.karatsuba.derive", "obj.karatsuba.apply", "obj.karatsuba.compare"], "claimIds": ["claim.karatsuba.identity", "claim.karatsuba.answer", "claim.karatsuba.complexity"], "narration": "Split, compute the two outer products and one sum product, recover the middle, and recombine by place value.", "visualIntent": "A five-step concept thread revisits the exact example without introducing new claims.", "captionText": "Split → three products → middle term → recombine → compare", "accessibilityDescription": "A numbered five-step recap links the method to the completed example." }
+  ],
+  "outputTargets": [
+    { "name": "landscape", "width": 1920, "height": 1080, "fps": 30 },
+    { "name": "portrait", "width": 1080, "height": 1920, "fps": 30 },
+    { "name": "square", "width": 1080, "height": 1080, "fps": 30 }
+  ],
+  "qualityAssertions": [
+    { "id": "qa.karatsuba.answer", "category": "content", "severity": "release-blocking", "check": "content.contains-exact-values", "description": "All required worked-example values remain exact.", "expected": [672, 2652, 6164, 2840, 7006652] },
+    { "id": "qa.karatsuba.support", "category": "grounding", "severity": "release-blocking", "check": "grounding.strict-claim-coverage", "description": "Every externally verifiable claim has entailing or supporting evidence.", "expected": 1.0 },
+    { "id": "qa.karatsuba.local-edit", "category": "persistence", "severity": "release-blocking", "check": "invalidation.scene-local", "description": "Editing the example narration leaves unrelated source and complexity scene artifacts byte-identical.", "expected": true },
+    { "id": "qa.karatsuba.captions", "category": "captions", "severity": "release-blocking", "check": "captions.no-essential-visual-collision", "description": "Captions stay within safe areas and never cover equations or intermediate values.", "expected": true },
+    { "id": "qa.karatsuba.render", "category": "render", "severity": "release-blocking", "check": "render.deterministic-all-targets", "description": "All declared targets render deterministically in the canonical environment.", "expected": true },
+    { "id": "qa.karatsuba.score", "category": "pedagogy", "severity": "release-blocking", "check": "evaluation.minimum-mean", "description": "Blind reviewer mean for accuracy, sequence, visual explanation, audio, and usability.", "expected": 4.0 }
+  ],
+  "provenance": {
+    "fixtureAuthor": "Alystria fixture authors",
+    "createdAt": "2026-08-28T00:00:00Z",
+    "licenseExpression": "CC0-1.0",
+    "networkRequired": false,
+    "containsPersonalData": false,
+    "notes": "All narrative and source material is locally authored; external DOI is reviewer context only."
+  }
+}

@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "catalogVersion": "2026.08.28.2",
+  "lastVerifiedAt": "2026-08-28",
+  "aliases": {
+    "azure": "azure-speech",
+    "google": "gemini"
+  },
+  "providers": [
+    {
+      "id": "mock",
+      "displayName": "Deterministic Mock",
+      "execution": "local",
+      "credentialKind": "none",
+      "approvedByDefault": true,
+      "capabilities": ["llm", "image", "tts", "presenter", "alignment"],
+      "dataBoundary": "local-only",
+      "pricing": { "status": "free", "hardBudgetEligible": true }
+    },
+    {
+      "id": "local-runtime",
+      "displayName": "Alystria Local Runtime",
+      "execution": "local",
+      "credentialKind": "none",
+      "approvedByDefault": false,
+      "capabilities": ["llm", "embedding", "reranking", "image", "tts", "asr", "alignment", "presenter"],
+      "dataBoundary": "local-only",
+      "pricing": { "status": "free", "hardBudgetEligible": true }
+    },
+    {
+      "id": "openai-compatible-local",
+      "displayName": "OpenAI-Compatible Local Endpoint",
+      "execution": "local",
+      "credentialKind": "optional-secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["llm", "embedding"],
+      "dataBoundary": "user-configured",
+      "pricing": { "status": "user-configured", "hardBudgetEligible": false }
+    },
+    {
+      "id": "openai",
+      "displayName": "OpenAI",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["llm", "image", "tts", "asr"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "anthropic",
+      "displayName": "Anthropic",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["llm"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "gemini",
+      "displayName": "Google Gemini",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["llm", "image", "video", "tts", "asr"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "nvidia-nim",
+      "displayName": "NVIDIA NIM Hosted Preview",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["llm", "vlm", "embedding", "image"],
+      "dataBoundary": "nvidia-hosted-preview-public-synthetic-only",
+      "pricing": { "status": "free-preview-model-limit-check-required", "hardBudgetEligible": true },
+      "usagePolicy": {
+        "productionEligible": false,
+        "acceptedDataClasses": ["public"],
+        "explicitTermsApprovalRequired": true,
+        "modelAvailabilityCheckRequired": true,
+        "trainingUse": "possible-terms-conflict",
+        "retention": "session-oriented-security-logging-unknown",
+        "selfHostedEntitlementSeparate": true,
+        "termsUrl": "https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf"
+      }
+    },
+    {
+      "id": "black-forest-labs",
+      "displayName": "Black Forest Labs",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["image"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "recraft",
+      "displayName": "Recraft",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["image"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "runway",
+      "displayName": "Runway",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["video"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "elevenlabs",
+      "displayName": "ElevenLabs",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["tts", "voice-clone"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "azure-speech",
+      "displayName": "Azure AI Speech",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["tts", "asr", "presenter"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "heygen",
+      "displayName": "HeyGen",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["presenter"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "tavus",
+      "displayName": "Tavus",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["presenter"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "openverse",
+      "displayName": "Openverse",
+      "execution": "cloud",
+      "credentialKind": "none",
+      "approvedByDefault": false,
+      "capabilities": ["licensed-media-search"],
+      "dataBoundary": "public-query-only",
+      "pricing": { "status": "free", "hardBudgetEligible": true }
+    },
+    {
+      "id": "pexels",
+      "displayName": "Pexels",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["licensed-media-search"],
+      "dataBoundary": "public-query-only",
+      "pricing": { "status": "free", "hardBudgetEligible": true }
+    },
+    {
+      "id": "google-cloud-speech",
+      "displayName": "Google Cloud Speech",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["tts", "asr", "alignment"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "qwen3-tts-local",
+      "displayName": "Qwen3-TTS Local",
+      "execution": "local",
+      "credentialKind": "none",
+      "approvedByDefault": false,
+      "capabilities": ["tts"],
+      "dataBoundary": "local-only",
+      "pricing": { "status": "free", "hardBudgetEligible": true }
+    },
+    {
+      "id": "kokoro-local",
+      "displayName": "Kokoro Local",
+      "execution": "local",
+      "credentialKind": "none",
+      "approvedByDefault": false,
+      "capabilities": ["tts"],
+      "dataBoundary": "local-only",
+      "pricing": { "status": "free", "hardBudgetEligible": true }
+    },
+    {
+      "id": "whisperx-local",
+      "displayName": "WhisperX Local",
+      "execution": "local",
+      "credentialKind": "none",
+      "approvedByDefault": false,
+      "capabilities": ["asr", "alignment"],
+      "dataBoundary": "local-only",
+      "pricing": { "status": "free", "hardBudgetEligible": true }
+    },
+    {
+      "id": "mfa-local",
+      "displayName": "Montreal Forced Aligner Local",
+      "execution": "local",
+      "credentialKind": "none",
+      "approvedByDefault": false,
+      "capabilities": ["alignment"],
+      "dataBoundary": "local-only",
+      "pricing": { "status": "free", "hardBudgetEligible": true }
+    },
+    {
+      "id": "presenter-local",
+      "displayName": "LivePortrait / MuseTalk Local",
+      "execution": "local",
+      "credentialKind": "none",
+      "approvedByDefault": false,
+      "capabilities": ["presenter"],
+      "dataBoundary": "local-only",
+      "pricing": { "status": "free", "hardBudgetEligible": true }
+    }
+  ]
+}
