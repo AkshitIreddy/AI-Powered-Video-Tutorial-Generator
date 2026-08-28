@@ -1,0 +1,25 @@
+{
+  "name": "alystria-studio",
+  "version": "2.0.0-rc.0",
+  "private": true,
+  "description": "A local-first AI tutorial creation studio.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "pnpm --filter @alystria/desktop dev",
+    "build": "pnpm -r --if-present build",
+    "test": "pnpm -r --if-present test && python3 -m pytest services/pipeline/tests",
+    "test:unit": "pnpm -r --if-present test:unit && python3 -m pytest services/pipeline/tests/unit",
+    "test:e2e": "pnpm --filter @alystria/desktop test:e2e",
+    "lint": "pnpm -r --if-present lint && python3 -m ruff check services/pipeline",
+    "typecheck": "pnpm -r --if-present typecheck && python3 -m mypy services/pipeline/src",
+    "render-test": "pnpm --filter @alystria/renderer test:render",
+    "benchmark": "node scripts/benchmark.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "package:desktop": "pnpm --filter @alystria/desktop tauri build"
+  }
+}

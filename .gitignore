@@ -1,0 +1,47 @@
+# JavaScript and render outputs
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# Rust and Tauri
+target/
+src-tauri/gen/
+
+# Local projects, runtime packs, models, and generated media
+*.alytutorial
+*.alyproject/
+.alystria/
+runtime-packs/
+models/
+staging/
+exports/
+screenshots/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+apikeys.json
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
