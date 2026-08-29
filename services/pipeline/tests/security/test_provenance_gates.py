@@ -102,6 +102,43 @@ class ProvenanceTests(unittest.TestCase):
 
 
 class LicensingTests(unittest.TestCase):
+    def test_mit_starter_audio_allows_transformed_commercial_export(self) -> None:
+        def starter_audio(role: str) -> AssetProvenance:
+            return AssetProvenance(
+                asset_id=f"program-{role}:starter-audio",
+                sha256=HASH,
+                origin=OriginKind.GENERATED,
+                rights_status=RightsStatus.VERIFIED,
+                license_id="MIT",
+                creator="Alystria Studio contributors",
+                attribution=None,
+                provider_id="alystria-project-asset",
+                model_id="alystria-project-asset",
+                model_revision="cas-v1",
+            )
+
+        use = AssetUse(
+            DistributionPurpose.PUBLIC_COMMERCIAL,
+            transformed=True,
+            attribution_included=True,
+        )
+
+        decision = SecurityGates.export_gate(
+            ExportGateInput(
+                "export",
+                (starter_audio("music"), starter_audio("sfx")),
+                use,
+                (),
+                (),
+                True,
+                0,
+                True,
+                evaluated_at=NOW,
+            )
+        )
+
+        self.assertTrue(decision.allowed, decision.findings)
+
     def test_cc_by_requires_attribution(self) -> None:
         use = AssetUse(
             DistributionPurpose.PUBLIC_COMMERCIAL, transformed=True, attribution_included=False
