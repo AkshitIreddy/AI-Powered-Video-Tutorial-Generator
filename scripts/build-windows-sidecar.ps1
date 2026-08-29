@@ -43,28 +43,37 @@ $Launcher = Join-Path $PipelineRoot "sidecar_entry.py"
 New-Item -ItemType Directory -Path $WorkRoot | Out-Null
 try {
     $UvExecutable = [string]$UvPath
-    & $UvExecutable run --project $PipelineRoot --with "pyinstaller==6.22.2" `
-        pyinstaller --noconfirm --clean --onefile --console `
-        --name "alystria-pipeline" `
-        --paths $SourceRoot `
-        --collect-submodules "alystria" `
-        --collect-data "alystria.sandbox" `
-        --distpath $DistRoot `
-        --workpath $BuildRoot `
-        --specpath $SpecRoot `
+    # Start-Process is deliberately used instead of relying on LASTEXITCODE:
+    # PowerShell hosts launched through WSL can leave that variable unset even
+    # after a native process has completed. Quote every argv atom because the
+    # saved project path contains spaces.
+    $PyInstallerArguments = @(
+        "run", "--project", $PipelineRoot, "--with", "pyinstaller==6.22.2",
+        "pyinstaller", "--noconfirm", "--clean", "--onefile", "--console",
+        "--name", "alystria-pipeline", "--paths", $SourceRoot,
+        "--collect-submodules", "alystria", "--collect-data", "alystria.sandbox",
+        "--distpath", $DistRoot, "--workpath", $BuildRoot, "--specpath", $SpecRoot,
         $Launcher
-    if ($LASTEXITCODE -ne 0) {
-        throw "PyInstaller failed with exit code $LASTEXITCODE."
+    )
+    $QuotedArguments = ($PyInstallerArguments | ForEach-Object {
+        '"' + ([string]$_).Replace('"', '\"') + '"'
+    }) -join ' '
+    $PyInstallerProcess = Start-Process -FilePath $UvExecutable -ArgumentList $QuotedArguments -Wait -PassThru -NoNewWindow
+    if ($PyInstallerProcess.ExitCode -ne 0) {
+        throw "PyInstaller failed with exit code $($PyInstallerProcess.ExitCode)."
     }
 
     $BuiltExecutable = Join-Path $DistRoot "alystria-pipeline.exe"
     if (-not (Test-Path $BuiltExecutable -PathType Leaf)) {
+        # Some Windows hosts launched through WSL do not set LASTEXITCODE for
+        # a completed native child. The immutable output in this fresh temp
+        # dist directory is the authoritative success signal either way.
         throw "PyInstaller did not produce the expected alystria-pipeline.exe artifact."
     }
 
-    & $BuiltExecutable doctor | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "The built sidecar failed its dependency-free doctor smoke test."
+    $DoctorProcess = Start-Process -FilePath $BuiltExecutable -ArgumentList '"doctor"' -Wait -PassThru -NoNewWindow
+    if ($DoctorProcess.ExitCode -ne 0) {
+        throw "The built sidecar failed its dependency-free doctor smoke test (exit $($DoctorProcess.ExitCode))."
     }
 
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
