@@ -6,8 +6,10 @@ const MAX_TITLE_CHARS: usize = 160;
 const MAX_PROVIDER_ID_CHARS: usize = 64;
 const MAX_SECRET_CHARS: usize = 32_768;
 pub const MAX_SNAPSHOT_BYTES: usize = 1024 * 1024;
+pub const MAX_CUSTOMIZATION_BYTES: usize = 128 * 1024;
 pub const MAX_SOURCE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_SOURCE_BASE64_CHARS: usize = MAX_SOURCE_BYTES.div_ceil(3) * 4;
+pub const MAX_PROJECT_ASSET_BYTES: usize = 64 * 1024 * 1024;
 
 pub fn title(value: &str) -> Result<String, CommandError> {
     let trimmed = value.trim();
@@ -156,6 +158,24 @@ pub fn optional_metadata(
     Ok(Some(trimmed.to_owned()))
 }
 
+pub fn optional_long_metadata(
+    value: &Option<String>,
+    field: &str,
+) -> Result<Option<String>, CommandError> {
+    let Some(value) = value else { return Ok(None) };
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.chars().count() > 2_000
+        || trimmed.chars().any(|character| character == '\0')
+    {
+        return Err(CommandError::invalid(
+            field,
+            "must contain 1 to 2,000 non-NUL characters",
+        ));
+    }
+    Ok(Some(trimmed.to_owned()))
+}
+
 pub fn snapshot(value: &Value) -> Result<(), CommandError> {
     if !value.is_object() {
         return Err(CommandError::invalid("snapshot", "must be a JSON object"));
@@ -169,6 +189,118 @@ pub fn snapshot(value: &Value) -> Result<(), CommandError> {
         ));
     }
     reject_snapshot_payloads(value)?;
+    Ok(())
+}
+
+pub fn customization(value: &Value) -> Result<(), CommandError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| CommandError::invalid("customization", "must be a JSON object"))?;
+    const REQUIRED: [&str; 21] = [
+        "fontPairId",
+        "displayFont",
+        "bodyFont",
+        "typeScale",
+        "lineHeight",
+        "fonts",
+        "paletteId",
+        "colors",
+        "backgroundMode",
+        "backgroundAssetId",
+        "materialStrength",
+        "density",
+        "contrast",
+        "reducedMotion",
+        "sceneTreatment",
+        "cornerRadius",
+        "shadowStrength",
+        "captions",
+        "presenter",
+        "audio",
+        "assets",
+    ];
+    if object.len() != REQUIRED.len() || REQUIRED.iter().any(|field| !object.contains_key(*field)) {
+        return Err(CommandError::invalid(
+            "customization",
+            "must use the supported visual-bible contract",
+        ));
+    }
+    let bytes = serde_json::to_vec(value)
+        .map_err(|_| CommandError::invalid("customization", "must contain only JSON values"))?;
+    if bytes.len() > MAX_CUSTOMIZATION_BYTES {
+        return Err(CommandError::invalid(
+            "customization",
+            "exceeds the 128 KiB visual-bible limit",
+        ));
+    }
+    reject_customization_payloads(value, 0)
+}
+
+fn reject_customization_payloads(value: &Value, depth: usize) -> Result<(), CommandError> {
+    if depth > 8 {
+        return Err(CommandError::invalid(
+            "customization",
+            "exceeds the supported nesting depth",
+        ));
+    }
+    match value {
+        Value::Object(map) => {
+            for (key, nested) in map {
+                let normalized = key.to_ascii_lowercase().replace(['_', '-'], "");
+                if matches!(
+                    normalized.as_str(),
+                    "secret"
+                        | "apikey"
+                        | "token"
+                        | "password"
+                        | "contentbase64"
+                        | "filebytes"
+                        | "path"
+                        | "url"
+                        | "uri"
+                        | "script"
+                        | "command"
+                        | "executable"
+                ) {
+                    return Err(CommandError::invalid(
+                        "customization",
+                        "must not contain credentials, paths, code, URLs, or embedded bytes",
+                    ));
+                }
+                reject_customization_payloads(nested, depth + 1)?;
+            }
+        }
+        Value::Array(values) => {
+            if values.len() > 256 {
+                return Err(CommandError::invalid(
+                    "customization",
+                    "arrays are limited to 256 entries",
+                ));
+            }
+            for nested in values {
+                reject_customization_payloads(nested, depth + 1)?;
+            }
+        }
+        Value::String(value) => {
+            if value.len() > 2_000 || value.contains('\0') {
+                return Err(CommandError::invalid(
+                    "customization",
+                    "text values must be bounded and contain no NUL bytes",
+                ));
+            }
+            let lowered = value.trim().to_ascii_lowercase();
+            if lowered.starts_with("file:")
+                || lowered.starts_with("data:")
+                || lowered.starts_with("javascript:")
+            {
+                return Err(CommandError::invalid(
+                    "customization",
+                    "must not contain filesystem or executable URLs",
+                ));
+            }
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -328,5 +460,39 @@ mod tests {
     fn source_base64_limit_matches_eight_mibibytes() {
         assert_eq!(MAX_SOURCE_BASE64_CHARS, 11_184_812);
         assert_eq!(MAX_SOURCE_BYTES, 8_388_608);
+    }
+
+    #[test]
+    fn customization_accepts_contract_and_rejects_paths_or_extra_fields() {
+        let value = serde_json::json!({
+            "fontPairId": "editorial",
+            "displayFont": "Bricolage Grotesque",
+            "bodyFont": "Atkinson Hyperlegible Next",
+            "typeScale": 100,
+            "lineHeight": "balanced",
+            "fonts": {"displayAssetId":null,"bodyAssetId":null},
+            "paletteId": "precision",
+            "colors": {"paper":"#F7F8FC","ink":"#151827","accent":"#5658E8","evidence":"#168F88"},
+            "backgroundMode": "paper",
+            "backgroundAssetId": null,
+            "materialStrength": 28,
+            "density": "balanced",
+            "contrast": "standard",
+            "reducedMotion": false,
+            "sceneTreatment": "edge-to-edge",
+            "cornerRadius": 14,
+            "shadowStrength": 24,
+            "captions": {"position":"auto","style":"soft-panel","size":100,"safeInset":8,"textColor":"#FFFFFF","panelColor":"#151827","maxLines":2},
+            "presenter": {"assetId":null,"placement":"off","side":"right","scale":72,"crop":"portrait","frame":"soft"},
+            "audio": {"musicAssetId":null,"sfxAssetId":null,"musicLevel":12,"sfxLevel":28,"narrationDucking":72},
+            "assets": []
+        });
+        assert!(customization(&value).is_ok());
+        let mut with_path = value.clone();
+        with_path["assets"] = serde_json::json!([{"path":"C:/private/file.png"}]);
+        assert!(customization(&with_path).is_err());
+        let mut with_extra = value;
+        with_extra["command"] = serde_json::json!("run");
+        assert!(customization(&with_extra).is_err());
     }
 }

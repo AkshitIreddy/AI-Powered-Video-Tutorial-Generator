@@ -14,6 +14,7 @@ from alystria.jobs import ActionKey, DependencyGraph, JobContext, SQLiteWorkflow
 from alystria.jobs.runtime import TaskHandler
 from alystria.presenters import PresenterDirection, PresenterPlacement
 from alystria.project import ProjectStore
+from alystria.project_assets import validate_approved_presenter_for_export
 from alystria.qa import Finding, GateStatus, QualityGate, Severity
 from alystria.qa.content import (
     Citation,
@@ -653,10 +654,16 @@ class GenerationWorkflow:
         seconds_each = max(1, request.duration_seconds // max(1, len(sections)))
         types = ("question", "definition", "worked_example", "comparison", "recap")
         scenes = []
+        visual_customization = request.metadata.get("visualCustomization")
+        presenter_customization = (
+            visual_customization.get("presenter", {})
+            if isinstance(visual_customization, dict)
+            else {}
+        )
         for index, section in enumerate(sections):
             scene_id = _stable_id("scene", request.topic, section["outlineSectionId"])
-            scenes.append(
-                {
+            presenter_scene = index == 0 and request.presenter_mode != "off"
+            scene = {
                     "id": scene_id,
                     "sectionId": section["outlineSectionId"],
                     # The opening is the one sparse presenter moment in the
@@ -664,11 +671,7 @@ class GenerationWorkflow:
                     # composited into an explicit presenter family; the
                     # renderer rejects a clip bound to an unrelated visual
                     # scene rather than guessing a placement.
-                    "type": (
-                        "presenter-slide"
-                        if index == 0 and request.presenter_mode != "off"
-                        else types[min(index, len(types) - 1)]
-                    ),
+                    "type": "presenter-slide" if presenter_scene else types[min(index, len(types) - 1)],
                     "title": _title_from_narration(section["narration"], index),
                     "narration": section["narration"],
                     "visualIntent": section["visualIntent"],
@@ -683,7 +686,17 @@ class GenerationWorkflow:
                     ),
                     "locks": [],
                 }
-            )
+            if presenter_scene and isinstance(presenter_customization, dict):
+                scene["presenterPlacement"] = str(
+                    presenter_customization.get("placement", "picture-in-picture")
+                )
+                scene["presenterFit"] = str(
+                    presenter_customization.get("fit", "cover")
+                )
+                profile = presenter_customization.get("profile")
+                if isinstance(profile, dict) and isinstance(profile.get("displayName"), str):
+                    scene["presenterName"] = profile["displayName"]
+            scenes.append(scene)
         storyboard = {
             "id": _stable_id("storyboard", _canonical(scenes), request.deterministic_seed),
             "timebase": TICKS_PER_SECOND,
@@ -1013,6 +1026,33 @@ class GenerationWorkflow:
         captions = self._input_payload(parameters, "captions")
         presenter = self._input_payload(parameters, "presenter")
         request = _request(parameters)
+        audio_customization = request.metadata.get("audioCustomization")
+        if not isinstance(audio_customization, dict):
+            audio_customization = {
+                "schemaVersion": 1,
+                "inputs": [],
+                "mix": {"musicDuckingDb": -12.96},
+            }
+        visual_customization = request.metadata.get("visualCustomization")
+        if not isinstance(visual_customization, dict):
+            visual_customization = {
+                "schemaVersion": 1,
+                "assets": [],
+                "presenter": {"enabled": False},
+                "captionStyle": {},
+                "warnings": [],
+            }
+        font_customization = request.metadata.get("fontCustomization")
+        if not isinstance(font_customization, dict):
+            font_customization = {
+                "fontAssets": [],
+                "typography": {
+                    "displayFamily": "Bricolage Grotesque",
+                    "bodyFamily": "Atkinson Hyperlegible Next",
+                    "codeFamily": "JetBrains Mono",
+                    "captionFamily": "Atkinson Hyperlegible Next",
+                },
+            }
         render_request = {
             "schemaVersion": 1,
             "generationId": parameters["generationId"],
@@ -1025,6 +1065,10 @@ class GenerationWorkflow:
             "narration": narration["narration"],
             "captions": captions,
             "presenters": presenter["presenters"],
+            "audioCustomization": audio_customization,
+            "visualCustomization": visual_customization,
+            "fontCustomization": font_customization,
+            "customization": request.metadata.get("customization"),
         }
         context.set_progress(0.15, message="Submitting immutable render request")
         rendered = self.renderer_client.render(render_request)
@@ -1043,6 +1087,7 @@ class GenerationWorkflow:
             narration=narration,
             captions=captions,
             presenter=presenter,
+            audio_customization=audio_customization,
             render_artifact_hash=artifact.hash,
         )
         provenance_manifest = {
@@ -1124,6 +1169,18 @@ class GenerationWorkflow:
                     "role": "qa-evidence",
                     "stableId": "master",
                 },
+                *[
+                    {
+                        "artifactHash": str(item["artifactHash"]),
+                        "role": f"program-{item['role']}",
+                        "stableId": str(item["assetId"]),
+                    }
+                    for item in audio_customization.get("inputs", [])
+                    if isinstance(item, dict)
+                    and isinstance(item.get("artifactHash"), str)
+                    and item.get("role") in {"music", "sfx"}
+                    and isinstance(item.get("assetId"), str)
+                ],
             ],
         )
 
@@ -1210,6 +1267,11 @@ class GenerationWorkflow:
         return self._persist_stage(context, parameters, payload, upstream_stages=upstream)
 
     def _export(self, context: JobContext, parameters: dict[str, Any]) -> dict[str, Any]:
+        validate_approved_presenter_for_export(
+            self.store,
+            str(parameters["approvalRevisionId"]),
+            distribution_scope="publicCommercial",
+        )
         approved = self._approved_storyboard(parameters)
         captions = self._input_payload(parameters, "captions")
         render = self._input_payload(parameters, "render")
@@ -1408,6 +1470,7 @@ class GenerationWorkflow:
         narration: dict[str, Any],
         captions: dict[str, Any],
         presenter: dict[str, Any],
+        audio_customization: dict[str, Any],
         render_artifact_hash: str,
     ) -> list[dict[str, Any]]:
         subjects: list[tuple[str, str, str, str]] = []
@@ -1444,6 +1507,18 @@ class GenerationWorkflow:
                 self.media_client.model_revision,
             )
             for item in presenter.get("presenters", [])
+        )
+        subjects.extend(
+            (
+                str(item["artifactHash"]),
+                f"program-{item['role']}",
+                "alystria-project-asset",
+                "cas-v1",
+            )
+            for item in audio_customization.get("inputs", [])
+            if isinstance(item, dict)
+            and isinstance(item.get("artifactHash"), str)
+            and item.get("role") in {"music", "sfx"}
         )
         subjects.append(
             (
@@ -2169,7 +2244,7 @@ def _presenter_direction(scene: dict[str, Any]) -> PresenterDirection:
     if not isinstance(raw, str):
         raise ValueError("Presenter placement must be a string")
     try:
-        placement = PresenterPlacement(raw.strip().casefold())
+        placement = PresenterPlacement(raw.strip().casefold().replace("-", "_"))
     except ValueError as error:
         allowed = ", ".join(item.value for item in PresenterPlacement)
         raise ValueError(f"Unsupported presenter placement {raw!r}; expected {allowed}") from error

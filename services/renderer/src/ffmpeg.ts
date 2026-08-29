@@ -241,6 +241,7 @@ function prepareAudio(inputs: readonly AudioInput[], options: AudioMasterOptions
   };
   inputs.forEach((input, index) => {
     if (!Object.hasOwn(labels, input.role)) throw new TypeError(`Audio input ${index} has unsupported role ${String(input.role)}`);
+    if (input.loop) args.push("-stream_loop", "-1");
     args.push("-i", pathArgument(input.path, `audio input ${index}`));
     if (!Number.isSafeInteger(input.startTick) || input.startTick < 0) throw new RangeError(`Audio input ${index} has invalid startTick`);
     const delayTicks = Math.max(0, input.startTick - timelineStartTick);
@@ -274,9 +275,21 @@ function prepareAudio(inputs: readonly AudioInput[], options: AudioMasterOptions
   const effects = mixGroup(labels.sfx, "effects");
   const finalLabels: string[] = [];
   if (voice && music) {
+    const configuredDucking = inputs
+      .filter((input) => input.role === "music" && input.duckingDb !== undefined)
+      .map((input) => input.duckingDb as number);
+    const duckingDb = configuredDucking.length === 0 ? -12 : Math.min(...configuredDucking);
+    if (!Number.isFinite(duckingDb) || duckingDb < -36 || duckingDb > 0) {
+      throw new RangeError("Music ducking must be in [-36, 0] dB");
+    }
+    // sidechaincompress is programme-dependent, so duckingDb is a maximum
+    // reduction policy rather than a promise that every voiced sample reaches
+    // exactly that gain.  A ratio of one disables reduction; deeper requested
+    // policies increase it monotonically to FFmpeg's documented ceiling.
+    const duckingRatio = Math.min(20, Math.max(1, 1 + Math.abs(duckingDb) * 0.75));
     chains.push(`${voice}asplit=2[voice_mix][voice_sc]`);
     chains.push("[voice_sc]apad[voice_sc_pad]");
-    chains.push(`${music}[voice_sc_pad]sidechaincompress=threshold=0.015:ratio=8:attack=20:release=500[ducked_music]`);
+    chains.push(`${music}[voice_sc_pad]sidechaincompress=threshold=0.015:ratio=${duckingRatio.toFixed(3)}:attack=20:release=500[ducked_music]`);
     finalLabels.push("[voice_mix]", "[ducked_music]");
   } else {
     if (voice) finalLabels.push(voice);

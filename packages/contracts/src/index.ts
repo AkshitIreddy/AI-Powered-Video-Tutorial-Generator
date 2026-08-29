@@ -6,4 +6,5 @@ export * from "./project.js";
 export * from "./providerCatalog.js";
 export * from "./research.js";
 export * from "./storyboard.js";
+export * from "./starterKit.js";
 export * from "./validator.js";

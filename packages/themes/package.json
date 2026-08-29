@@ -18,14 +18,19 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "starter-kits"
   ],
+  "dependencies": {
+    "@alystria/contracts": "workspace:*"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:unit": "vitest run",
     "lint": "tsc -p tsconfig.json --noEmit",
+    "starter-kit": "tsc -p tsconfig.json && node scripts/write-starter-kit.mjs",
     "specimen": "node scripts/write-specimen.mjs"
   },
   "devDependencies": {

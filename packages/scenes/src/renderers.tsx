@@ -70,16 +70,26 @@ export function TitleRenderer(props: SceneRendererProps<TitleContent>) {
   const safe = scene.metrics.safe;
   const style = animationStyle(scene.choreography, "body", frame.tick, frame.reducedMotion) as CSSProperties;
   const isPortrait = scene.metrics.profile === "portrait";
+  // Keep a deliberate visual-safe gutter between the title copy and the
+  // right-hand module card.  Imported display fonts can be substantially
+  // wider than the bundled face, so the old 3% gap allowed a legitimate title
+  // to intrude underneath the card even though its text box itself fit.
   const accentRect: Rect = isPortrait
     ? { x: safe.x + safe.width * 0.1, y: safe.y + safe.height * 0.66, width: safe.width * 0.8, height: safe.height * 0.18 }
-    : { x: safe.x + safe.width * 0.61, y: safe.y + safe.height * 0.18, width: safe.width * 0.33, height: safe.height * 0.58 };
+    : { x: safe.x + safe.width * 0.66, y: safe.y + safe.height * 0.18, width: safe.width * 0.28, height: safe.height * 0.58 };
+  const titleRect: Rect = isPortrait
+    ? { x: safe.x + scene.metrics.gutter * 1.4, y: safe.y + safe.height * 0.2, width: safe.width * 0.95, height: safe.height * 0.38 }
+    : { x: safe.x + scene.metrics.gutter * 1.4, y: safe.y + safe.height * 0.2, width: safe.width * 0.5, height: safe.height * 0.4 };
+  const subtitleRect: Rect = isPortrait
+    ? { x: safe.x + scene.metrics.gutter * 1.4, y: safe.y + safe.height * 0.61, width: safe.width * 0.92, height: safe.height * 0.13 }
+    : { x: safe.x + scene.metrics.gutter * 1.4, y: safe.y + safe.height * 0.63, width: safe.width * 0.48, height: safe.height * 0.13 };
   return (
     <SceneCanvas {...props} theme={theme}>
       <g id="body" style={style}>
         <rect x={safe.x} y={safe.y + safe.height * 0.08} width={scene.metrics.unit * 1.1} height={safe.height * 0.5} rx={scene.metrics.unit * 0.5} fill={theme.primary} />
         <Pill x={safe.x + scene.metrics.gutter * 1.4} y={safe.y + safe.height * 0.08} label={content.eyebrow ?? "NEW TUTORIAL"} theme={theme} fontSize={scene.metrics.smallSize} />
-        <WrappedText text={content.title} rect={{ x: safe.x + scene.metrics.gutter * 1.4, y: safe.y + safe.height * 0.2, width: isPortrait ? safe.width * 0.95 : safe.width * 0.58, height: safe.height * 0.38 }} theme={theme} fontSize={scene.metrics.titleSize * 1.34} fontFamily={theme.fontDisplay} fontWeight="780" maxLines={isPortrait ? 4 : 3} lineHeight={1.03} />
-        {content.subtitle ? <WrappedText text={content.subtitle} rect={{ x: safe.x + scene.metrics.gutter * 1.4, y: safe.y + safe.height * 0.61, width: isPortrait ? safe.width * 0.92 : safe.width * 0.52, height: safe.height * 0.13 }} theme={theme} fontSize={scene.metrics.subtitleSize} fill={theme.mutedInk} maxLines={2} /> : null}
+        <WrappedText text={content.title} rect={titleRect} theme={theme} fontSize={scene.metrics.titleSize * 1.34} fontFamily={theme.fontDisplay} fontWeight="780" maxLines={isPortrait ? 4 : 3} lineHeight={1.03} />
+        {content.subtitle ? <WrappedText text={content.subtitle} rect={subtitleRect} theme={theme} fontSize={scene.metrics.subtitleSize} fill={theme.mutedInk} maxLines={2} /> : null}
         <Card rect={accentRect} theme={theme} tone="primary">
           <g>
             <circle cx={accentRect.x + accentRect.width * 0.5} cy={accentRect.y + accentRect.height * 0.43} r={Math.min(accentRect.width, accentRect.height) * 0.2} fill={theme.surface} opacity="0.95" />
@@ -471,17 +481,40 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
   const content = props.scene.spec.content;
   const body = bodyRect(props);
   const withSlide = content.kind === "presenter-slide";
-  const [presenterRect, slideRect] = withSlide
-    ? (props.scene.metrics.columns === 2 ? splitColumns(body, props.scene.metrics.gutter, 0.39) : stackRows(body, 2, props.scene.metrics.gutter))
-    : [body, undefined] as const;
-  const portraitRect: Rect = withSlide ? insetRect(presenterRect, props.scene.metrics.gutter * 0.5) : { x: body.x + body.width * 0.22, y: body.y, width: body.width * 0.56, height: body.height * 0.75 };
+  const placement = content.placement ?? (withSlide ? "split-left" : "full");
+  const split = props.scene.metrics.columns === 2
+    ? splitColumns(body, props.scene.metrics.gutter, 0.39)
+    : stackRows(body, 2, props.scene.metrics.gutter) as readonly [Rect, Rect];
+  const presenterPanel = placement === "split-right" ? split[1] : split[0];
+  const slideRect = !withSlide || placement === "full"
+    ? undefined
+    : placement === "picture-in-picture"
+      ? body
+      : placement === "split-right" ? split[0] : split[1];
+  const portraitRect: Rect = placement === "full"
+    ? body
+    : placement === "picture-in-picture"
+      ? {
+          x: body.x + body.width * 0.67,
+          y: body.y + body.height * 0.34,
+          width: body.width * 0.3,
+          height: body.height * 0.58,
+        }
+      : withSlide
+        ? insetRect(presenterPanel, props.scene.metrics.gutter * 0.5)
+        : { x: body.x + body.width * 0.22, y: body.y, width: body.width * 0.56, height: body.height * 0.75 };
+  const nameplateHeight = Math.max(props.scene.metrics.bodySize * 1.9, portraitRect.height * 0.13);
+  const nameplateY = portraitRect.y + portraitRect.height - nameplateHeight;
   return withFrame(props, (
     <g id="body" data-semantic-role="presenter">
-      <AssetFrame asset={content.portrait ?? { id: "presenter-placeholder", alt: content.presenterName ?? "Presenter portrait", fit: "cover" }} rect={portraitRect} resolveAsset={props.resolveAsset} theme={theme} label="" />
-      <rect x={portraitRect.x} y={portraitRect.y + portraitRect.height * 0.78} width={portraitRect.width} height={portraitRect.height * 0.22} rx={theme.radius} fill={theme.codeBackground} opacity="0.92" />
-      <text x={portraitRect.x + props.scene.metrics.gutter} y={portraitRect.y + portraitRect.height * 0.89} fill={theme.surface} fontFamily={theme.fontBody} fontWeight="750" fontSize={props.scene.metrics.bodySize}>{content.presenterName ?? "Presenter"}</text>
-      {content.talkingPoint ? <WrappedText text={content.talkingPoint} rect={withSlide ? { x: presenterRect.x + presenterRect.width * 0.27, y: presenterRect.y + presenterRect.height * 0.8, width: presenterRect.width * 0.69, height: presenterRect.height * 0.18 } : { x: body.x + body.width * 0.12, y: body.y + body.height * 0.81, width: body.width * 0.76, height: body.height * 0.16 }} theme={theme} fill={withSlide ? theme.surface : theme.ink} fontSize={withSlide ? props.scene.metrics.subtitleSize * 0.76 : props.scene.metrics.subtitleSize} fontWeight="650" textAnchor="middle" maxLines={withSlide ? 2 : 3} /> : null}
       {withSlide && slideRect ? <Card rect={slideRect} theme={theme} tone="primary"><BulletList items={content.slideItems ?? []} rect={insetRect(slideRect, props.scene.metrics.gutter)} scene={props.scene} frame={props.frame} theme={theme} /></Card> : null}
+      <AssetFrame asset={content.portrait ?? { id: "presenter-placeholder", alt: content.presenterName ?? "Presenter portrait", fit: "cover" }} rect={portraitRect} resolveAsset={props.resolveAsset} theme={theme} label="" />
+      <rect x={portraitRect.x} y={nameplateY} width={portraitRect.width} height={nameplateHeight} rx={theme.radius} fill={theme.codeBackground} opacity="0.92" />
+      <text x={portraitRect.x + props.scene.metrics.gutter * 0.8} y={nameplateY + nameplateHeight * 0.62} fill={theme.surface} fontFamily={theme.fontBody} fontWeight="750" fontSize={props.scene.metrics.bodySize * 0.82}>{content.presenterName ?? "Presenter"}</text>
+      {/* Presenter-slide scenes already devote the adjacent card to the idea.
+          Keeping a second talking point in the portrait lower-third caused
+          competing text layers over the face/nameplate. */}
+      {!withSlide && content.talkingPoint ? <WrappedText text={content.talkingPoint} rect={{ x: body.x + body.width * 0.12, y: body.y + body.height * 0.81, width: body.width * 0.76, height: body.height * 0.16 }} theme={theme} fill={theme.ink} fontSize={props.scene.metrics.subtitleSize} fontWeight="650" textAnchor="middle" maxLines={3} /> : null}
       {content.disclosure ? <Pill x={body.x + body.width - Math.min(300, content.disclosure.length * props.scene.metrics.smallSize * 0.55) - props.scene.metrics.gutter} y={body.y + body.height - props.scene.metrics.smallSize * 2.3} label={content.disclosure} tone="neutral" theme={theme} fontSize={props.scene.metrics.smallSize * 0.72} /> : null}
     </g>
   ));

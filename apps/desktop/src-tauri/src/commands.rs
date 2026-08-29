@@ -86,6 +86,21 @@ pub fn project_snapshot_save(
 }
 
 #[tauri::command]
+pub fn project_customization_save(
+    mut input: SaveProjectCustomizationRequest,
+    state: State<'_, AppState>,
+) -> Result<ProjectCustomizationReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    input.expected_head_revision_id =
+        validation::stable_id(&input.expected_head_revision_id, "expectedHeadRevisionId")?;
+    validation::customization(&input.customization)?;
+    input.message = validation::optional_metadata(&input.message, "message")?;
+    worker_result(&state.worker, "project.customization.save", &input)
+}
+
+#[tauri::command]
 pub fn project_history_get(
     input: ProjectIdentityRequest,
     state: State<'_, AppState>,
@@ -141,6 +156,32 @@ pub fn source_import(
     }
     drop(decoded);
     worker_result(&state.worker, "source.import", &input)
+}
+
+#[tauri::command]
+pub fn project_asset_import(
+    mut input: ProjectAssetImportRequest,
+    state: State<'_, AppState>,
+) -> Result<ProjectAssetImportReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    validate_project_asset_import(&mut input)?;
+    worker_result(&state.worker, "asset.import", &input)
+}
+
+#[tauri::command]
+pub fn presenter_profile_select(
+    mut input: SelectPresenterProfileRequest,
+    state: State<'_, AppState>,
+) -> Result<SelectPresenterProfileReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    input.expected_head_revision_id =
+        validation::stable_id(&input.expected_head_revision_id, "expectedHeadRevisionId")?;
+    input.profile_id = validation::stable_id(&input.profile_id, "profileId")?;
+    worker_result(&state.worker, "presenter.profile.select", &input)
 }
 
 #[tauri::command]
@@ -604,6 +645,178 @@ fn validate_generation(input: &mut GenerationRequest) -> Result<(), CommandError
     Ok(())
 }
 
+fn validate_project_asset_import(
+    input: &mut ProjectAssetImportRequest,
+) -> Result<(), CommandError> {
+    input.expected_head_revision_id =
+        validation::stable_id(&input.expected_head_revision_id, "expectedHeadRevisionId")?;
+    input.filename = validation::source_filename(&input.filename)?;
+    input.mime_type = validation::mime_type(&input.mime_type)?;
+    input.rights.creator = validation::optional_metadata(&input.rights.creator, "rights.creator")?;
+    input.rights.license =
+        validation::optional_long_metadata(&input.rights.license, "rights.license")?;
+    input.rights.attribution =
+        validation::optional_long_metadata(&input.rights.attribution, "rights.attribution")?;
+
+    match (&input.kind, input.presenter.as_mut()) {
+        (ProjectAssetKind::PresenterPortrait, Some(presenter)) => {
+            presenter.display_name =
+                validation::bounded_text(&presenter.display_name, "presenter.displayName", 120)?;
+            if input.rights.model_input != AssetPermission::Allowed {
+                return Err(CommandError::invalid(
+                    "rights.modelInput",
+                    "presenter portraits must be explicitly cleared for model input",
+                ));
+            }
+            match presenter.identity_type {
+                PresenterIdentityType::Synthetic => {
+                    if !presenter.synthetic_origin_attested {
+                        return Err(CommandError::invalid(
+                            "presenter.syntheticOriginAttested",
+                            "synthetic portraits require an explicit origin attestation",
+                        ));
+                    }
+                    if presenter.consent.is_some() {
+                        return Err(CommandError::invalid(
+                            "presenter.consent",
+                            "synthetic portraits must not carry a real-person consent record",
+                        ));
+                    }
+                }
+                PresenterIdentityType::RealPerson => {
+                    if presenter.synthetic_origin_attested {
+                        return Err(CommandError::invalid(
+                            "presenter.syntheticOriginAttested",
+                            "a real-person portrait cannot be attested as synthetic",
+                        ));
+                    }
+                    let consent = presenter.consent.as_mut().ok_or_else(|| {
+                        CommandError::invalid(
+                            "presenter.consent",
+                            "real-person portraits require explicit consent",
+                        )
+                    })?;
+                    consent.subject_display_name = validation::bounded_text(
+                        &consent.subject_display_name,
+                        "presenter.consent.subjectDisplayName",
+                        160,
+                    )?;
+                    consent.attestor_display_name = validation::bounded_text(
+                        &consent.attestor_display_name,
+                        "presenter.consent.attestorDisplayName",
+                        160,
+                    )?;
+                    if !consent.accepted {
+                        return Err(CommandError::invalid(
+                            "presenter.consent.accepted",
+                            "the authorized attestor must explicitly accept the consent record",
+                        ));
+                    }
+                    if !consent.disclosure_required {
+                        return Err(CommandError::invalid(
+                            "presenter.consent.disclosureRequired",
+                            "real-person animation requires synthetic-media disclosure",
+                        ));
+                    }
+                    if consent.authority == ConsentAuthority::SelfConsent
+                        && consent.subject_display_name.to_lowercase()
+                            != consent.attestor_display_name.to_lowercase()
+                    {
+                        return Err(CommandError::invalid(
+                            "presenter.consent.authority",
+                            "selfConsent requires the subject and attestor to be the same person",
+                        ));
+                    }
+                    let grants: BTreeSet<_> = consent.grants.iter().copied().collect();
+                    if grants.len() != consent.grants.len() || grants.len() > 4 {
+                        return Err(CommandError::invalid(
+                            "presenter.consent.grants",
+                            "grants must be unique and bounded",
+                        ));
+                    }
+                    if !grants.contains(&PresenterConsentGrant::PortraitAnimation) {
+                        return Err(CommandError::invalid(
+                            "presenter.consent.grants",
+                            "portraitAnimation consent is required",
+                        ));
+                    }
+                    if matches!(
+                        consent.distribution_scope,
+                        PresenterDistributionScope::PublicNonCommercial
+                            | PresenterDistributionScope::PublicCommercial
+                    ) && !grants.contains(&PresenterConsentGrant::PublicDistribution)
+                    {
+                        return Err(CommandError::invalid(
+                            "presenter.consent.grants",
+                            "publicDistribution consent is required for public presenter output",
+                        ));
+                    }
+                    if consent.distribution_scope == PresenterDistributionScope::PublicCommercial
+                        && !grants.contains(&PresenterConsentGrant::CommercialDistribution)
+                    {
+                        return Err(CommandError::invalid(
+                            "presenter.consent.grants",
+                            "commercialDistribution consent is required for commercial presenter output",
+                        ));
+                    }
+                    if grants.contains(&PresenterConsentGrant::CommercialDistribution)
+                        && !grants.contains(&PresenterConsentGrant::PublicDistribution)
+                    {
+                        return Err(CommandError::invalid(
+                            "presenter.consent.grants",
+                            "commercialDistribution consent also requires publicDistribution consent",
+                        ));
+                    }
+                }
+            }
+        }
+        (ProjectAssetKind::PresenterPortrait, None) => {
+            return Err(CommandError::invalid(
+                "presenter",
+                "presenter portraits require identity, disclosure, and profile metadata",
+            ));
+        }
+        (_, Some(_)) => {
+            return Err(CommandError::invalid(
+                "presenter",
+                "presenter metadata is only valid for presenter portraits",
+            ));
+        }
+        (_, None) => {}
+    }
+
+    let limit = match input.kind {
+        ProjectAssetKind::Font => 16 * 1024 * 1024,
+        ProjectAssetKind::PresenterPortrait | ProjectAssetKind::BackgroundImage => 32 * 1024 * 1024,
+        ProjectAssetKind::SoundEffect => 32 * 1024 * 1024,
+        ProjectAssetKind::PresenterAudio | ProjectAssetKind::Music => {
+            validation::MAX_PROJECT_ASSET_BYTES
+        }
+    };
+    if input.content_base64.len() > limit.div_ceil(3) * 4 {
+        return Err(CommandError::invalid(
+            "contentBase64",
+            format!(
+                "exceeds the {} MiB limit for this asset kind",
+                limit / 1024 / 1024
+            ),
+        ));
+    }
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(input.content_base64.as_bytes())
+        .map_err(|_| CommandError::invalid("contentBase64", "must be canonical base64"))?;
+    if decoded.len() > limit {
+        return Err(CommandError::invalid(
+            "contentBase64",
+            format!(
+                "decodes beyond the {} MiB limit for this asset kind",
+                limit / 1024 / 1024
+            ),
+        ));
+    }
+    Ok(())
+}
+
 fn failed_receipt(job_id: Uuid, error: CommandError) -> JobReceipt {
     let state = if error.code == "COMPONENT_UNAVAILABLE" || error.code == "WORKER_ERROR" {
         JobState::Blocked
@@ -698,6 +911,90 @@ mod tests {
         assert_eq!(input.budget.currency, "USD");
         assert_eq!(input.approved_provider_ids, ["local"]);
         assert_eq!(input.preservation_locks, ["scene-a"]);
+    }
+
+    fn presenter_asset_input(identity_type: PresenterIdentityType) -> ProjectAssetImportRequest {
+        ProjectAssetImportRequest {
+            project_id: Uuid::nil(),
+            project_directory: "C:/project".into(),
+            expected_head_revision_id: "rev_test".into(),
+            kind: ProjectAssetKind::PresenterPortrait,
+            filename: "presenter.png".into(),
+            mime_type: "image/png".into(),
+            privacy: SourcePrivacy::ProjectLocal,
+            rights: AssetRightsInput {
+                status: AssetRightsStatus::Owned,
+                creator: Some("Project owner".into()),
+                license: Some("User-owned media".into()),
+                attribution: None,
+                commercial_use: AssetPermission::Allowed,
+                redistribution: AssetPermission::Allowed,
+                model_input: AssetPermission::Allowed,
+            },
+            presenter: Some(PresenterAssetInput {
+                identity_type,
+                display_name: "Studio instructor".into(),
+                synthetic_origin_attested: identity_type == PresenterIdentityType::Synthetic,
+                consent: None,
+                select_after_import: true,
+            }),
+            content_base64: base64::engine::general_purpose::STANDARD.encode(b"small-test-image"),
+        }
+    }
+
+    #[test]
+    fn asset_validation_accepts_attested_synthetic_presenter() {
+        let mut input = presenter_asset_input(PresenterIdentityType::Synthetic);
+        validate_project_asset_import(&mut input).unwrap();
+        assert_eq!(input.filename, "presenter.png");
+        assert_eq!(input.rights.creator.as_deref(), Some("Project owner"));
+    }
+
+    #[test]
+    fn asset_validation_requires_real_person_consent() {
+        let mut input = presenter_asset_input(PresenterIdentityType::RealPerson);
+        let error = validate_project_asset_import(&mut input).unwrap_err();
+        assert!(error.message.contains("explicit consent"));
+    }
+
+    #[test]
+    fn asset_validation_requires_distribution_grants_matching_output_scope() {
+        let mut input = presenter_asset_input(PresenterIdentityType::RealPerson);
+        input.presenter.as_mut().unwrap().consent = Some(PresenterConsentAttestation {
+            subject_display_name: "Studio instructor".into(),
+            attestor_display_name: "Studio instructor".into(),
+            authority: ConsentAuthority::SelfConsent,
+            grants: vec![
+                PresenterConsentGrant::PortraitAnimation,
+                PresenterConsentGrant::PublicDistribution,
+            ],
+            distribution_scope: PresenterDistributionScope::PublicCommercial,
+            accepted: true,
+            disclosure_required: true,
+        });
+        let error = validate_project_asset_import(&mut input).unwrap_err();
+        assert!(error.message.contains("commercialDistribution"));
+
+        input
+            .presenter
+            .as_mut()
+            .unwrap()
+            .consent
+            .as_mut()
+            .unwrap()
+            .grants
+            .push(PresenterConsentGrant::CommercialDistribution);
+        validate_project_asset_import(&mut input).unwrap();
+    }
+
+    #[test]
+    fn asset_validation_rejects_presenter_metadata_for_other_media() {
+        let mut input = presenter_asset_input(PresenterIdentityType::Synthetic);
+        input.kind = ProjectAssetKind::Music;
+        input.filename = "music.mp3".into();
+        input.mime_type = "audio/mpeg".into();
+        let error = validate_project_asset_import(&mut input).unwrap_err();
+        assert!(error.message.contains("only valid for presenter portraits"));
     }
 
     #[derive(Default)]

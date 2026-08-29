@@ -26,7 +26,7 @@ from .service import PipelineService, desktop_run_one
 
 PROTOCOL_VERSION = 1
 MAX_STARTUP_BYTES = 8 * 1024
-MAX_REQUEST_BYTES = 12 * 1024 * 1024
+MAX_REQUEST_BYTES = 96 * 1024 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 SOCKET_TIMEOUT_SECONDS = 30.0
 ALLOWED_METHODS = frozenset(
@@ -36,11 +36,14 @@ ALLOWED_METHODS = frozenset(
         "project.initialize",
         "project.snapshot.get",
         "project.snapshot.save",
+        "project.customization.save",
         "project.history.get",
         "project.history.undo",
         "project.history.redo",
         "project.export",
         "source.import",
+        "asset.import",
+        "presenter.profile.select",
         "provider.routingPolicy.get",
         "provider.routingPolicy.save",
         "generation.start",
@@ -118,7 +121,7 @@ class _DesktopRequestHandler(socketserver.StreamRequestHandler):
             line = self.rfile.readline(MAX_REQUEST_BYTES + 1)
             if len(line) > MAX_REQUEST_BYTES:
                 raise DesktopProtocolError(
-                    "REQUEST_TOO_LARGE", "Worker request exceeds the 12 MiB safety limit"
+                    "REQUEST_TOO_LARGE", "Worker request exceeds the 96 MiB safety limit"
                 )
             if not line or not line.endswith(b"\n"):
                 raise DesktopProtocolError(

@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.alystria.studio/v2/starter-kit.schema.json",
+  "title": "Alystria starter-kit assets, theme recipes, and user import slots",
+  "$defs": {
+    "StarterAssetLicense": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "expression", "name", "attributionRequired", "redistributionAllowed", "commercialUseAllowed", "derivativesAllowed", "exportAllowed"],
+      "properties": {
+        "status": { "enum": ["cleared", "conditional", "pending", "unknown", "restricted"] },
+        "expression": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "name": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "licenseUri": { "$ref": "common.schema.json#/$defs/Uri" },
+        "copyrightNotice": { "type": "string", "maxLength": 1000 },
+        "attributionRequired": { "type": "boolean" },
+        "attributionText": { "type": "string", "maxLength": 2000 },
+        "redistributionAllowed": { "type": "boolean" },
+        "commercialUseAllowed": { "type": "boolean" },
+        "derivativesAllowed": { "type": "boolean" },
+        "exportAllowed": { "type": "boolean" },
+        "restrictions": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" }, "uniqueItems": true }
+      }
+    },
+    "StarterAssetProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "creator", "creationMethod", "recordedAt", "reviewStatus"],
+      "properties": {
+        "origin": { "enum": ["alystria-authored", "third-party-open-source", "system-font", "generated", "user-import", "derived"] },
+        "creator": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "creationMethod": { "enum": ["procedural-code", "hand-authored", "recorded", "font-distribution", "generative-model", "user-supplied", "derived-edit"] },
+        "sourceUri": { "$ref": "common.schema.json#/$defs/Uri" },
+        "sourceRevision": { "type": "string", "maxLength": 500 },
+        "tool": { "type": "string", "maxLength": 300 },
+        "model": { "type": "string", "maxLength": 300 },
+        "promptArtifactId": { "$ref": "common.schema.json#/$defs/Id" },
+        "promptAvailability": { "enum": ["artifact-recorded", "conversation-retained", "not-recorded", "not-applicable"] },
+        "synthetic": { "type": "boolean" },
+        "c2paStatus": { "enum": ["present-embedded", "present-sidecar", "absent", "invalid", "unsupported", "not-applicable"] },
+        "ingredientAssetIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+        "recordedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "reviewStatus": { "enum": ["verified", "needs-review", "quarantined"] },
+        "notes": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "StarterAssetSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delivery", "availability"],
+      "properties": {
+        "delivery": { "enum": ["procedural", "bundled-file", "optional-download", "installed-family", "style-preset", "placeholder"] },
+        "availability": { "enum": ["ready", "optional", "planned", "unavailable"] },
+        "relativePath": { "$ref": "common.schema.json#/$defs/RelativePath" },
+        "contentHash": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "byteSize": { "type": "integer", "minimum": 1 },
+        "downloadUri": { "$ref": "common.schema.json#/$defs/Uri" },
+        "familyNames": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/ShortText" }, "uniqueItems": true },
+        "fallbackAssetId": { "$ref": "common.schema.json#/$defs/Id" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "delivery": { "const": "bundled-file" } }, "required": ["delivery"] },
+          "then": { "required": ["relativePath", "contentHash", "byteSize"] }
+        },
+        {
+          "if": { "properties": { "delivery": { "const": "optional-download" } }, "required": ["delivery"] },
+          "then": { "required": ["downloadUri", "contentHash", "byteSize"] }
+        },
+        {
+          "if": { "properties": { "delivery": { "const": "installed-family" } }, "required": ["delivery"] },
+          "then": { "required": ["familyNames"] }
+        },
+        {
+          "if": { "properties": { "availability": { "const": "planned" } }, "required": ["availability"] },
+          "then": { "properties": { "delivery": { "const": "placeholder" } } }
+        }
+      ]
+    },
+    "StarterAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "description", "tags", "source", "license", "provenance", "technical", "accessibility"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "kind": { "enum": ["background", "overlay", "transition", "font", "music", "sound-effect", "presenter-style", "presenter-portrait", "lower-third", "caption-style"] },
+        "name": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "tags": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/ShortText" }, "uniqueItems": true },
+        "source": { "$ref": "#/$defs/StarterAssetSource" },
+        "license": { "$ref": "#/$defs/StarterAssetLicense" },
+        "provenance": { "$ref": "#/$defs/StarterAssetProvenance" },
+        "technical": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mediaType", "renderSafe", "remoteFetchRequired"],
+          "properties": {
+            "mediaType": { "type": "string", "minLength": 3, "maxLength": 150 },
+            "renderSafe": { "type": "boolean" },
+            "remoteFetchRequired": { "type": "boolean" },
+            "dimensions": { "$ref": "common.schema.json#/$defs/Dimensions" },
+            "durationMs": { "type": "integer", "minimum": 1 },
+            "loopable": { "type": "boolean" },
+            "sampleRate": { "enum": [44100, 48000, 96000] },
+            "channels": { "enum": [1, 2, 6] },
+            "integratedLufs": { "type": "number", "minimum": -60, "maximum": 0 },
+            "fontWeights": { "type": "array", "items": { "type": "integer", "minimum": 100, "maximum": 1000 }, "uniqueItems": true },
+            "variableFont": { "type": "boolean" },
+            "scriptCoverage": { "type": "array", "items": { "enum": ["latin", "latin-extended", "devanagari", "cyrillic", "greek", "arabic", "cjk", "math", "symbols"] }, "uniqueItems": true },
+            "rendererRecipe": { "type": "string", "maxLength": 1000 },
+            "safeAreaPercent": { "type": "number", "minimum": 0, "maximum": 30 },
+            "transparentBackground": { "type": "boolean" }
+          }
+        },
+        "accessibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reducedMotionSafe", "highContrastSafe"],
+          "properties": {
+            "reducedMotionSafe": { "type": "boolean" },
+            "highContrastSafe": { "type": "boolean" },
+            "description": { "type": "string", "maxLength": 1000 },
+            "transcriptLabel": { "type": "string", "maxLength": 300 }
+          }
+        }
+      }
+    },
+    "StarterThemePack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "themeId", "name", "description", "defaults", "alternatives", "audioDefaults", "presenterDefaults"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "themeId": { "enum": ["minimal", "academic", "modern-tech", "notebook", "documentary", "playful", "childrens-education", "corporate-training", "light", "dark"] },
+        "name": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["backgroundAssetId", "transitionAssetId", "displayFontAssetId", "bodyFontAssetId", "codeFontAssetId", "presenterStyleAssetId"],
+          "properties": {
+            "backgroundAssetId": { "$ref": "common.schema.json#/$defs/Id" },
+            "overlayAssetId": { "$ref": "common.schema.json#/$defs/Id" },
+            "transitionAssetId": { "$ref": "common.schema.json#/$defs/Id" },
+            "displayFontAssetId": { "$ref": "common.schema.json#/$defs/Id" },
+            "bodyFontAssetId": { "$ref": "common.schema.json#/$defs/Id" },
+            "codeFontAssetId": { "$ref": "common.schema.json#/$defs/Id" },
+            "presenterStyleAssetId": { "$ref": "common.schema.json#/$defs/Id" },
+            "presenterPortraitAssetId": { "$ref": "common.schema.json#/$defs/Id" },
+            "lowerThirdAssetId": { "$ref": "common.schema.json#/$defs/Id" },
+            "captionStyleAssetId": { "$ref": "common.schema.json#/$defs/Id" }
+          }
+        },
+        "alternatives": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["backgroundAssetIds", "transitionAssetIds", "fontAssetIds", "presenterStyleAssetIds", "presenterPortraitAssetIds", "musicAssetIds", "soundEffectAssetIds"],
+          "properties": {
+            "backgroundAssetIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+            "transitionAssetIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+            "fontAssetIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+            "presenterStyleAssetIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+            "presenterPortraitAssetIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+            "musicAssetIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
+            "soundEffectAssetIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true }
+          }
+        },
+        "audioDefaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["musicEnabled", "effectsEnabled", "musicGainDb", "effectsGainDb", "duckingDb"],
+          "properties": {
+            "musicEnabled": { "type": "boolean" },
+            "effectsEnabled": { "type": "boolean" },
+            "musicGainDb": { "type": "number", "minimum": -60, "maximum": 0 },
+            "effectsGainDb": { "type": "number", "minimum": -60, "maximum": 0 },
+            "duckingDb": { "type": "number", "minimum": -30, "maximum": 0 }
+          }
+        },
+        "presenterDefaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["usage", "placement", "maximumCoveragePercent", "allowUserPortrait"],
+          "properties": {
+            "usage": { "enum": ["none", "sparse", "balanced", "frequent"] },
+            "placement": { "enum": ["left", "right", "alternating", "contextual", "full"] },
+            "maximumCoveragePercent": { "type": "number", "minimum": 5, "maximum": 100 },
+            "allowUserPortrait": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "UserAssetSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "description", "acceptedMediaTypes", "maximumBytes", "multiple", "rightsAttestationRequired", "provenanceRequired", "consentRequired", "normalization"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "kind": { "enum": ["background", "overlay", "font", "music", "sound-effect", "presenter-portrait", "presenter-video", "logo", "lower-third", "caption-style"] },
+        "name": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "acceptedMediaTypes": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$" }, "uniqueItems": true },
+        "acceptedExtensions": { "type": "array", "items": { "type": "string", "pattern": "^\\.[a-z0-9]{1,12}$" }, "uniqueItems": true },
+        "maximumBytes": { "type": "integer", "minimum": 1024, "maximum": 2147483648 },
+        "multiple": { "type": "boolean" },
+        "rightsAttestationRequired": { "type": "boolean" },
+        "provenanceRequired": { "type": "boolean" },
+        "consentRequired": { "type": "boolean" },
+        "normalization": { "enum": ["image-srgb", "video-rec709", "audio-48khz", "font-sanitized", "data-only"] },
+        "minimumDimensions": { "$ref": "common.schema.json#/$defs/Dimensions" },
+        "maximumDurationMs": { "type": "integer", "minimum": 1 },
+        "guidance": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortText" }, "uniqueItems": true }
+      }
+    },
+    "StarterKitManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "id", "version", "name", "description", "defaults", "assets", "themePacks", "userAssetSlots"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "id": { "$ref": "common.schema.json#/$defs/Id" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$" },
+        "name": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 3000 },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["musicEnabled", "effectsEnabled", "remoteFetchDuringRender", "unknownRightsBlockExport"],
+          "properties": {
+            "musicEnabled": { "const": false },
+            "effectsEnabled": { "const": false },
+            "remoteFetchDuringRender": { "const": false },
+            "unknownRightsBlockExport": { "const": true }
+          }
+        },
+        "assets": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/StarterAsset" } },
+        "themePacks": { "type": "array", "minItems": 10, "items": { "$ref": "#/$defs/StarterThemePack" } },
+        "userAssetSlots": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/UserAssetSlot" } }
+      }
+    }
+  },
+  "$ref": "#/$defs/StarterKitManifest"
+}

@@ -56,6 +56,15 @@ class FilenameAndMimeTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate_file("image.jpg", png, declared_mime="image/jpeg")
 
+    def test_opus_declared_mime_is_canonicalized_without_bypassing_magic(self) -> None:
+        opus = b"OggS" + bytes(32)
+        result = validate_file("voice.opus", opus, declared_mime="audio/opus")
+        self.assertEqual(result.declared_mime, "audio/ogg")
+        self.assertEqual(result.detected_mime, "audio/ogg")
+
+        with self.assertRaises(ValidationError):
+            validate_file("voice.mp3", opus, declared_mime="audio/opus")
+
     def test_json_requires_valid_json(self) -> None:
         self.assertEqual(detect_mime(b'{"safe": true}'), "application/json")
         self.assertEqual(detect_mime(b"{not-json"), "text/plain")

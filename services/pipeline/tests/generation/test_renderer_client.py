@@ -27,6 +27,11 @@ from alystria.generation.renderer_client import (
 from alystria.project import ProjectStore
 from alystria.service import _production_renderer_client
 
+ONE_PIXEL_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010804000000b51c0c02"
+    "0000000b4944415478da6364f80f00010501312718e3600000000049454e44ae426082"
+)
+
 
 def canonical(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
@@ -107,12 +112,23 @@ class FakeRendererRunner:
         for audio in manifest["audioInputs"]:
             audio_path = Path(audio["path"])
             assert audio_path.is_file()
+            assert digest(audio_path) == audio["sha256"]
             audio_path.resolve().relative_to(cwd.resolve())
         for presenter in manifest.get("presenterVideos", []):
             presenter_path = Path(presenter["path"])
             assert presenter_path.is_file()
             assert digest(presenter_path) == presenter["sha256"]
             presenter_path.resolve().relative_to(cwd.resolve())
+        for visual in manifest.get("visualAssets", []):
+            visual_path = Path(visual["path"])
+            assert visual_path.is_file()
+            assert digest(visual_path) == visual["sha256"]
+            visual_path.resolve().relative_to(cwd.resolve())
+        for font in manifest.get("fontAssets", []):
+            font_path = Path(font["path"])
+            assert font_path.is_file()
+            assert digest(font_path) == font["sha256"]
+            font_path.resolve().relative_to(cwd.resolve())
         output_root = Path(argv[argv.index("--output-dir") + 1])
         output_name = argv[argv.index("--output") + 1]
         delivery_path = output_root / output_name
@@ -301,6 +317,291 @@ def test_subprocess_renderer_translates_materializes_invokes_and_cleans(tmp_path
         assert render_call[0][2] == "render"
         assert render_call[2] == 42
         assert runner.attempt_root is not None and not runner.attempt_root.exists()
+    finally:
+        store.close()
+
+
+def test_subprocess_renderer_materializes_hash_bound_visual_for_image_and_presenter_scenes(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Visual Tutorial", name="Visual Tutorial")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        image = store.add_artifact_bytes(
+            ONE_PIXEL_PNG,
+            media_type="image/png",
+            original_name="owned-background.png",
+        )
+        request = render_request(first.hash, second.hash)
+        request["scenes"][0]["type"] = "image_focus"
+        request["scenes"][1]["type"] = "presenter"
+        request["assets"] = [
+            {
+                "sceneId": "scene_intro",
+                "artifactHash": image.hash,
+                "mediaType": "image/png",
+                "assetId": "uploaded-explanation",
+                "role": "primary",
+                "fit": "contain",
+                "alt": "An owned visual explanation",
+            },
+            {
+                "sceneId": "scene_close",
+                "artifactHash": image.hash,
+                "mediaType": "image/png",
+                "assetId": "uploaded-presenter",
+                "role": "presenter-portrait",
+                "fit": "cover",
+                "alt": "The selected tutorial presenter",
+            },
+        ]
+        client = SubprocessRendererClient(store, pins, runner=runner)
+        client.render(request)
+        assert runner.render_manifest is not None
+        visual_inputs = runner.render_manifest["visualAssets"]
+        assert [item["id"] for item in visual_inputs] == [
+            "uploaded-explanation",
+            "uploaded-presenter",
+        ]
+        assert all(item["sha256"] == image.hash for item in visual_inputs)
+        assert all(item["mediaType"] == "image/png" for item in visual_inputs)
+        scenes = runner.render_manifest["scenes"]
+        assert scenes[0]["visualAssets"] == [
+            {
+                "assetId": "uploaded-explanation",
+                "sha256": image.hash,
+                "role": "primary",
+                "alt": "An owned visual explanation",
+                "fit": "contain",
+            }
+        ]
+        assert scenes[1]["visualAssets"][0]["role"] == "presenter-portrait"
+        assert not Path(visual_inputs[0]["path"]).exists(), "attempt staging must be cleaned"
+    finally:
+        store.close()
+
+
+def test_subprocess_renderer_materializes_inspected_selected_font_and_typography(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Font Tutorial", name="Font Tutorial")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        font = store.add_artifact_bytes(
+            b"\x00\x01\x00\x00owned-render-font", media_type="font/ttf"
+        )
+        family = f"AlystriaImported-{font.hash[:16]}"
+        request = render_request(first.hash, second.hash)
+        request["fontCustomization"] = {
+            "fontAssets": [
+                {
+                    "id": "asset_owned_font",
+                    "artifactHash": font.hash,
+                    "mediaType": "font/ttf",
+                    "family": family,
+                    "roles": ["display", "body", "caption"],
+                    "weight": 650,
+                    "style": "normal",
+                    "inspectionStatus": "metadata-inspected",
+                    "embeddingPermission": "installable",
+                    "exportEligible": True,
+                }
+            ],
+            "typography": {
+                "displayFamily": family,
+                "bodyFamily": family,
+                "codeFamily": "JetBrains Mono",
+                "captionFamily": family,
+            },
+        }
+        client = SubprocessRendererClient(store, pins, runner=runner)
+        client.render(request)
+        assert runner.render_manifest is not None
+        manifest = runner.render_manifest
+        assert manifest["typography"]["displayFamily"] == family
+        assert manifest["captionStyle"]["fontFamily"] == family
+        assert manifest["fontAssets"][0]["sha256"] == font.hash
+        assert manifest["fontAssets"][0]["roles"] == ["display", "body", "caption"]
+        assert not Path(manifest["fontAssets"][0]["path"]).exists()
+    finally:
+        store.close()
+
+
+def test_renderer_stages_selected_music_and_sfx_as_hash_bound_program_audio(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Audio Tutorial", name="Audio Tutorial")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        music = store.add_artifact_bytes(
+            b"RIFF-music", media_type="audio/wav", original_name="owned-bed.wav"
+        )
+        cue = store.add_artifact_bytes(
+            b"fLaC-cue", media_type="audio/flac", original_name="owned-cue.flac"
+        )
+        request = render_request(first.hash, second.hash)
+        request["audioCustomization"] = {
+            "schemaVersion": 1,
+            "mix": {"musicDuckingDb": -14.5},
+            "inputs": [
+                {
+                    "assetId": "asset_music",
+                    "artifactHash": music.hash,
+                    "mediaType": "audio/wav",
+                    "role": "music",
+                    "source": "project",
+                    "gainDb": -20.0,
+                    "schedule": "full-program-loop",
+                },
+                {
+                    "assetId": "asset_cue",
+                    "artifactHash": cue.hash,
+                    "mediaType": "audio/flac",
+                    "role": "sfx",
+                    "source": "project",
+                    "gainDb": -12.0,
+                    "schedule": "scene-emphasis",
+                },
+            ],
+        }
+
+        SubprocessRendererClient(store, pins, runner=runner).render(request)
+
+        assert runner.render_manifest is not None
+        program = [
+            item
+            for item in runner.render_manifest["audioInputs"]
+            if item["role"] in {"music", "sfx"}
+        ]
+        assert len(program) == 2
+        assert program[0] == {
+            "id": "music-0000-asset_music",
+            "assetId": "asset_music",
+            "path": program[0]["path"],
+            "sha256": music.hash,
+            "mediaType": "audio/wav",
+            "role": "music",
+            "startTick": 0,
+            "endTick": 480_000,
+            "gainDb": -20.0,
+            "loop": True,
+            "duckingDb": -14.5,
+        }
+        assert program[1]["assetId"] == "asset_cue"
+        assert program[1]["sha256"] == cue.hash
+        assert program[1]["mediaType"] == "audio/flac"
+        assert program[1]["role"] == "sfx"
+        assert program[1]["startTick"] == 0
+        assert not Path(program[0]["path"]).exists()
+        assert not Path(program[1]["path"]).exists()
+    finally:
+        store.close()
+
+
+def test_renderer_expands_custom_background_presenter_and_caption_style_without_paths(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Customized Tutorial", name="Customized Tutorial")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        background = store.add_artifact_bytes(ONE_PIXEL_PNG, media_type="image/png")
+        portrait = store.add_artifact_bytes(ONE_PIXEL_PNG + b"portrait", media_type="image/png")
+        request = render_request(first.hash, second.hash)
+        request["scenes"][0]["type"] = "presenter-slide"
+        request["scenes"][0]["presenterName"] = "Minji"
+        request["scenes"][0]["presenterPlacement"] = "right"
+        request["visualCustomization"] = {
+            "schemaVersion": 1,
+            "assets": [
+                {
+                    "assetId": "background.modern-tech-signal-v1",
+                    "artifactHash": background.hash,
+                    "mediaType": "image/png",
+                    "role": "background",
+                    "source": "starter",
+                    "alt": "A quiet technical signal field",
+                    "fit": "cover",
+                },
+                {
+                    "assetId": "presenter-portrait.modern-tech-minji-v1",
+                    "artifactHash": portrait.hash,
+                    "mediaType": "image/png",
+                    "role": "presenter-portrait",
+                    "source": "starter",
+                    "alt": "Fictional synthetic systems guide",
+                    "fit": "contain",
+                },
+            ],
+            "presenter": {"enabled": True, "placement": "right", "fit": "contain"},
+            "captionStyle": {
+                "position": "top",
+                "style": "solid-panel",
+                "sizePercent": 112,
+                "safeInsetPercent": 9,
+                "maxLines": 3,
+                "textColor": "#FFF4D6",
+                "panelColor": "#102033",
+                "fontFamily": "Atkinson Hyperlegible Next",
+                "fallbackFamilies": ["Arial", "sans-serif"],
+            },
+            "warnings": [],
+        }
+
+        SubprocessRendererClient(store, pins, runner=runner).render(request)
+        assert runner.render_manifest is not None
+        manifest = runner.render_manifest
+        assert manifest["captionStyle"]["position"] == "top"
+        assert manifest["captionStyle"]["maxLines"] == 3
+        assert manifest["scenes"][0]["metadata"]["presenterName"] == "Minji"
+        assert manifest["scenes"][0]["metadata"]["presenterPlacement"] == "right"
+        assert [item["id"] for item in manifest["visualAssets"]] == [
+            "background-modern-tech-signal-v1",
+            "presenter-portrait-modern-tech-minji-v1",
+        ]
+        assert [item["role"] for item in manifest["scenes"][0]["visualAssets"]] == [
+            "background",
+            "presenter-portrait",
+        ]
+        assert [item["role"] for item in manifest["scenes"][1]["visualAssets"]] == [
+            "background"
+        ]
+        assert not {"path", "url", "uri", "contentBase64"} & request["visualCustomization"]["assets"][0].keys()
+    finally:
+        store.close()
+
+
+def test_subprocess_renderer_rejects_visual_media_type_mismatch(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Visual Tutorial", name="Visual Tutorial")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        image = store.add_artifact_bytes(ONE_PIXEL_PNG, media_type="image/png")
+        request = render_request(first.hash, second.hash)
+        request["assets"] = [
+            {
+                "sceneId": "scene_intro",
+                "artifactHash": image.hash,
+                "mediaType": "image/jpeg",
+            }
+        ]
+        client = SubprocessRendererClient(store, pins, runner=runner)
+        with pytest.raises(RendererOutputError, match="media type does not match"):
+            client.render(request)
+        assert runner.render_manifest is None
     finally:
         store.close()
 

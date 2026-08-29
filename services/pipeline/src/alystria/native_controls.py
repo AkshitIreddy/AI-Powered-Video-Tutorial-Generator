@@ -20,6 +20,7 @@ from alystria.generation.adapters import RendererClient
 from alystria.jobs import ActionKey, DependencyGraph, Job, JobContext, JobState
 from alystria.jobs.runtime import SQLiteWorkflowRuntime
 from alystria.project import ProjectStore, Revision
+from alystria.project_assets import validate_approved_presenter_for_export
 
 TICKS_PER_SECOND = 240_000
 CONTROL_IMPLEMENTATION_VERSION = "native-controls-v1"
@@ -350,6 +351,14 @@ class NativeControlCoordinator:
                 "Pinned renderer runtime is unavailable; master export is disabled until runtime diagnostics pass"
             )
         generation_id = str(params["baseGenerationId"])
+        generation_status = GenerationCoordinator(self.store).status(generation_id)
+        if generation_status.approval_revision_id is None:
+            raise ValueError("Master export requires a durable approval revision")
+        validate_approved_presenter_for_export(
+            self.store,
+            generation_status.approval_revision_id,
+            distribution_scope="publicCommercial",
+        )
         storyboard = self._stage_payload(generation_id, "storyboard")["storyboard"]
         narration_payload = self._stage_payload(generation_id, "narration")
         captions_payload = self._stage_payload(generation_id, "captions")

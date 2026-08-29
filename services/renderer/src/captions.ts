@@ -1,4 +1,4 @@
-import type { CaptionCue, RenderTarget } from "./contracts.js";
+import type { CaptionCue, CaptionRenderStyle, RenderTarget } from "./contracts.js";
 import { TICKS_PER_SECOND } from "./timebase.js";
 
 const XML_ESCAPE: Readonly<Record<string, string>> = {
@@ -61,39 +61,72 @@ export function toSrt(cues: readonly CaptionCue[]): string {
   return `${cues.map((cue, index) => `${index + 1}\n${timestamp(cue.startTick, ",")} --> ${timestamp(cue.endTick, ",")}\n${cue.speaker ? `${escapeCaptionText(cue.speaker)}: ` : ""}${escapeCaptionText(cue.text)}`).join("\n\n")}\n`;
 }
 
-function wrapCaption(value: string, maximumCharacters: number): readonly string[] {
+function wrapCaption(value: string, maximumCharacters: number, maxLines: number): readonly string[] {
   const words = value.trim().split(/\s+/);
   const lines: string[] = [];
   for (const word of words) {
     const current = lines.at(-1);
-    if (!current || (current.length + 1 + word.length > maximumCharacters && lines.length < 2)) lines.push(word);
+    if (!current || (current.length + 1 + word.length > maximumCharacters && lines.length < maxLines)) lines.push(word);
     else lines[lines.length - 1] = `${current} ${word}`;
   }
-  return lines.slice(0, 2);
+  return lines.slice(0, maxLines);
 }
 
-export function renderCaptionSvg(cues: readonly CaptionCue[], tick: number, target: RenderTarget): string {
+const DEFAULT_CAPTION_STYLE: CaptionRenderStyle = {
+  position: "auto",
+  style: "soft-panel",
+  sizePercent: 100,
+  safeInsetPercent: 6,
+  maxLines: 2,
+  textColor: "#FFFFFF",
+  panelColor: "#151827",
+  fontFamily: "Atkinson Hyperlegible Next",
+  fallbackFamilies: ["Arial", "sans-serif"],
+};
+
+export function captionTopBandHeight(target: RenderTarget, style: CaptionRenderStyle | undefined): number {
+  if (!style || style.position !== "top") return 0;
+  const inset = Math.round(target.height * style.safeInsetPercent / 100);
+  const baseFontSize = Math.max(18, Math.round(Math.min(target.width, target.height) * 0.034 * style.sizePercent / 100));
+  const requested = inset + baseFontSize * (style.maxLines * 1.18 + 0.92);
+  return Math.round(Math.min(target.height * 0.3, Math.max(target.height * 0.14, requested)));
+}
+
+export function renderCaptionSvg(
+  cues: readonly CaptionCue[],
+  tick: number,
+  target: RenderTarget,
+  selectedStyle: CaptionRenderStyle = DEFAULT_CAPTION_STYLE,
+): string {
   const active = activeCaptionCues(cues, tick);
   if (active.length === 0) return "";
   const cue = active[0] as CaptionCue;
-  const position = cue.position === "top" ? Math.round(target.height * 0.12) : Math.round(target.height * 0.88);
-  const baseFontSize = Math.max(22, Math.round(Math.min(target.width, target.height) * 0.034));
-  const maxWidth = Math.round(target.width * 0.84);
+  const top = selectedStyle.position === "top" || (selectedStyle.position === "auto" && cue.position === "top");
+  const inset = Math.round(target.height * selectedStyle.safeInsetPercent / 100);
+  const baseFontSize = Math.max(18, Math.round(Math.min(target.width, target.height) * 0.034 * selectedStyle.sizePercent / 100));
+  const maxWidth = Math.round(target.width * (1 - Math.min(0.36, selectedStyle.safeInsetPercent * 2 / 100)));
   const maximumCharacters = Math.max(22, Math.floor(maxWidth / (baseFontSize * 0.55)));
-  const lines = wrapCaption(cue.text, maximumCharacters);
+  const lines = wrapCaption(cue.text, maximumCharacters, selectedStyle.maxLines);
   const text = escapeMarkup(cue.text);
   const longestLine = Math.max(...lines.map((line) => line.length + (cue.speaker ? cue.speaker.length + 2 : 0)));
-  const fontSize = Math.max(18, Math.min(baseFontSize, Math.floor(maxWidth / Math.max(1, longestLine * 0.55))));
-  const twoLines = lines.length > 1;
-  const rectY = position - fontSize * (twoLines ? 1.75 : 1.35);
-  const rectHeight = fontSize * (twoLines ? 2.65 : 1.8);
+  const fontSize = Math.max(16, Math.min(baseFontSize, Math.floor(maxWidth / Math.max(1, longestLine * 0.55))));
+  const rectHeight = fontSize * (lines.length * 1.18 + 0.72);
+  const rectY = top ? inset : target.height - inset - rectHeight;
+  const textCenterY = rectY + rectHeight / 2;
   const tspans = lines.map((line, index) => {
     const speaker = index === 0 && cue.speaker ? `<tspan font-weight="700">${escapeMarkup(cue.speaker)}: </tspan>` : "";
-    const y = position + (index - (lines.length - 1) / 2) * fontSize * 1.18;
+    const y = textCenterY + fontSize * 0.34 + (index - (lines.length - 1) / 2) * fontSize * 1.18;
     return `<tspan x="${target.width / 2}" y="${y.toFixed(1)}">${speaker}${escapeMarkup(line)}</tspan>`;
   }).join("");
+  const panelOpacity = selectedStyle.style === "solid-panel" ? "0.96" : selectedStyle.style === "outline" ? "0.3" : "0.82";
+  const outline = selectedStyle.style === "outline"
+    ? ` stroke="${selectedStyle.panelColor}" stroke-width="${Math.max(2, Math.round(fontSize * 0.1))}"`
+    : "";
+  const fontStack = [selectedStyle.fontFamily, ...selectedStyle.fallbackFamilies]
+    .map((family) => family === "sans-serif" || family === "serif" || family === "monospace" ? family : `'${escapeMarkup(family)}'`)
+    .join(", ");
   return `<g data-caption-id="${escapeMarkup(cue.id)}" role="note" aria-label="${text}">
-    <rect x="${Math.round((target.width - maxWidth) / 2)}" y="${rectY.toFixed(1)}" width="${maxWidth}" height="${rectHeight.toFixed(1)}" rx="${Math.round(fontSize * 0.4)}" fill="#151827" fill-opacity="0.9"/>
-    <text text-anchor="middle" fill="#ffffff" font-family="Atkinson Hyperlegible, Arial, sans-serif" font-size="${fontSize}">${tspans}</text>
+    <rect x="${Math.round((target.width - maxWidth) / 2)}" y="${rectY.toFixed(1)}" width="${maxWidth}" height="${rectHeight.toFixed(1)}" rx="${Math.round(fontSize * (selectedStyle.style === "solid-panel" ? 0.2 : 0.48))}" fill="${selectedStyle.panelColor}" fill-opacity="${panelOpacity}"${outline}/>
+    <text text-anchor="middle" fill="${selectedStyle.textColor}" font-family="${fontStack}" font-size="${fontSize}">${tspans}</text>
   </g>`;
 }

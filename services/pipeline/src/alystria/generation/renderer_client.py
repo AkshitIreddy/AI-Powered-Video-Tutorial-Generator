@@ -79,6 +79,16 @@ MEDIA_EXTENSIONS = {
     "audio/ogg": ".ogg",
     "audio/webm": ".webm",
 }
+VISUAL_MEDIA_EXTENSIONS = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+}
+FONT_MEDIA_EXTENSIONS = {
+    "font/ttf": ".ttf",
+    "font/otf": ".otf",
+    "font/woff": ".woff",
+}
 
 
 class RendererClientError(RuntimeError):
@@ -298,12 +308,18 @@ class SubprocessRendererClient:
         with tempfile.TemporaryDirectory(prefix="attempt-", dir=staging_parent) as temporary:
             attempt_root = _guarded_child(staging_parent, Path(temporary))
             audio_root = _guarded_child(attempt_root, attempt_root / "audio")
+            visual_root = _guarded_child(attempt_root, attempt_root / "visuals")
+            font_root = _guarded_child(attempt_root, attempt_root / "fonts")
             presenter_root = _guarded_child(attempt_root, attempt_root / "presenters")
             output_root = _guarded_child(attempt_root, attempt_root / "output")
             audio_root.mkdir()
+            visual_root.mkdir()
+            font_root.mkdir()
             presenter_root.mkdir()
             output_root.mkdir()
-            manifest = self._build_manifest(request, audio_root, presenter_root, output_root)
+            manifest = self._build_manifest(
+                request, audio_root, visual_root, font_root, presenter_root, output_root
+            )
             manifest_path = _guarded_child(attempt_root, attempt_root / "render-manifest.json")
             manifest_bytes = (_canonical_json(manifest) + "\n").encode()
             manifest_path.write_bytes(manifest_bytes)
@@ -342,6 +358,8 @@ class SubprocessRendererClient:
         self,
         request: Mapping[str, Any],
         audio_root: Path,
+        visual_root: Path,
+        font_root: Path,
         presenter_root: Path,
         output_root: Path,
     ) -> dict[str, Any]:
@@ -395,6 +413,14 @@ class SubprocessRendererClient:
             cues_value = caption_map.get(scene_id, [])
             if not isinstance(cues_value, list):
                 raise ValueError(f"Captions for scene {scene_id} must be a list")
+            scene_metadata: dict[str, str | int] = {
+                "sourceType": str(scene.get("type", scene.get("kind", kind))),
+                "sceneIndex": index,
+            }
+            for metadata_key in ("presenterName", "presenterDisclosure", "presenterPlacement", "presenterFit"):
+                metadata_value = scene.get(metadata_key)
+                if isinstance(metadata_value, str) and metadata_value.strip():
+                    scene_metadata[metadata_key] = metadata_value.strip()[:200]
             resolved_scenes.append(
                 {
                     "id": scene_id,
@@ -407,15 +433,16 @@ class SubprocessRendererClient:
                         scene.get("accessibilityDescription")
                         or f"An explanatory {kind.replace('-', ' ')} scene titled {_required_string(scene, 'title')}"
                     ),
-                    "metadata": {
-                        "sourceType": str(scene.get("type", scene.get("kind", kind))),
-                        "sceneIndex": index,
-                    },
+                    "metadata": scene_metadata,
                 }
             )
             narration = narration_by_scene.get(scene_id)
             if narration is not None:
-                digest = _required_string(narration, "artifactHash")
+                digest = _required_string(narration, "artifactHash").lower()
+                if not SHA256_PATTERN.fullmatch(digest) or not self.store.cas.verify(digest):
+                    raise RendererOutputError(
+                        f"Narration artifact for scene {scene_id} is missing or corrupt"
+                    )
                 media_type = str(narration.get("mediaType", "audio/wav")).casefold()
                 suffix = MEDIA_EXTENSIONS.get(media_type)
                 if suffix is None:
@@ -427,10 +454,15 @@ class SubprocessRendererClient:
                     audio_root / f"{index:04d}-{_safe_name(scene_id)}{suffix}",
                 )
                 self.store.cas.copy_to(digest, destination)
+                _validate_staged_audio(destination, audio_root, digest, scene_id)
                 duration_ms = _required_int(narration, "durationMs", minimum=1)
                 audio_inputs.append(
                     {
+                        "id": f"narration-{index:04d}-{_safe_name(scene_id)}",
+                        "assetId": f"scene-narration:{scene_id}",
                         "path": str(destination),
+                        "sha256": digest,
+                        "mediaType": media_type,
                         "role": "narration",
                         "startTick": timeline_tick,
                         "endTick": timeline_tick
@@ -439,6 +471,14 @@ class SubprocessRendererClient:
                     }
                 )
             timeline_tick += duration_ticks
+        audio_inputs.extend(
+            self._materialize_program_audio(
+                request.get("audioCustomization"),
+                resolved_scenes,
+                timeline_tick,
+                audio_root,
+            )
+        )
         if set(narration_by_scene) - {str(scene["id"]) for scene in resolved_scenes}:
             raise ValueError("Renderer narration references an unknown scene")
         unknown_presenters = set(presenters_by_scene) - {
@@ -449,6 +489,28 @@ class SubprocessRendererClient:
                 "Renderer presenter references an unknown scene: "
                 + ", ".join(sorted(unknown_presenters))
             )
+        custom_visual_assets, caption_style = _render_visual_customization(
+            request.get("visualCustomization"), resolved_scenes
+        )
+        font_inputs, typography = self._materialize_font_assets(
+            request.get("fontCustomization"), font_root
+        )
+        caption_style = {**caption_style, "fontFamily": typography["captionFamily"]}
+        generated_assets = request.get("assets", [])
+        if not isinstance(generated_assets, list):
+            raise ValueError("Renderer assets must be a list")
+        # Explicit project/starter choices take precedence for a semantic role.
+        # Generated candidates remain in provenance, but duplicate backgrounds
+        # and portraits do not silently cover the user's selection.
+        visual_inputs, visuals_by_scene = self._materialize_visual_assets(
+            [*custom_visual_assets, *generated_assets],
+            resolved_scenes,
+            visual_root,
+        )
+        for scene in resolved_scenes:
+            scene_visuals = visuals_by_scene.get(str(scene["id"]), [])
+            if scene_visuals:
+                scene["visualAssets"] = scene_visuals
         presenter_videos = self._materialize_presenter_videos(
             presenters_by_scene,
             resolved_scenes,
@@ -462,6 +524,10 @@ class SubprocessRendererClient:
             "scenes": resolved_scenes,
             "outputDirectory": str(output_root),
             "audioInputs": audio_inputs,
+            "captionStyle": caption_style,
+            **({"visualAssets": visual_inputs} if visual_inputs else {}),
+            **({"fontAssets": font_inputs} if font_inputs else {}),
+            "typography": typography,
             **({"presenterVideos": presenter_videos} if presenter_videos else {}),
             "metadata": {
                 "generationId": generation_id,
@@ -469,6 +535,398 @@ class SubprocessRendererClient:
                 "sourceTimebase": str(request.get("timebase", TICKS_PER_SECOND)),
             },
         }
+
+    def _materialize_font_assets(
+        self,
+        value: object,
+        font_root: Path,
+    ) -> tuple[list[dict[str, Any]], dict[str, str]]:
+        """Stage only selected, inspected, rights-cleared CAS font objects."""
+
+        fallback = {
+            "displayFamily": "Bricolage Grotesque",
+            "bodyFamily": "Atkinson Hyperlegible Next",
+            "codeFamily": "JetBrains Mono",
+            "captionFamily": "Atkinson Hyperlegible Next",
+        }
+        if value is None:
+            return [], fallback
+        customization = _required_mapping(value, "font customization")
+        assets_value = customization.get("fontAssets", [])
+        if not isinstance(assets_value, list):
+            raise ValueError("Renderer font customization assets must be a list")
+        typography_value = _required_mapping(
+            customization.get("typography", fallback), "font typography"
+        )
+        typography = {
+            field: _font_family(typography_value.get(field), f"typography.{field}")
+            for field in (
+                "displayFamily",
+                "bodyFamily",
+                "codeFamily",
+                "captionFamily",
+            )
+        }
+        result: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        seen_roles: set[str] = set()
+        for index, raw in enumerate(assets_value):
+            item = _required_mapping(raw, f"font asset {index}")
+            if any(key in item for key in ("path", "url", "uri", "contentBase64")):
+                raise ValueError("Font customization must not contain paths, URLs, or embedded bytes")
+            asset_id = _required_string(item, "id")
+            if asset_id in seen_ids:
+                raise ValueError(f"Renderer font asset {asset_id!r} is duplicated")
+            seen_ids.add(asset_id)
+            digest = _required_string(item, "artifactHash").lower()
+            if not SHA256_PATTERN.fullmatch(digest) or not self.store.cas.verify(digest):
+                raise RendererOutputError(
+                    f"Font artifact {asset_id!r} is missing or corrupt"
+                )
+            row = self.store.connection.execute(
+                "SELECT media_type FROM artifacts WHERE hash=?", (digest,)
+            ).fetchone()
+            if row is None:
+                raise RendererOutputError(
+                    f"Font artifact {asset_id!r} is not registered"
+                )
+            registered_media_type = str(row["media_type"]).casefold()
+            declared_media_type = _required_string(item, "mediaType").casefold()
+            suffix = FONT_MEDIA_EXTENSIONS.get(registered_media_type)
+            if declared_media_type != registered_media_type or suffix is None:
+                raise RendererOutputError(
+                    f"Font artifact {asset_id!r} has no render-safe media registration"
+                )
+            family = _required_string(item, "family")
+            expected_family = f"AlystriaImported-{digest[:16]}"
+            if family != expected_family:
+                raise ValueError(
+                    f"Font artifact {asset_id!r} family alias does not match its hash"
+                )
+            roles_value = item.get("roles")
+            if not isinstance(roles_value, list) or not 1 <= len(roles_value) <= 4:
+                raise ValueError(f"Font artifact {asset_id!r} has invalid roles")
+            roles: list[str] = []
+            for role_value in roles_value:
+                role = _enum_value(
+                    role_value,
+                    {"display", "body", "code", "caption"},
+                    "font role",
+                )
+                if role in roles or role in seen_roles:
+                    raise ValueError(f"Font role {role!r} is duplicated")
+                roles.append(role)
+                seen_roles.add(role)
+            inspection = _enum_value(
+                item.get("inspectionStatus"),
+                {"metadata-inspected"},
+                "font inspection status",
+            )
+            permission = _enum_value(
+                item.get("embeddingPermission"),
+                {"installable", "previewPrint", "editable"},
+                "font embedding permission",
+            )
+            if item.get("exportEligible") is not True:
+                raise ValueError(f"Font artifact {asset_id!r} is not export-cleared")
+            style = _enum_value(
+                item.get("style"), {"normal", "italic"}, "font style"
+            )
+            weight_value = item.get("weight")
+            weight: int | list[int]
+            if isinstance(weight_value, int) and not isinstance(weight_value, bool):
+                if not 1 <= weight_value <= 1_000:
+                    raise ValueError("Font weight must be in [1, 1000]")
+                weight = weight_value
+            elif (
+                isinstance(weight_value, list)
+                and len(weight_value) == 2
+                and all(
+                    isinstance(part, int)
+                    and not isinstance(part, bool)
+                    and 1 <= part <= 1_000
+                    for part in weight_value
+                )
+                and weight_value[0] <= weight_value[1]
+            ):
+                weight = [int(weight_value[0]), int(weight_value[1])]
+            else:
+                raise ValueError("Font weight or variable weight range is invalid")
+            destination = _guarded_child(
+                font_root,
+                font_root / f"font-{index:04d}-{_safe_name(asset_id)}{suffix}",
+            )
+            self.store.cas.copy_to(digest, destination)
+            resolved = _validate_staged_font(
+                destination,
+                font_root,
+                digest,
+                asset_id,
+                registered_media_type,
+            )
+            result.append(
+                {
+                    "id": asset_id,
+                    "path": str(resolved),
+                    "sha256": digest,
+                    "mediaType": registered_media_type,
+                    "family": family,
+                    "roles": roles,
+                    "weight": weight,
+                    "style": style,
+                    "inspectionStatus": inspection,
+                    "embeddingPermission": permission,
+                    "exportEligible": True,
+                }
+            )
+        for role, field in (
+            ("display", "displayFamily"),
+            ("body", "bodyFamily"),
+            ("code", "codeFamily"),
+            ("caption", "captionFamily"),
+        ):
+            family = typography[field]
+            if family.startswith("AlystriaImported-") and not any(
+                family == item["family"] and role in item["roles"] for item in result
+            ):
+                raise ValueError(
+                    f"Typography role {role!r} references an unbound imported font"
+                )
+        return result, typography
+
+    def _materialize_program_audio(
+        self,
+        value: object,
+        scenes: Sequence[Mapping[str, Any]],
+        duration_ticks: int,
+        audio_root: Path,
+    ) -> list[dict[str, Any]]:
+        """Stage explicit music/SFX selections from the project CAS.
+
+        The request contains only IDs, hashes, and policies produced by the
+        project-audio resolver.  Filesystem paths are always generated inside
+        this attempt directory and their bytes are re-hashed after copying.
+        """
+
+        if value is None:
+            return []
+        customization = _required_mapping(value, "audio customization")
+        if customization.get("schemaVersion") != 1:
+            raise ValueError("Renderer audio customization requires schemaVersion 1")
+        inputs_value = customization.get("inputs", [])
+        if not isinstance(inputs_value, list):
+            raise ValueError("Renderer audio customization inputs must be a list")
+        mix = _required_mapping(customization.get("mix", {}), "audio mix policy")
+        ducking_db = _required_number(
+            mix,
+            "musicDuckingDb",
+            minimum=-36,
+            maximum=0,
+        )
+        result: list[dict[str, Any]] = []
+        seen_asset_ids: set[str] = set()
+        scene_starts = _audio_emphasis_ticks(scenes)
+        for index, value_item in enumerate(inputs_value):
+            item = _required_mapping(value_item, f"program audio {index}")
+            asset_id = _required_string(item, "assetId")
+            if asset_id in seen_asset_ids:
+                raise ValueError(f"Renderer program audio asset {asset_id!r} is duplicated")
+            seen_asset_ids.add(asset_id)
+            role = _required_string(item, "role")
+            if role not in {"music", "sfx"}:
+                raise ValueError(f"Renderer program audio {asset_id!r} has unsupported role {role}")
+            expected_schedule = "full-program-loop" if role == "music" else "scene-emphasis"
+            if item.get("schedule") != expected_schedule:
+                raise ValueError(
+                    f"Renderer program audio {asset_id!r} requires schedule {expected_schedule!r}"
+                )
+            digest = _required_string(item, "artifactHash").lower()
+            if not SHA256_PATTERN.fullmatch(digest) or not self.store.cas.verify(digest):
+                raise RendererOutputError(
+                    f"Program audio artifact {asset_id!r} is missing or corrupt"
+                )
+            row = self.store.connection.execute(
+                "SELECT media_type FROM artifacts WHERE hash=?", (digest,)
+            ).fetchone()
+            if row is None:
+                raise RendererOutputError(
+                    f"Program audio artifact {asset_id!r} is not registered"
+                )
+            registered_media_type = str(row["media_type"]).casefold()
+            declared_media_type = _required_string(item, "mediaType").casefold()
+            if registered_media_type != declared_media_type:
+                raise RendererOutputError(
+                    f"Program audio artifact {asset_id!r} media type does not match its CAS registration"
+                )
+            suffix = MEDIA_EXTENSIONS.get(registered_media_type)
+            if suffix is None:
+                raise ValueError(
+                    f"Program audio artifact {asset_id!r} has unsupported media type {registered_media_type!r}"
+                )
+            destination = _guarded_child(
+                audio_root,
+                audio_root / f"program-{index:04d}-{_safe_name(asset_id)}{suffix}",
+            )
+            self.store.cas.copy_to(digest, destination)
+            resolved = _validate_staged_audio(destination, audio_root, digest, asset_id)
+            gain_db = _required_number(item, "gainDb", minimum=-96, maximum=24)
+            base = {
+                "assetId": asset_id,
+                "path": str(resolved),
+                "sha256": digest,
+                "mediaType": registered_media_type,
+                "role": role,
+                "gainDb": gain_db,
+            }
+            if role == "music":
+                result.append(
+                    {
+                        **base,
+                        "id": f"music-{index:04d}-{_safe_name(asset_id)}",
+                        "startTick": 0,
+                        "endTick": duration_ticks,
+                        "loop": True,
+                        "duckingDb": ducking_db,
+                    }
+                )
+            else:
+                for cue_index, start_tick in enumerate(scene_starts):
+                    result.append(
+                        {
+                            **base,
+                            "id": f"sfx-{index:04d}-{cue_index:04d}-{_safe_name(asset_id)}",
+                            "startTick": start_tick,
+                        }
+                    )
+        return result
+
+    def _materialize_visual_assets(
+        self,
+        assets_value: object,
+        scenes: Sequence[Mapping[str, Any]],
+        visual_root: Path,
+    ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+        """Copy hash-verified bitmap assets from CAS into one render attempt.
+
+        SVG and other non-bitmap generation artifacts remain in provenance but
+        cannot cross this browser boundary. The browser receives only bytes;
+        the absolute staging path is consumed and removed by the Node executor.
+        """
+
+        if not isinstance(assets_value, list):
+            raise ValueError("Renderer assets must be a list")
+        scenes_by_id = {_required_string(scene, "id"): scene for scene in scenes}
+        inputs: list[dict[str, Any]] = []
+        references: dict[str, list[dict[str, Any]]] = {}
+        ids: dict[str, tuple[str, str]] = {}
+        role_counts: dict[tuple[str, str], int] = {}
+        for index, value in enumerate(assets_value):
+            asset = _required_mapping(value, f"visual asset {index}")
+            scene_id = _required_string(asset, "sceneId")
+            scene = scenes_by_id.get(scene_id)
+            if scene is None:
+                raise ValueError(f"Renderer visual asset references unknown scene {scene_id}")
+            artifact_hash = _required_string(asset, "artifactHash").lower()
+            if not SHA256_PATTERN.fullmatch(artifact_hash) or not self.store.cas.verify(
+                artifact_hash
+            ):
+                raise RendererOutputError(
+                    f"Visual artifact for scene {scene_id} is missing or corrupt"
+                )
+            row = self.store.connection.execute(
+                "SELECT media_type FROM artifacts WHERE hash=?", (artifact_hash,)
+            ).fetchone()
+            if row is None:
+                raise RendererOutputError(
+                    f"Visual artifact for scene {scene_id} is not registered"
+                )
+            registered_media_type = str(row["media_type"]).casefold()
+            declared_media_type = str(
+                asset.get("mediaType", registered_media_type)
+            ).casefold()
+            if declared_media_type != registered_media_type:
+                raise RendererOutputError(
+                    f"Visual artifact for scene {scene_id} media type does not match its CAS registration"
+                )
+            suffix = VISUAL_MEDIA_EXTENSIONS.get(registered_media_type)
+            if suffix is None:
+                # Deterministic fixtures currently generate sanitized SVG
+                # envelopes. Keep them as evidence, but do not send active SVG
+                # content into Chromium as an image asset.
+                continue
+            role = _visual_asset_role(asset.get("role"), str(scene["kind"]))
+            role_key = (scene_id, role)
+            role_count = role_counts.get(role_key, 0)
+            role_counts[role_key] = role_count + 1
+            if role_count:
+                if role == "primary" and role_count == 1:
+                    role = "secondary"
+                else:
+                    continue
+            requested_id = asset.get("assetId")
+            asset_id = (
+                _safe_name(requested_id)
+                if isinstance(requested_id, str) and requested_id.strip()
+                else f"visual-{index:04d}-{_safe_name(scene_id)}-{role}"
+            )
+            if not asset_id:
+                raise ValueError("Renderer visual asset id must not be empty")
+            existing = ids.get(asset_id)
+            if existing is not None:
+                if existing != (artifact_hash, registered_media_type):
+                    raise ValueError(
+                        f"Renderer visual asset id {asset_id!r} maps to conflicting immutable objects"
+                    )
+                references.setdefault(scene_id, []).append(
+                    {
+                        "assetId": asset_id,
+                        "sha256": artifact_hash,
+                        "role": role,
+                        "alt": _visual_asset_alt(asset, scene),
+                        "fit": _visual_asset_fit(asset.get("fit"), role),
+                    }
+                )
+                continue
+            ids[asset_id] = (artifact_hash, registered_media_type)
+            destination = _guarded_child(
+                visual_root,
+                visual_root / f"{index:04d}-{_safe_name(scene_id)}-{role}{suffix}",
+            )
+            self.store.cas.copy_to(artifact_hash, destination)
+            try:
+                info = destination.lstat()
+                resolved = destination.resolve(strict=True)
+                resolved.relative_to(visual_root.resolve(strict=True))
+            except (OSError, ValueError) as error:
+                raise RendererOutputError(
+                    f"Visual staging artifact for scene {scene_id} is unavailable"
+                ) from error
+            if destination.is_symlink() or not resolved.is_file() or info.st_size <= 0:
+                raise RendererOutputError(
+                    f"Visual staging artifact for scene {scene_id} is not a regular file"
+                )
+            if _sha256_file(resolved) != artifact_hash:
+                raise RendererOutputError(
+                    f"Visual staging artifact for scene {scene_id} changed during copy"
+                )
+            inputs.append(
+                {
+                    "id": asset_id,
+                    "path": str(resolved),
+                    "sha256": artifact_hash,
+                    "mediaType": registered_media_type,
+                }
+            )
+            references.setdefault(scene_id, []).append(
+                {
+                    "assetId": asset_id,
+                    "sha256": artifact_hash,
+                    "role": role,
+                    "alt": _visual_asset_alt(asset, scene),
+                    "fit": _visual_asset_fit(asset.get("fit"), role),
+                }
+            )
+        return inputs, references
 
     def _materialize_presenter_videos(
         self,
@@ -960,11 +1418,262 @@ def _required_int(
     return result
 
 
+def _required_number(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    minimum: float,
+    maximum: float,
+) -> float:
+    result = value.get(key)
+    if (
+        not isinstance(result, (int, float))
+        or isinstance(result, bool)
+        or not math.isfinite(float(result))
+        or float(result) < minimum
+        or float(result) > maximum
+    ):
+        raise ValueError(f"{key} must be numeric in [{minimum}, {maximum}]")
+    return float(result)
+
+
+def _validate_staged_audio(
+    destination: Path,
+    audio_root: Path,
+    expected_hash: str,
+    label: str,
+) -> Path:
+    try:
+        info = destination.lstat()
+        resolved = destination.resolve(strict=True)
+        resolved.relative_to(audio_root.resolve(strict=True))
+    except (OSError, ValueError) as error:
+        raise RendererOutputError(f"Staged audio {label!r} is unavailable") from error
+    if destination.is_symlink() or not resolved.is_file() or info.st_size <= 0:
+        raise RendererOutputError(f"Staged audio {label!r} is not a regular file")
+    if _sha256_file(resolved) != expected_hash:
+        raise RendererOutputError(f"Staged audio {label!r} changed during copy")
+    return resolved
+
+
+def _validate_staged_font(
+    destination: Path,
+    font_root: Path,
+    expected_hash: str,
+    label: str,
+    media_type: str,
+) -> Path:
+    try:
+        info = destination.lstat()
+        resolved = destination.resolve(strict=True)
+        resolved.relative_to(font_root.resolve(strict=True))
+    except (OSError, ValueError) as error:
+        raise RendererOutputError(f"Staged font {label!r} is unavailable") from error
+    if destination.is_symlink() or not resolved.is_file() or info.st_size <= 0:
+        raise RendererOutputError(f"Staged font {label!r} is not a regular file")
+    if info.st_size > 16 * 1024 * 1024:
+        raise RendererOutputError(f"Staged font {label!r} exceeds the renderer limit")
+    if _sha256_file(resolved) != expected_hash:
+        raise RendererOutputError(f"Staged font {label!r} changed during copy")
+    prefix = resolved.read_bytes()[:4]
+    valid = (
+        prefix in {b"\x00\x01\x00\x00", b"true", b"typ1"}
+        if media_type == "font/ttf"
+        else prefix == b"OTTO"
+        if media_type == "font/otf"
+        else prefix == b"wOFF"
+    )
+    if not valid:
+        raise RendererOutputError(
+            f"Staged font {label!r} bytes do not match {media_type}"
+        )
+    return resolved
+
+
+def _audio_emphasis_ticks(scenes: Sequence[Mapping[str, Any]]) -> list[int]:
+    """Choose a restrained deterministic set of scene-boundary cue times."""
+
+    preferred = {
+        "section-intro",
+        "definition",
+        "worked-example",
+        "question",
+        "quiz",
+        "recap",
+        "summary",
+        "outro",
+    }
+    minimum_gap = 5 * TICKS_PER_SECOND
+    result = [0]
+    timeline_tick = 0
+    for scene in scenes:
+        scene_start = timeline_tick
+        duration_ticks = _required_int(scene, "durationTicks", minimum=1)
+        timeline_tick += duration_ticks
+        if scene_start == 0 or str(scene.get("kind", "")) not in preferred:
+            continue
+        if scene_start - result[-1] >= minimum_gap:
+            result.append(scene_start)
+        if len(result) >= 12:
+            break
+    return result
+
+
 def _safe_name(value: str) -> str:
     result = SAFE_NAME_PATTERN.sub("-", value).strip("-_")
     if not result:
         result = hashlib.sha256(value.encode()).hexdigest()[:16]
     return result[:96]
+
+
+def _render_visual_customization(
+    value: object,
+    scenes: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Expand closed visual tokens into scene bindings without accepting paths."""
+
+    default_caption = {
+        "position": "auto",
+        "style": "soft-panel",
+        "sizePercent": 100.0,
+        "safeInsetPercent": 6.0,
+        "maxLines": 2,
+        "textColor": "#FFFFFF",
+        "panelColor": "#151827",
+        "fontFamily": "Atkinson Hyperlegible Next",
+        "fallbackFamilies": ["Arial", "sans-serif"],
+    }
+    if value is None:
+        return [], default_caption
+    customization = _required_mapping(value, "visual customization")
+    if customization.get("schemaVersion") != 1:
+        raise ValueError("Renderer visual customization requires schemaVersion 1")
+    assets_value = customization.get("assets", [])
+    if not isinstance(assets_value, list):
+        raise ValueError("Renderer visual customization assets must be a list")
+    presenter = _required_mapping(
+        customization.get("presenter", {}), "visual presenter policy"
+    )
+    presenter_enabled = presenter.get("enabled") is True
+    expanded: list[dict[str, Any]] = []
+    for index, item in enumerate(assets_value):
+        asset = _required_mapping(item, f"visual customization asset {index}")
+        role = str(asset.get("role", "")).strip().casefold()
+        if role not in {"background", "presenter-portrait"}:
+            raise ValueError(f"Unsupported customized visual role {role!r}")
+        # No filesystem locator is part of this record. CAS materialization is
+        # performed by _materialize_visual_assets after hash/registration checks.
+        if any(key in asset for key in ("path", "url", "uri", "contentBase64")):
+            raise ValueError("Visual customization must not contain paths, URLs, or embedded bytes")
+        target_scenes = (
+            [scene for scene in scenes if str(scene.get("kind")) in {"presenter", "presenter-slide", "presenter-with-slide"}]
+            if role == "presenter-portrait" and presenter_enabled
+            else list(scenes) if role == "background" else []
+        )
+        for scene in target_scenes:
+            expanded.append(
+                {
+                    "sceneId": _required_string(scene, "id"),
+                    "assetId": _required_string(asset, "assetId"),
+                    "artifactHash": _required_string(asset, "artifactHash"),
+                    "mediaType": _required_string(asset, "mediaType"),
+                    "role": role,
+                    "alt": _required_string(asset, "alt"),
+                    "fit": str(asset.get("fit", "cover")),
+                }
+            )
+    caption_value = customization.get("captionStyle", default_caption)
+    caption = _required_mapping(caption_value, "caption render style")
+    result = {
+        "position": _enum_value(caption.get("position"), {"auto", "top", "lower-third"}, "caption position"),
+        "style": _enum_value(caption.get("style"), {"soft-panel", "solid-panel", "outline"}, "caption style"),
+        "sizePercent": _bounded_number(caption.get("sizePercent"), 60, 160, "caption sizePercent"),
+        "safeInsetPercent": _bounded_number(caption.get("safeInsetPercent"), 2, 24, "caption safeInsetPercent"),
+        "maxLines": _bounded_int(caption.get("maxLines"), 1, 3, "caption maxLines"),
+        "textColor": _hex_color(caption.get("textColor"), "caption textColor"),
+        "panelColor": _hex_color(caption.get("panelColor"), "caption panelColor"),
+        "fontFamily": _font_family(caption.get("fontFamily"), "caption fontFamily"),
+        "fallbackFamilies": _fallback_families(caption.get("fallbackFamilies")),
+    }
+    return expanded, result
+
+
+def _enum_value(value: object, allowed: set[str], label: str) -> str:
+    if not isinstance(value, str) or value not in allowed:
+        raise ValueError(f"{label} is unsupported")
+    return value
+
+
+def _bounded_number(value: object, minimum: float, maximum: float, label: str) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"{label} must be numeric")
+    result = float(value)
+    if not math.isfinite(result) or result < minimum or result > maximum:
+        raise ValueError(f"{label} must be between {minimum} and {maximum}")
+    return result
+
+
+def _bounded_int(value: object, minimum: int, maximum: int, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < minimum or value > maximum:
+        raise ValueError(f"{label} must be an integer between {minimum} and {maximum}")
+    return value
+
+
+def _hex_color(value: object, label: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+        raise ValueError(f"{label} must be a six-digit hexadecimal color")
+    return value.upper()
+
+
+def _font_family(value: object, label: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[\w .'-]{1,120}", value, re.UNICODE):
+        raise ValueError(f"{label} contains unsupported characters")
+    return value
+
+
+def _fallback_families(value: object) -> list[str]:
+    if not isinstance(value, list) or not 1 <= len(value) <= 4:
+        raise ValueError("caption fallbackFamilies must contain one to four names")
+    return [_font_family(item, "caption fallback family") for item in value]
+
+
+def _visual_asset_role(value: object, scene_kind: str) -> str:
+    if value is None:
+        if scene_kind in {"presenter", "presenter-slide", "presenter-with-slide"}:
+            return "presenter-portrait"
+        if scene_kind in {
+            "image-focus",
+            "image-comparison",
+            "document-focus",
+            "screen-recording",
+        }:
+            return "primary"
+        return "background"
+    normalized = str(value).strip().casefold().replace("_", "-")
+    if normalized not in {"background", "primary", "secondary", "presenter-portrait"}:
+        raise ValueError(f"Unsupported visual asset role {value!r}")
+    return normalized
+
+
+def _visual_asset_fit(value: object, role: str) -> str:
+    if value is None:
+        return "cover" if role in {"background", "presenter-portrait"} else "contain"
+    normalized = str(value).strip().casefold()
+    if normalized not in {"cover", "contain"}:
+        raise ValueError("Visual asset fit must be cover or contain")
+    return normalized
+
+
+def _visual_asset_alt(
+    asset: Mapping[str, Any], scene: Mapping[str, Any]
+) -> str:
+    value = asset.get("alt", scene.get("accessibilityDescription", scene.get("content", {})))
+    if isinstance(value, Mapping):
+        value = scene.get("id", "Tutorial visual")
+    if not isinstance(value, str) or not value.strip():
+        value = f"Visual for {_required_string(scene, 'id')}"
+    normalized = " ".join(value.split())
+    return normalized[:1_000]
 
 
 def _presenter_placement(value: Mapping[str, Any]) -> str:

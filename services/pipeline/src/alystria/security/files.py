@@ -25,6 +25,12 @@ MIME_ALIASES = {
     "image/jpg": "image/jpeg",
     "application/x-zip-compressed": "application/zip",
     "text/x-markdown": "text/markdown",
+    # RFC 7845 registers ``audio/ogg`` for Ogg Opus. Browsers and operating
+    # systems also commonly report the non-canonical ``audio/opus`` token for
+    # .opus files. Canonicalize that exact alias before the normal extension
+    # and magic-byte checks; do not widen the formats an Ogg container may
+    # impersonate.
+    "audio/opus": "audio/ogg",
 }
 
 EXTENSION_MIMES: dict[str, frozenset[str]] = {
@@ -48,6 +54,14 @@ EXTENSION_MIMES: dict[str, frozenset[str]] = {
     ".markdown": frozenset({"text/markdown", "text/plain"}),
     ".csv": frozenset({"text/csv", "text/plain"}),
     ".wav": frozenset({"audio/wav"}),
+    ".mp3": frozenset({"audio/mpeg"}),
+    ".flac": frozenset({"audio/flac"}),
+    ".ogg": frozenset({"audio/ogg"}),
+    ".opus": frozenset({"audio/ogg"}),
+    ".ttf": frozenset({"font/ttf"}),
+    ".otf": frozenset({"font/otf"}),
+    ".woff": frozenset({"font/woff"}),
+    ".woff2": frozenset({"font/woff2"}),
     ".mp4": frozenset({"video/mp4"}),
 }
 
@@ -182,6 +196,22 @@ def detect_mime(data: bytes) -> str:
         return "video/mp4"
     if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WAVE":
         return "audio/wav"
+    if data.startswith(b"fLaC"):
+        return "audio/flac"
+    if data.startswith(b"OggS"):
+        return "audio/ogg"
+    if data.startswith(b"ID3") or (
+        len(data) >= 2 and data[0] == 0xFF and data[1] & 0xE0 == 0xE0
+    ):
+        return "audio/mpeg"
+    if data.startswith(b"OTTO"):
+        return "font/otf"
+    if data.startswith((b"\x00\x01\x00\x00", b"true", b"typ1")):
+        return "font/ttf"
+    if data.startswith(b"wOFF"):
+        return "font/woff"
+    if data.startswith(b"wOF2"):
+        return "font/woff2"
 
     sample = data[: 64 * 1024]
     try:

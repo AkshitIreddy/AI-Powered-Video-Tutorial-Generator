@@ -11,6 +11,12 @@ from .generated_schema_registry import (
     definition,
     schema_by_id,
 )
+from .starter_kit import (
+    StarterAssetRecord,
+    StarterKitCatalog,
+    StarterKitDiagnostic,
+    StarterThemePackRecord,
+)
 
 __all__ = [
     "CONTRACT_SET_SHA256",
@@ -22,4 +28,8 @@ __all__ = [
     "SchemaBinding",
     "definition",
     "schema_by_id",
+    "StarterAssetRecord",
+    "StarterKitCatalog",
+    "StarterKitDiagnostic",
+    "StarterThemePackRecord",
 ]

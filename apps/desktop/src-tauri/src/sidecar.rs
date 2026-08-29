@@ -778,11 +778,14 @@ fn valid_method(method: &str) -> bool {
             | "project.initialize"
             | "project.snapshot.get"
             | "project.snapshot.save"
+            | "project.customization.save"
             | "project.history.get"
             | "project.history.undo"
             | "project.history.redo"
             | "project.export"
             | "source.import"
+            | "asset.import"
+            | "presenter.profile.select"
             | "provider.routingPolicy.get"
             | "provider.routingPolicy.save"
             | "generation.start"
@@ -831,9 +834,12 @@ mod tests {
         assert!(valid_method("generation.start"));
         assert!(valid_method("project.snapshot.get"));
         assert!(valid_method("project.snapshot.save"));
+        assert!(valid_method("project.customization.save"));
         assert!(valid_method("project.history.undo"));
         assert!(valid_method("control.renderScene"));
         assert!(valid_method("source.import"));
+        assert!(valid_method("asset.import"));
+        assert!(valid_method("presenter.profile.select"));
         assert!(valid_method("project.export"));
         assert!(valid_method("provider.routingPolicy.get"));
         assert!(valid_method("provider.routingPolicy.save"));

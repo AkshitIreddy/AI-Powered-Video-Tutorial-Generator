@@ -76,6 +76,15 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import alystriaMark from "./assets/alystria-mark.svg";
+import academicEvidenceBackground from "./assets/backgrounds/academic-evidence-paper-v1.png";
+import modernSignalBackground from "./assets/backgrounds/modern-tech-signal-v1.png";
+import playfulPaperBackground from "./assets/backgrounds/playful-paper-cut-v1.png";
+import academicAmara from "./assets/presenters/academic-amara-v1.png";
+import documentaryMalik from "./assets/presenters/documentary-malik-v1.png";
+import mathematicsArjun from "./assets/presenters/mathematics-arjun-v1.png";
+import modernMinji from "./assets/presenters/modern-tech-minji-v1.png";
+import playfulLucia from "./assets/presenters/playful-lucia-v1.png";
+import scienceZara from "./assets/presenters/science-zara-v1.png";
 import { defaultSnapshot, templates } from "./data";
 import {
   appBootstrap,
@@ -93,6 +102,8 @@ import {
   localModelDownloadStatus,
   masterExport,
   projectCreate,
+  projectAssetImport,
+  projectCustomizationSave,
   projectExportArchive,
   projectOpen,
   projectHistoryRedo,
@@ -108,6 +119,7 @@ import {
   sceneRender,
   sourceImport,
   type BootstrapInfo,
+  type AssetPermission,
   type DiagnosticReport,
   type GroundingMode,
   type JobReceipt,
@@ -116,6 +128,7 @@ import {
   type ModelDownloadStatus,
   type MasterExportRequest,
   type ModelProfile,
+  type ProjectAssetImportReceipt,
   type ProviderSecretRef,
   type TutorialRoutingPolicy,
   type QualityPreset,
@@ -125,10 +138,13 @@ import { buildProviderRoutingReview } from "./providerRouting";
 import { SharedScenePreview } from "./ScenePreview";
 import type {
   AppSnapshot,
+  CanvasCustomization,
   GlobalArea,
   JobRecord,
   ProjectRecord,
   Scene,
+  StudioAssetKind,
+  StudioAssetReference,
   StudioMode,
   ToastMessage,
   Workspace,
@@ -250,6 +266,116 @@ const profileProviderOptions = [
 
 const SOURCE_FILE_ACCEPT = ".pdf,.docx,.pptx,.epub,.md,.markdown,.txt,.csv,.json";
 const MAX_SOURCE_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_STUDIO_ASSET_BYTES = 24 * 1024 * 1024;
+
+const DEFAULT_CANVAS_CUSTOMIZATION: CanvasCustomization = {
+  fontPairId: "editorial",
+  displayFont: "Bricolage Grotesque",
+  bodyFont: "Atkinson Hyperlegible Next",
+  typeScale: 100,
+  lineHeight: "balanced",
+  fonts: { displayAssetId: null, bodyAssetId: null },
+  paletteId: "precision",
+  colors: { paper: "#F7F8FC", ink: "#151827", accent: "#5658E8", evidence: "#168F88" },
+  backgroundMode: "paper",
+  backgroundAssetId: null,
+  materialStrength: 28,
+  density: "balanced",
+  contrast: "standard",
+  reducedMotion: false,
+  sceneTreatment: "edge-to-edge",
+  cornerRadius: 14,
+  shadowStrength: 24,
+  captions: {
+    position: "auto",
+    style: "soft-panel",
+    size: 100,
+    safeInset: 8,
+    textColor: "#FFFFFF",
+    panelColor: "#151827",
+    maxLines: 2,
+  },
+  presenter: {
+    assetId: null,
+    placement: "off",
+    side: "right",
+    scale: 72,
+    crop: "portrait",
+    frame: "soft",
+  },
+  audio: {
+    musicAssetId: null,
+    sfxAssetId: null,
+    musicLevel: 12,
+    sfxLevel: 28,
+    narrationDucking: 72,
+  },
+  assets: [
+    starterAsset("presenter-portrait.academic-amara-v1", "presenter", "Amara · academic", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "a168260c6087a80752c313adfb8d0f0440576fe916549f96acff4542b7714614", 2034611, "image/png"),
+    starterAsset("presenter-portrait.modern-tech-minji-v1", "presenter", "Minji · modern tech", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "fe347fb12f24238d0748f2b54484e960043d98c0667637aef6178d951bc96681", 1849015, "image/png"),
+    starterAsset("presenter-portrait.documentary-malik-v1", "presenter", "Malik · documentary", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "c66e3bf3da440110cc2ebc8e1925a632d8fc220d53c148fb05153ac6530411e5", 2224926, "image/png"),
+    starterAsset("presenter-portrait.playful-lucia-v1", "presenter", "Lucia · playful", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "e779ad0e0e31d26ded23fbf81c11c386eb0d944cc1f521f62571a809ffface50", 2083770, "image/png"),
+    starterAsset("presenter-portrait.science-zara-v1", "presenter", "Zara · science", "Alystria Studio image generation", "MIT", "34a4856e71c0895858e0c2226e33563efa4ff867b0f86b0b3154cc2d96bc0bcb", 2089478, "image/png"),
+    starterAsset("presenter-portrait.mathematics-arjun-v1", "presenter", "Arjun · mathematics", "Alystria Studio image generation", "MIT", "4f62f43d3eff3f33b5a80eafa7ada77cb017d5d440edcc0030ca501a4d940332", 2116385, "image/png"),
+    starterAsset("background.academic-evidence-paper-v1", "background", "Academic evidence paper", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "1ba1306b0eb2dc4af7d0c04b7e7785ed27febf2a12922c91110770c13dc155ca", 2001277, "image/png"),
+    starterAsset("background.modern-tech-signal-v1", "background", "Modern signal", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "49e8abe6ba85052c6f74c022b468ebd983460600912f3e77b4b0fd301fc3a66d", 1268644, "image/png"),
+    starterAsset("background.playful-paper-cut-v1", "background", "Playful paper cut", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "52f98ff2927c5f73d4518e25d70a9d93e42044e4b3363bcccd06a2f0a5471806", 1892657, "image/png"),
+    starterAsset("music-none", "music", "No music", "Alystria Studio", "MIT"),
+    starterAsset("starter.audio.music.focus-loop", "music", "Focus loop", "Alystria Studio", "MIT", "4552ed81a04c045d5a135ef312fccf470a69041b2da9569d339b0ecf308114f5", 3456044, "audio/wav"),
+    starterAsset("starter.audio.music.inquiry-loop", "music", "Inquiry loop", "Alystria Studio", "MIT", "a9fc0088c9a10624bacde27be451ce1865d28986b92189daae4126c5fd29a00d", 3456044, "audio/wav"),
+    starterAsset("starter.audio.sfx.emphasis-a", "sfx", "Quiet teaching cue", "Alystria Studio", "MIT", "19d1dc64015c1b527b44fdc74e30f8becc976a6ea39e6644f11fee0564d26c29", 161324, "audio/wav"),
+    starterAsset("starter.audio.sfx.emphasis-b", "sfx", "Technical emphasis", "Alystria Studio", "MIT", "92774860b29adf231e3c8c5b7da7e0cd6e222ba6fc711358496404244f0ec50b", 161324, "audio/wav"),
+    starterAsset("sfx-none", "sfx", "No sound cues", "Alystria Studio", "MIT"),
+  ],
+};
+
+const FONT_PAIRS: Array<Pick<CanvasCustomization, "fontPairId" | "displayFont" | "bodyFont"> & { name: string; note: string }> = [
+  { fontPairId: "editorial", name: "Precision editorial", displayFont: "Bricolage Grotesque", bodyFont: "Atkinson Hyperlegible Next", note: "Distinctive titles, highly legible teaching copy" },
+  { fontPairId: "humanist", name: "Humanist classroom", displayFont: "Atkinson Hyperlegible Next", bodyFont: "Atkinson Hyperlegible Next", note: "Quiet, accessible, and multilingual" },
+  { fontPairId: "technical", name: "Technical notebook", displayFont: "JetBrains Mono", bodyFont: "Atkinson Hyperlegible Next", note: "Code-forward structure with calm prose" },
+  { fontPairId: "cinematic", name: "Cinematic lecture", displayFont: "Bricolage Grotesque", bodyFont: "Bricolage Grotesque", note: "Large, concise statements and slower pacing" },
+];
+
+const PALETTE_PRESETS: Array<{ id: CanvasCustomization["paletteId"]; name: string; colors: CanvasCustomization["colors"] }> = [
+  { id: "precision", name: "Precision paper", colors: { paper: "#F7F8FC", ink: "#151827", accent: "#5658E8", evidence: "#168F88" } },
+  { id: "midnight", name: "Midnight lab", colors: { paper: "#111522", ink: "#F4F5FB", accent: "#8C8EFF", evidence: "#43C2B8" } },
+  { id: "field-notes", name: "Field notes", colors: { paper: "#F4F0E5", ink: "#27291F", accent: "#416C57", evidence: "#A8602F" } },
+  { id: "signal", name: "Signal room", colors: { paper: "#F5F6FA", ink: "#121725", accent: "#D14862", evidence: "#176E97" } },
+];
+
+const STARTER_PRESENTER_PREVIEWS: Record<string, { src: string; focalPoint: string }> = {
+  "presenter-portrait.academic-amara-v1": { src: academicAmara, focalPoint: "50% 22%" },
+  "presenter-portrait.modern-tech-minji-v1": { src: modernMinji, focalPoint: "50% 20%" },
+  "presenter-portrait.documentary-malik-v1": { src: documentaryMalik, focalPoint: "50% 20%" },
+  "presenter-portrait.playful-lucia-v1": { src: playfulLucia, focalPoint: "50% 18%" },
+  "presenter-portrait.science-zara-v1": { src: scienceZara, focalPoint: "50% 20%" },
+  "presenter-portrait.mathematics-arjun-v1": { src: mathematicsArjun, focalPoint: "50% 20%" },
+};
+
+const STARTER_BACKGROUND_PREVIEWS: Record<string, string> = {
+  "background.academic-evidence-paper-v1": academicEvidenceBackground,
+  "background.modern-tech-signal-v1": modernSignalBackground,
+  "background.playful-paper-cut-v1": playfulPaperBackground,
+};
+
+function starterAsset(id: string, kind: StudioAssetKind, label: string, creator: string, license: string, sha256?: string, byteSize?: number, mediaType?: string): StudioAssetReference {
+  return { id, kind, label, source: "starter-pack", creator, license, attribution: `${label} — ${creator}`, rightsStatus: "cleared", ...(sha256 ? { sha256 } : {}), ...(byteSize ? { byteSize } : {}), ...(mediaType ? { mediaType } : {}) };
+}
+
+function canvasCustomization(project: ProjectRecord): CanvasCustomization {
+  const saved = project.customization;
+  if (!saved) return structuredClone(DEFAULT_CANVAS_CUSTOMIZATION);
+  return {
+    ...DEFAULT_CANVAS_CUSTOMIZATION,
+    ...saved,
+    colors: { ...DEFAULT_CANVAS_CUSTOMIZATION.colors, ...saved.colors },
+    fonts: { ...DEFAULT_CANVAS_CUSTOMIZATION.fonts, ...saved.fonts },
+    captions: { ...DEFAULT_CANVAS_CUSTOMIZATION.captions, ...saved.captions },
+    presenter: { ...DEFAULT_CANVAS_CUSTOMIZATION.presenter, ...saved.presenter },
+    audio: { ...DEFAULT_CANVAS_CUSTOMIZATION.audio, ...saved.audio },
+    assets: saved.assets?.length ? saved.assets : DEFAULT_CANVAS_CUSTOMIZATION.assets,
+  };
+}
 
 function LogoMark() {
   return (
@@ -276,6 +402,16 @@ function App() {
   const toastCounter = useRef(0);
   const snapshotSaveSequence = useRef(Promise.resolve());
   const durableVersionByProject = useRef(new Map<string, number>());
+  const customizationSaves = useRef(new Map<string, {
+    projectId: string;
+    projectDirectory: string;
+    expectedHeadRevisionId: string;
+    latest: CanvasCustomization;
+    version: number;
+    persistedVersion: number;
+    saving: boolean;
+    timer?: number;
+  }>());
 
   const activeProject = snapshot.projects.find((project) => project.id === activeProjectId) ?? snapshot.projects[0]!;
   const activeScene = activeProject.scenes.find((scene) => scene.id === activeSceneId) ?? activeProject.scenes[0]!;
@@ -338,6 +474,109 @@ function App() {
     }));
   };
 
+  const flushProjectCustomization = async (projectKey: string) => {
+    const entry = customizationSaves.current.get(projectKey);
+    if (!entry || entry.saving || entry.persistedVersion >= entry.version) return;
+    entry.saving = true;
+    let conflictRetries = 0;
+    try {
+      while (entry.persistedVersion < entry.version) {
+        const savingVersion = entry.version;
+        const expectedHead = entry.expectedHeadRevisionId;
+        const customization = structuredClone(entry.latest);
+        try {
+          const saved = await projectCustomizationSave({
+            projectId: entry.projectId,
+            projectDirectory: entry.projectDirectory,
+            expectedHeadRevisionId: expectedHead,
+            customization,
+            message: "Updated visual bible customization",
+          });
+          if (entry.expectedHeadRevisionId === expectedHead) {
+            entry.expectedHeadRevisionId = saved.headRevisionId;
+          }
+          entry.persistedVersion = savingVersion;
+          conflictRetries = 0;
+          setSnapshot((current) => ({
+            ...current,
+            projects: current.projects.map((project) => project.id === projectKey && project.nativeHeadRevisionId === expectedHead
+              ? {
+                ...project,
+                nativeHeadRevisionId: saved.headRevisionId,
+                nativeRevisionNumber: saved.revisionNumber,
+              }
+              : project),
+          }));
+        } catch (error) {
+          if (!errorMessage(error).includes("REVISION_CONFLICT") || conflictRetries >= 2) throw error;
+          conflictRetries += 1;
+          const current = await projectSnapshotGet({
+            projectId: entry.projectId,
+            projectDirectory: entry.projectDirectory,
+          });
+          entry.expectedHeadRevisionId = current.headRevisionId;
+          setSnapshot((snapshotState) => ({
+            ...snapshotState,
+            projects: snapshotState.projects.map((project) => project.id === projectKey
+              ? {
+                ...project,
+                nativeHeadRevisionId: current.headRevisionId,
+                nativeRevisionNumber: current.revisionNumber,
+              }
+              : project),
+          }));
+        }
+      }
+    } catch (error) {
+      // Stop automatic retry storms after bounded conflict recovery. The
+      // in-memory choice remains visible and the next user edit queues a fresh
+      // save against the most recently observed head.
+      entry.persistedVersion = entry.version;
+      notify("Visual bible needs attention", `${errorMessage(error)} Your choices remain in this app session and can be saved again after the project is refreshed.`, "warning");
+    } finally {
+      entry.saving = false;
+      if (entry.persistedVersion < entry.version) {
+        entry.timer = window.setTimeout(() => { void flushProjectCustomization(projectKey); }, 500);
+      }
+    }
+  };
+
+  const updateProjectCustomization = (project: ProjectRecord, customization: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => {
+    setSnapshot((current) => ({
+      ...current,
+      projects: current.projects.map((item) => item.id === project.id
+        ? {
+          ...item,
+          customization,
+          updatedAt: "just now",
+          ...(receipt ? { nativeHeadRevisionId: receipt.headRevisionId, nativeRevisionNumber: receipt.revisionNumber } : {}),
+        }
+        : item),
+    }));
+    const nativeProjectId = project.nativeProjectId;
+    const nativeProjectDirectory = project.nativeProjectDirectory;
+    const expectedHeadRevisionId = receipt?.headRevisionId ?? project.nativeHeadRevisionId;
+    if (!nativeProjectId || !nativeProjectDirectory || !expectedHeadRevisionId) return;
+    const existing = customizationSaves.current.get(project.id);
+    if (existing?.timer) window.clearTimeout(existing.timer);
+    const next = existing ?? {
+      projectId: nativeProjectId,
+      projectDirectory: nativeProjectDirectory,
+      expectedHeadRevisionId,
+      latest: customization,
+      version: 0,
+      persistedVersion: 0,
+      saving: false,
+    };
+    next.projectId = nativeProjectId;
+    next.projectDirectory = nativeProjectDirectory;
+    if (receipt || !existing) next.expectedHeadRevisionId = expectedHeadRevisionId;
+    next.latest = structuredClone(customization);
+    next.version += 1;
+    next.timer = window.setTimeout(() => { void flushProjectCustomization(project.id); }, 500);
+    customizationSaves.current.set(project.id, next);
+  };
+
   const addJob = (job: JobRecord) => setSnapshot((current) => ({ ...current, jobs: [job, ...current.jobs] }));
 
   useEffect(() => {
@@ -348,6 +587,12 @@ function App() {
       if (active) setRuntime((current) => ({ ...current, loading: false, error: errorMessage(error) }));
     });
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => () => {
+    for (const entry of customizationSaves.current.values()) {
+      if (entry.timer) window.clearTimeout(entry.timer);
+    }
   }, []);
 
   useEffect(() => {
@@ -819,6 +1064,7 @@ function App() {
               onScene={(scene) => { setActiveSceneId(scene.id); if (workspace !== "studio") setWorkspace("studio"); }}
               onSelectScene={setActiveSceneId}
               onSceneUpdate={(sceneId, update) => updateScene(activeProject.id, sceneId, update)}
+              onProjectCustomization={(customization, receipt) => updateProjectCustomization(activeProject, customization, receipt)}
               onRegenerate={setRegenScene}
               onNotify={notify}
               onAddJob={addJob}
@@ -1272,6 +1518,7 @@ function ProjectWorkspace(props: {
   onScene: (scene: Scene) => void;
   onSelectScene: (sceneId: string) => void;
   onSceneUpdate: (sceneId: string, update: Partial<Scene>) => void;
+  onProjectCustomization: (customization: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => void;
   onRegenerate: (scene: Scene) => void;
   onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void;
   onAddJob: (job: JobRecord) => void;
@@ -1350,19 +1597,37 @@ function StoryboardWorkspace({ project, onScene, onRegenerate, onWorkspace }: Pr
   </div>;
 }
 
-function StudioWorkspace({ project, activeScene, mode, version, onSelectScene, onSceneUpdate, onRegenerate, onUndo, onRedo, onRenderScene }: ProjectWorkspaceProps) {
+function StudioWorkspace({ project, activeScene, mode, version, onSelectScene, onSceneUpdate, onProjectCustomization, onRegenerate, onUndo, onRedo, onRenderScene, onNotify }: ProjectWorkspaceProps) {
   const [playing, setPlaying] = useState(false);
   const [inspectorTab, setInspectorTab] = useState("Content");
   const [zoom, setZoom] = useState(72);
+  const [assetPreviews, setAssetPreviews] = useState<Record<string, string>>({});
+  const assetPreviewsRef = useRef(assetPreviews);
+  const customization = canvasCustomization(project);
+  useEffect(() => { assetPreviewsRef.current = assetPreviews; }, [assetPreviews]);
+  useEffect(() => () => Object.values(assetPreviewsRef.current).forEach((url) => URL.revokeObjectURL(url)), []);
+  const selectedPresenter = customization.presenter.assetId ? assetPreviews[customization.presenter.assetId] : undefined;
+  const selectedBackground = customization.backgroundAssetId ? assetPreviews[customization.backgroundAssetId] ?? STARTER_BACKGROUND_PREVIEWS[customization.backgroundAssetId] : undefined;
+  const canvasStyle = {
+    "--project-paper": customization.colors.paper,
+    "--project-ink": customization.colors.ink,
+    "--project-accent": customization.colors.accent,
+    "--project-evidence": customization.colors.evidence,
+    "--project-display": `"${customization.displayFont}", sans-serif`,
+    "--project-body": `"${customization.bodyFont}", sans-serif`,
+    "--project-type-scale": customization.typeScale / 100,
+    "--project-corner": `${customization.cornerRadius}px`,
+    "--project-shadow": customization.shadowStrength / 100,
+  } as React.CSSProperties;
   return <div className="studio-workspace">
     <div className="studio-toolbar"><div><span className="scene-crumb">Scene {String(activeScene.index).padStart(2, "0")}</span><strong>{activeScene.title}</strong><SceneStatus status={activeScene.status} /></div><div className="studio-toolbar-center"><button onClick={onUndo} aria-label="Undo durable revision"><Undo2 size={16} /></button><button onClick={onRedo} aria-label="Redo durable revision"><Redo2 size={16} /></button><span className="separator" /><button><Square size={14} /> Fit</button><label><input aria-label="Canvas zoom" type="range" min="45" max="110" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />{zoom}%</label></div><div><button className="secondary-button small" onClick={() => onRegenerate(activeScene)}><WandSparkles size={15} /> New candidate</button><button className="primary-button small" onClick={() => onRenderScene(activeScene)}><Play size={14} /> Render scene</button></div></div>
     <div className="studio-layout">
       <aside className="scene-rail"><div className="scene-rail-head"><span>Scenes</span><button><Plus size={15} /></button></div><div className="scene-rail-list">{project.scenes.map((scene) => <button className={scene.id === activeScene.id ? "active" : ""} onClick={() => onSelectScene(scene.id)} key={scene.id}><span className="rail-index">{String(scene.index).padStart(2, "0")}</span><span className="rail-thumb"><SceneArtwork scene={scene} compact /></span><span className="rail-copy"><strong>{scene.title}</strong><small>{formatTime(scene.duration)} · {scene.kind.replace("-", " ")}</small></span><i className={`rail-state ${scene.status}`} /></button>)}</div></aside>
-      <section className="canvas-stage"><div className="canvas-surround"><div className="canvas-rulers top" /><div className="canvas-rulers side" /><div className="preview-canvas" style={{ width: `${Math.min(92, zoom + 20)}%` }}><SharedScenePreview scene={activeScene} project={project} fallback={<SceneArtwork scene={activeScene} />} /><div className="safe-area" aria-hidden="true" /><div className="frame-badge">SHARED RENDERER · FRAME 01842</div></div></div><div className="playback-bar"><button aria-label="Previous scene"><ArrowLeft size={17} /></button><button className="play-toggle" onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pause preview" : "Play preview"}>{playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><button aria-label="Next scene"><ArrowRight size={17} /></button><span className="timecode">{playing ? "00:00:18:08" : "00:00:00:00"} <i>/</i> 00:01:34:00</span><div className="playback-progress"><i style={{ width: playing ? "24%" : "0%" }} /></div><button><Volume2 size={16} /></button><button>1×</button></div>
+      <section className="canvas-stage"><div className="canvas-surround"><div className="canvas-rulers top" /><div className="canvas-rulers side" /><div className={`preview-canvas canvas-${customization.backgroundMode} treatment-${customization.sceneTreatment} density-${customization.density} contrast-${customization.contrast}`} style={{ ...canvasStyle, width: `${Math.min(92, zoom + 20)}%`, ...(selectedBackground ? { backgroundImage: `url(${selectedBackground})` } : {}) }} data-testid="customized-canvas"><SharedScenePreview scene={activeScene} project={project} fallback={<SceneArtwork scene={activeScene} />} />{customization.presenter.placement !== "off" && <div className={`presenter-preview placement-${customization.presenter.placement} side-${customization.presenter.side} frame-${customization.presenter.frame} crop-${customization.presenter.crop}`} style={{ width: `${Math.round(customization.presenter.scale * .42)}%` }} data-testid="presenter-preview">{selectedPresenter ? <img src={selectedPresenter} alt="Uploaded presenter preview" /> : <PresenterPortrait assetId={customization.presenter.assetId} />}</div>}<CaptionPreview settings={customization.captions} fontFamily={customization.bodyFont} /><div className="safe-area" style={{ inset: `${customization.captions.safeInset}%` }} aria-hidden="true" /><div className="frame-badge">VISUAL BIBLE · v{version} · FRAME 01842</div></div></div><div className="playback-bar"><button aria-label="Previous scene"><ArrowLeft size={17} /></button><button className="play-toggle" onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pause preview" : "Play preview"}>{playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><button aria-label="Next scene"><ArrowRight size={17} /></button><span className="timecode">{playing ? "00:00:18:08" : "00:00:00:00"} <i>/</i> 00:01:34:00</span><div className="playback-progress"><i style={{ width: playing ? "24%" : "0%" }} /></div><button><Volume2 size={16} /></button><button>1×</button></div>
       </section>
       <aside className="inspector"><div className="inspector-tabs">{["Content", "Design", "Motion"].map((tab) => <button className={inspectorTab === tab ? "active" : ""} onClick={() => setInspectorTab(tab)} key={tab}>{tab}</button>)}</div>
         {inspectorTab === "Content" ? <div className="inspector-body"><InspectorSection title="Scene identity"><label>Title<input value={activeScene.title} onChange={(event) => onSceneUpdate(activeScene.id, { title: event.target.value })} /></label><label>Scene family<select value={activeScene.kind} onChange={(event) => onSceneUpdate(activeScene.id, { kind: event.target.value as Scene["kind"] })}><option value="title">Title</option><option value="definition">Definition</option><option value="diagram">Diagram</option><option value="worked-example">Worked example</option><option value="comparison">Comparison</option><option value="code">Code trace</option><option value="recap">Recap</option></select></label></InspectorSection><InspectorSection title="Narration"><textarea rows={7} value={activeScene.narration} onChange={(event) => onSceneUpdate(activeScene.id, { narration: event.target.value })} /><div className="field-meta"><span>{activeScene.narration.split(" ").length} words</span><span>~{activeScene.duration}s</span></div><button className="secondary-button full"><Mic2 size={15} /> Voice & pronunciation</button></InspectorSection><InspectorSection title="Evidence"><button className="evidence-chip"><ShieldCheck size={15} /><span><strong>{activeScene.citations} supported claims</strong><small>View evidence spans</small></span><ChevronRight size={15} /></button></InspectorSection>{mode === "studio" && <InspectorSection title="Dependency impact"><p className="inspector-note">Editing narration invalidates alignment, captions, presenter timing, scene render, and final composition.</p></InspectorSection>}</div>
-        : inspectorTab === "Design" ? <DesignInspector /> : <MotionInspector studioMode={mode === "studio"} />}
+        : inspectorTab === "Design" ? <DesignInspector project={project} customization={customization} onChange={onProjectCustomization} onNotify={onNotify} onPreviewAsset={(id, url) => setAssetPreviews((current) => ({ ...current, [id]: url }))} /> : <MotionInspector studioMode={mode === "studio"} />}
       </aside>
     </div>
     <div className="timeline-panel"><div className="timeline-tools"><button><PanelRightClose size={15} /> Timeline</button><span>00:00</span><span>00:20</span><span>00:40</span><span>01:00</span><span>01:20</span></div><div className="timeline-tracks"><div className="track-labels"><span><Eye size={14} /> Visual</span><span><AudioLines size={14} /> Narration</span><span><AlignLeft size={14} /> Captions</span></div><div className="track-content"><div className="timeline-cursor" style={{ left: playing ? "25%" : "2%" }} /><div className="visual-clip">Formula reveal <small>00:00–01:34</small></div><div className="audio-wave">{Array.from({ length: 90 }, (_, i) => <i key={i} style={{ height: `${8 + ((i * 13) % 24)}px` }} />)}</div><div className="caption-clips"><span style={{ width: "28%" }}>Multiply a plus b…</span><span style={{ width: "34%" }}>Subtract ac and bd…</span><span style={{ width: "29%" }}>Four products become three.</span></div></div></div><div className="version-stamp"><History size={14} /> v{version} saved</div></div>
@@ -1371,7 +1636,231 @@ function StudioWorkspace({ project, activeScene, mode, version, onSelectScene, o
 
 function InspectorSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="inspector-section"><div className="inspector-section-title"><strong>{title}</strong><ChevronDown size={14} /></div>{children}</section>; }
 
-function DesignInspector() { return <div className="inspector-body"><InspectorSection title="Visual treatment"><div className="style-options"><button className="active"><span className="style-swatch thread-swatch" />Concept thread</button><button><span className="style-swatch formula-swatch" />Formula focus</button><button><span className="style-swatch split-swatch" />Split view</button></div></InspectorSection><InspectorSection title="Responsive layout"><div className="aspect-buttons"><button className="active">16:9</button><button>9:16</button><button>1:1</button></div><p className="inspector-note">Layouts reflow independently for each target. Nothing is cropped.</p></InspectorSection><InspectorSection title="Theme"><button className="theme-choice"><i /><span><strong>Precision paper</strong><small>Project visual bible</small></span><ChevronRight size={15} /></button></InspectorSection></div>; }
+function DesignInspector({ project, customization, onChange, onNotify, onPreviewAsset }: {
+  project: ProjectRecord;
+  customization: CanvasCustomization;
+  onChange: (next: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => void;
+  onNotify: ProjectWorkspaceProps["onNotify"];
+  onPreviewAsset: (id: string, url: string) => void;
+}) {
+  const [section, setSection] = useState<"identity" | "captions" | "media">("identity");
+  const [uploadRights, setUploadRights] = useState<"owned" | "licensed" | "review">("review");
+  const [uploadLicense, setUploadLicense] = useState("");
+  const [uploadAttribution, setUploadAttribution] = useState("");
+  const [licensedCommercialUse, setLicensedCommercialUse] = useState<AssetPermission>("unknown");
+  const [licensedRedistribution, setLicensedRedistribution] = useState<AssetPermission>("unknown");
+  const [licensedModelInput, setLicensedModelInput] = useState<AssetPermission>("unknown");
+  const [presenterIdentity, setPresenterIdentity] = useState<"synthetic" | "realPerson">("synthetic");
+  const [presenterName, setPresenterName] = useState("My presenter");
+  const [syntheticAttested, setSyntheticAttested] = useState(false);
+  const [consentSubject, setConsentSubject] = useState("");
+  const [consentAttestor, setConsentAttestor] = useState("");
+  const [consentAuthority, setConsentAuthority] = useState<"selfConsent" | "parentOrGuardian" | "authorizedRepresentative">("selfConsent");
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [presenterDistributionScope, setPresenterDistributionScope] = useState<"privatePreview" | "publicNonCommercial" | "publicCommercial">("privatePreview");
+  const update = (patch: Partial<CanvasCustomization>) => onChange({ ...customization, ...patch });
+  const updateCaption = (patch: Partial<CanvasCustomization["captions"]>) => update({ captions: { ...customization.captions, ...patch } });
+  const updatePresenter = (patch: Partial<CanvasCustomization["presenter"]>) => update({ presenter: { ...customization.presenter, ...patch } });
+  const updateAudio = (patch: Partial<CanvasCustomization["audio"]>) => update({ audio: { ...customization.audio, ...patch } });
+  const acceptAsset = async (file: File, kind: StudioAssetKind) => {
+    if (file.size > MAX_STUDIO_ASSET_BYTES) {
+      onNotify("Asset is too large", `${file.name} is ${formatBytes(file.size)}; studio preview assets must be 24 MiB or smaller.`, "warning");
+      return;
+    }
+    if (kind === "presenter" && uploadRights === "review") {
+      onNotify("Clear presenter rights first", "Presenter portraits cannot be sent to a lip-sync model while model-input permission is unknown.", "warning");
+      return;
+    }
+    if (kind === "presenter" && uploadRights === "licensed" && licensedModelInput !== "allowed") {
+      onNotify("Model-input permission required", "A licensed portrait can only be animated when its license explicitly allows model input.", "warning");
+      return;
+    }
+    if (uploadRights === "licensed" && (!uploadLicense.trim() || !uploadAttribution.trim())) {
+      onNotify("License details are incomplete", "Enter the actual license and required attribution before importing a licensed asset.", "warning");
+      return;
+    }
+    if (kind === "presenter" && presenterIdentity === "synthetic" && !syntheticAttested) {
+      onNotify("Synthetic origin attestation required", "Confirm that this presenter is fictional or generated before it can be used for face animation.", "warning");
+      return;
+    }
+    if (kind === "presenter" && presenterIdentity === "realPerson" && (!consentSubject.trim() || !consentAttestor.trim() || !consentAccepted)) {
+      onNotify("Presenter consent is incomplete", "Name the subject and attestor, then accept portrait-animation consent and synthetic-media disclosure.", "warning");
+      return;
+    }
+    if (kind === "presenter" && presenterIdentity === "realPerson" && consentAuthority === "selfConsent" && consentSubject.trim().toLocaleLowerCase() !== consentAttestor.trim().toLocaleLowerCase()) {
+      onNotify("Self-consent names must match", "Choose parent/guardian or authorized representative when someone else is attesting consent.", "warning");
+      return;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const cleared = uploadRights === "owned" || (uploadRights === "licensed" && licensedRedistribution === "allowed" && (kind !== "presenter" || licensedModelInput === "allowed"));
+    const nativeKind = kind === "presenter" ? "presenterPortrait" : kind === "background" ? "backgroundImage" : kind === "sfx" ? "soundEffect" : kind;
+    let receipt: ProjectAssetImportReceipt | undefined;
+    if (project.nativeProjectId && project.nativeProjectDirectory && project.nativeHeadRevisionId) {
+      try {
+        receipt = await projectAssetImport({
+          projectId: project.nativeProjectId,
+          projectDirectory: project.nativeProjectDirectory,
+          expectedHeadRevisionId: project.nativeHeadRevisionId,
+          kind: nativeKind,
+          filename: file.name,
+          mimeType: studioAssetMimeType(file),
+          privacy: "project_local",
+          rights: {
+            status: uploadRights === "owned" ? "owned" : uploadRights === "licensed" ? "licensed" : "unknown",
+            creator: uploadRights === "owned" ? "Project owner" : "User supplied",
+            license: uploadRights === "owned" ? "User owned" : uploadRights === "licensed" ? uploadLicense.trim() : "Rights review required",
+            attribution: uploadRights === "owned" ? "No attribution required" : uploadRights === "licensed" ? uploadAttribution.trim() : "Attribution pending",
+            commercialUse: uploadRights === "owned" ? "allowed" : uploadRights === "licensed" ? licensedCommercialUse : "unknown",
+            redistribution: uploadRights === "owned" ? "allowed" : uploadRights === "licensed" ? licensedRedistribution : "unknown",
+            modelInput: uploadRights === "owned" ? "allowed" : uploadRights === "licensed" ? licensedModelInput : "unknown",
+          },
+          ...(kind === "presenter" ? {
+            presenter: {
+              identityType: presenterIdentity,
+              displayName: presenterName.trim() || file.name.replace(/\.[^.]+$/u, ""),
+              syntheticOriginAttested: presenterIdentity === "synthetic",
+              ...(presenterIdentity === "realPerson" ? {
+                consent: {
+                  subjectDisplayName: consentSubject.trim(),
+                  attestorDisplayName: consentAttestor.trim(),
+                  authority: consentAuthority,
+                  grants: ["portraitAnimation" as const, "videoReenactment" as const, ...(presenterDistributionScope === "privatePreview" ? [] : ["publicDistribution" as const]), ...(presenterDistributionScope === "publicCommercial" ? ["commercialDistribution" as const] : [])],
+                  distributionScope: presenterDistributionScope,
+                  accepted: consentAccepted,
+                  disclosureRequired: true,
+                },
+              } : {}),
+              selectAfterImport: true,
+            },
+          } : {}),
+          contentBase64: bytesToBase64(bytes),
+        });
+      } catch (error) {
+        onNotify("Asset import did not complete", errorMessage(error), "warning");
+        return;
+      }
+    }
+    const id = receipt?.artifact.id ?? `upload-${kind}-${Date.now()}`;
+    const asset: StudioAssetReference = {
+      id,
+      kind,
+      label: file.name.replace(/\.[^.]+$/u, ""),
+      source: "user-upload",
+      filename: file.name,
+      mediaType: studioAssetMimeType(file),
+      byteSize: file.size,
+      sha256: receipt?.artifact.sha256 ?? sha256,
+      creator: uploadRights === "owned" ? "Project owner" : "User supplied",
+      license: uploadRights === "owned" ? "User owned" : uploadRights === "licensed" ? uploadLicense.trim() : "Rights review required",
+      attribution: uploadRights === "owned" ? "No attribution required" : uploadRights === "licensed" ? uploadAttribution.trim() : "Attribution pending",
+      rightsStatus: receipt ? (receipt.provenance.exportEligible ? "cleared" : "review") : cleared ? "cleared" : "review",
+    };
+    onPreviewAsset(id, URL.createObjectURL(file));
+    const assets = [...customization.assets, asset];
+    const next: CanvasCustomization = { ...customization, assets };
+    if (kind === "presenter") next.presenter = { ...next.presenter, assetId: id, placement: "picture-in-picture" };
+    if (kind === "background") { next.backgroundAssetId = id; next.backgroundMode = "image"; }
+    if (kind === "font") { next.fontPairId = "custom"; next.displayFont = asset.label; next.fonts = { ...next.fonts, displayAssetId: id }; }
+    if (kind === "music") next.audio = { ...next.audio, musicAssetId: id };
+    if (kind === "sfx") next.audio = { ...next.audio, sfxAssetId: id };
+    onChange(next, receipt);
+    const exportReady = receipt ? receipt.provenance.exportEligible : cleared;
+    onNotify(exportReady ? "Asset added to visual bible" : "Asset added with an export hold", exportReady ? `${file.name} is copied into the project store and its SHA-256 provenance record is saved.` : `${file.name} can be previewed, but export stays blocked until rights are reviewed.`, exportReady ? "success" : "warning");
+  };
+
+  return <div className="inspector-body design-inspector">
+    <div className="design-scope"><span><Sparkles size={14} /><strong>Project visual bible</strong></span><small>Changes persist with {project.title} and flow to every responsive target.</small></div>
+    <div className="design-section-tabs" role="tablist" aria-label="Design customization sections">
+      <button role="tab" aria-selected={section === "identity"} className={section === "identity" ? "active" : ""} onClick={() => setSection("identity")}>Identity</button>
+      <button role="tab" aria-selected={section === "captions"} className={section === "captions" ? "active" : ""} onClick={() => setSection("captions")}>Captions</button>
+      <button role="tab" aria-selected={section === "media"} className={section === "media" ? "active" : ""} onClick={() => setSection("media")}>Media</button>
+    </div>
+    {section === "identity" && <>
+      <InspectorSection title="Typography system">
+        <div className="font-pair-list">{FONT_PAIRS.map((pair) => <button key={pair.fontPairId} className={customization.fontPairId === pair.fontPairId ? "active" : ""} onClick={() => update({ fontPairId: pair.fontPairId, displayFont: pair.displayFont, bodyFont: pair.bodyFont })}><span className={`font-specimen font-${pair.fontPairId}`}>Aa</span><span><strong>{pair.name}</strong><small>{pair.note}</small></span>{customization.fontPairId === pair.fontPairId && <Check size={14} />}</button>)}</div>
+        {customization.assets.some((asset) => asset.kind === "font" && asset.source === "user-upload") && <><label>Uploaded display font<select value={customization.fonts.displayAssetId ?? ""} onChange={(event) => { const asset = customization.assets.find((item) => item.id === event.target.value); update({ fontPairId: asset ? "custom" : customization.fontPairId, displayFont: asset?.label ?? customization.displayFont, fonts: { ...customization.fonts, displayAssetId: asset?.id ?? null } }); }}><option value="">Use theme display font</option>{customization.assets.filter((asset) => asset.kind === "font" && asset.source === "user-upload").map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label><label>Uploaded body font<select value={customization.fonts.bodyAssetId ?? ""} onChange={(event) => { const asset = customization.assets.find((item) => item.id === event.target.value); update({ fontPairId: asset ? "custom" : customization.fontPairId, bodyFont: asset?.label ?? customization.bodyFont, fonts: { ...customization.fonts, bodyAssetId: asset?.id ?? null } }); }}><option value="">Use theme body font</option>{customization.assets.filter((asset) => asset.kind === "font" && asset.source === "user-upload").map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label></>}
+        <div className="range-field"><label><span>Type scale</span><output>{customization.typeScale}%</output></label><input aria-label="Project type scale" type="range" min="85" max="125" value={customization.typeScale} onChange={(event) => update({ typeScale: Number(event.target.value) })} /></div>
+        <label>Reading rhythm<select value={customization.lineHeight} onChange={(event) => update({ lineHeight: event.target.value as CanvasCustomization["lineHeight"] })}><option value="compact">Compact · data dense</option><option value="balanced">Balanced · general teaching</option><option value="airy">Airy · young learners</option></select></label>
+        <AssetUpload label="Upload a font file" accept=".woff,.woff2,.ttf,.otf" onFile={(file) => { void acceptAsset(file, "font"); }} />
+      </InspectorSection>
+      <InspectorSection title="Color language">
+        <div className="palette-list">{PALETTE_PRESETS.map((palette) => <button key={palette.id} className={customization.paletteId === palette.id ? "active" : ""} onClick={() => update({ paletteId: palette.id, colors: palette.colors })}><span>{Object.values(palette.colors).map((color) => <i key={color} style={{ background: color }} />)}</span><strong>{palette.name}</strong></button>)}</div>
+        <div className="color-field-grid">{(["paper", "ink", "accent", "evidence"] as const).map((key) => <label key={key}><span>{key}</span><input aria-label={`${key} color`} type="color" value={customization.colors[key]} onChange={(event) => update({ paletteId: "custom", colors: { ...customization.colors, [key]: event.target.value } })} /></label>)}</div>
+      </InspectorSection>
+      <InspectorSection title="Canvas & material">
+        <div className="choice-grid compact">{(["paper", "grid", "gradient", "image"] as const).map((mode) => <button key={mode} className={customization.backgroundMode === mode ? "active" : ""} onClick={() => update({ backgroundMode: mode })}><span className={`material-swatch ${mode}`} />{mode}</button>)}</div>
+        <div className="starter-backgrounds" aria-label="Generated starter backgrounds">{Object.entries(STARTER_BACKGROUND_PREVIEWS).map(([id, src]) => { const asset = customization.assets.find((item) => item.id === id); return <button key={id} className={customization.backgroundAssetId === id ? "active" : ""} onClick={() => update({ backgroundMode: "image", backgroundAssetId: id })}><img src={src} alt="" /><span><strong>{asset?.label}</strong><small>Generated · MIT starter pack</small></span></button>; })}</div>
+        {customization.assets.some((asset) => asset.kind === "background" && asset.source === "user-upload") && <label>Uploaded background<select value={customization.backgroundAssetId ?? ""} onChange={(event) => update({ backgroundMode: "image", backgroundAssetId: event.target.value || null })}><option value="">Choose an imported background</option>{customization.assets.filter((asset) => asset.kind === "background" && asset.source === "user-upload").map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label>}
+        <div className="range-field"><label><span>Material strength</span><output>{customization.materialStrength}%</output></label><input aria-label="Material strength" type="range" min="0" max="80" value={customization.materialStrength} onChange={(event) => update({ materialStrength: Number(event.target.value) })} /></div>
+        <AssetUpload label="Upload a background" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" onFile={(file) => { void acceptAsset(file, "background"); }} />
+      </InspectorSection>
+      <InspectorSection title="Scene framing">
+        <div className="segmented-control three">{(["edge-to-edge", "card", "editorial-frame"] as const).map((item) => <button key={item} className={customization.sceneTreatment === item ? "active" : ""} onClick={() => update({ sceneTreatment: item })}>{item.replace("-", " ")}</button>)}</div>
+        <div className="compact-row"><label>Density<select value={customization.density} onChange={(event) => update({ density: event.target.value as CanvasCustomization["density"] })}><option value="compact">Compact</option><option value="balanced">Balanced</option><option value="spacious">Spacious</option></select></label><label>Contrast<select value={customization.contrast} onChange={(event) => update({ contrast: event.target.value as CanvasCustomization["contrast"] })}><option value="standard">Standard</option><option value="high">High</option></select></label></div>
+        <label className="mini-toggle"><input type="checkbox" checked={customization.reducedMotion} onChange={(event) => update({ reducedMotion: event.target.checked })} /><span><strong>Reduced motion master</strong><small>Replace non-essential movement with gentle dissolves.</small></span></label>
+      </InspectorSection>
+    </>}
+    {section === "captions" && <>
+      <InspectorSection title="Safe placement">
+        <div className="caption-position-grid">{(["auto", "top", "lower-third"] as const).map((position) => <button key={position} className={customization.captions.position === position ? "active" : ""} onClick={() => updateCaption({ position })}><span className={`caption-position-icon ${position}`}><i /></span>{position.replace("-", " ")}</button>)}</div>
+        <p className="inspector-note">Auto avoids faces, formulas, UI callouts, and presenter regions on each target.</p>
+        <div className="range-field"><label><span>Safe inset</span><output>{customization.captions.safeInset}%</output></label><input aria-label="Caption safe inset" type="range" min="5" max="18" value={customization.captions.safeInset} onChange={(event) => updateCaption({ safeInset: Number(event.target.value) })} /></div>
+      </InspectorSection>
+      <InspectorSection title="Caption typography">
+        <div className="segmented-control three">{(["soft-panel", "solid-panel", "outline"] as const).map((style) => <button key={style} className={customization.captions.style === style ? "active" : ""} onClick={() => updateCaption({ style })}>{style.replace("-", " ")}</button>)}</div>
+        <div className="range-field"><label><span>Caption size</span><output>{customization.captions.size}%</output></label><input aria-label="Caption size" type="range" min="80" max="140" value={customization.captions.size} onChange={(event) => updateCaption({ size: Number(event.target.value) })} /></div>
+        <label>Maximum lines<select value={customization.captions.maxLines} onChange={(event) => updateCaption({ maxLines: Number(event.target.value) as 1 | 2 | 3 })}><option value="1">1 line · short-form</option><option value="2">2 lines · recommended</option><option value="3">3 lines · accessibility override</option></select></label>
+        <div className="color-field-grid two"><label><span>Text</span><input aria-label="Caption text color" type="color" value={customization.captions.textColor} onChange={(event) => updateCaption({ textColor: event.target.value })} /></label><label><span>Panel</span><input aria-label="Caption panel color" type="color" value={customization.captions.panelColor} onChange={(event) => updateCaption({ panelColor: event.target.value })} /></label></div>
+        <div className="caption-quality-note"><ShieldCheck size={15} /><span><strong>Export guard active</strong><small>Line breaks, reading speed, contrast, and scene collisions are rechecked before export.</small></span></div>
+      </InspectorSection>
+    </>}
+    {section === "media" && <>
+      <InspectorSection title="Rights for uploads">
+        <div className="rights-selector">{(["owned", "licensed", "review"] as const).map((value) => <button key={value} className={uploadRights === value ? "active" : ""} onClick={() => setUploadRights(value)}>{value === "owned" ? "I own it" : value === "licensed" ? "Licensed" : "Review later"}</button>)}</div>
+        {uploadRights === "licensed" && <div className="license-fields"><label>License<input value={uploadLicense} placeholder="e.g. CC BY 4.0 or stock license ID" onChange={(event) => setUploadLicense(event.target.value)} /></label><label>Required attribution<input value={uploadAttribution} placeholder="Creator · source · license" onChange={(event) => setUploadAttribution(event.target.value)} /></label><label>Commercial use<select value={licensedCommercialUse} onChange={(event) => setLicensedCommercialUse(event.target.value as AssetPermission)}><option value="unknown">Unknown · keep export hold</option><option value="notAllowed">Not allowed</option><option value="allowed">Explicitly allowed</option></select></label><label>Redistribution in exported video<select value={licensedRedistribution} onChange={(event) => setLicensedRedistribution(event.target.value as AssetPermission)}><option value="unknown">Unknown · keep export hold</option><option value="notAllowed">Not allowed</option><option value="allowed">Explicitly allowed</option></select></label><label>AI / model input<select value={licensedModelInput} onChange={(event) => setLicensedModelInput(event.target.value as AssetPermission)}><option value="unknown">Unknown · do not send to models</option><option value="notAllowed">Not allowed</option><option value="allowed">Explicitly allowed</option></select></label></div>}
+        <p className="inspector-note">Every upload stores its filename, SHA-256, creator, license, attribution, and export status—never just a loose file path.</p>
+      </InspectorSection>
+      <InspectorSection title="Presenter">
+        <div className="presenter-grid">{[...Object.keys(STARTER_PRESENTER_PREVIEWS), ...customization.assets.filter((asset) => asset.kind === "presenter" && asset.source === "user-upload").map((asset) => asset.id)].map((id) => { const asset = customization.assets.find((item) => item.id === id); return <button key={id} aria-label={asset?.label ?? id} className={customization.presenter.assetId === id ? "active" : ""} onClick={() => updatePresenter({ assetId: id, placement: "picture-in-picture" })}><PresenterPortrait assetId={id} /><span>{asset?.label}</span></button>; })}</div>
+        <div className="presenter-upload-identity"><span>Uploaded portrait identity</span><div className="rights-selector two"><button className={presenterIdentity === "synthetic" ? "active" : ""} onClick={() => setPresenterIdentity("synthetic")}>Fictional / generated</button><button className={presenterIdentity === "realPerson" ? "active" : ""} onClick={() => setPresenterIdentity("realPerson")}>Real person</button></div><label>Presenter name<input value={presenterName} onChange={(event) => setPresenterName(event.target.value)} /></label>{presenterIdentity === "synthetic" ? <label className="mini-toggle"><input type="checkbox" checked={syntheticAttested} onChange={(event) => setSyntheticAttested(event.target.checked)} /><span><strong>I attest this identity is fictional or generated</strong><small>Required before local lip-sync or presenter animation.</small></span></label> : <div className="consent-fields"><label>Person shown<input value={consentSubject} onChange={(event) => { setConsentSubject(event.target.value); if (consentAuthority === "selfConsent") setConsentAttestor(event.target.value); }} /></label><label>Consent authority<select value={consentAuthority} onChange={(event) => { const authority = event.target.value as typeof consentAuthority; setConsentAuthority(authority); if (authority === "selfConsent") setConsentAttestor(consentSubject); }}><option value="selfConsent">Self-consent</option><option value="parentOrGuardian">Parent or guardian</option><option value="authorizedRepresentative">Authorized representative</option></select></label><label>Authorized distribution<select value={presenterDistributionScope} onChange={(event) => setPresenterDistributionScope(event.target.value as typeof presenterDistributionScope)}><option value="privatePreview">Private preview only</option><option value="publicNonCommercial">Public, non-commercial</option><option value="publicCommercial">Public and commercial</option></select></label><label>Consent attested by<input value={consentAttestor} readOnly={consentAuthority === "selfConsent"} onChange={(event) => setConsentAttestor(event.target.value)} /></label><label className="mini-toggle"><input type="checkbox" checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} /><span><strong>Portrait animation and the selected distribution scope are authorized</strong><small>Synthetic-media disclosure stays required. Revocation remains attached to this profile.</small></span></label></div>}</div>
+        <AssetUpload label="Upload your presenter picture" accept="image/png,image/jpeg,image/webp" onFile={(file) => { void acceptAsset(file, "presenter"); }} />
+        <label>Presenter layout<select value={customization.presenter.placement} onChange={(event) => updatePresenter({ placement: event.target.value as CanvasCustomization["presenter"]["placement"] })}><option value="off">Off</option><option value="picture-in-picture">Picture in picture</option><option value="split">Split stage</option><option value="full-frame">Full frame</option></select></label>
+        <div className="compact-row"><label>Side<select value={customization.presenter.side} onChange={(event) => updatePresenter({ side: event.target.value as "left" | "right" })}><option value="left">Left</option><option value="right">Right</option></select></label><label>Crop<select value={customization.presenter.crop} onChange={(event) => updatePresenter({ crop: event.target.value as CanvasCustomization["presenter"]["crop"] })}><option value="portrait">Portrait safe</option><option value="contain">Contain</option><option value="cover">Fill</option></select></label></div>
+        <div className="range-field"><label><span>Presenter scale</span><output>{customization.presenter.scale}%</output></label><input aria-label="Presenter scale" type="range" min="28" max="100" value={customization.presenter.scale} onChange={(event) => updatePresenter({ scale: Number(event.target.value) })} /></div>
+      </InspectorSection>
+      <InspectorSection title="Music & sound cues">
+        <label>Music bed<select value={customization.audio.musicAssetId ?? "music-none"} onChange={(event) => updateAudio({ musicAssetId: event.target.value === "music-none" ? null : event.target.value })}><option value="music-none">No music · recommended</option><option value="starter.audio.music.focus-loop">Focus loop · starter pack</option><option value="starter.audio.music.inquiry-loop">Inquiry loop · starter pack</option>{customization.assets.filter((asset) => asset.kind === "music" && asset.source === "user-upload").map((asset) => <option value={asset.id} key={asset.id}>{asset.label} · uploaded</option>)}</select></label>
+        <AssetUpload label="Upload music" accept="audio/wav,audio/mpeg,audio/flac,audio/ogg,audio/opus,.wav,.mp3,.flac,.ogg,.opus" onFile={(file) => { void acceptAsset(file, "music"); }} />
+        <label>Sound cue<select value={customization.audio.sfxAssetId ?? "sfx-none"} onChange={(event) => updateAudio({ sfxAssetId: event.target.value === "sfx-none" ? null : event.target.value })}><option value="sfx-none">No sound cues · recommended</option><option value="starter.audio.sfx.emphasis-a">Quiet teaching cue</option><option value="starter.audio.sfx.emphasis-b">Technical emphasis</option>{customization.assets.filter((asset) => asset.kind === "sfx" && asset.source === "user-upload").map((asset) => <option value={asset.id} key={asset.id}>{asset.label} · uploaded</option>)}</select></label>
+        <AssetUpload label="Upload a sound cue" accept="audio/wav,audio/mpeg,audio/flac,audio/ogg,audio/opus,.wav,.mp3,.flac,.ogg,.opus" onFile={(file) => { void acceptAsset(file, "sfx"); }} />
+        <div className="range-field"><label><span>Music under narration</span><output>{customization.audio.musicLevel}%</output></label><input aria-label="Music level" type="range" min="0" max="40" value={customization.audio.musicLevel} onChange={(event) => updateAudio({ musicLevel: Number(event.target.value) })} /></div>
+        <div className="range-field"><label><span>Automatic ducking</span><output>{customization.audio.narrationDucking}%</output></label><input aria-label="Narration ducking" type="range" min="30" max="90" value={customization.audio.narrationDucking} onChange={(event) => updateAudio({ narrationDucking: Number(event.target.value) })} /></div>
+      </InspectorSection>
+      <AssetLedger assets={customization.assets} />
+    </>}
+  </div>;
+}
+
+function AssetUpload({ label, accept, onFile }: { label: string; accept: string; onFile: (file: File) => void }) {
+  return <label className="asset-upload"><Upload size={14} /><span>{label}</span><input type="file" accept={accept} onChange={(event) => { const file = event.target.files?.[0]; if (file) onFile(file); event.currentTarget.value = ""; }} /></label>;
+}
+
+function AssetLedger({ assets }: { assets: StudioAssetReference[] }) {
+  const selected = assets.filter((asset) => asset.source === "user-upload");
+  return <InspectorSection title="Project asset ledger">{selected.length ? <div className="asset-ledger">{selected.map((asset) => <div key={asset.id}><span className={`asset-state ${asset.rightsStatus}`}><FileCheck2 size={14} /></span><span><strong>{asset.label}</strong><small>{asset.kind} · {asset.license}{asset.byteSize ? ` · ${formatBytes(asset.byteSize)}` : ""}</small><code>{asset.sha256?.slice(0, 12)}…</code></span></div>)}</div> : <p className="inspector-note">No custom files yet. Starter-pack assets are already cleared and attributed.</p>}</InspectorSection>;
+}
+
+function PresenterPortrait({ assetId }: { assetId: string | null }) {
+  const starter = assetId ? STARTER_PRESENTER_PREVIEWS[assetId] : undefined;
+  if (starter) return <span className="presenter-portrait generated-portrait" aria-hidden="true"><img src={starter.src} alt="" style={{ objectPosition: starter.focalPoint }} /></span>;
+  return <span className="presenter-portrait portrait-mentor" aria-hidden="true"><i className="portrait-halo" /><i className="portrait-head" /><i className="portrait-hair" /><i className="portrait-neck" /><i className="portrait-shirt" /></span>;
+}
+
+function CaptionPreview({ settings, fontFamily }: { settings: CanvasCustomization["captions"]; fontFamily: string }) {
+  return <div className={`caption-preview position-${settings.position} style-${settings.style}`} style={{ color: settings.textColor, backgroundColor: settings.style === "outline" ? "transparent" : `${settings.panelColor}e8`, fontFamily: `"${fontFamily}", sans-serif`, fontSize: `${Math.round(12 * settings.size / 100)}px`, maxWidth: `calc(100% - ${settings.safeInset * 2}%)` }} data-testid="caption-preview"><span>Four products become <em>three</em>.</span><small>{settings.maxLines} line{settings.maxLines === 1 ? "" : "s"} max · collision safe</small></div>;
+}
 
 function MotionInspector({ studioMode }: { studioMode: boolean }) { return <div className="inspector-body"><InspectorSection title="Choreography"><div className="motion-row"><span><small>Entrance</small><strong>Thread draw</strong></span><span>0.8s</span></div><div className="motion-row"><span><small>Emphasis</small><strong>Term isolate</strong></span><span>2 beats</span></div><div className="motion-row"><span><small>Exit</small><strong>Carry forward</strong></span><span>0.5s</span></div></InspectorSection>{studioMode ? <InspectorSection title="Frame controls"><label>Start tick<input value="240000" readOnly /></label><label>Duration ticks<input value="22560000" readOnly /></label><label>Seed<input value="alya-scene-004" readOnly /></label></InspectorSection> : <div className="guided-callout"><Sparkles size={18} /><strong>Timing is guided by narration.</strong><p>Switch to Studio mode for exact ticks, easing curves, and responsive overrides.</p></div>}</div>; }
 
@@ -1709,6 +2198,24 @@ function inferredMimeType(filename: string): string {
   if (suffix === "csv") return "text/csv";
   if (suffix === "json") return "application/json";
   return "text/plain";
+}
+
+function studioAssetMimeType(file: File): string {
+  if (file.type) return file.type === "audio/opus" || file.type === "application/ogg" ? "audio/ogg" : file.type;
+  const suffix = file.name.toLowerCase().split(".").at(-1);
+  if (suffix === "png") return "image/png";
+  if (suffix === "jpg" || suffix === "jpeg") return "image/jpeg";
+  if (suffix === "webp") return "image/webp";
+  if (suffix === "ttf") return "font/ttf";
+  if (suffix === "otf") return "font/otf";
+  if (suffix === "woff") return "font/woff";
+  if (suffix === "woff2") return "font/woff2";
+  if (suffix === "wav") return "audio/wav";
+  if (suffix === "mp3") return "audio/mpeg";
+  if (suffix === "flac") return "audio/flac";
+  if (suffix === "ogg") return "audio/ogg";
+  if (suffix === "opus") return "audio/ogg";
+  return "application/octet-stream";
 }
 
 function formatBytes(bytes: number): string {

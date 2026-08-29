@@ -94,6 +94,43 @@ test("local model and provider profiles remain explicit and saveable", async ({ 
   await page.locator(".profile-panel").screenshot({ path: testInfo.outputPath("provider-profiles.png") });
 });
 
+test("visual bible customizes typography, captions, backgrounds, presenter, and licensed uploads", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "Full studio inspection uses the desktop viewport");
+  await page.getByRole("button", { name: /continue working/i }).click();
+  await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /studio/i }).click();
+  await page.getByRole("button", { name: "Design" }).click();
+  await page.getByRole("button", { name: /cinematic lecture/i }).click();
+  await page.getByRole("button", { name: /modern signal/i }).click();
+  await page.getByRole("tab", { name: /captions/i }).click();
+  await page.getByRole("button", { name: /top/i }).click();
+  await page.getByRole("slider", { name: /caption size/i }).fill("116");
+  await page.getByRole("tab", { name: /media/i }).click();
+  await page.getByRole("button", { name: /minji · modern tech/i }).click();
+  await page.getByLabel(/presenter layout/i).selectOption("picture-in-picture");
+  await expect(page.getByTestId("presenter-preview")).toBeVisible();
+  await expect(page.getByTestId("caption-preview")).toHaveClass(/position-top/);
+
+  await page.screenshot({ path: testInfo.outputPath("visual-bible-full.png") });
+  await page.locator(".canvas-stage").screenshot({ path: testInfo.outputPath("visual-bible-canvas.png") });
+  await page.locator(".inspector").screenshot({ path: testInfo.outputPath("visual-bible-media-inspector.png") });
+
+  await page.getByRole("button", { name: /licensed/i }).click();
+  await page.getByLabel("License", { exact: true }).fill("CC BY 4.0");
+  await page.getByLabel(/required attribution/i).fill("Alystria QA fixture · CC BY 4.0");
+  await page.getByRole("button", { name: /fictional \/ generated/i }).click();
+  await page.getByText(/i attest this identity is fictional or generated/i).click();
+  await page.locator('.asset-upload:has-text("Upload your presenter picture") input').setInputFiles({
+    name: "presenter-owned.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("89504e470d0a1a0a", "hex"),
+  });
+  await expect(page.getByText(/asset added to visual bible/i)).toBeVisible();
+  const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}"));
+  const customization = persisted.projects.find((project: { id: string }) => project.id === "karatsuba")?.customization;
+  expect(customization.presenter.placement).toBe("picture-in-picture");
+  expect(customization.assets.some((asset: { filename?: string; rightsStatus: string }) => asset.filename === "presenter-owned.png" && asset.rightsStatus === "cleared")).toBe(true);
+});
+
 async function configureLocalRouting(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: /models & providers/i }).click();
   await expect(page.getByRole("heading", { name: /provider & model profiles/i })).toBeVisible();

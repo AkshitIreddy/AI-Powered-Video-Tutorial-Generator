@@ -1,0 +1,1059 @@
+{
+  "$schema": "https://alystria.local/schemas/starter-audio-catalog-v1.json",
+  "schemaVersion": 1,
+  "catalogId": "alystria.starter-audio.v1",
+  "displayName": "Alystria Starter Audio",
+  "defaultPolicy": {
+    "musicEnabled": false,
+    "soundEffectsEnabled": false,
+    "stingersEnabled": false,
+    "autoplay": false,
+    "preserveVisualAlternatives": true
+  },
+  "licenseExpression": "MIT",
+  "creator": "Alystria Studio contributors",
+  "assets": [
+    {
+      "id": "starter.audio.stinger.intro-prism",
+      "displayName": "Intro — Prism",
+      "kind": "stinger",
+      "role": "intro",
+      "description": "A bright, precise rise for title cards and lesson openings.",
+      "path": "stingers/intro-prism.wav",
+      "mimeType": "audio/wav",
+      "sha256": "c571409fd8479345b5a8dc170b519158e0820731bd33c766b7d15019b73b66f9",
+      "bytes": 921644,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 3.2
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.42,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "A title-card thread draws from left to right."
+      },
+      "tags": [
+        "bright",
+        "precise",
+        "opening"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -18.542,
+        "dcOffsetDbfs": -105.768,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -56.31,
+        "tailRmsDbfs": -93.273,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 422.62,
+        "onsetRatio1ms": 0.000161,
+        "attackMs": 93.458,
+        "integratedLufs": -16.1,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.stinger.intro-thread",
+      "displayName": "Intro — Concept Thread",
+      "kind": "stinger",
+      "role": "intro",
+      "description": "A restrained, curious opening with a gentle call-and-response contour.",
+      "path": "stingers/intro-thread.wav",
+      "mimeType": "audio/wav",
+      "sha256": "81b0e0c9dcd02ffeae77d5b76c7c3db443459831dcd825297ec4958669a584ba",
+      "bytes": 806444,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 2.8
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.42,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "A concept-thread node appears and connects to the lesson title."
+      },
+      "tags": [
+        "curious",
+        "gentle",
+        "opening"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -18.52,
+        "dcOffsetDbfs": -106.95,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -54.579,
+        "tailRmsDbfs": -93.19,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 261.05,
+        "onsetRatio1ms": 0.000236,
+        "attackMs": 114.354,
+        "integratedLufs": -16.3,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.stinger.outro-arrival",
+      "displayName": "Outro — Arrival",
+      "kind": "stinger",
+      "role": "outro",
+      "description": "A warm resolution for recaps, completed sections, and lesson endings.",
+      "path": "stingers/outro-arrival.wav",
+      "mimeType": "audio/wav",
+      "sha256": "aa910ac3c57e4b688943dbda7a11db8b4f32543ad31d6d9b8b14676b40f71681",
+      "bytes": 1036844,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 3.6
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.43,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "The final concept-thread nodes converge into a completion marker."
+      },
+      "tags": [
+        "warm",
+        "resolved",
+        "ending"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -17.641,
+        "dcOffsetDbfs": -105.858,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -58.567,
+        "tailRmsDbfs": -95.671,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 299.01,
+        "onsetRatio1ms": 0.000237,
+        "attackMs": 114.042,
+        "integratedLufs": -15.2,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.stinger.outro-reflection",
+      "displayName": "Outro — Reflection",
+      "kind": "stinger",
+      "role": "outro",
+      "description": "A slower, softer close for reflective summaries and source cards.",
+      "path": "stingers/outro-reflection.wav",
+      "mimeType": "audio/wav",
+      "sha256": "ae2e26aa382ddb3e99de992c583e62a1410665a8cdbf6c9e12f737c6df27509a",
+      "bytes": 1180844,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 4.1
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.4,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "The summary remains on screen as the concept thread settles."
+      },
+      "tags": [
+        "soft",
+        "reflective",
+        "ending"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -17.908,
+        "dcOffsetDbfs": -117.903,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -55.679,
+        "tailRmsDbfs": -95.697,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 254.36,
+        "onsetRatio1ms": 0.000183,
+        "attackMs": 114.125,
+        "integratedLufs": -15.6,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.sfx.ui-success-a",
+      "displayName": "UI Success A",
+      "kind": "sfx",
+      "role": "success",
+      "description": "A compact three-note confirmation for successful local actions.",
+      "path": "sfx/ui-success-a.wav",
+      "mimeType": "audio/wav",
+      "sha256": "d4a610363959dbfa0027e7249b2411c02d011e6d19d34f790f3366bc94a22af4",
+      "bytes": 236204,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 0.82
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.36,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Show a persistent success state with text and an icon."
+      },
+      "tags": [
+        "ui",
+        "success",
+        "confirmation"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -19.195,
+        "dcOffsetDbfs": -100.698,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -144.308,
+        "tailRmsDbfs": -144.44,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 757.34,
+        "onsetRatio1ms": 0.006831,
+        "attackMs": 14.792,
+        "integratedLufs": -15.6,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.sfx.ui-success-b",
+      "displayName": "UI Success B",
+      "kind": "sfx",
+      "role": "success",
+      "description": "A pitch-shifted companion used to reduce repetitive feedback fatigue.",
+      "path": "sfx/ui-success-b.wav",
+      "mimeType": "audio/wav",
+      "sha256": "115b6d62cee45df2b15acbeec22506558f5eaa9b83264aceffa9a160092875bd",
+      "bytes": 236204,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 0.82
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.34,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Show a persistent success state with text and an icon."
+      },
+      "tags": [
+        "ui",
+        "success",
+        "variant"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -19.248,
+        "dcOffsetDbfs": -101.167,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -144.387,
+        "tailRmsDbfs": -144.34,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 850.08,
+        "onsetRatio1ms": 0.009487,
+        "attackMs": 14.708,
+        "integratedLufs": -15.5,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.sfx.ui-warning-a",
+      "displayName": "UI Warning A",
+      "kind": "sfx",
+      "role": "warning",
+      "description": "A calm two-tone caution cue without an alarm-like edge.",
+      "path": "sfx/ui-warning-a.wav",
+      "mimeType": "audio/wav",
+      "sha256": "d0808c02c293373570ed0ed0ecddc97bc37df5631b0cf9aee8075688158616b8",
+      "bytes": 247724,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 0.86
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.34,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Show an amber warning with an actionable text explanation."
+      },
+      "tags": [
+        "ui",
+        "warning",
+        "calm"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -16.854,
+        "dcOffsetDbfs": -104.548,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -144.54,
+        "tailRmsDbfs": -92.837,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 267.83,
+        "onsetRatio1ms": 0.000987,
+        "attackMs": 31.438,
+        "integratedLufs": -14.4,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.sfx.ui-warning-b",
+      "displayName": "UI Warning B",
+      "kind": "sfx",
+      "role": "warning",
+      "description": "A companion warning contour for alternating repeated cautions.",
+      "path": "sfx/ui-warning-b.wav",
+      "mimeType": "audio/wav",
+      "sha256": "30b6a932ea00036fed31b0d9f96e9b70d5df0b4159a9d443334d3db89e2f4f39",
+      "bytes": 247724,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 0.86
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.32,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Show an amber warning with an actionable text explanation."
+      },
+      "tags": [
+        "ui",
+        "warning",
+        "variant"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -16.868,
+        "dcOffsetDbfs": -110.889,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -144.485,
+        "tailRmsDbfs": -92.923,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 286.96,
+        "onsetRatio1ms": 0.000536,
+        "attackMs": 32.729,
+        "integratedLufs": -14.5,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.sfx.emphasis-a",
+      "displayName": "Emphasis A",
+      "kind": "sfx",
+      "role": "emphasis",
+      "description": "A soft upward thread cue for key terms and diagram reveals.",
+      "path": "sfx/emphasis-a.wav",
+      "mimeType": "audio/wav",
+      "sha256": "19d1dc64015c1b527b44fdc74e30f8becc976a6ea39e6644f11fee0564d26c29",
+      "bytes": 161324,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 0.56
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.27,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Use motion, weight, and a non-color marker to emphasize the same item."
+      },
+      "tags": [
+        "tutorial",
+        "emphasis",
+        "reveal"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -13.615,
+        "dcOffsetDbfs": -131.198,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -144.396,
+        "tailRmsDbfs": -144.494,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 595.14,
+        "onsetRatio1ms": 0.005089,
+        "attackMs": 23.542,
+        "integratedLufs": -10.2,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.sfx.emphasis-b",
+      "displayName": "Emphasis B",
+      "kind": "sfx",
+      "role": "emphasis",
+      "description": "A companion emphasis cue with slightly higher tonal color.",
+      "path": "sfx/emphasis-b.wav",
+      "mimeType": "audio/wav",
+      "sha256": "92774860b29adf231e3c8c5b7da7e0cd6e222ba6fc711358496404244f0ec50b",
+      "bytes": 161324,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 0.56
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.25,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Use motion, weight, and a non-color marker to emphasize the same item."
+      },
+      "tags": [
+        "tutorial",
+        "emphasis",
+        "variant"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -13.422,
+        "dcOffsetDbfs": -136.503,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -144.432,
+        "tailRmsDbfs": -144.417,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 668.01,
+        "onsetRatio1ms": 0.001978,
+        "attackMs": 27.083,
+        "integratedLufs": -9.9,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.sfx.quiz-correct-a",
+      "displayName": "Quiz Correct A",
+      "kind": "sfx",
+      "role": "quiz-success",
+      "description": "A clear celebratory answer cue that remains restrained under narration.",
+      "path": "sfx/quiz-correct-a.wav",
+      "mimeType": "audio/wav",
+      "sha256": "50192ce3ae51d4d4e61264f5270cfdc842a6342d726898d4c6ee68716e2303ba",
+      "bytes": 322604,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 1.12
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.32,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Keep the correct answer marked with text, icon, and explanation."
+      },
+      "tags": [
+        "quiz",
+        "correct",
+        "celebratory"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -19.797,
+        "dcOffsetDbfs": -103.851,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -144.458,
+        "tailRmsDbfs": -144.506,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 518.02,
+        "onsetRatio1ms": 0.003393,
+        "attackMs": 116.562,
+        "integratedLufs": -16.2,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.sfx.quiz-correct-b",
+      "displayName": "Quiz Correct B",
+      "kind": "sfx",
+      "role": "quiz-success",
+      "description": "An alternate quiz-success phrase for varied practice sequences.",
+      "path": "sfx/quiz-correct-b.wav",
+      "mimeType": "audio/wav",
+      "sha256": "a27912c30f054ce9b8f4088fdfd0f209de7495e98ab324a4692b32f33c4e2b53",
+      "bytes": 322604,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 1.12
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.3,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Keep the correct answer marked with text, icon, and explanation."
+      },
+      "tags": [
+        "quiz",
+        "correct",
+        "variant"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -20.372,
+        "dcOffsetDbfs": -103.545,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -144.54,
+        "tailRmsDbfs": -144.37,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 580.24,
+        "onsetRatio1ms": 0.002639,
+        "attackMs": 110.604,
+        "integratedLufs": -16.7,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.sfx.quiz-reveal-a",
+      "displayName": "Quiz Reveal A",
+      "kind": "sfx",
+      "role": "quiz-reveal",
+      "description": "A neutral reveal cue for showing an answer without implying correctness.",
+      "path": "sfx/quiz-reveal-a.wav",
+      "mimeType": "audio/wav",
+      "sha256": "357c424d1d156b73c418ede3f397f838e8593660994e75b6916076da95e8d608",
+      "bytes": 224684,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 0.78
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.25,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Reveal the answer with a labelled explanation panel."
+      },
+      "tags": [
+        "quiz",
+        "reveal",
+        "neutral"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -14.825,
+        "dcOffsetDbfs": -97.61,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -144.467,
+        "tailRmsDbfs": -62.18,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 439.45,
+        "onsetRatio1ms": 0.000447,
+        "attackMs": 37.333,
+        "integratedLufs": -11.2,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.sfx.quiz-reveal-b",
+      "displayName": "Quiz Reveal B",
+      "kind": "sfx",
+      "role": "quiz-reveal",
+      "description": "A second neutral answer-reveal cue for repeated interactions.",
+      "path": "sfx/quiz-reveal-b.wav",
+      "mimeType": "audio/wav",
+      "sha256": "c5f7d8c0b1ae3e29e2251f352a440a915421032a8c09f4e54bddd49d88008b92",
+      "bytes": 224684,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 0.78
+      },
+      "loop": {
+        "enabled": false,
+        "startFrame": null,
+        "endFrameExclusive": null
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.24,
+        "duckUnderNarrationDb": 0.0,
+        "bus": "effects",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Reveal the answer with a labelled explanation panel."
+      },
+      "tags": [
+        "quiz",
+        "reveal",
+        "variant"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -4.8,
+        "rmsDbfs": -15.792,
+        "dcOffsetDbfs": -98.25,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -144.642,
+        "tailRmsDbfs": -63.19,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 465.56,
+        "onsetRatio1ms": 0.002312,
+        "attackMs": 36.354,
+        "integratedLufs": -12.2,
+        "truePeakDbtp": -4.8
+      }
+    },
+    {
+      "id": "starter.audio.music.focus-loop",
+      "displayName": "Focus Loop",
+      "kind": "music",
+      "role": "ambient-bed",
+      "description": "A sparse, cool suspended bed for quiet diagram and code passages.",
+      "path": "music/focus-loop.wav",
+      "mimeType": "audio/wav",
+      "sha256": "4552ed81a04c045d5a135ef312fccf470a69041b2da9569d339b0ecf308114f5",
+      "bytes": 3456044,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 12.0
+      },
+      "loop": {
+        "enabled": true,
+        "startFrame": 0,
+        "endFrameExclusive": 576000
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.16,
+        "duckUnderNarrationDb": -8.0,
+        "bus": "music",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Music is decorative; no information is carried only in audio."
+      },
+      "tags": [
+        "ambient",
+        "focus",
+        "cool",
+        "seamless"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -6.0,
+        "rmsDbfs": -18.19,
+        "dcOffsetDbfs": -123.23,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -17.314,
+        "tailRmsDbfs": -15.64,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 291.47,
+        "loopSeamStepDbfs": -36.478,
+        "loopDerivativeMismatchDbfs": -58.478,
+        "integratedLufs": -16.1,
+        "truePeakDbtp": -6.0
+      }
+    },
+    {
+      "id": "starter.audio.music.inquiry-loop",
+      "displayName": "Inquiry Loop",
+      "kind": "music",
+      "role": "ambient-bed",
+      "description": "A warm, open-ended suspended bed for research and reflection scenes.",
+      "path": "music/inquiry-loop.wav",
+      "mimeType": "audio/wav",
+      "sha256": "a9fc0088c9a10624bacde27be451ce1865d28986b92189daae4126c5fd29a00d",
+      "bytes": 3456044,
+      "format": {
+        "codec": "pcm_s24le",
+        "sampleRateHz": 48000,
+        "channels": 2,
+        "bitDepth": 24,
+        "durationSeconds": 12.0
+      },
+      "loop": {
+        "enabled": true,
+        "startFrame": 0,
+        "endFrameExclusive": 576000
+      },
+      "mix": {
+        "enabledByDefault": false,
+        "recommendedLinearLevel": 0.15,
+        "duckUnderNarrationDb": -8.0,
+        "bus": "music",
+        "autoplay": false
+      },
+      "accessibility": {
+        "carriesEssentialInformation": false,
+        "requiredVisualAlternative": "Music is decorative; no information is carried only in audio."
+      },
+      "tags": [
+        "ambient",
+        "inquiry",
+        "warm",
+        "seamless"
+      ],
+      "provenance": {
+        "creator": "Alystria Studio contributors",
+        "origin": "alystria-authored-procedural-synthesis",
+        "rightsStatus": "owned",
+        "licenseExpression": "MIT",
+        "sourceGenerator": "tools/generate.py",
+        "generatorSeed": "alystria-starter-audio-v1",
+        "ingredients": [],
+        "usesThirdPartySamples": false,
+        "usesGenerativeAi": false
+      },
+      "measurements": {
+        "samplePeakDbfs": -6.0,
+        "rmsDbfs": -17.968,
+        "dcOffsetDbfs": -128.208,
+        "clippedSamples": 0,
+        "onsetRmsDbfs": -16.18,
+        "tailRmsDbfs": -16.702,
+        "spectralFlatness": 0.0,
+        "hissShareAbove5kHz": 0.0,
+        "spectralCentroidHz": 244.18,
+        "loopSeamStepDbfs": -37.738,
+        "loopDerivativeMismatchDbfs": -58.525,
+        "integratedLufs": -16.0,
+        "truePeakDbtp": -6.0
+      }
+    }
+  ]
+}

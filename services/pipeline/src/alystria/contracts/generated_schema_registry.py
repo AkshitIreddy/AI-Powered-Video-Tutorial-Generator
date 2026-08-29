@@ -28,13 +28,14 @@ class SchemaBinding:
 
 GENERATED_CONTRACT_VERSION: Final = 1
 JSON_SCHEMA_DRAFT: Final = "https://json-schema.org/draft/2020-12/schema"
-CONTRACT_SET_SHA256: Final = "d6f711440b36c68f36965e96d7842d87261bc6cb00fd7ced0b766999c38ee748"
+CONTRACT_SET_SHA256: Final = "1974fd6b54d020db8cb0352d628aec245b78703e407906d9c187418539f863db"
 SCHEMA_IDS: Final = MappingProxyType({
     "common": "https://schemas.alystria.studio/v2/common.schema.json",
     "execution": "https://schemas.alystria.studio/v2/execution.schema.json",
     "media": "https://schemas.alystria.studio/v2/media.schema.json",
     "project": "https://schemas.alystria.studio/v2/project.schema.json",
     "research": "https://schemas.alystria.studio/v2/research.schema.json",
+    "starter-kit": "https://schemas.alystria.studio/v2/starter-kit.schema.json",
     "storyboard": "https://schemas.alystria.studio/v2/storyboard.schema.json",
 })
 
@@ -155,6 +156,23 @@ SCHEMAS: Final = (
             DefinitionBinding(name="ResearchBundle", types=("object",), required=("claims", "evidence", "learnerProfile", "learningPlan", "sources", "supports"), properties=("claims", "evidence", "learnerProfile", "learningPlan", "sources", "supports"), refs=("#/$defs/AtomicClaim", "#/$defs/ClaimSupport", "#/$defs/EvidenceChunk", "#/$defs/LearnerProfile", "#/$defs/LearningPlan", "#/$defs/SourceVersion")),
             DefinitionBinding(name="SourceLocator", types=("object",), required=("kind",), properties=("canonicalUri", "kind", "localPath", "value"), refs=("common.schema.json#/$defs/RelativePath", "common.schema.json#/$defs/Uri")),
             DefinitionBinding(name="SourceVersion", types=("object",), required=("contentHash", "id", "locator", "retrievedAt", "rightsStatus", "sourceId", "storagePolicy", "title", "trust"), properties=("authors", "contentHash", "id", "language", "licenseExpression", "locator", "metadata", "mimeType", "publishedAt", "publisher", "retrievedAt", "rightsStatus", "sourceId", "storagePolicy", "title", "trust"), refs=("#/$defs/SourceLocator", "common.schema.json#/$defs/Id", "common.schema.json#/$defs/IsoDateTime", "common.schema.json#/$defs/JsonValue", "common.schema.json#/$defs/Locale", "common.schema.json#/$defs/Sha256", "common.schema.json#/$defs/ShortText")),
+        ),
+    ),
+    SchemaBinding(
+        key="starter-kit",
+        file="starter-kit.schema.json",
+        id="https://schemas.alystria.studio/v2/starter-kit.schema.json",
+        title="Alystria starter-kit assets, theme recipes, and user import slots",
+        sha256="96b9dcc98273e4eca75774c713fd87db6fb7a8a96a46575b6ad4546ac4f3c930",
+        root=DefinitionBinding(name="$root", types=("reference",), required=(), properties=(), refs=("#/$defs/StarterAsset", "#/$defs/StarterAssetLicense", "#/$defs/StarterAssetProvenance", "#/$defs/StarterAssetSource", "#/$defs/StarterKitManifest", "#/$defs/StarterThemePack", "#/$defs/UserAssetSlot", "common.schema.json#/$defs/Dimensions", "common.schema.json#/$defs/Id", "common.schema.json#/$defs/IsoDateTime", "common.schema.json#/$defs/RelativePath", "common.schema.json#/$defs/Sha256", "common.schema.json#/$defs/ShortText", "common.schema.json#/$defs/Uri")),
+        definitions=(
+            DefinitionBinding(name="StarterAsset", types=("object",), required=("accessibility", "description", "id", "kind", "license", "name", "provenance", "source", "tags", "technical"), properties=("accessibility", "description", "id", "kind", "license", "name", "provenance", "source", "tags", "technical"), refs=("#/$defs/StarterAssetLicense", "#/$defs/StarterAssetProvenance", "#/$defs/StarterAssetSource", "common.schema.json#/$defs/Dimensions", "common.schema.json#/$defs/Id", "common.schema.json#/$defs/ShortText")),
+            DefinitionBinding(name="StarterAssetLicense", types=("object",), required=("attributionRequired", "commercialUseAllowed", "derivativesAllowed", "exportAllowed", "expression", "name", "redistributionAllowed", "status"), properties=("attributionRequired", "attributionText", "commercialUseAllowed", "copyrightNotice", "derivativesAllowed", "exportAllowed", "expression", "licenseUri", "name", "redistributionAllowed", "restrictions", "status"), refs=("common.schema.json#/$defs/ShortText", "common.schema.json#/$defs/Uri")),
+            DefinitionBinding(name="StarterAssetProvenance", types=("object",), required=("creationMethod", "creator", "origin", "recordedAt", "reviewStatus"), properties=("c2paStatus", "creationMethod", "creator", "ingredientAssetIds", "model", "notes", "origin", "promptArtifactId", "promptAvailability", "recordedAt", "reviewStatus", "sourceRevision", "sourceUri", "synthetic", "tool"), refs=("common.schema.json#/$defs/Id", "common.schema.json#/$defs/IsoDateTime", "common.schema.json#/$defs/ShortText", "common.schema.json#/$defs/Uri")),
+            DefinitionBinding(name="StarterAssetSource", types=("object",), required=("availability", "delivery"), properties=("availability", "byteSize", "contentHash", "delivery", "downloadUri", "fallbackAssetId", "familyNames", "relativePath"), refs=("common.schema.json#/$defs/Id", "common.schema.json#/$defs/RelativePath", "common.schema.json#/$defs/Sha256", "common.schema.json#/$defs/ShortText", "common.schema.json#/$defs/Uri")),
+            DefinitionBinding(name="StarterKitManifest", types=("object",), required=("assets", "defaults", "description", "id", "name", "schemaVersion", "themePacks", "userAssetSlots", "version"), properties=("assets", "defaults", "description", "id", "name", "schemaVersion", "themePacks", "userAssetSlots", "version"), refs=("#/$defs/StarterAsset", "#/$defs/StarterThemePack", "#/$defs/UserAssetSlot", "common.schema.json#/$defs/Id", "common.schema.json#/$defs/ShortText")),
+            DefinitionBinding(name="StarterThemePack", types=("object",), required=("alternatives", "audioDefaults", "defaults", "description", "id", "name", "presenterDefaults", "themeId"), properties=("alternatives", "audioDefaults", "defaults", "description", "id", "name", "presenterDefaults", "themeId"), refs=("common.schema.json#/$defs/Id", "common.schema.json#/$defs/ShortText")),
+            DefinitionBinding(name="UserAssetSlot", types=("object",), required=("acceptedMediaTypes", "consentRequired", "description", "id", "kind", "maximumBytes", "multiple", "name", "normalization", "provenanceRequired", "rightsAttestationRequired"), properties=("acceptedExtensions", "acceptedMediaTypes", "consentRequired", "description", "guidance", "id", "kind", "maximumBytes", "maximumDurationMs", "minimumDimensions", "multiple", "name", "normalization", "provenanceRequired", "rightsAttestationRequired"), refs=("common.schema.json#/$defs/Dimensions", "common.schema.json#/$defs/Id", "common.schema.json#/$defs/ShortText")),
         ),
     ),
     SchemaBinding(

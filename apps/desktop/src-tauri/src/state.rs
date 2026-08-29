@@ -112,14 +112,108 @@ fn debug_worker_override(runtime_root: &std::path::Path) -> Option<WorkerLaunchC
         && let Some(candidate) = candidate
         && candidate.is_file()
     {
+        let mut environment = BTreeMap::new();
+        if let Some(starter_audio_root) = debug_starter_audio_root(&candidate) {
+            environment.insert(
+                "ALYSTRIA_STARTER_AUDIO_ROOT".into(),
+                starter_audio_root.into_os_string(),
+            );
+        }
+        if let Some(starter_visual_root) = debug_starter_visual_root(&candidate) {
+            environment.insert(
+                "ALYSTRIA_STARTER_VISUAL_ROOT".into(),
+                starter_visual_root.into_os_string(),
+            );
+        }
         return Some(WorkerLaunchConfig {
             executable: candidate,
             working_directory: runtime_root.join("work").join("pipeline-debug"),
             expected_sha256: None,
-            environment: BTreeMap::new(),
+            environment,
         });
     }
     None
+}
+
+/// Development and portable-debug workers may use only an Alystria-owned
+/// starter-audio directory. Packaged sidecars place it beside the executable;
+/// source development falls back to the repository asset root compiled into
+/// this debug binary. No project request or inherited environment variable can
+/// redirect this trust boundary.
+fn debug_starter_audio_root(worker: &std::path::Path) -> Option<PathBuf> {
+    let sibling = worker
+        .parent()?
+        .join("assets")
+        .join("starter")
+        .join("audio");
+    if starter_audio_catalog_is_regular(&sibling) {
+        return sibling.canonicalize().ok();
+    }
+    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("assets")
+        .join("starter")
+        .join("audio");
+    starter_audio_catalog_is_regular(&source_root)
+        .then(|| source_root.canonicalize().ok())
+        .flatten()
+}
+
+fn starter_audio_catalog_is_regular(root: &std::path::Path) -> bool {
+    let Ok(root_metadata) = root.symlink_metadata() else {
+        return false;
+    };
+    if !root_metadata.is_dir() || root_metadata.file_type().is_symlink() {
+        return false;
+    }
+    let Ok(catalog_metadata) = root.join("catalog.json").symlink_metadata() else {
+        return false;
+    };
+    catalog_metadata.is_file()
+        && !catalog_metadata.file_type().is_symlink()
+        && catalog_metadata.len() > 0
+        && catalog_metadata.len() <= 2 * 1024 * 1024
+}
+
+fn debug_starter_visual_root(worker: &std::path::Path) -> Option<PathBuf> {
+    let sibling = worker
+        .parent()?
+        .join("assets")
+        .join("starter")
+        .join("visuals");
+    if starter_visual_catalog_is_regular(&sibling) {
+        return sibling.canonicalize().ok();
+    }
+    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..");
+    starter_visual_catalog_is_regular(&source_root)
+        .then(|| source_root.canonicalize().ok())
+        .flatten()
+}
+
+fn starter_visual_catalog_is_regular(root: &std::path::Path) -> bool {
+    let Ok(root_metadata) = root.symlink_metadata() else {
+        return false;
+    };
+    if !root_metadata.is_dir() || root_metadata.file_type().is_symlink() {
+        return false;
+    }
+    let catalog = root
+        .join("packages")
+        .join("themes")
+        .join("starter-kits")
+        .join("core.v1.json");
+    let Ok(catalog_metadata) = catalog.symlink_metadata() else {
+        return false;
+    };
+    catalog_metadata.is_file()
+        && !catalog_metadata.file_type().is_symlink()
+        && catalog_metadata.len() > 0
+        && catalog_metadata.len() <= 8 * 1024 * 1024
 }
 
 /// A test-only data root lets the portable debug handoff leave production
@@ -140,4 +234,60 @@ fn missing_worker_path(runtime_root: &std::path::Path) -> PathBuf {
         "alystria-pipeline"
     };
     runtime_root.join("unavailable").join(executable)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn debug_asset_roots_are_derived_from_the_worker_sibling() {
+        let temporary = TempDir::new().unwrap();
+        let worker = temporary.path().join("alystria-pipeline.exe");
+        fs::write(&worker, b"test worker").unwrap();
+
+        let audio = temporary.path().join("assets/starter/audio");
+        fs::create_dir_all(&audio).unwrap();
+        fs::write(audio.join("catalog.json"), b"{}").unwrap();
+
+        let visuals = temporary
+            .path()
+            .join("assets/starter/visuals/packages/themes/starter-kits");
+        fs::create_dir_all(&visuals).unwrap();
+        fs::write(visuals.join("core.v1.json"), b"{}").unwrap();
+
+        assert_eq!(
+            debug_starter_audio_root(&worker),
+            Some(audio.canonicalize().unwrap())
+        );
+        assert_eq!(
+            debug_starter_visual_root(&worker),
+            Some(
+                temporary
+                    .path()
+                    .join("assets/starter/visuals")
+                    .canonicalize()
+                    .unwrap()
+            )
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn debug_asset_roots_reject_symlinked_catalogs() {
+        let temporary = TempDir::new().unwrap();
+        let worker = temporary.path().join("alystria-pipeline.exe");
+        fs::write(&worker, b"test worker").unwrap();
+        let external = temporary.path().join("external.json");
+        fs::write(&external, b"{}").unwrap();
+
+        let audio = temporary.path().join("assets/starter/audio");
+        fs::create_dir_all(&audio).unwrap();
+        std::os::unix::fs::symlink(&external, audio.join("catalog.json")).unwrap();
+
+        // A rejected packaged root falls back to the compile-time repository
+        // root in a source build, never to the symlink target.
+        assert_ne!(debug_starter_audio_root(&worker), Some(audio));
+    }
 }

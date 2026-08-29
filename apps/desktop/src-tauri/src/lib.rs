@@ -8,6 +8,7 @@ mod project_store;
 mod runtime;
 mod secrets;
 mod sidecar;
+pub mod starter_kit;
 mod state;
 mod types;
 mod validation;
@@ -32,10 +33,13 @@ pub fn run() {
             project_save,
             project_snapshot_get,
             project_snapshot_save,
+            project_customization_save,
             project_history_get,
             project_history_undo,
             project_history_redo,
             source_import,
+            project_asset_import,
+            presenter_profile_select,
             project_export_archive,
             generation_start,
             generation_approve,

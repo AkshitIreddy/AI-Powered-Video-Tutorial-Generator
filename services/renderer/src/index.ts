@@ -1,4 +1,5 @@
 export * from "./browser.js";
+export * from "./assets.js";
 export * from "./captions.js";
 export * from "./contracts.js";
 export * from "./executor.js";

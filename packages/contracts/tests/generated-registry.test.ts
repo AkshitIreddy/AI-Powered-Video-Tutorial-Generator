@@ -18,6 +18,7 @@ describe("generated cross-language schema registry", () => {
       "media",
       "project",
       "research",
+      "starter-kit",
       "storyboard",
     ]);
     expect(new Set(GENERATED_SCHEMAS.map((schema) => schema.id)).size).toBe(

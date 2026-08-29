@@ -110,7 +110,23 @@ export async function createPlaywrightChromiumDriver(options: PlaywrightChromium
         async setContent(html) { await page.setContent(html, { waitUntil: "domcontentloaded" }); },
         async waitForRenderReady() {
           await page.waitForFunction(() => document.body?.dataset.renderReady === "true");
-          await page.evaluate(async () => document.fonts.ready);
+          await page.evaluate(async () => {
+            const fontReady = (globalThis as typeof globalThis & {
+              __alystriaFontReady?: Promise<readonly string[]>;
+            }).__alystriaFontReady;
+            if (fontReady) await fontReady;
+            if (document.body.dataset.renderError) {
+              throw new Error(document.body.dataset.renderError);
+            }
+            await document.fonts.ready;
+            // A newly injected SVG/foreignObject document can report its DOM
+            // ready before Chromium has committed text shaping to a paint
+            // frame. Two frame boundaries make the authoritative screenshot
+            // deterministic rather than occasionally capturing partial glyph
+            // tiles from the initial composite.
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          });
         },
         async screenshot(screenshotOptions) {
           await page.screenshot({ ...screenshotOptions, scale: "device", omitBackground: false });

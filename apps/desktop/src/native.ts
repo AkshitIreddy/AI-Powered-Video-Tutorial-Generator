@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import type { CanvasCustomization } from "./types";
 
 export type DesktopEnvironment = "native" | "browser-demo";
 export type GroundingMode = "creative" | "grounded" | "strict";
@@ -67,6 +68,21 @@ export interface ProjectSnapshotReceipt {
   history?: ProjectHistoryState;
 }
 
+export interface SaveProjectCustomizationRequest extends ProjectIdentityRequest {
+  expectedHeadRevisionId: string;
+  customization: CanvasCustomization;
+  message?: string;
+}
+
+export interface ProjectCustomizationReceipt {
+  projectId: string;
+  headRevisionId: string;
+  revisionNumber: number;
+  rootHash: string;
+  updatedAt: string;
+  customization: CanvasCustomization;
+}
+
 export interface ProjectHistoryState {
   headRevisionId: string;
   canUndo: boolean;
@@ -113,6 +129,82 @@ export interface SourceImportReceipt {
   attribution: string | null;
   evidence: number;
   status: "verified" | "review";
+}
+
+export type ProjectAssetKind = "presenterPortrait" | "presenterAudio" | "backgroundImage" | "font" | "music" | "soundEffect";
+export type AssetRightsStatus = "owned" | "licensed" | "publicDomain" | "unknown";
+export type AssetPermission = "allowed" | "notAllowed" | "unknown";
+
+export interface AssetRightsInput {
+  status: AssetRightsStatus;
+  creator?: string;
+  license?: string;
+  attribution?: string;
+  commercialUse: AssetPermission;
+  redistribution: AssetPermission;
+  modelInput: AssetPermission;
+}
+
+export interface PresenterConsentAttestation {
+  subjectDisplayName: string;
+  attestorDisplayName: string;
+  authority: "selfConsent" | "parentOrGuardian" | "authorizedRepresentative";
+  grants: Array<"portraitAnimation" | "videoReenactment" | "publicDistribution" | "commercialDistribution">;
+  distributionScope: "privatePreview" | "publicNonCommercial" | "publicCommercial";
+  accepted: boolean;
+  disclosureRequired: boolean;
+}
+
+export interface PresenterAssetInput {
+  identityType: "synthetic" | "realPerson";
+  displayName: string;
+  syntheticOriginAttested: boolean;
+  consent?: PresenterConsentAttestation;
+  selectAfterImport: boolean;
+}
+
+export interface ProjectAssetImportRequest extends ProjectIdentityRequest {
+  expectedHeadRevisionId: string;
+  kind: ProjectAssetKind;
+  filename: string;
+  mimeType: string;
+  privacy: SourcePrivacy;
+  rights: AssetRightsInput;
+  presenter?: PresenterAssetInput;
+  contentBase64: string;
+}
+
+export interface PresenterProfileRef {
+  profileId: string;
+  displayName: string;
+  portraitArtifactId: string;
+  identityType: "synthetic" | "realPerson";
+  consentRecordId?: string;
+  disclosureRequired: boolean;
+  authorizedDistributionScope: "privatePreview" | "publicNonCommercial" | "publicCommercial";
+}
+
+export interface ProjectAssetImportReceipt {
+  projectId: string;
+  headRevisionId: string;
+  revisionNumber: number;
+  artifact: { id: string; kind: ProjectAssetKind; sha256: string; byteSize: number; mediaType: string; originalFilename: string; state: string };
+  provenance: { id: string; origin: string; rightsStatus: AssetRightsStatus; creator?: string; license?: string; attribution?: string; exportEligible: boolean; blockers: string[] };
+  presenterProfile?: PresenterProfileRef;
+  selectedPresenterProfileId?: string;
+}
+
+export interface SelectPresenterProfileRequest extends ProjectIdentityRequest {
+  expectedHeadRevisionId: string;
+  profileId: string;
+}
+
+export interface SelectPresenterProfileReceipt {
+  projectId: string;
+  headRevisionId: string;
+  revisionNumber: number;
+  selectedPresenterProfileId: string;
+  profile: PresenterProfileRef;
 }
 
 export interface ExportProjectArchiveRequest extends ProjectIdentityRequest {
@@ -565,6 +657,35 @@ export function projectSnapshotSave(input: SaveProjectSnapshotRequest): Promise<
   });
 }
 
+export function projectCustomizationSave(input: SaveProjectCustomizationRequest): Promise<ProjectCustomizationReceipt> {
+  return command("project_customization_save", input, () => {
+    const project = browserProjects.get(input.projectId);
+    if (!project || project.handle.projectDirectory !== input.projectDirectory) {
+      throw new Error("Browser demo project snapshot is unavailable.");
+    }
+    if (project.snapshot.headRevisionId !== input.expectedHeadRevisionId) {
+      throw new Error("REVISION_CONFLICT: Reload the durable project customization before saving.");
+    }
+    const history = browserHistory.get(input.projectId) ?? { undo: [], redo: [] };
+    history.undo.push(structuredClone(project.snapshot));
+    history.redo = [];
+    browserHistory.set(input.projectId, history);
+    const next = browserSnapshot(input.projectId, {
+      ...project.snapshot.snapshot,
+      customization: structuredClone(input.customization),
+    }, project.snapshot.revisionNumber + 1);
+    project.snapshot = next;
+    return {
+      projectId: input.projectId,
+      headRevisionId: next.headRevisionId,
+      revisionNumber: next.revisionNumber,
+      rootHash: next.rootHash,
+      updatedAt: next.updatedAt,
+      customization: structuredClone(input.customization),
+    };
+  });
+}
+
 export function projectHistoryGet(input: ProjectIdentityRequest): Promise<ProjectHistoryState> {
   return command("project_history_get", input, () => {
     const project = browserProjects.get(input.projectId);
@@ -624,6 +745,73 @@ export function sourceImport(input: SourceImportRequest): Promise<SourceImportRe
       snapshot: { ...project.snapshot.snapshot, sources: [...sources, receipt] },
     };
     return receipt;
+  });
+}
+
+export function projectAssetImport(input: ProjectAssetImportRequest): Promise<ProjectAssetImportReceipt> {
+  return command("project_asset_import", input, () => {
+    const project = browserProjects.get(input.projectId);
+    if (!project || project.handle.projectDirectory !== input.projectDirectory) throw new Error("Browser demo project snapshot is unavailable.");
+    if (project.snapshot.headRevisionId !== input.expectedHeadRevisionId) throw new Error("REVISION_CONFLICT: Reload the project before importing this asset.");
+    const byteSize = decodedBase64Length(input.contentBase64);
+    const sha256 = demoHash(`${input.kind}:${input.filename}:${byteSize}:${input.contentBase64.slice(0, 96)}`);
+    const exportEligible = input.rights.status !== "unknown" && input.rights.redistribution === "allowed";
+    const artifactId = `asset_${sha256.slice(0, 24)}`;
+    const profile = input.kind === "presenterPortrait" && input.presenter ? {
+      profileId: `presenter_${sha256.slice(0, 20)}`,
+      displayName: input.presenter.displayName,
+      portraitArtifactId: artifactId,
+      identityType: input.presenter.identityType,
+      ...(input.presenter.identityType === "realPerson" ? { consentRecordId: `consent_${sha256.slice(0, 20)}` } : {}),
+      disclosureRequired: true,
+      authorizedDistributionScope: input.presenter.identityType === "synthetic" ? "publicCommercial" : input.presenter.consent?.distributionScope ?? "privatePreview",
+    } satisfies PresenterProfileRef : undefined;
+    const next = browserSnapshot(input.projectId, {
+      ...project.snapshot.snapshot,
+      importedAssets: [
+        ...(Array.isArray(project.snapshot.snapshot.importedAssets) ? project.snapshot.snapshot.importedAssets : []),
+        { id: artifactId, kind: input.kind, sha256, byteSize, mediaType: input.mimeType, originalFilename: input.filename },
+      ],
+      ...(profile && input.presenter?.selectAfterImport ? { selectedPresenterProfileId: profile.profileId } : {}),
+    }, project.snapshot.revisionNumber + 1);
+    project.snapshot = next;
+    return {
+      projectId: input.projectId,
+      headRevisionId: next.headRevisionId,
+      revisionNumber: next.revisionNumber,
+      artifact: { id: artifactId, kind: input.kind, sha256, byteSize, mediaType: input.mimeType, originalFilename: input.filename, state: "quarantined" },
+      provenance: {
+        id: `prov_${sha256.slice(0, 20)}`,
+        origin: "User upload · browser demo",
+        rightsStatus: input.rights.status,
+        ...(input.rights.creator ? { creator: input.rights.creator } : {}),
+        ...(input.rights.license ? { license: input.rights.license } : {}),
+        ...(input.rights.attribution ? { attribution: input.rights.attribution } : {}),
+        exportEligible,
+        blockers: exportEligible ? [] : ["Native validation and cleared redistribution rights are required."],
+      },
+      ...(profile ? { presenterProfile: profile } : {}),
+      ...(profile && input.presenter?.selectAfterImport ? { selectedPresenterProfileId: profile.profileId } : {}),
+    };
+  });
+}
+
+export function presenterProfileSelect(input: SelectPresenterProfileRequest): Promise<SelectPresenterProfileReceipt> {
+  return command("presenter_profile_select", input, () => {
+    const project = browserProjects.get(input.projectId);
+    if (!project || project.handle.projectDirectory !== input.projectDirectory) throw new Error("Browser demo project snapshot is unavailable.");
+    if (project.snapshot.headRevisionId !== input.expectedHeadRevisionId) throw new Error("REVISION_CONFLICT: Reload the project before selecting this presenter.");
+    const profile: PresenterProfileRef = {
+      profileId: input.profileId,
+      displayName: "Selected presenter",
+      portraitArtifactId: `asset_${input.profileId}`,
+      identityType: "synthetic",
+      disclosureRequired: false,
+      authorizedDistributionScope: "publicCommercial",
+    };
+    const next = browserSnapshot(input.projectId, { ...project.snapshot.snapshot, selectedPresenterProfileId: input.profileId }, project.snapshot.revisionNumber + 1);
+    project.snapshot = next;
+    return { projectId: input.projectId, headRevisionId: next.headRevisionId, revisionNumber: next.revisionNumber, selectedPresenterProfileId: input.profileId, profile };
   });
 }
 

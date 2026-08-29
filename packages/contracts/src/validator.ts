@@ -6,6 +6,7 @@ import mediaSchema from "../schema/media.schema.json" with { type: "json" };
 import projectSchema from "../schema/project.schema.json" with { type: "json" };
 import researchSchema from "../schema/research.schema.json" with { type: "json" };
 import storyboardSchema from "../schema/storyboard.schema.json" with { type: "json" };
+import starterKitSchema from "../schema/starter-kit.schema.json" with { type: "json" };
 import type { Diagnostic, JsonValue } from "./common.js";
 import type { Artifact, ExportSpec, JobRun, ModelDescriptor, PluginManifest, ProviderDescriptor, QualityGate, TaskAttempt, TaskRun } from "./execution.js";
 import { SCHEMA_IDS } from "./generated/schemaRegistry.js";
@@ -13,8 +14,9 @@ import type { AssetProvenance, ConsentRecord, NarrationSpec } from "./media.js";
 import type { ProjectBundle, ProjectManifest, ProjectRevision } from "./project.js";
 import type { AtomicClaim, ResearchBundle, SourceVersion } from "./research.js";
 import type { RenderManifest, Scene, StoryboardSnapshot } from "./storyboard.js";
+import type { StarterKitManifest } from "./starterKit.js";
 
-export const schemas = Object.freeze({ commonSchema, researchSchema, mediaSchema, storyboardSchema, executionSchema, projectSchema });
+export const schemas = Object.freeze({ commonSchema, researchSchema, mediaSchema, storyboardSchema, executionSchema, projectSchema, starterKitSchema });
 
 export interface ValidationIssue {
   instancePath: string;
@@ -46,6 +48,7 @@ function createAjv(): Ajv2020 {
   ajv.addSchema(storyboardSchema);
   ajv.addSchema(executionSchema);
   ajv.addSchema(projectSchema);
+  ajv.addSchema(starterKitSchema);
   return ajv;
 }
 
@@ -82,6 +85,7 @@ const revisionValidator = requiredValidator<ProjectRevision>(definitionUri(SCHEM
 const sourceValidator = requiredValidator<SourceVersion>(definitionUri(SCHEMA_IDS.research, "SourceVersion"));
 const claimValidator = requiredValidator<AtomicClaim>(definitionUri(SCHEMA_IDS.research, "AtomicClaim"));
 const renderManifestValidator = requiredValidator<RenderManifest>(definitionUri(SCHEMA_IDS.storyboard, "RenderManifest"));
+const starterKitValidator = requiredValidator<StarterKitManifest>(SCHEMA_IDS["starter-kit"]);
 
 function toIssues(errors: ErrorObject[] | null | undefined): ValidationIssue[] {
   return (errors ?? []).map((error) => ({
@@ -119,6 +123,7 @@ export function validateProjectRevision(value: unknown): ValidationResult<Projec
 export function validateSourceVersion(value: unknown): ValidationResult<SourceVersion> { return validate(sourceValidator, value); }
 export function validateAtomicClaim(value: unknown): ValidationResult<AtomicClaim> { return validate(claimValidator, value); }
 export function validateRenderManifest(value: unknown): ValidationResult<RenderManifest> { return validate(renderManifestValidator, value); }
+export function validateStarterKitManifest(value: unknown): ValidationResult<StarterKitManifest> { return validate(starterKitValidator, value); }
 
 /** Validate any public or plugin-defined contract registered with the shared Ajv instance. */
 export function validateContract<T>(schemaUri: string, value: unknown): ValidationResult<T> {

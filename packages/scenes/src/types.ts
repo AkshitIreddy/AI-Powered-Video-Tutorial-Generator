@@ -179,6 +179,8 @@ interface TitledContent {
   readonly title: string;
   readonly eyebrow?: string;
   readonly subtitle?: string;
+  /** Optional immutable backdrop resolved by the host through an opaque asset id. */
+  readonly background?: AssetReference;
 }
 
 export interface TitleContent extends TitledContent {
@@ -323,6 +325,7 @@ export interface PresenterContent extends TitledContent {
   readonly talkingPoint?: string;
   readonly slideItems?: readonly TextItem[];
   readonly disclosure?: string;
+  readonly placement?: "full" | "picture-in-picture" | "split-left" | "split-right";
 }
 
 export interface QuoteContent extends TitledContent {

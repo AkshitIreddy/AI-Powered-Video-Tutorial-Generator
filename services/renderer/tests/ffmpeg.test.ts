@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { parseAudioAnalysis, SpawnCommandRunner } from "../src/executor.js";
 import { fixtureTarget } from "../src/fixture.js";
 import {
   ffmpegDistributionWarnings,
@@ -63,23 +67,59 @@ test("WebM delivery uses compatible Opus audio and WebVTT captions", () => {
 
 test("audio master uses 48 kHz and measurable loudness targets", () => {
   const plan = planAudioMaster([
-    { path: "narration.wav", role: "narration", startTick: 0 },
-    { path: "music.wav", role: "music", startTick: secondsToTicks(0.5), gainDb: -21 },
+    { id: "narration", assetId: "scene:narration", path: "narration.wav", sha256: "a".repeat(64), mediaType: "audio/wav", role: "narration", startTick: 0 },
+    { id: "music", assetId: "starter.music", path: "music.wav", sha256: "b".repeat(64), mediaType: "audio/wav", role: "music", startTick: secondsToTicks(0.5), endTick: secondsToTicks(5), gainDb: -21, loop: true, duckingDb: -18 },
   ], "master.wav");
   assert.match(plan.args.join(" "), /loudnorm=I=-16:LRA=11:TP=-2/);
   assert.match(plan.args.join(" "), /acompressor=threshold=0\.05:ratio=8/);
   assert.match(plan.args.join(" "), /sidechaincompress=/);
+  assert.match(plan.args.join(" "), /ratio=14\.500/);
+  assert.deepEqual(plan.args.slice(plan.args.indexOf("-stream_loop"), plan.args.indexOf("-stream_loop") + 3), ["-stream_loop", "-1", "-i"]);
   assert.ok(plan.args.includes("pcm_s24le"));
   assert.ok(plan.args.includes("48000"));
 });
 
 test("range audio is source-trimmed, timeline-shifted, and exact duration", () => {
   const plan = planAudioMaster([
-    { path: "narration.wav", role: "narration", startTick: 0 },
+    { id: "narration", assetId: "scene:narration", path: "narration.wav", sha256: "a".repeat(64), mediaType: "audio/wav", role: "narration", startTick: 0 },
   ], "range.wav", { timelineStartTick: secondsToTicks(2), durationTicks: secondsToTicks(3) });
   const filter = plan.args[plan.args.indexOf("-filter_complex") + 1];
   assert.match(filter ?? "", /atrim=start=2\.000000:duration=3\.000000/);
   assert.match(filter ?? "", /apad=whole_dur=3\.000000,atrim=duration=3\.000000/);
+});
+
+test("real FFmpeg mixes narration, looped music, and SFX without clipping", { skip: !process.env.ALYSTRIA_TEST_FFMPEG_PATH, timeout: 30_000 }, async () => {
+  const ffmpeg = process.env.ALYSTRIA_TEST_FFMPEG_PATH!;
+  const directory = await mkdtemp(join(tmpdir(), "alystria-audio-mix-"));
+  const runner = new SpawnCommandRunner();
+  try {
+    const narration = join(directory, "narration.wav");
+    const master = join(directory, "master.wav");
+    const generated = await runner.run(ffmpeg, [
+      "-hide_banner", "-nostdin", "-y",
+      "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5:sample_rate=48000",
+      "-c:a", "pcm_s24le", narration,
+    ], {});
+    assert.equal(generated.exitCode, 0, generated.stderr);
+    const mix = planAudioMaster([
+      { id: "voice", assetId: "scene:narration", path: narration, sha256: "a".repeat(64), mediaType: "audio/wav", role: "narration", startTick: 0, endTick: secondsToTicks(1.5) },
+      { id: "music", assetId: "starter.audio.music.focus-loop", path: resolve("../..", "assets/starter/audio/music/focus-loop.wav"), sha256: "b".repeat(64), mediaType: "audio/wav", role: "music", startTick: 0, endTick: secondsToTicks(3), gainDb: -18, loop: true, duckingDb: -14 },
+      { id: "cue", assetId: "starter.audio.sfx.emphasis-a", path: resolve("../..", "assets/starter/audio/sfx/emphasis-a.wav"), sha256: "c".repeat(64), mediaType: "audio/wav", role: "sfx", startTick: secondsToTicks(1), gainDb: -12 },
+    ], master, { durationTicks: secondsToTicks(3) });
+    const mixed = await runner.run(ffmpeg, mix.args, {});
+    assert.equal(mixed.exitCode, 0, mixed.stderr);
+    const analysis = planAudioAnalysis(master);
+    const measured = await runner.run(ffmpeg, analysis.args, {});
+    assert.equal(measured.exitCode, 0, measured.stderr);
+    const metrics = parseAudioAnalysis(measured.stderr);
+    assert.equal(metrics.audioIsSilent, false);
+    assert.equal(metrics.clippedSamples, 0);
+    assert.equal(metrics.decodedSamplesPerChannel, 144_000);
+    assert.ok(metrics.integratedLufs >= -17 && metrics.integratedLufs <= -15);
+    assert.ok(metrics.truePeakDbtp !== null && metrics.truePeakDbtp <= -1.5);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("silent master is exact-duration stereo PCM at 48 kHz", () => {

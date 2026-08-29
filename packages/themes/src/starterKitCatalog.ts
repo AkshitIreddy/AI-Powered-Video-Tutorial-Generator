@@ -1,0 +1,304 @@
+import type {
+  StarterAsset,
+  StarterAssetAccessibility,
+  StarterAssetLicense,
+  StarterAssetProvenance,
+  StarterKitManifest,
+  StarterThemePack,
+  UserAssetSlot,
+} from "@alystria/contracts";
+
+const RECORDED_AT = "2026-08-29T00:00:00.000Z";
+
+const MIT_LICENSE: StarterAssetLicense = {
+  status: "cleared", expression: "MIT", name: "MIT License",
+  licenseUri: "https://spdx.org/licenses/MIT.html", copyrightNotice: "Copyright Alystria Studio contributors",
+  attributionRequired: false, redistributionAllowed: true, commercialUseAllowed: true, derivativesAllowed: true, exportAllowed: true,
+};
+
+const OFL_LICENSE: StarterAssetLicense = {
+  status: "cleared", expression: "OFL-1.1", name: "SIL Open Font License 1.1",
+  licenseUri: "https://scripts.sil.org/OFL", attributionRequired: true,
+  attributionText: "Font family and license are listed in the exported third-party notices.",
+  redistributionAllowed: true, commercialUseAllowed: true, derivativesAllowed: true, exportAllowed: true,
+  restrictions: ["Reserved font names and modified-font naming remain subject to each font's OFL notice."],
+};
+
+const USER_OWNED_GENERATED_LICENSE: StarterAssetLicense = {
+  status: "cleared", expression: "LicenseRef-USER-OWNED", name: "User-owned generated starter asset",
+  copyrightNotice: "Generated for the Alystria Studio project by the project owner",
+  attributionRequired: false, redistributionAllowed: true, commercialUseAllowed: true, derivativesAllowed: true, exportAllowed: true,
+  restrictions: ["Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."],
+};
+
+const ACCESSIBLE_STATIC: StarterAssetAccessibility = {
+  reducedMotionSafe: true, highContrastSafe: true,
+};
+
+function authoredProvenance(method: StarterAssetProvenance["creationMethod"], notes?: string): StarterAssetProvenance {
+  return { origin: "alystria-authored", creator: "Alystria Studio contributors", creationMethod: method, recordedAt: RECORDED_AT, reviewStatus: "verified", ...(notes ? { notes } : {}) };
+}
+
+function proceduralAsset(input: {
+  id: string; kind: "background" | "overlay" | "transition" | "presenter-style" | "lower-third" | "caption-style";
+  name: string; description: string; tags: string[]; recipe: string; reducedMotionSafe?: boolean;
+}): StarterAsset {
+  return {
+    id: input.id, kind: input.kind, name: input.name, description: input.description, tags: input.tags,
+    source: { delivery: input.kind === "presenter-style" ? "style-preset" : "procedural", availability: "ready" },
+    license: MIT_LICENSE,
+    provenance: authoredProvenance("procedural-code"),
+    technical: { mediaType: "application/vnd.alystria.renderer-recipe+json", renderSafe: true, remoteFetchRequired: false, rendererRecipe: input.recipe },
+    accessibility: { reducedMotionSafe: input.reducedMotionSafe ?? true, highContrastSafe: true, description: input.description },
+  };
+}
+
+function fontAsset(input: { id: string; name: string; families: string[]; sourceUri: string; tags: string[]; weights: number[]; scripts: NonNullable<StarterAsset["technical"]["scriptCoverage"]>; variable?: boolean }): StarterAsset {
+  return {
+    id: input.id, kind: "font", name: input.name, description: `${input.name} is resolved from an app-managed local installation and never fetched while rendering.`, tags: input.tags,
+    source: { delivery: "installed-family", availability: "optional", familyNames: input.families },
+    license: OFL_LICENSE,
+    provenance: { origin: "third-party-open-source", creator: input.name, creationMethod: "font-distribution", sourceUri: input.sourceUri, recordedAt: RECORDED_AT, reviewStatus: "verified" },
+    technical: { mediaType: "font/collection", renderSafe: true, remoteFetchRequired: false, fontWeights: input.weights, variableFont: input.variable ?? true, scriptCoverage: input.scripts },
+    accessibility: { ...ACCESSIBLE_STATIC, description: `Locally installed ${input.name} typeface.` },
+  };
+}
+
+function bundledAudio(input: { id: string; kind: "music" | "sound-effect"; name: string; description: string; tags: string[]; relativePath: string; contentHash: string; byteSize: number; durationMs: number; loopable: boolean; integratedLufs: number; transcriptLabel: string }): StarterAsset {
+  return {
+    id: input.id, kind: input.kind, name: input.name, description: input.description, tags: input.tags,
+    source: { delivery: "bundled-file", availability: "ready", relativePath: `assets/starter/audio/${input.relativePath}`, contentHash: input.contentHash, byteSize: input.byteSize },
+    license: MIT_LICENSE,
+    provenance: {
+      ...authoredProvenance("procedural-code", "Deterministic PCM synthesis; no third-party samples and no generative AI."),
+      tool: "assets/starter/audio/tools/generate.py", sourceRevision: "alystria-starter-audio-v1",
+    },
+    technical: { mediaType: "audio/wav", renderSafe: true, remoteFetchRequired: false, durationMs: input.durationMs, loopable: input.loopable, sampleRate: 48000, channels: 2, integratedLufs: input.integratedLufs },
+    accessibility: { reducedMotionSafe: true, highContrastSafe: true, transcriptLabel: input.transcriptLabel, description: input.description },
+  };
+}
+
+function bundledGeneratedImage(input: { id: string; kind: "background" | "presenter-portrait"; name: string; description: string; tags: string[]; relativePath: string; contentHash: string; byteSize: number; width: number; height: number; license?: StarterAssetLicense }): StarterAsset {
+  return {
+    id: input.id, kind: input.kind, name: input.name, description: input.description, tags: input.tags,
+    source: { delivery: "bundled-file", availability: "ready", relativePath: input.relativePath, contentHash: input.contentHash, byteSize: input.byteSize },
+    license: input.license ?? USER_OWNED_GENERATED_LICENSE,
+    provenance: {
+      origin: "generated", creator: "Alystria Studio project owner", creationMethod: "generative-model",
+      tool: "image_gen", model: "gpt-image 2.0", sourceRevision: "OpenAI built-in imagegen",
+      promptAvailability: "conversation-retained", synthetic: true, c2paStatus: "present-embedded", ingredientAssetIds: [],
+      recordedAt: RECORDED_AT, reviewStatus: "verified",
+      notes: input.kind === "presenter-portrait" ? "Entirely fictional synthetic adult presenter; no real person is intended or depicted." : "Synthetic theme background generated specifically for Alystria Studio.",
+    },
+    technical: { mediaType: "image/png", renderSafe: true, remoteFetchRequired: false, dimensions: { width: input.width, height: input.height }, safeAreaPercent: 5, transparentBackground: false },
+    accessibility: { reducedMotionSafe: true, highContrastSafe: true, description: input.description },
+  };
+}
+
+const backgrounds: StarterAsset[] = [
+  ["background.studio-grid", "Studio Grid", "Warm precision paper with a restrained 14px concept grid and clean reading zones.", ["minimal", "light", "precision"], "paper-field:grid-14;grain=0.015;quiet-zone=center"],
+  ["background.seminar-paper", "Seminar Paper", "Warm archival paper with a barely visible fiber field and protected figure margin.", ["academic", "paper", "scholarly"], "paper-field:fiber;grain=0.025;margin=right;ink-safe=true"],
+  ["background.signal-field", "Signal Field", "Deep navy engineering field with sparse coordinate ticks and a bounded mint trace plane.", ["modern-tech", "dark", "systems"], "dark-field:navy;ticks=0.08;trace-plane=mint;glow=restrained"],
+  ["background.ruled-workbook", "Ruled Workbook", "Clean cream workbook with adaptive rules that fade beneath dense text.", ["notebook", "worked-example", "paper"], "paper-field:ruled;rule-alpha=0.09;text-exclusion=true"],
+  ["background.archive-slate", "Archive Slate", "Charcoal documentary slate with warm edge falloff and a source-safe lower rail.", ["documentary", "cinematic", "evidence"], "dark-field:charcoal;vignette=0.08;source-rail=bottom"],
+  ["background.shape-garden", "Shape Garden", "Playful off-white stage with large quiet color forms outside the reading measure.", ["playful", "friendly", "colorful"], "paper-field:warm;shapes=large-edge;seeded=true;text-exclusion=true"],
+  ["background.story-meadow", "Story Meadow", "Soft storybook landscape bands that preserve a calm central teaching stage.", ["childrens-education", "story", "friendly"], "illustrated-field:meadow;layers=4;center-stage=quiet;seeded=true"],
+  ["background.training-canvas", "Training Canvas", "Neutral professional canvas with action rails, module markers, and policy-safe footer.", ["corporate-training", "professional", "structured"], "paper-field:neutral;action-rail=left;policy-footer=true"],
+  ["background.gallery-white", "Gallery White", "Neutral bright studio surface with optical corner shading and no visible texture behind text.", ["light", "minimal", "clean"], "paper-field:white;corner-shade=0.018;text-zone=flat"],
+  ["background.nocturne", "Nocturne", "Low-glare blue-black field with stable luminance and a subtle lavender edge thread.", ["dark", "technical", "low-glare"], "dark-field:blue-black;edge-thread=lavender;flash-safe=true"],
+].map(([id, name, description, tags, recipe]) => proceduralAsset({ id: id as string, kind: "background", name: name as string, description: description as string, tags: tags as string[], recipe: recipe as string }));
+
+const generatedBackgrounds: StarterAsset[] = [
+  bundledGeneratedImage({ id: "background.academic-evidence-paper-v1", kind: "background", name: "Academic Evidence Paper", description: "A refined warm evidence-paper stage with editorial structure and clear text-safe composition.", tags: ["academic", "evidence", "bundled", "synthetic"], relativePath: "apps/desktop/src/assets/backgrounds/academic-evidence-paper-v1.png", contentHash: "1ba1306b0eb2dc4af7d0c04b7e7785ed27febf2a12922c91110770c13dc155ca", byteSize: 2001277, width: 1672, height: 941 }),
+  bundledGeneratedImage({ id: "background.modern-tech-signal-v1", kind: "background", name: "Modern Signal Architecture", description: "A polished dark systems field with restrained signal structure and a protected content plane.", tags: ["modern-tech", "systems", "bundled", "synthetic"], relativePath: "apps/desktop/src/assets/backgrounds/modern-tech-signal-v1.png", contentHash: "49e8abe6ba85052c6f74c022b468ebd983460600912f3e77b4b0fd301fc3a66d", byteSize: 1268644, width: 1672, height: 941 }),
+  bundledGeneratedImage({ id: "background.playful-paper-cut-v1", kind: "background", name: "Playful Paper-Cut Stage", description: "A layered editorial paper-cut world with energetic edge detail and a calm teaching center.", tags: ["playful", "paper-cut", "bundled", "synthetic"], relativePath: "apps/desktop/src/assets/backgrounds/playful-paper-cut-v1.png", contentHash: "52f98ff2927c5f73d4518e25d70a9d93e42044e4b3363bcccd06a2f0a5471806", byteSize: 1892657, width: 1672, height: 941 }),
+];
+
+const overlays: StarterAsset[] = [
+  proceduralAsset({ id: "overlay.concept-thread", kind: "overlay", name: "Concept Thread", description: "A semantic line layer connecting objectives, scenes, citations, and review markers.", tags: ["concept-thread", "semantic", "universal"], recipe: "thread:path-from-semantic-anchors;labels=accessible;decorative=false" }),
+  proceduralAsset({ id: "overlay.figure-margin", kind: "overlay", name: "Figure Margin", description: "Numbered evidence margin for figures, citations, qualifications, and units.", tags: ["academic", "evidence", "documentary"], recipe: "margin:right;figure-numbers=true;evidence-locators=true" }),
+  proceduralAsset({ id: "overlay.signal-trace", kind: "overlay", name: "Signal Trace", description: "State-driven trace overlay for execution, data flow, and dependency changes.", tags: ["modern-tech", "code", "systems"], recipe: "trace:state-driven;inactive=slate;active=mint;reduced-motion=step" }),
+  proceduralAsset({ id: "overlay.working-marks", kind: "overlay", name: "Working Marks", description: "Seeded underline, bracket, correction, and check marks for worked examples.", tags: ["notebook", "playful", "worked-example"], recipe: "marks:underline,bracket,check;seeded=true;stroke-variation=subtle" }),
+];
+
+const transitions: StarterAsset[] = [
+  ["transition.clean-cut", "Clean Cut", "A frame-exact semantic cut with no ornamental movement.", "transition:cut"],
+  ["transition.soft-crossfade", "Soft Crossfade", "A short luminance-safe dissolve that preserves focal position.", "transition:crossfade;duration=12f;luminance-safe=true"],
+  ["transition.thread-wipe", "Concept Thread Wipe", "The concept thread advances and reveals the next scene along its logical direction.", "transition:thread-wipe;semantic-direction=true;duration=18f"],
+  ["transition.page-turn", "Measured Page Turn", "A restrained two-plane paper turn for sections and worked-example pages.", "transition:page-turn;planes=2;shadow=restrained;duration=20f"],
+  ["transition.signal-handoff", "Signal Handoff", "An active trace exits one system boundary and resolves into the next.", "transition:signal-handoff;state-bound=true;duration=16f"],
+  ["transition.dip-to-ink", "Dip to Ink", "A brief dip through the theme canvas color for chronology or emotional reset.", "transition:dip-to-canvas;duration=14f;flash-safe=true"],
+  ["transition.shape-match", "Shape Match", "One large teaching shape holds its geometry while content changes around it.", "transition:shape-match;max-elements=1;duration=20f"],
+  ["transition.reduced-step", "Reduced-Motion Step", "A zero-travel opacity step used whenever reduced motion is active.", "transition:opacity-step;duration=6f;translation=0"],
+].map(([id, name, description, recipe]) => proceduralAsset({ id: id as string, kind: "transition", name: name as string, description: description as string, tags: ["transition", "deterministic"], recipe: recipe as string }));
+
+const fonts: StarterAsset[] = [
+  fontAsset({ id: "font.bricolage", name: "Bricolage Grotesque", families: ["Bricolage Grotesque", "Atkinson Hyperlegible Next", "Arial", "sans-serif"], sourceUri: "https://github.com/atelier-anchor/Bricolage", tags: ["display", "editorial", "modern"], weights: [200,300,400,500,600,700,800], scripts: ["latin", "latin-extended"] }),
+  fontAsset({ id: "font.atkinson", name: "Atkinson Hyperlegible Next", families: ["Atkinson Hyperlegible Next", "Atkinson Hyperlegible", "Arial", "sans-serif"], sourceUri: "https://github.com/googlefonts/atkinson-hyperlegible-next", tags: ["body", "accessible", "ui"], weights: [200,300,400,500,600,700,800], scripts: ["latin", "latin-extended"] }),
+  fontAsset({ id: "font.source-serif", name: "Source Serif 4", families: ["Source Serif 4", "Noto Serif", "Georgia", "serif"], sourceUri: "https://github.com/adobe-fonts/source-serif", tags: ["serif", "academic", "editorial"], weights: [200,300,400,500,600,700,800,900], scripts: ["latin", "latin-extended", "cyrillic", "greek"] }),
+  fontAsset({ id: "font.source-sans", name: "Source Sans 3", families: ["Source Sans 3", "Atkinson Hyperlegible Next", "Arial", "sans-serif"], sourceUri: "https://github.com/adobe-fonts/source-sans", tags: ["sans", "academic", "body"], weights: [200,300,400,500,600,700,800,900], scripts: ["latin", "latin-extended", "cyrillic", "greek"] }),
+  fontAsset({ id: "font.fraunces", name: "Fraunces", families: ["Fraunces", "Source Serif 4", "Georgia", "serif"], sourceUri: "https://github.com/undercasetype/Fraunces", tags: ["display", "warm", "playful"], weights: [100,200,300,400,500,600,700,800,900], scripts: ["latin", "latin-extended"] }),
+  fontAsset({ id: "font.nunito", name: "Nunito Sans", families: ["Nunito Sans", "Atkinson Hyperlegible Next", "Arial", "sans-serif"], sourceUri: "https://github.com/googlefonts/nunito", tags: ["friendly", "body", "children"], weights: [200,300,400,500,600,700,800,900], scripts: ["latin", "latin-extended"] }),
+  fontAsset({ id: "font.patrick-hand", name: "Patrick Hand", families: ["Patrick Hand", "Comic Sans MS", "cursive"], sourceUri: "https://github.com/googlefonts/patrickhand", tags: ["handwritten", "notebook", "display"], weights: [400], scripts: ["latin", "latin-extended"], variable: false }),
+  fontAsset({ id: "font.lexend", name: "Lexend", families: ["Lexend", "Atkinson Hyperlegible Next", "Arial", "sans-serif"], sourceUri: "https://github.com/googlefonts/lexend", tags: ["accessible", "children", "body"], weights: [100,200,300,400,500,600,700,800,900], scripts: ["latin", "latin-extended"] }),
+  fontAsset({ id: "font.ibm-plex-sans", name: "IBM Plex Sans", families: ["IBM Plex Sans", "Atkinson Hyperlegible Next", "Arial", "sans-serif"], sourceUri: "https://github.com/IBM/plex", tags: ["technical", "corporate", "ui"], weights: [100,200,300,400,500,600,700], scripts: ["latin", "latin-extended", "cyrillic", "greek", "arabic"] }),
+  fontAsset({ id: "font.ibm-plex-serif", name: "IBM Plex Serif", families: ["IBM Plex Serif", "Source Serif 4", "Georgia", "serif"], sourceUri: "https://github.com/IBM/plex", tags: ["serif", "corporate", "editorial"], weights: [100,200,300,400,500,600,700], scripts: ["latin", "latin-extended", "cyrillic", "greek"] }),
+  fontAsset({ id: "font.noto-sans", name: "Noto Sans", families: ["Noto Sans", "Atkinson Hyperlegible Next", "Arial", "sans-serif"], sourceUri: "https://github.com/notofonts/latin-greek-cyrillic", tags: ["multilingual", "body", "fallback"], weights: [100,200,300,400,500,600,700,800,900], scripts: ["latin", "latin-extended", "cyrillic", "greek"] }),
+  fontAsset({ id: "font.noto-serif", name: "Noto Serif", families: ["Noto Serif", "Source Serif 4", "Georgia", "serif"], sourceUri: "https://github.com/notofonts/latin-greek-cyrillic", tags: ["multilingual", "serif", "fallback"], weights: [100,200,300,400,500,600,700,800,900], scripts: ["latin", "latin-extended", "cyrillic", "greek"] }),
+  fontAsset({ id: "font.jetbrains-mono", name: "JetBrains Mono", families: ["JetBrains Mono", "Cascadia Mono", "Consolas", "monospace"], sourceUri: "https://github.com/JetBrains/JetBrainsMono", tags: ["code", "mono", "technical"], weights: [100,200,300,400,500,600,700,800], scripts: ["latin", "latin-extended", "cyrillic", "greek", "symbols"] }),
+  fontAsset({ id: "font.stix-math", name: "STIX Two Math", families: ["STIX Two Math", "Cambria Math", "Noto Sans Math", "serif"], sourceUri: "https://github.com/stipub/stixfonts", tags: ["math", "academic", "symbols"], weights: [400], scripts: ["latin", "greek", "math", "symbols"], variable: false }),
+];
+
+const presenterStyles: StarterAsset[] = [
+  ["presenter.precision-guide", "Precision Guide", "Confident studio instructor in clean neutral wardrobe, restrained gestures, and a crisp matte cutout.", "presenter:waist-up;wardrobe=neutral-structured;gesture=restrained;matte=clean"],
+  ["presenter.seminar-scholar", "Seminar Scholar", "Warm contemporary lecturer framed beside evidence with measured pointing and thoughtful pauses.", "presenter:waist-up;wardrobe=academic-modern;gesture=measured;evidence-side=clear"],
+  ["presenter.systems-engineer", "Systems Engineer", "Approachable technical presenter with compact gestures that never cross code or traces.", "presenter:pip;wardrobe=technical-casual;gesture=compact;code-safe=true"],
+  ["presenter.notebook-mentor", "Notebook Mentor", "Friendly cutout mentor positioned like a margin guide beside working steps.", "presenter:cutout;wardrobe=warm-casual;gesture=trace-operation;margin-guide=true"],
+  ["presenter.documentary-host", "Documentary Host", "Grounded host with restrained cinematic lighting and evidence-conscious eyeline.", "presenter:waist-up;lighting=documentary-soft;gesture=restrained;eyeline=evidence"],
+  ["presenter.creative-coach", "Creative Coach", "Expressive but controlled host with varied open-hand gestures and bold color blocking.", "presenter:waist-up;wardrobe=color-block;gesture=expressive-controlled"],
+  ["presenter.story-guide", "Story Guide", "Illustrated character guide with simple readable expressions and child-safe visual language.", "presenter:illustrated;framing=full-body;gesture=simple;expression=readable"],
+  ["presenter.training-lead", "Training Lead", "Professional facilitator with direct posture, clear action cues, and policy-safe styling.", "presenter:waist-up;wardrobe=professional;gesture=action-cue;lower-third=corporate"],
+  ["presenter.gallery-host", "Gallery Host", "Minimal studio presenter with high-key neutral lighting and quiet asymmetric placement.", "presenter:waist-up;lighting=high-key-neutral;gesture=quiet;placement=asymmetric"],
+  ["presenter.nocturne-expert", "Nocturne Expert", "Low-glare technical host with soft edge separation and no neon spill.", "presenter:pip;lighting=soft-edge;gesture=compact;glow=none"],
+  ["presenter.voice-only", "Voice Only", "No visible presenter; narration and visual explanation carry the scene.", "presenter:none"],
+  ["presenter.user-portrait", "Your Presenter", "A user-supplied portrait or consented presenter clip using the selected framing and disclosure policy.", "presenter:user-asset;consent-gate=true;rights-gate=true"],
+].map(([id, name, description, recipe]) => proceduralAsset({ id: id as string, kind: "presenter-style", name: name as string, description: description as string, tags: ["presenter", "direction-preset"], recipe: recipe as string }));
+
+const generatedPresenters: StarterAsset[] = [
+  bundledGeneratedImage({ id: "presenter-portrait.academic-amara-v1", kind: "presenter-portrait", name: "Amara — Academic Guide", description: "Fictional synthetic academic presenter with a warm, credible seminar-room presence.", tags: ["academic", "presenter", "bundled", "synthetic"], relativePath: "apps/desktop/src/assets/presenters/academic-amara-v1.png", contentHash: "a168260c6087a80752c313adfb8d0f0440576fe916549f96acff4542b7714614", byteSize: 2034611, width: 1254, height: 1254 }),
+  bundledGeneratedImage({ id: "presenter-portrait.modern-tech-minji-v1", kind: "presenter-portrait", name: "Minji — Systems Guide", description: "Fictional synthetic systems presenter with crisp technical styling and compact framing.", tags: ["modern-tech", "presenter", "bundled", "synthetic"], relativePath: "apps/desktop/src/assets/presenters/modern-tech-minji-v1.png", contentHash: "fe347fb12f24238d0748f2b54484e960043d98c0667637aef6178d951bc96681", byteSize: 1849015, width: 1254, height: 1254 }),
+  bundledGeneratedImage({ id: "presenter-portrait.documentary-malik-v1", kind: "presenter-portrait", name: "Malik — Documentary Host", description: "Fictional synthetic documentary host with grounded expression and cinematic restraint.", tags: ["documentary", "presenter", "bundled", "synthetic"], relativePath: "apps/desktop/src/assets/presenters/documentary-malik-v1.png", contentHash: "c66e3bf3da440110cc2ebc8e1925a632d8fc220d53c148fb05153ac6530411e5", byteSize: 2224926, width: 1254, height: 1254 }),
+  bundledGeneratedImage({ id: "presenter-portrait.playful-lucia-v1", kind: "presenter-portrait", name: "Lucia — Creative Coach", description: "Fictional synthetic creative presenter with expressive color, friendly energy, and readable silhouette.", tags: ["playful", "presenter", "bundled", "synthetic"], relativePath: "apps/desktop/src/assets/presenters/playful-lucia-v1.png", contentHash: "e779ad0e0e31d26ded23fbf81c11c386eb0d944cc1f521f62571a809ffface50", byteSize: 2083770, width: 1254, height: 1254 }),
+  bundledGeneratedImage({ id: "presenter-portrait.science-zara-v1", kind: "presenter-portrait", name: "Zara — Science Guide", description: "Fictional synthetic science presenter with a clear, curious presence suited to experiments, evidence, and grounded explanations.", tags: ["science", "academic", "presenter", "bundled", "synthetic"], relativePath: "apps/desktop/src/assets/presenters/science-zara-v1.png", contentHash: "34a4856e71c0895858e0c2226e33563efa4ff867b0f86b0b3154cc2d96bc0bcb", byteSize: 2089478, width: 1254, height: 1254, license: MIT_LICENSE }),
+  bundledGeneratedImage({ id: "presenter-portrait.mathematics-arjun-v1", kind: "presenter-portrait", name: "Arjun — Mathematics Guide", description: "Fictional synthetic mathematics presenter with a calm, precise presence for derivations, worked examples, and conceptual proofs.", tags: ["mathematics", "academic", "notebook", "presenter", "bundled", "synthetic"], relativePath: "apps/desktop/src/assets/presenters/mathematics-arjun-v1.png", contentHash: "4f62f43d3eff3f33b5a80eafa7ada77cb017d5d440edcc0030ca501a4d940332", byteSize: 2116385, width: 1254, height: 1254, license: MIT_LICENSE }),
+];
+
+const surfaceStyles: StarterAsset[] = [
+  proceduralAsset({ id: "lower-third.precision", kind: "lower-third", name: "Precision Label", description: "Compact ink label with a concept-thread anchor and generous safe area.", tags: ["minimal", "light"], recipe: "lower-third:compact;anchor=thread;max-lines=2" }),
+  proceduralAsset({ id: "lower-third.editorial", kind: "lower-third", name: "Editorial Credit", description: "Documentary and academic identity slate with role, source, and date support.", tags: ["academic", "documentary"], recipe: "lower-third:editorial;fields=name,role,source,date" }),
+  proceduralAsset({ id: "lower-third.signal", kind: "lower-third", name: "Signal Label", description: "Technical identity label aligned to the active system trace.", tags: ["modern-tech", "dark"], recipe: "lower-third:signal;anchor=active-trace;glow=none" }),
+  proceduralAsset({ id: "lower-third.friendly", kind: "lower-third", name: "Friendly Name Card", description: "Rounded readable name card with a strong icon and no decorative clutter.", tags: ["playful", "children"], recipe: "lower-third:friendly;icon=true;max-lines=2" }),
+  proceduralAsset({ id: "lower-third.training", kind: "lower-third", name: "Training Role Card", description: "Professional role and department card with explicit action or module context.", tags: ["corporate", "training"], recipe: "lower-third:training;fields=name,role,module" }),
+  proceduralAsset({ id: "caption.solid", kind: "caption-style", name: "Solid Accessible Captions", description: "High-contrast two-line captions with semantic breaks and adaptive collision avoidance.", tags: ["caption", "accessible"], recipe: "caption:solid;lines=2;collision=adaptive;contrast=AA" }),
+  proceduralAsset({ id: "caption.document", kind: "caption-style", name: "Document Captions", description: "Left-aligned evidence-friendly captions with compact speaker and sound labels.", tags: ["caption", "academic", "documentary"], recipe: "caption:document-label;align=left;lines=2" }),
+  proceduralAsset({ id: "caption.friendly", kind: "caption-style", name: "Friendly Captions", description: "Large rounded captions tuned for younger readers and language learners.", tags: ["caption", "children", "accessible"], recipe: "caption:speech-card;lines=2;reading-rate=young" }),
+  proceduralAsset({ id: "caption.dark", kind: "caption-style", name: "Low-Glare Captions", description: "Opaque near-white caption field on dark scenes with softened contrast and no glow.", tags: ["caption", "dark", "low-glare"], recipe: "caption:inverse-solid;glow=none;contrast=AA" }),
+];
+
+const music: StarterAsset[] = [
+  bundledAudio({ id: "starter.audio.music.focus-loop", kind: "music", name: "Focus Loop", description: "A sparse, cool suspended bed for quiet diagram and code passages.", tags: ["focused", "technical", "minimal", "loop"], relativePath: "music/focus-loop.wav", contentHash: "4552ed81a04c045d5a135ef312fccf470a69041b2da9569d339b0ecf308114f5", byteSize: 3456044, durationMs: 12000, loopable: true, integratedLufs: -16.1, transcriptLabel: "soft suspended background music" }),
+  bundledAudio({ id: "starter.audio.music.inquiry-loop", kind: "music", name: "Inquiry Loop", description: "A warm, open-ended suspended bed for research and reflection scenes.", tags: ["inquiry", "academic", "documentary", "loop"], relativePath: "music/inquiry-loop.wav", contentHash: "a9fc0088c9a10624bacde27be451ce1865d28986b92189daae4126c5fd29a00d", byteSize: 3456044, durationMs: 12000, loopable: true, integratedLufs: -16.0, transcriptLabel: "warm reflective background music" }),
+];
+
+const soundEffects: StarterAsset[] = [
+  bundledAudio({ id: "starter.audio.stinger.intro-prism", kind: "sound-effect", name: "Intro — Prism", description: "A bright, precise rise for title cards and lesson openings.", tags: ["stinger", "intro", "bright"], relativePath: "stingers/intro-prism.wav", contentHash: "c571409fd8479345b5a8dc170b519158e0820731bd33c766b7d15019b73b66f9", byteSize: 921644, durationMs: 3200, loopable: false, integratedLufs: -16.1, transcriptLabel: "bright opening tones" }),
+  bundledAudio({ id: "starter.audio.stinger.intro-thread", kind: "sound-effect", name: "Intro — Concept Thread", description: "A restrained, curious opening with a gentle call-and-response contour.", tags: ["stinger", "intro", "concept-thread"], relativePath: "stingers/intro-thread.wav", contentHash: "81b0e0c9dcd02ffeae77d5b76c7c3db443459831dcd825297ec4958669a584ba", byteSize: 806444, durationMs: 2800, loopable: false, integratedLufs: -16.3, transcriptLabel: "gentle opening tones" }),
+  bundledAudio({ id: "starter.audio.stinger.outro-arrival", kind: "sound-effect", name: "Outro — Arrival", description: "A warm resolution for recaps, completed sections, and lesson endings.", tags: ["stinger", "outro", "resolved"], relativePath: "stingers/outro-arrival.wav", contentHash: "aa910ac3c57e4b688943dbda7a11db8b4f32543ad31d6d9b8b14676b40f71681", byteSize: 1036844, durationMs: 3600, loopable: false, integratedLufs: -15.2, transcriptLabel: "warm resolving tones" }),
+  bundledAudio({ id: "starter.audio.stinger.outro-reflection", kind: "sound-effect", name: "Outro — Reflection", description: "A slower, softer close for reflective summaries and source cards.", tags: ["stinger", "outro", "reflective"], relativePath: "stingers/outro-reflection.wav", contentHash: "ae2e26aa382ddb3e99de992c583e62a1410665a8cdbf6c9e12f737c6df27509a", byteSize: 1180844, durationMs: 4100, loopable: false, integratedLufs: -15.6, transcriptLabel: "soft reflective closing tones" }),
+  bundledAudio({ id: "starter.audio.sfx.ui-success-a", kind: "sound-effect", name: "Success A", description: "A compact three-note confirmation for successful local actions.", tags: ["ui", "success", "variant-a"], relativePath: "sfx/ui-success-a.wav", contentHash: "d4a610363959dbfa0027e7249b2411c02d011e6d19d34f790f3366bc94a22af4", byteSize: 236204, durationMs: 820, loopable: false, integratedLufs: -15.6, transcriptLabel: "success tones" }),
+  bundledAudio({ id: "starter.audio.sfx.ui-success-b", kind: "sound-effect", name: "Success B", description: "A pitch-shifted companion used to reduce repetitive feedback fatigue.", tags: ["ui", "success", "variant-b"], relativePath: "sfx/ui-success-b.wav", contentHash: "115b6d62cee45df2b15acbeec22506558f5eaa9b83264aceffa9a160092875bd", byteSize: 236204, durationMs: 820, loopable: false, integratedLufs: -15.5, transcriptLabel: "success tones" }),
+  bundledAudio({ id: "starter.audio.sfx.ui-warning-a", kind: "sound-effect", name: "Caution A", description: "A calm two-tone caution cue without an alarm-like edge.", tags: ["ui", "warning", "variant-a"], relativePath: "sfx/ui-warning-a.wav", contentHash: "d0808c02c293373570ed0ed0ecddc97bc37df5631b0cf9aee8075688158616b8", byteSize: 247724, durationMs: 860, loopable: false, integratedLufs: -14.4, transcriptLabel: "calm caution tones" }),
+  bundledAudio({ id: "starter.audio.sfx.ui-warning-b", kind: "sound-effect", name: "Caution B", description: "A companion warning contour for alternating repeated cautions.", tags: ["ui", "warning", "variant-b"], relativePath: "sfx/ui-warning-b.wav", contentHash: "30b6a932ea00036fed31b0d9f96e9b70d5df0b4159a9d443334d3db89e2f4f39", byteSize: 247724, durationMs: 860, loopable: false, integratedLufs: -14.5, transcriptLabel: "calm caution tones" }),
+  bundledAudio({ id: "starter.audio.sfx.emphasis-a", kind: "sound-effect", name: "Emphasis A", description: "A soft upward thread cue for key terms and diagram reveals.", tags: ["emphasis", "concept-thread", "variant-a"], relativePath: "sfx/emphasis-a.wav", contentHash: "19d1dc64015c1b527b44fdc74e30f8becc976a6ea39e6644f11fee0564d26c29", byteSize: 161324, durationMs: 560, loopable: false, integratedLufs: -10.2, transcriptLabel: "soft rising emphasis tone" }),
+  bundledAudio({ id: "starter.audio.sfx.emphasis-b", kind: "sound-effect", name: "Emphasis B", description: "A companion emphasis cue with slightly higher tonal color.", tags: ["emphasis", "concept-thread", "variant-b"], relativePath: "sfx/emphasis-b.wav", contentHash: "92774860b29adf231e3c8c5b7da7e0cd6e222ba6fc711358496404244f0ec50b", byteSize: 161324, durationMs: 560, loopable: false, integratedLufs: -9.9, transcriptLabel: "soft rising emphasis tone" }),
+  bundledAudio({ id: "starter.audio.sfx.quiz-correct-a", kind: "sound-effect", name: "Quiz Correct A", description: "A clear celebratory answer cue that remains restrained under narration.", tags: ["quiz", "success", "variant-a"], relativePath: "sfx/quiz-correct-a.wav", contentHash: "50192ce3ae51d4d4e61264f5270cfdc842a6342d726898d4c6ee68716e2303ba", byteSize: 322604, durationMs: 1120, loopable: false, integratedLufs: -16.2, transcriptLabel: "correct answer tones" }),
+  bundledAudio({ id: "starter.audio.sfx.quiz-correct-b", kind: "sound-effect", name: "Quiz Correct B", description: "An alternate quiz-success phrase for varied practice sequences.", tags: ["quiz", "success", "variant-b"], relativePath: "sfx/quiz-correct-b.wav", contentHash: "a27912c30f054ce9b8f4088fdfd0f209de7495e98ab324a4692b32f33c4e2b53", byteSize: 322604, durationMs: 1120, loopable: false, integratedLufs: -16.7, transcriptLabel: "correct answer tones" }),
+  bundledAudio({ id: "starter.audio.sfx.quiz-reveal-a", kind: "sound-effect", name: "Quiz Reveal A", description: "A neutral reveal cue for showing an answer without implying correctness.", tags: ["quiz", "reveal", "variant-a"], relativePath: "sfx/quiz-reveal-a.wav", contentHash: "357c424d1d156b73c418ede3f397f838e8593660994e75b6916076da95e8d608", byteSize: 224684, durationMs: 780, loopable: false, integratedLufs: -11.2, transcriptLabel: "answer reveal tone" }),
+  bundledAudio({ id: "starter.audio.sfx.quiz-reveal-b", kind: "sound-effect", name: "Quiz Reveal B", description: "A second neutral answer-reveal cue for repeated interactions.", tags: ["quiz", "reveal", "variant-b"], relativePath: "sfx/quiz-reveal-b.wav", contentHash: "c5f7d8c0b1ae3e29e2251f352a440a915421032a8c09f4e54bddd49d88008b92", byteSize: 224684, durationMs: 780, loopable: false, integratedLufs: -12.2, transcriptLabel: "answer reveal tone" }),
+];
+
+const AUDIO_ASSET_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  "music.quiet-focus": "starter.audio.music.focus-loop",
+  "music.open-air": "starter.audio.music.inquiry-loop",
+  "music.seminar-room": "starter.audio.music.inquiry-loop",
+  "music.archive-current": "starter.audio.music.focus-loop",
+  "music.signal-bed": "starter.audio.music.focus-loop",
+  "music.deep-focus": "starter.audio.music.inquiry-loop",
+  "music.pencil-momentum": "starter.audio.music.inquiry-loop",
+  "music.curiosity-loop": "starter.audio.music.focus-loop",
+  "music.story-steps": "starter.audio.music.inquiry-loop",
+  "music.forward-brief": "starter.audio.music.inquiry-loop",
+  "sfx.evidence-place": "starter.audio.sfx.emphasis-b",
+  "sfx.page-settle": "starter.audio.stinger.intro-prism",
+  "sfx.code-step": "starter.audio.sfx.emphasis-b",
+  "sfx.data-arrive": "starter.audio.sfx.ui-success-a",
+  "sfx.timeline-mark": "starter.audio.stinger.intro-prism",
+  "sfx.map-focus": "starter.audio.stinger.outro-reflection",
+  "sfx.character-pop": "starter.audio.sfx.ui-success-b",
+  "sfx.action-check": "starter.audio.sfx.ui-success-a",
+});
+
+function resolveAudioAssetIds(ids: readonly string[]): string[] {
+  return [...new Set(ids.map((id) => AUDIO_ASSET_ALIASES[id] ?? id))];
+}
+
+const BUILT_IN_PRESENTER_PORTRAIT_IDS = generatedPresenters.map((asset) => asset.id);
+
+function themePack(input: Omit<StarterThemePack, "id" | "name" | "audioDefaults" | "presenterDefaults"> & { name: string; music: string[]; sfx: string[]; presenterUsage?: StarterThemePack["presenterDefaults"]["usage"]; presenterPlacement?: StarterThemePack["presenterDefaults"]["placement"]; coverage?: number }): StarterThemePack {
+  const { music, sfx, presenterUsage = "sparse", presenterPlacement = "contextual", coverage = 30, ...pack } = input;
+  const musicAssetIds = resolveAudioAssetIds(music);
+  const soundEffectAssetIds = resolveAudioAssetIds(sfx);
+  return {
+    ...pack, id: `starter.${pack.themeId}`, name: input.name,
+    alternatives: {
+      ...pack.alternatives,
+      presenterPortraitAssetIds: [...new Set([...pack.alternatives.presenterPortraitAssetIds, ...BUILT_IN_PRESENTER_PORTRAIT_IDS])],
+      musicAssetIds,
+      soundEffectAssetIds,
+    },
+    audioDefaults: { musicEnabled: false, effectsEnabled: false, musicGainDb: -26, effectsGainDb: -20, duckingDb: -12 },
+    presenterDefaults: { usage: presenterUsage, placement: presenterPlacement, maximumCoveragePercent: coverage, allowUserPortrait: true },
+  };
+}
+
+const sharedFonts = ["font.bricolage", "font.atkinson", "font.source-serif", "font.source-sans", "font.fraunces", "font.nunito", "font.patrick-hand", "font.lexend", "font.ibm-plex-sans", "font.ibm-plex-serif", "font.noto-sans", "font.noto-serif", "font.jetbrains-mono", "font.stix-math"];
+const sharedSfx = ["starter.audio.stinger.intro-thread", "starter.audio.sfx.emphasis-a", "starter.audio.sfx.quiz-correct-a", "starter.audio.sfx.quiz-reveal-a", "starter.audio.stinger.outro-arrival"];
+
+const themePacks: StarterThemePack[] = [
+  themePack({ themeId: "minimal", name: "Minimal Precision Kit", description: "Quiet precision, clean type, concept-thread continuity, and sparse presenter use.", defaults: { backgroundAssetId: "background.studio-grid", overlayAssetId: "overlay.concept-thread", transitionAssetId: "transition.thread-wipe", displayFontAssetId: "font.bricolage", bodyFontAssetId: "font.atkinson", codeFontAssetId: "font.jetbrains-mono", presenterStyleAssetId: "presenter.precision-guide", lowerThirdAssetId: "lower-third.precision", captionStyleAssetId: "caption.solid" }, alternatives: { backgroundAssetIds: ["background.gallery-white"], transitionAssetIds: ["transition.clean-cut", "transition.soft-crossfade", "transition.reduced-step"], fontAssetIds: sharedFonts, presenterStyleAssetIds: ["presenter.gallery-host", "presenter.voice-only", "presenter.user-portrait"], presenterPortraitAssetIds: ["presenter-portrait.academic-amara-v1", "presenter-portrait.modern-tech-minji-v1"], musicAssetIds: [], soundEffectAssetIds: [] }, music: ["music.quiet-focus", "music.open-air"], sfx: sharedSfx }),
+  themePack({ themeId: "academic", name: "Academic Seminar Kit", description: "Typeset argument, evidence margins, figure discipline, and measured presenter direction.", defaults: { backgroundAssetId: "background.academic-evidence-paper-v1", overlayAssetId: "overlay.figure-margin", transitionAssetId: "transition.page-turn", displayFontAssetId: "font.source-serif", bodyFontAssetId: "font.source-sans", codeFontAssetId: "font.jetbrains-mono", presenterStyleAssetId: "presenter.seminar-scholar", presenterPortraitAssetId: "presenter-portrait.academic-amara-v1", lowerThirdAssetId: "lower-third.editorial", captionStyleAssetId: "caption.document" }, alternatives: { backgroundAssetIds: ["background.seminar-paper", "background.gallery-white"], transitionAssetIds: ["transition.clean-cut", "transition.soft-crossfade", "transition.reduced-step"], fontAssetIds: sharedFonts, presenterStyleAssetIds: ["presenter.precision-guide", "presenter.voice-only", "presenter.user-portrait"], presenterPortraitAssetIds: ["presenter-portrait.documentary-malik-v1", "presenter-portrait.modern-tech-minji-v1"], musicAssetIds: [], soundEffectAssetIds: [] }, music: ["music.seminar-room", "music.archive-current"], sfx: [...sharedSfx, "sfx.evidence-place", "sfx.page-settle"] }),
+  themePack({ themeId: "modern-tech", name: "Modern Systems Kit", description: "Low-glare computation surfaces, state-driven signal motion, exact code type, and compact presenters.", defaults: { backgroundAssetId: "background.modern-tech-signal-v1", overlayAssetId: "overlay.signal-trace", transitionAssetId: "transition.signal-handoff", displayFontAssetId: "font.bricolage", bodyFontAssetId: "font.ibm-plex-sans", codeFontAssetId: "font.jetbrains-mono", presenterStyleAssetId: "presenter.systems-engineer", presenterPortraitAssetId: "presenter-portrait.modern-tech-minji-v1", lowerThirdAssetId: "lower-third.signal", captionStyleAssetId: "caption.dark" }, alternatives: { backgroundAssetIds: ["background.signal-field", "background.nocturne"], transitionAssetIds: ["transition.thread-wipe", "transition.clean-cut", "transition.reduced-step"], fontAssetIds: sharedFonts, presenterStyleAssetIds: ["presenter.nocturne-expert", "presenter.voice-only", "presenter.user-portrait"], presenterPortraitAssetIds: ["presenter-portrait.academic-amara-v1", "presenter-portrait.documentary-malik-v1"], musicAssetIds: [], soundEffectAssetIds: [] }, music: ["music.signal-bed", "music.deep-focus"], sfx: [...sharedSfx, "sfx.code-step", "sfx.data-arrive"] }),
+  themePack({ themeId: "notebook", name: "Working Notebook Kit", description: "Honest construction marks, warm paper, readable handwriting accents, and a margin mentor.", defaults: { backgroundAssetId: "background.ruled-workbook", overlayAssetId: "overlay.working-marks", transitionAssetId: "transition.page-turn", displayFontAssetId: "font.patrick-hand", bodyFontAssetId: "font.atkinson", codeFontAssetId: "font.jetbrains-mono", presenterStyleAssetId: "presenter.notebook-mentor", lowerThirdAssetId: "lower-third.precision", captionStyleAssetId: "caption.document" }, alternatives: { backgroundAssetIds: ["background.seminar-paper", "background.academic-evidence-paper-v1"], transitionAssetIds: ["transition.thread-wipe", "transition.soft-crossfade", "transition.reduced-step"], fontAssetIds: sharedFonts, presenterStyleAssetIds: ["presenter.seminar-scholar", "presenter.voice-only", "presenter.user-portrait"], presenterPortraitAssetIds: ["presenter-portrait.academic-amara-v1", "presenter-portrait.playful-lucia-v1"], musicAssetIds: [], soundEffectAssetIds: [] }, music: ["music.pencil-momentum", "music.quiet-focus"], sfx: [...sharedSfx, "sfx.page-settle"] }),
+  themePack({ themeId: "documentary", name: "Documentary Evidence Kit", description: "Cinematic restraint, source-safe slates, chronology cues, and evidence-conscious hosting.", defaults: { backgroundAssetId: "background.archive-slate", overlayAssetId: "overlay.figure-margin", transitionAssetId: "transition.dip-to-ink", displayFontAssetId: "font.source-serif", bodyFontAssetId: "font.source-sans", codeFontAssetId: "font.jetbrains-mono", presenterStyleAssetId: "presenter.documentary-host", presenterPortraitAssetId: "presenter-portrait.documentary-malik-v1", lowerThirdAssetId: "lower-third.editorial", captionStyleAssetId: "caption.document" }, alternatives: { backgroundAssetIds: ["background.nocturne", "background.academic-evidence-paper-v1"], transitionAssetIds: ["transition.clean-cut", "transition.soft-crossfade", "transition.reduced-step"], fontAssetIds: sharedFonts, presenterStyleAssetIds: ["presenter.seminar-scholar", "presenter.voice-only", "presenter.user-portrait"], presenterPortraitAssetIds: ["presenter-portrait.academic-amara-v1", "presenter-portrait.playful-lucia-v1"], musicAssetIds: [], soundEffectAssetIds: [] }, music: ["music.archive-current", "music.seminar-room"], sfx: [...sharedSfx, "sfx.evidence-place", "sfx.timeline-mark", "sfx.map-focus"] }),
+  themePack({ themeId: "playful", name: "Creative Curiosity Kit", description: "Bold quiet shapes, warm expressive type, semantic motion, and a controlled creative coach.", defaults: { backgroundAssetId: "background.playful-paper-cut-v1", overlayAssetId: "overlay.working-marks", transitionAssetId: "transition.shape-match", displayFontAssetId: "font.fraunces", bodyFontAssetId: "font.nunito", codeFontAssetId: "font.jetbrains-mono", presenterStyleAssetId: "presenter.creative-coach", presenterPortraitAssetId: "presenter-portrait.playful-lucia-v1", lowerThirdAssetId: "lower-third.friendly", captionStyleAssetId: "caption.friendly" }, alternatives: { backgroundAssetIds: ["background.shape-garden", "background.story-meadow", "background.gallery-white"], transitionAssetIds: ["transition.thread-wipe", "transition.soft-crossfade", "transition.reduced-step"], fontAssetIds: sharedFonts, presenterStyleAssetIds: ["presenter.story-guide", "presenter.voice-only", "presenter.user-portrait"], presenterPortraitAssetIds: ["presenter-portrait.academic-amara-v1", "presenter-portrait.modern-tech-minji-v1"], musicAssetIds: [], soundEffectAssetIds: [] }, music: ["music.curiosity-loop", "music.story-steps"], sfx: [...sharedSfx, "sfx.character-pop"] , presenterUsage: "balanced", coverage: 34 }),
+  themePack({ themeId: "childrens-education", name: "Story Learning Kit", description: "Large readable forms, child-safe motion and audio, a friendly illustrated guide, and generous captions.", defaults: { backgroundAssetId: "background.story-meadow", transitionAssetId: "transition.shape-match", displayFontAssetId: "font.fraunces", bodyFontAssetId: "font.lexend", codeFontAssetId: "font.jetbrains-mono", presenterStyleAssetId: "presenter.story-guide", lowerThirdAssetId: "lower-third.friendly", captionStyleAssetId: "caption.friendly" }, alternatives: { backgroundAssetIds: ["background.shape-garden", "background.playful-paper-cut-v1"], transitionAssetIds: ["transition.soft-crossfade", "transition.thread-wipe", "transition.reduced-step"], fontAssetIds: sharedFonts, presenterStyleAssetIds: ["presenter.creative-coach", "presenter.voice-only", "presenter.user-portrait"], presenterPortraitAssetIds: ["presenter-portrait.playful-lucia-v1"], musicAssetIds: [], soundEffectAssetIds: [] }, music: ["music.story-steps", "music.curiosity-loop"], sfx: [...sharedSfx, "sfx.character-pop"], presenterUsage: "frequent", coverage: 38 }),
+  themePack({ themeId: "corporate-training", name: "Professional Training Kit", description: "Action-oriented composition, explicit roles, calm professional sound, and policy-safe presenters.", defaults: { backgroundAssetId: "background.training-canvas", overlayAssetId: "overlay.concept-thread", transitionAssetId: "transition.thread-wipe", displayFontAssetId: "font.ibm-plex-serif", bodyFontAssetId: "font.ibm-plex-sans", codeFontAssetId: "font.jetbrains-mono", presenterStyleAssetId: "presenter.training-lead", lowerThirdAssetId: "lower-third.training", captionStyleAssetId: "caption.solid" }, alternatives: { backgroundAssetIds: ["background.gallery-white", "background.studio-grid"], transitionAssetIds: ["transition.clean-cut", "transition.soft-crossfade", "transition.reduced-step"], fontAssetIds: sharedFonts, presenterStyleAssetIds: ["presenter.precision-guide", "presenter.voice-only", "presenter.user-portrait"], presenterPortraitAssetIds: ["presenter-portrait.academic-amara-v1", "presenter-portrait.modern-tech-minji-v1"], musicAssetIds: [], soundEffectAssetIds: [] }, music: ["music.forward-brief", "music.quiet-focus"], sfx: [...sharedSfx, "sfx.action-check"] }),
+  themePack({ themeId: "light", name: "Bright Editorial Kit", description: "Airy editorial canvas, precise concept continuity, accessible type, and optional gallery hosting.", defaults: { backgroundAssetId: "background.gallery-white", overlayAssetId: "overlay.concept-thread", transitionAssetId: "transition.thread-wipe", displayFontAssetId: "font.bricolage", bodyFontAssetId: "font.atkinson", codeFontAssetId: "font.jetbrains-mono", presenterStyleAssetId: "presenter.gallery-host", lowerThirdAssetId: "lower-third.precision", captionStyleAssetId: "caption.solid" }, alternatives: { backgroundAssetIds: ["background.studio-grid", "background.academic-evidence-paper-v1"], transitionAssetIds: ["transition.clean-cut", "transition.soft-crossfade", "transition.reduced-step"], fontAssetIds: sharedFonts, presenterStyleAssetIds: ["presenter.precision-guide", "presenter.voice-only", "presenter.user-portrait"], presenterPortraitAssetIds: ["presenter-portrait.academic-amara-v1", "presenter-portrait.playful-lucia-v1"], musicAssetIds: [], soundEffectAssetIds: [] }, music: ["music.open-air", "music.quiet-focus"], sfx: sharedSfx }),
+  themePack({ themeId: "dark", name: "Deep Focus Kit", description: "Stable low-glare working space, restrained edge light, accessible inverse captions, and technical hosting.", defaults: { backgroundAssetId: "background.nocturne", overlayAssetId: "overlay.concept-thread", transitionAssetId: "transition.dip-to-ink", displayFontAssetId: "font.bricolage", bodyFontAssetId: "font.atkinson", codeFontAssetId: "font.jetbrains-mono", presenterStyleAssetId: "presenter.nocturne-expert", lowerThirdAssetId: "lower-third.signal", captionStyleAssetId: "caption.dark" }, alternatives: { backgroundAssetIds: ["background.signal-field", "background.modern-tech-signal-v1"], transitionAssetIds: ["transition.clean-cut", "transition.signal-handoff", "transition.reduced-step"], fontAssetIds: sharedFonts, presenterStyleAssetIds: ["presenter.systems-engineer", "presenter.voice-only", "presenter.user-portrait"], presenterPortraitAssetIds: ["presenter-portrait.modern-tech-minji-v1", "presenter-portrait.documentary-malik-v1"], musicAssetIds: [], soundEffectAssetIds: [] }, music: ["music.deep-focus", "music.signal-bed"], sfx: [...sharedSfx, "sfx.code-step", "sfx.data-arrive"] }),
+];
+
+const userAssetSlots: UserAssetSlot[] = [
+  { id: "upload.background", kind: "background", name: "Backgrounds", description: "Upload still or loopable visual backgrounds; text-safe zones are detected and can be adjusted per target.", acceptedMediaTypes: ["image/png", "image/jpeg", "image/webp", "video/mp4", "video/webm"], acceptedExtensions: [".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm"], maximumBytes: 536870912, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: false, normalization: "image-srgb", minimumDimensions: { width: 1920, height: 1080 }, maximumDurationMs: 60000, guidance: ["Use high-resolution assets with quiet areas for text.", "Video backgrounds must loop cleanly and avoid flashes."] },
+  { id: "upload.overlay", kind: "overlay", name: "Overlays and textures", description: "Upload transparent texture, grain, frame, or motif layers.", acceptedMediaTypes: ["image/png", "image/webp"], acceptedExtensions: [".png", ".webp"], maximumBytes: 134217728, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: false, normalization: "image-srgb", minimumDimensions: { width: 1024, height: 1024 }, guidance: ["Use transparent PNG or WebP.", "Avoid texture under small text."] },
+  { id: "upload.font", kind: "font", name: "Fonts", description: "Upload locally licensed fonts for a project or brand kit; font files are sanitized and subset for export.", acceptedMediaTypes: ["font/ttf", "font/otf", "font/woff", "font/woff2"], acceptedExtensions: [".ttf", ".otf", ".woff", ".woff2"], maximumBytes: 52428800, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: false, normalization: "font-sanitized", guidance: ["Confirm embedding and redistribution rights.", "Provide Devanagari coverage for Hindi projects when needed."] },
+  { id: "upload.music", kind: "music", name: "Music", description: "Upload owned or licensed music stems and loops; loudness and looping are analyzed before use.", acceptedMediaTypes: ["audio/wav", "audio/flac", "audio/mpeg", "audio/mp4"], acceptedExtensions: [".wav", ".flac", ".mp3", ".m4a"], maximumBytes: 1073741824, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: false, normalization: "audio-48khz", maximumDurationMs: 1800000, guidance: ["Prefer WAV or FLAC masters.", "Music is off by default and automatically ducks beneath narration."] },
+  { id: "upload.sound-effect", kind: "sound-effect", name: "Sound effects", description: "Upload owned or licensed one-shots, ambiences, and transition cues.", acceptedMediaTypes: ["audio/wav", "audio/flac", "audio/mpeg"], acceptedExtensions: [".wav", ".flac", ".mp3"], maximumBytes: 268435456, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: false, normalization: "audio-48khz", maximumDurationMs: 120000, guidance: ["Avoid harsh transients under narration.", "Provide a caption label for meaningful sounds."] },
+  { id: "upload.presenter-portrait-synthetic", kind: "presenter-portrait", name: "Synthetic presenter portraits", description: "Upload an original fictional or synthetic character portrait for lip-sync and presenter scenes.", acceptedMediaTypes: ["image/png", "image/jpeg", "image/webp"], acceptedExtensions: [".png", ".jpg", ".jpeg", ".webp"], maximumBytes: 104857600, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: false, normalization: "image-srgb", minimumDimensions: { width: 1024, height: 1024 }, guidance: ["Use a front-facing, evenly lit image with visible shoulders.", "Record the generator, model, prompt provenance, and C2PA state when available."] },
+  { id: "upload.presenter-portrait-real", kind: "presenter-portrait", name: "Real-person presenter portraits", description: "Upload a consented real-person portrait with an immutable likeness and distribution consent record.", acceptedMediaTypes: ["image/png", "image/jpeg", "image/webp"], acceptedExtensions: [".png", ".jpg", ".jpeg", ".webp"], maximumBytes: 104857600, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: true, normalization: "image-srgb", minimumDimensions: { width: 1024, height: 1024 }, guidance: ["Use a front-facing, evenly lit image with visible shoulders.", "Consent scope must cover portrait animation, lip-sync, and distribution."] },
+  { id: "upload.presenter-video", kind: "presenter-video", name: "Presenter clips", description: "Upload consented presenter footage for compositing or identity-reference workflows.", acceptedMediaTypes: ["video/mp4", "video/quicktime", "video/webm"], acceptedExtensions: [".mp4", ".mov", ".webm"], maximumBytes: 2147483648, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: true, normalization: "video-rec709", minimumDimensions: { width: 1080, height: 1080 }, maximumDurationMs: 1800000, guidance: ["Use steady framing and clean speech-free footage where possible.", "Consent and distribution scope are checked before export."] },
+  { id: "upload.logo", kind: "logo", name: "Logos and brand marks", description: "Upload brand marks with light and dark variants for intros, lower thirds, and credits.", acceptedMediaTypes: ["image/png", "image/webp", "image/svg+xml"], acceptedExtensions: [".png", ".webp", ".svg"], maximumBytes: 52428800, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: false, normalization: "image-srgb", guidance: ["SVG is sanitized and scripts, remote references, and foreign objects are rejected.", "Keep clear-space guidance in the brand kit."] },
+  { id: "upload.lower-third", kind: "lower-third", name: "Lower-third design", description: "Import a data-only lower-third token preset or a flattened transparent frame.", acceptedMediaTypes: ["application/json", "image/png", "image/webp"], acceptedExtensions: [".json", ".png", ".webp"], maximumBytes: 52428800, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: false, normalization: "data-only", guidance: ["Executable templates are not accepted.", "Keep text and marks within safe areas."] },
+  { id: "upload.caption-style", kind: "caption-style", name: "Caption style", description: "Import a closed data-only caption token preset with font, color, placement, and safe-area settings.", acceptedMediaTypes: ["application/json"], acceptedExtensions: [".json"], maximumBytes: 1048576, multiple: true, rightsAttestationRequired: true, provenanceRequired: true, consentRequired: false, normalization: "data-only", guidance: ["WCAG contrast and collision checks still apply.", "One-, two-, and three-line stress samples are validated before use."] },
+];
+
+/**
+ * The shipped catalog intentionally contains no opaque media placeholders disguised as assets.
+ * Procedural/style records are immediately usable; open fonts are locally resolved; bundled audio
+ * is hash-bound and export-cleared while remaining disabled until a user explicitly enables it.
+ */
+export const BUILT_IN_STARTER_KIT: StarterKitManifest = {
+  schemaVersion: 1,
+  id: "alystria.starter-kit.core",
+  version: "1.0.0",
+  name: "Alystria Core Starter Kit",
+  description: "A rights-aware local starter library for ten themes, with deterministic surfaces and transitions, open-font choices, presenter direction presets, audio creative briefs, and safe user-import slots.",
+  defaults: { musicEnabled: false, effectsEnabled: false, remoteFetchDuringRender: false, unknownRightsBlockExport: true },
+  assets: [...backgrounds, ...generatedBackgrounds, ...overlays, ...transitions, ...fonts, ...presenterStyles, ...generatedPresenters, ...surfaceStyles, ...music, ...soundEffects],
+  themePacks,
+  userAssetSlots,
+};
+
+export const STARTER_ASSET_COUNTS = Object.freeze(BUILT_IN_STARTER_KIT.assets.reduce<Record<string, number>>((counts, asset) => {
+  counts[asset.kind] = (counts[asset.kind] ?? 0) + 1;
+  return counts;
+}, {}));

@@ -59,6 +59,7 @@ def open_coordinator(tmp_path: Path) -> tuple[ProjectStore, GenerationCoordinato
 def test_presenter_direction_uses_only_explicit_semantic_placements() -> None:
     assert _presenter_direction({}).placement is PresenterPlacement.PICTURE_IN_PICTURE
     assert _presenter_direction({"presenterPlacement": "full_frame"}).placement is PresenterPlacement.FULL_FRAME
+    assert _presenter_direction({"presenterPlacement": "picture-in-picture"}).placement is PresenterPlacement.PICTURE_IN_PICTURE
     assert _presenter_fit({"presenterFit": "contain"}) == "contain"
     with pytest.raises(ValueError, match="Unsupported presenter placement"):
         _presenter_direction({"presenterPlacement": "arbitrary-filter-coordinate"})

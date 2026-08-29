@@ -64,6 +64,28 @@ pub struct SaveProjectSnapshotRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SaveProjectCustomizationRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub customization: Value,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectCustomizationReceipt {
+    pub project_id: Uuid,
+    pub head_revision_id: String,
+    pub revision_number: u64,
+    pub root_hash: String,
+    pub updated_at: DateTime<Utc>,
+    pub customization: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSnapshotReceipt {
     pub project_id: Uuid,
@@ -153,6 +175,194 @@ pub struct SourceImportReceipt {
     pub attribution: Option<String>,
     pub evidence: u64,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ProjectAssetKind {
+    PresenterPortrait,
+    PresenterAudio,
+    BackgroundImage,
+    Font,
+    Music,
+    SoundEffect,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AssetRightsStatus {
+    Owned,
+    Licensed,
+    PublicDomain,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AssetPermission {
+    Allowed,
+    NotAllowed,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AssetRightsInput {
+    pub status: AssetRightsStatus,
+    #[serde(default)]
+    pub creator: Option<String>,
+    #[serde(default)]
+    pub license: Option<String>,
+    #[serde(default)]
+    pub attribution: Option<String>,
+    pub commercial_use: AssetPermission,
+    pub redistribution: AssetPermission,
+    pub model_input: AssetPermission,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PresenterIdentityType {
+    Synthetic,
+    RealPerson,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ConsentAuthority {
+    SelfConsent,
+    ParentOrGuardian,
+    AuthorizedRepresentative,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub enum PresenterConsentGrant {
+    PortraitAnimation,
+    VideoReenactment,
+    PublicDistribution,
+    CommercialDistribution,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PresenterDistributionScope {
+    PrivatePreview,
+    PublicNonCommercial,
+    PublicCommercial,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresenterConsentAttestation {
+    pub subject_display_name: String,
+    pub attestor_display_name: String,
+    pub authority: ConsentAuthority,
+    pub grants: Vec<PresenterConsentGrant>,
+    pub distribution_scope: PresenterDistributionScope,
+    pub accepted: bool,
+    pub disclosure_required: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresenterAssetInput {
+    pub identity_type: PresenterIdentityType,
+    pub display_name: String,
+    pub synthetic_origin_attested: bool,
+    #[serde(default)]
+    pub consent: Option<PresenterConsentAttestation>,
+    pub select_after_import: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectAssetImportRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub kind: ProjectAssetKind,
+    pub filename: String,
+    pub mime_type: String,
+    pub privacy: SourcePrivacy,
+    pub rights: AssetRightsInput,
+    #[serde(default)]
+    pub presenter: Option<PresenterAssetInput>,
+    pub content_base64: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedAssetRef {
+    pub id: String,
+    pub kind: ProjectAssetKind,
+    pub sha256: String,
+    pub byte_size: u64,
+    pub media_type: String,
+    pub original_filename: String,
+    pub state: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedAssetProvenance {
+    pub id: String,
+    pub origin: String,
+    pub rights_status: AssetRightsStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub creator: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<String>,
+    pub export_eligible: bool,
+    pub blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresenterProfileRef {
+    pub profile_id: String,
+    pub display_name: String,
+    pub portrait_artifact_id: String,
+    pub identity_type: PresenterIdentityType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consent_record_id: Option<String>,
+    pub disclosure_required: bool,
+    pub authorized_distribution_scope: PresenterDistributionScope,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectAssetImportReceipt {
+    pub project_id: Uuid,
+    pub head_revision_id: String,
+    pub revision_number: u64,
+    pub artifact: ImportedAssetRef,
+    pub provenance: ImportedAssetProvenance,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presenter_profile: Option<PresenterProfileRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_presenter_profile_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SelectPresenterProfileRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub profile_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectPresenterProfileReceipt {
+    pub project_id: Uuid,
+    pub head_revision_id: String,
+    pub revision_number: u64,
+    pub selected_presenter_profile_id: String,
+    pub profile: PresenterProfileRef,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

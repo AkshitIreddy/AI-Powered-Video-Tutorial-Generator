@@ -135,6 +135,10 @@ importers:
         version: 3.2.4(@types/node@24.3.0)(jsdom@26.1.0)
 
   packages/themes:
+    dependencies:
+      '@alystria/contracts':
+        specifier: workspace:*
+        version: link:../contracts
     devDependencies:
       '@types/node':
         specifier: 24.3.0

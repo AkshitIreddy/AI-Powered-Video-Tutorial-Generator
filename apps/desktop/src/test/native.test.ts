@@ -12,6 +12,7 @@ import {
   jobStatus,
   masterExport,
   projectCreate,
+  projectCustomizationSave,
   projectExportArchive,
   projectOpen,
   projectHistoryUndo,
@@ -181,6 +182,43 @@ describe("native desktop bridge", () => {
 
     expect(tauri.invoke).toHaveBeenNthCalledWith(1, "provider_routing_policy_get", { input: identity });
     expect(tauri.invoke).toHaveBeenNthCalledWith(2, "provider_routing_policy_save", { input: save });
+  });
+
+  it("saves visual-bible choices through the narrow customization command", async () => {
+    const input = {
+      projectId: "019d0000-0000-7000-8000-000000000041",
+      projectDirectory: "C:/Users/Akshit/Alystria/Projects/customization",
+      expectedHeadRevisionId: "rev_1",
+      customization: {
+        fontPairId: "editorial" as const,
+        displayFont: "Bricolage Grotesque",
+        bodyFont: "Atkinson Hyperlegible Next",
+        typeScale: 100,
+        lineHeight: "balanced" as const,
+        fonts: { displayAssetId: null, bodyAssetId: null },
+        paletteId: "precision" as const,
+        colors: { paper: "#F7F8FC", ink: "#151827", accent: "#5658E8", evidence: "#168F88" },
+        backgroundMode: "paper" as const,
+        backgroundAssetId: null,
+        materialStrength: 28,
+        density: "balanced" as const,
+        contrast: "standard" as const,
+        reducedMotion: false,
+        sceneTreatment: "edge-to-edge" as const,
+        cornerRadius: 14,
+        shadowStrength: 24,
+        captions: { position: "auto" as const, style: "soft-panel" as const, size: 100, safeInset: 8, textColor: "#FFFFFF", panelColor: "#151827", maxLines: 2 as const },
+        presenter: { assetId: null, placement: "off" as const, side: "right" as const, scale: 72, crop: "portrait" as const, frame: "soft" as const },
+        audio: { musicAssetId: null, sfxAssetId: null, musicLevel: 12, sfxLevel: 28, narrationDucking: 72 },
+        assets: [],
+      },
+      message: "Updated visual bible customization",
+    };
+    tauri.invoke.mockResolvedValueOnce({ projectId: input.projectId, headRevisionId: "rev_2", revisionNumber: 2, customization: input.customization });
+
+    await projectCustomizationSave(input);
+
+    expect(tauri.invoke).toHaveBeenCalledWith("project_customization_save", { input });
   });
 
   it("persists reviewed routing as a separate browser project revision", async () => {

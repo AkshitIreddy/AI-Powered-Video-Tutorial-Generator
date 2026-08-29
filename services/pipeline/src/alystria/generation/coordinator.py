@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 import uuid
 from pathlib import Path
@@ -14,6 +15,7 @@ from alystria.jobs.runtime import TaskHandler
 from alystria.project import ProjectStore
 from alystria.project.database import transaction
 from alystria.project.models import utc_now
+from alystria.project_customization import validate_customization
 from alystria.providers import parse_routing_policy
 from alystria.security.files import detect_mime
 from alystria.sources import (
@@ -24,6 +26,8 @@ from alystria.sources import (
 )
 
 from .adapters import GenerationMediaClient, RendererClient
+from .audio_assets import resolve_audio_customization
+from .font_customization import resolve_font_customization
 from .models import (
     ALL_STAGES,
     POST_APPROVAL_STAGES,
@@ -36,6 +40,7 @@ from .models import (
     SourceSpec,
     StageStatus,
 )
+from .visual_customization import resolve_visual_customization
 from .workflow import GenerationWorkflow
 
 
@@ -570,6 +575,8 @@ def request_from_desktop(
     params: dict[str, Any],
     *,
     document_extractor: DocumentExtractor | None = None,
+    starter_audio_root: Path | None = None,
+    starter_visual_root: Path | None = None,
 ) -> GenerationRequest:
     """Translate the narrow Rust desktop request plus current project snapshot.
 
@@ -639,6 +646,33 @@ def request_from_desktop(
         if isinstance(routing_value, dict)
         else None
     )
+    if starter_audio_root is None:
+        configured_starter_root = os.environ.get("ALYSTRIA_STARTER_AUDIO_ROOT")
+        starter_audio_root = (
+            None if configured_starter_root is None else Path(configured_starter_root)
+        )
+    audio_customization = resolve_audio_customization(
+        store,
+        snapshot,
+        starter_audio_root=starter_audio_root,
+    )
+    customization_value = snapshot.get("customization")
+    customization = (
+        validate_customization(customization_value)
+        if customization_value is not None
+        else None
+    )
+    if starter_visual_root is None:
+        configured_visual_root = os.environ.get("ALYSTRIA_STARTER_VISUAL_ROOT")
+        starter_visual_root = (
+            None if configured_visual_root is None else Path(configured_visual_root)
+        )
+    visual_customization = resolve_visual_customization(
+        store,
+        snapshot,
+        starter_visual_root=starter_visual_root,
+    )
+    font_customization = resolve_font_customization(store, snapshot)
     return GenerationRequest(
         topic=topic,
         audience=audience,
@@ -647,6 +681,12 @@ def request_from_desktop(
         experience=ExperienceLevel(experience_value),
         grounding_mode=GroundingMode(grounding),
         sources=tuple(sources),
+        presenter_mode=(
+            "auto"
+            if customization is None
+            or bool(visual_customization.get("presenter", {}).get("enabled"))
+            else "off"
+        ),
         deterministic_seed=int(snapshot.get("deterministicSeed", 0)),
         hard_budget_micros=minor_units * 10_000,
         metadata={
@@ -659,6 +699,10 @@ def request_from_desktop(
             "budgetCurrency": budget_value.get("currency", "USD"),
             "requireKnownPricing": bool(budget_value.get("requireKnownPricing", True)),
             "providerRoutingPolicy": routing_policy,
+            "audioCustomization": audio_customization,
+            "visualCustomization": visual_customization,
+            "fontCustomization": font_customization,
+            "customization": customization,
         },
     )
 

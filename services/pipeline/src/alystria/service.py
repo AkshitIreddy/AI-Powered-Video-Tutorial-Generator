@@ -44,6 +44,8 @@ from .jobs import (
 )
 from .native_controls import NativeControlCoordinator, native_job_receipt
 from .project import ProjectHistory, ProjectStore, export_project, import_project
+from .project_assets import import_project_asset, select_presenter_profile
+from .project_customization import save_project_customization
 from .providers import ProviderRuntimeFactory, parse_routing_policy
 from .security.files import ImportLimits, validate_file
 
@@ -92,6 +94,7 @@ class PipelineService:
             "project.initialize": self.project_initialize,
             "project.snapshot.get": self.project_snapshot_get,
             "project.snapshot.save": self.project_snapshot_save,
+            "project.customization.save": self.project_customization_save,
             "project.history.get": self.project_history_get,
             "project.history.undo": self.project_history_undo,
             "project.history.redo": self.project_history_redo,
@@ -105,6 +108,8 @@ class PipelineService:
             "project.export": self.project_export,
             "project.import": self.project_import,
             "source.import": self.source_import,
+            "asset.import": self.asset_import,
+            "presenter.profile.select": self.presenter_profile_select,
             "provider.routingPolicy.get": self.provider_routing_policy_get,
             "provider.routingPolicy.save": self.provider_routing_policy_save,
             "job.enqueue": self.job_enqueue,
@@ -205,6 +210,22 @@ class PipelineService:
                 raise RevisionConflictError(
                     f"Expected head {expected_head}, but current head is {actual}"
                 )
+            # Asset ledgers, provenance, and consent records are pipeline-owned
+            # trust-boundary data.  The webview persists visual-bible choices
+            # but must never erase or rewrite these records when saving an
+            # otherwise portable project snapshot after an asset import.
+            for protected_field in (
+                "customization",
+                "mediaAssets",
+                "assetProvenance",
+                "presenterProfiles",
+                "consentRecords",
+                "selectedPresenterProfileId",
+            ):
+                if protected_field in previous_head.snapshot:
+                    snapshot[protected_field] = copy.deepcopy(
+                        previous_head.snapshot[protected_field]
+                    )
             revision = store.create_revision(
                 snapshot=snapshot,
                 kind="edit",
@@ -213,6 +234,11 @@ class PipelineService:
             )
             history = ProjectHistory(store).record_new_revision(expected_head, revision)
             return {**_snapshot_receipt(revision), "history": history.to_dict()}
+
+    def project_customization_save(self, params: dict[str, Any]) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return save_project_customization(store, params)
 
     def project_history_get(self, params: dict[str, Any]) -> dict[str, Any]:
         project_id = _required_uuid(params, "projectId")
@@ -397,6 +423,16 @@ class PipelineService:
                 "headRevisionId": revision.revision_id,
                 "revisionNumber": revision.number,
             }
+
+    def asset_import(self, params: dict[str, Any]) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return import_project_asset(store, params)
+
+    def presenter_profile_select(self, params: dict[str, Any]) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return select_presenter_profile(store, params)
 
     def project_import(self, params: dict[str, Any]) -> dict[str, Any]:
         with import_project(

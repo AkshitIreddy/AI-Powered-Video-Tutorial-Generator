@@ -33,6 +33,19 @@ export interface CaptionCue {
   readonly position?: "top" | "bottom";
 }
 
+export interface CaptionRenderStyle {
+  readonly position: "auto" | "top" | "lower-third";
+  readonly style: "soft-panel" | "solid-panel" | "outline";
+  readonly sizePercent: number;
+  readonly safeInsetPercent: number;
+  readonly maxLines: 1 | 2 | 3;
+  readonly textColor: string;
+  readonly panelColor: string;
+  /** Closed font-family name. Uploaded font bytes are not transported yet. */
+  readonly fontFamily: string;
+  readonly fallbackFamilies: readonly string[];
+}
+
 export interface SceneContent {
   readonly eyebrow?: string;
   readonly title: string;
@@ -49,7 +62,58 @@ export interface ResolvedScene {
   readonly content: SceneContent;
   readonly captions?: readonly CaptionCue[];
   readonly accessibilityDescription?: string;
+  /** Semantic, hash-bound image references used by this scene. */
+  readonly visualAssets?: readonly SceneVisualAssetReference[];
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
+}
+
+export type SceneVisualAssetRole = "background" | "primary" | "secondary" | "presenter-portrait";
+
+export interface SceneVisualAssetReference {
+  /** Stable manifest-local id. It is not a path and is safe to persist in scene data. */
+  readonly assetId: string;
+  readonly sha256: string;
+  readonly role: SceneVisualAssetRole;
+  readonly alt: string;
+  readonly fit?: "cover" | "contain";
+}
+
+export type VisualAssetMediaType = "image/png" | "image/jpeg" | "image/webp";
+
+export interface VisualAssetInput {
+  /** Stable id referenced by ResolvedScene.visualAssets. */
+  readonly id: string;
+  /** Plain absolute path to an attempt-local, CAS-materialized regular file. */
+  readonly path: string;
+  readonly sha256: string;
+  readonly mediaType: VisualAssetMediaType;
+}
+
+export type FontAssetMediaType = "font/ttf" | "font/otf" | "font/woff";
+export type FontAssetRole = "display" | "body" | "code" | "caption";
+export type FontEmbeddingPermission = "installable" | "previewPrint" | "editable";
+
+/** Hash-bound, fully inspected font staged for this render attempt only. */
+export interface FontAssetInput {
+  readonly id: string;
+  readonly path: string;
+  readonly sha256: string;
+  readonly mediaType: FontAssetMediaType;
+  /** Closed deterministic alias: AlystriaImported- plus 16 lowercase hash digits. */
+  readonly family: string;
+  readonly roles: readonly FontAssetRole[];
+  readonly weight: number | readonly [number, number];
+  readonly style: "normal" | "italic";
+  readonly inspectionStatus: "metadata-inspected";
+  readonly embeddingPermission: FontEmbeddingPermission;
+  readonly exportEligible: true;
+}
+
+export interface RenderTypography {
+  readonly displayFamily: string;
+  readonly bodyFamily: string;
+  readonly codeFamily: string;
+  readonly captionFamily: string;
 }
 
 export interface RenderManifest {
@@ -60,6 +124,13 @@ export interface RenderManifest {
   readonly scenes: readonly ResolvedScene[];
   readonly outputDirectory: string;
   readonly audioInputs?: readonly AudioInput[];
+  readonly captionStyle?: CaptionRenderStyle;
+  /** Attempt-local copies of immutable CAS image objects. */
+  readonly visualAssets?: readonly VisualAssetInput[];
+  /** Attempt-local copies of immutable, inspected and export-cleared fonts. */
+  readonly fontAssets?: readonly FontAssetInput[];
+  /** Closed family aliases/names used by scene and caption typography. */
+  readonly typography?: RenderTypography;
   /**
    * Immutable local presenter clips composited by FFmpeg after authoritative
    * Chromium frame capture. Clips are bound to one presenter scene and their
@@ -70,11 +141,21 @@ export interface RenderManifest {
 }
 
 export interface AudioInput {
+  /** Unique timeline cue id. */
+  readonly id: string;
+  /** Stable project/starter asset id; never interpreted as a path. */
+  readonly assetId: string;
   readonly path: string;
+  readonly sha256: string;
+  readonly mediaType: "audio/wav" | "audio/x-wav" | "audio/flac" | "audio/mpeg" | "audio/mp4" | "audio/ogg" | "audio/webm";
   readonly role: "narration" | "music" | "sfx" | "audio-description";
   readonly startTick: number;
   readonly endTick?: number;
   readonly gainDb?: number;
+  /** Repeat the source until endTick. Valid only for music. */
+  readonly loop?: boolean;
+  /** Maximum side-chain gain reduction while voice is active. */
+  readonly duckingDb?: number;
 }
 
 export type PresenterVideoPlacement = "full" | "picture-in-picture" | "split-left" | "split-right";
@@ -159,6 +240,26 @@ export function assertResolvedScene(scene: ResolvedScene): void {
     captionStart = cue.startTick;
     captionIds.add(cue.id);
   }
+  const visualIds = new Set<string>();
+  const visualRoles = new Set<SceneVisualAssetRole>(["background", "primary", "secondary", "presenter-portrait"]);
+  for (const [index, visual] of (scene.visualAssets ?? []).entries()) {
+    if (!visual.assetId.trim() || visualIds.has(visual.assetId)) {
+      throw new TypeError(`Scene ${scene.id} visual asset ${index} id must be unique and non-empty`);
+    }
+    if (!/^[0-9a-f]{64}$/i.test(visual.sha256)) {
+      throw new TypeError(`Scene ${scene.id} visual asset ${visual.assetId} must have a 64-character SHA-256 hash`);
+    }
+    if (!visualRoles.has(visual.role)) {
+      throw new TypeError(`Scene ${scene.id} visual asset ${visual.assetId} has unsupported role ${String(visual.role)}`);
+    }
+    if (!visual.alt.trim() || visual.alt.length > 1_000) {
+      throw new TypeError(`Scene ${scene.id} visual asset ${visual.assetId} needs bounded alternative text`);
+    }
+    if (visual.fit !== undefined && visual.fit !== "cover" && visual.fit !== "contain") {
+      throw new TypeError(`Scene ${scene.id} visual asset ${visual.assetId} has unsupported fit ${String(visual.fit)}`);
+    }
+    visualIds.add(visual.assetId);
+  }
 }
 
 export function assertRenderManifest(manifest: RenderManifest): void {
@@ -177,9 +278,107 @@ export function assertRenderManifest(manifest: RenderManifest): void {
     duration += scene.durationTicks;
     if (!Number.isSafeInteger(duration)) throw new RangeError("Manifest duration exceeds JavaScript safe integer range");
   }
+  const visualInputs = new Map<string, VisualAssetInput>();
+  const supportedVisualMediaTypes = new Set<VisualAssetMediaType>(["image/png", "image/jpeg", "image/webp"]);
+  for (const [index, input] of (manifest.visualAssets ?? []).entries()) {
+    if (!input.id.trim() || visualInputs.has(input.id)) {
+      throw new TypeError(`Visual asset ${index} id must be unique and non-empty`);
+    }
+    const windowsDrivePath = /^[a-z]:[\\/]/i.test(input.path);
+    const unixAbsolutePath = /^\//.test(input.path);
+    const uriScheme = /^[a-z][a-z0-9+.-]*:/i.test(input.path) && !windowsDrivePath;
+    if (!input.path.trim() || /[\u0000\r\n]/.test(input.path) || uriScheme || (!windowsDrivePath && !unixAbsolutePath)) {
+      throw new TypeError(`Visual asset ${input.id} must use a plain absolute local filesystem path`);
+    }
+    if (!/^[0-9a-f]{64}$/i.test(input.sha256)) {
+      throw new TypeError(`Visual asset ${input.id} must have a 64-character SHA-256 hash`);
+    }
+    if (!supportedVisualMediaTypes.has(input.mediaType)) {
+      throw new TypeError(`Visual asset ${input.id} has unsupported media type ${String(input.mediaType)}`);
+    }
+    visualInputs.set(input.id, input);
+  }
+  const referencedVisuals = new Set<string>();
+  for (const scene of manifest.scenes) {
+    for (const reference of scene.visualAssets ?? []) {
+      const input = visualInputs.get(reference.assetId);
+      if (!input) throw new TypeError(`Scene ${scene.id} references missing visual asset ${reference.assetId}`);
+      if (input.sha256.toLowerCase() !== reference.sha256.toLowerCase()) {
+        throw new TypeError(`Scene ${scene.id} visual asset ${reference.assetId} hash does not match its input`);
+      }
+      referencedVisuals.add(reference.assetId);
+    }
+  }
+  for (const id of visualInputs.keys()) {
+    if (!referencedVisuals.has(id)) throw new TypeError(`Visual asset ${id} is not referenced by any scene`);
+  }
+  const fontIds = new Set<string>();
+  const fontRoles = new Map<FontAssetRole, FontAssetInput>();
+  const supportedFontMediaTypes = new Set<FontAssetMediaType>(["font/ttf", "font/otf", "font/woff"]);
+  const supportedEmbedding = new Set<FontEmbeddingPermission>(["installable", "previewPrint", "editable"]);
+  for (const [index, input] of (manifest.fontAssets ?? []).entries()) {
+    if (!input.id.trim() || input.id.length > 200 || fontIds.has(input.id)) {
+      throw new TypeError(`Font asset ${index} id must be bounded, unique, and non-empty`);
+    }
+    const windowsDrivePath = /^[a-z]:[\\/]/i.test(input.path);
+    const unixAbsolutePath = /^\//.test(input.path);
+    const uriScheme = /^[a-z][a-z0-9+.-]*:/i.test(input.path) && !windowsDrivePath;
+    if (!input.path.trim() || /[\u0000\r\n]/.test(input.path) || uriScheme || (!windowsDrivePath && !unixAbsolutePath)) {
+      throw new TypeError(`Font asset ${input.id} must use a plain absolute local filesystem path`);
+    }
+    if (!/^[0-9a-f]{64}$/i.test(input.sha256)) throw new TypeError(`Font asset ${input.id} must have a SHA-256 binding`);
+    const expectedFamily = `AlystriaImported-${input.sha256.toLowerCase().slice(0, 16)}`;
+    if (input.family !== expectedFamily) throw new TypeError(`Font asset ${input.id} family alias does not match its immutable hash`);
+    if (!supportedFontMediaTypes.has(input.mediaType)) throw new TypeError(`Font asset ${input.id} has unsupported media type ${String(input.mediaType)}`);
+    if (input.inspectionStatus !== "metadata-inspected" || input.exportEligible !== true || !supportedEmbedding.has(input.embeddingPermission)) {
+      throw new TypeError(`Font asset ${input.id} is not inspected and cleared for final rendering`);
+    }
+    if (!Array.isArray(input.roles) || input.roles.length === 0 || input.roles.length > 4) throw new TypeError(`Font asset ${input.id} needs one to four typography roles`);
+    for (const role of input.roles) {
+      if (!(["display", "body", "code", "caption"] as const).includes(role) || fontRoles.has(role)) {
+        throw new TypeError(`Typography role ${role} is unsupported or bound by more than one font asset`);
+      }
+      fontRoles.set(role, input);
+    }
+    const weights = typeof input.weight === "number" ? [input.weight] : input.weight;
+    if (weights.length < 1 || weights.length > 2 || weights.some((weight) => !Number.isInteger(weight) || weight < 1 || weight > 1_000) || (weights.length === 2 && weights[0]! > weights[1]!)) {
+      throw new RangeError(`Font asset ${input.id} weight must stay within OpenType's 1..1000 range`);
+    }
+    if (input.style !== "normal" && input.style !== "italic") throw new TypeError(`Font asset ${input.id} has unsupported style`);
+    fontIds.add(input.id);
+  }
+  if (manifest.typography !== undefined) {
+    const roleFamilies: readonly [FontAssetRole, string][] = [
+      ["display", manifest.typography.displayFamily],
+      ["body", manifest.typography.bodyFamily],
+      ["code", manifest.typography.codeFamily],
+      ["caption", manifest.typography.captionFamily],
+    ];
+    for (const [role, family] of roleFamilies) {
+      if (!/^[\w .'-]{1,120}$/u.test(family)) throw new TypeError(`Typography ${role} family contains unsupported characters`);
+      if (family.startsWith("AlystriaImported-") && fontRoles.get(role)?.family !== family) {
+        throw new TypeError(`Typography ${role} references an unbound imported font`);
+      }
+    }
+  }
+  if (manifest.captionStyle !== undefined) assertCaptionRenderStyle(manifest.captionStyle);
+  if (manifest.captionStyle !== undefined && manifest.typography !== undefined && manifest.captionStyle.fontFamily !== manifest.typography.captionFamily) {
+    throw new TypeError("Caption font family must match the resolved caption typography role");
+  }
   const audioRoles = new Set<AudioInput["role"]>(["narration", "music", "sfx", "audio-description"]);
+  const audioMediaTypes = new Set<AudioInput["mediaType"]>(["audio/wav", "audio/x-wav", "audio/flac", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/webm"]);
+  const audioIds = new Set<string>();
   for (const [index, input] of (manifest.audioInputs ?? []).entries()) {
-    if (!input.path.trim()) throw new TypeError(`Audio input ${index} path must not be empty`);
+    if (!input.id.trim() || audioIds.has(input.id)) throw new TypeError(`Audio input ${index} id must be unique and non-empty`);
+    if (!input.assetId.trim() || input.assetId.length > 200) throw new TypeError(`Audio input ${input.id} assetId must be bounded and non-empty`);
+    const windowsDrivePath = /^[a-z]:[\\/]/i.test(input.path);
+    const unixAbsolutePath = /^\//.test(input.path);
+    const uriScheme = /^[a-z][a-z0-9+.-]*:/i.test(input.path) && !windowsDrivePath;
+    if (!input.path.trim() || /[\u0000\r\n]/.test(input.path) || uriScheme || (!windowsDrivePath && !unixAbsolutePath)) {
+      throw new TypeError(`Audio input ${input.id} must use a plain absolute local filesystem path`);
+    }
+    if (!/^[0-9a-f]{64}$/i.test(input.sha256)) throw new TypeError(`Audio input ${input.id} must have a 64-character SHA-256 hash`);
+    if (!audioMediaTypes.has(input.mediaType)) throw new TypeError(`Audio input ${input.id} has unsupported media type ${String(input.mediaType)}`);
     if (!audioRoles.has(input.role)) throw new TypeError(`Audio input ${index} has unsupported role ${String(input.role)}`);
     if (!Number.isSafeInteger(input.startTick) || input.startTick < 0) throw new RangeError(`Audio input ${index} startTick is invalid`);
     if (input.endTick !== undefined && (!Number.isSafeInteger(input.endTick) || input.endTick <= input.startTick)) {
@@ -188,6 +387,17 @@ export function assertRenderManifest(manifest: RenderManifest): void {
     if (input.gainDb !== undefined && (!Number.isFinite(input.gainDb) || input.gainDb < -96 || input.gainDb > 24)) {
       throw new RangeError(`Audio input ${index} gainDb must be in [-96, 24]`);
     }
+    if (input.loop !== undefined && typeof input.loop !== "boolean") throw new TypeError(`Audio input ${input.id} loop must be boolean`);
+    if (input.loop && (input.role !== "music" || input.endTick === undefined)) {
+      throw new TypeError(`Looped audio input ${input.id} must be music with an explicit endTick`);
+    }
+    if (input.duckingDb !== undefined && (!Number.isFinite(input.duckingDb) || input.duckingDb < -36 || input.duckingDb > 0)) {
+      throw new RangeError(`Audio input ${input.id} duckingDb must be in [-36, 0]`);
+    }
+    if (input.duckingDb !== undefined && input.role !== "music") {
+      throw new TypeError(`Only music audio input ${input.id} may define duckingDb`);
+    }
+    audioIds.add(input.id);
   }
   const presenterIds = new Set<string>();
   const presenterSceneIds = new Set<string>();
@@ -224,5 +434,19 @@ export function assertRenderManifest(manifest: RenderManifest): void {
     }
     presenterIds.add(input.id);
     presenterSceneIds.add(input.sceneId);
+  }
+}
+
+function assertCaptionRenderStyle(style: CaptionRenderStyle): void {
+  if (!new Set(["auto", "top", "lower-third"]).has(style.position)) throw new TypeError("Caption position is unsupported");
+  if (!new Set(["soft-panel", "solid-panel", "outline"]).has(style.style)) throw new TypeError("Caption style is unsupported");
+  if (!Number.isFinite(style.sizePercent) || style.sizePercent < 60 || style.sizePercent > 160) throw new RangeError("Caption sizePercent must be in [60, 160]");
+  if (!Number.isFinite(style.safeInsetPercent) || style.safeInsetPercent < 2 || style.safeInsetPercent > 24) throw new RangeError("Caption safeInsetPercent must be in [2, 24]");
+  if (!Number.isInteger(style.maxLines) || style.maxLines < 1 || style.maxLines > 3) throw new RangeError("Caption maxLines must be 1, 2, or 3");
+  if (!/^#[0-9a-f]{6}$/iu.test(style.textColor) || !/^#[0-9a-f]{6}$/iu.test(style.panelColor)) throw new TypeError("Caption colors must be six-digit hexadecimal values");
+  const fontName = /^[\p{L}\p{N} .'-]{1,120}$/u;
+  if (!fontName.test(style.fontFamily)) throw new TypeError("Caption fontFamily contains unsupported characters");
+  if (!Array.isArray(style.fallbackFamilies) || style.fallbackFamilies.length < 1 || style.fallbackFamilies.length > 4 || style.fallbackFamilies.some((family) => !fontName.test(family))) {
+    throw new TypeError("Caption fallbackFamilies must contain one to four safe family names");
   }
 }

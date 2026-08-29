@@ -4,6 +4,7 @@ import { constants } from "node:fs";
 import {
   access,
   appendFile,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -12,7 +13,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import {
   createPlaywrightChromiumDriver,
@@ -21,6 +22,8 @@ import {
   type CaptureResult,
   type ChromiumDriver,
 } from "./browser.js";
+import { loadVisualAssetPayloads } from "./assets.js";
+import { loadFontAssetPayloads } from "./fonts.js";
 import { toSrt, toWebVtt } from "./captions.js";
 import { assertRenderManifest, type AudioInput, type CaptionCue, type RenderManifest } from "./contracts.js";
 import {
@@ -690,6 +693,36 @@ function audioInputsForRange(manifest: RenderManifest, startTick: number, endTic
   return (manifest.audioInputs ?? []).filter((input) => input.startTick < endTick && (input.endTick === undefined || input.endTick > startTick));
 }
 
+async function validateAudioAssets(manifest: RenderManifest): Promise<void> {
+  const attemptRoot = dirname(resolve(manifest.outputDirectory));
+  const hashesByPath = new Map<string, string>();
+  for (const input of manifest.audioInputs ?? []) {
+    const inputPath = resolve(input.path);
+    const fromAttemptRoot = relative(attemptRoot, inputPath);
+    if (
+      fromAttemptRoot === ""
+      || isAbsolute(fromAttemptRoot)
+      || fromAttemptRoot === ".."
+      || fromAttemptRoot.startsWith(`..${sep}`)
+    ) {
+      throw new TypeError(`Audio input ${input.id} escapes the guarded render attempt`);
+    }
+    const previous = hashesByPath.get(inputPath);
+    if (previous !== undefined && previous !== input.sha256.toLowerCase()) {
+      throw new TypeError(`Audio input ${input.id} reuses a path with a different hash`);
+    }
+    const info = await lstat(inputPath);
+    if (info.isSymbolicLink() || !info.isFile() || info.size <= 0) {
+      throw new TypeError(`Audio input ${input.id} must be a non-empty regular file`);
+    }
+    const actualHash = await sha256File(inputPath);
+    if (actualHash.toLowerCase() !== input.sha256.toLowerCase()) {
+      throw new TypeError(`Audio input ${input.id} SHA-256 does not match its bytes`);
+    }
+    hashesByPath.set(inputPath, actualHash.toLowerCase());
+  }
+}
+
 export async function executeRender(options: RenderExecutorOptions): Promise<RenderOutputManifest> {
   assertRenderManifest(options.manifest);
   if (options.manifest.rendererVersion !== RENDERER_VERSION) {
@@ -743,6 +776,7 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     for (const path of [options.executables.ffmpeg, options.executables.ffprobe]) {
       if (path.includes("/") || path.includes("\\")) await access(path, constants.R_OK);
     }
+    await validateAudioAssets(manifest);
     if (presenterLayers.length > 0) {
       await validatePresenterAssets(
         presenterLayers,
@@ -753,6 +787,8 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
         manifest.target.frameRate.denominator / manifest.target.frameRate.numerator,
       );
     }
+    const visualAssetPayloads = await loadVisualAssetPayloads(manifest);
+    const fontAssetPayloads = await loadFontAssetPayloads(manifest);
     const driver = await browserFactory({
       ...(options.executables.browser === undefined ? {} : { executablePath: options.executables.browser }),
       width: manifest.target.width,
@@ -762,10 +798,13 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     const browserSha256 = await sha256File(driver.executablePath);
     const expectedBrowserVersion = options.expectedBrowserVersion ?? driver.version;
     const expectedBrowserSha256 = options.expectedBrowserSha256 ?? browserSha256;
+    if ((visualAssetPayloads.length > 0 || fontAssetPayloads.length > 0) && options.dependencies?.frameRenderer) {
+      throw new TypeError("An injected frameRenderer cannot bypass visual or font asset payload validation");
+    }
     capture = new PinnedBrowserCapture(driver, {
       expectedVersion: expectedBrowserVersion,
       expectedSha256: expectedBrowserSha256,
-    }, options.dependencies?.frameRenderer ?? new FrameRenderer({ verifyRepeatability: true }));
+    }, options.dependencies?.frameRenderer ?? new FrameRenderer({ verifyRepeatability: true, visualAssetPayloads, fontAssetPayloads }));
     abortBrowser = (): void => { void capture?.close(); };
     options.signal?.addEventListener("abort", abortBrowser, { once: true });
     await capture.verifyBrowser();

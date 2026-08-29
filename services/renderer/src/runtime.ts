@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import {
   BUILTIN_SCENE_KINDS,
+  PRECISION_THEME,
   type BuiltinSceneKind,
   type SceneContent as BuiltinSceneContent,
   type SceneSpec,
+  type SceneTheme,
   type TextItem,
 } from "@alystria/scenes";
 import type {
@@ -14,12 +16,15 @@ import type {
   ResolvedScene,
 } from "./contracts.js";
 import { assertRenderManifest } from "./contracts.js";
-import { escapeMarkup, renderCaptionSvg } from "./captions.js";
+import { attachVisualAssetBootstrap, type VisualAssetPayload } from "./assets.js";
+import { attachFontAssetBootstrap, type FontAssetPayload } from "./fonts.js";
+import { captionTopBandHeight, escapeMarkup, renderCaptionSvg } from "./captions.js";
 import { ResponsiveLayoutCompiler } from "./layout.js";
 import { SeededRandom, withDeterminismGuard } from "./random.js";
 import {
   SceneViewStaticAdapter,
   assertSceneSpecMatchesResolvedScene,
+  createLocalAssetResolver,
   type SceneSpecResolver,
   type SceneViewAdapterOptions,
 } from "./scene-view.js";
@@ -41,6 +46,10 @@ export interface FrameRendererOptions {
   /** Resolves the immutable SceneSpec associated with a manifest scene. */
   readonly sceneSpecResolver?: SceneSpecResolver;
   readonly sceneView?: SceneViewAdapterOptions;
+  /** Hash-verified bytes loaded by the executor; never filesystem paths. */
+  readonly visualAssetPayloads?: readonly VisualAssetPayload[];
+  /** Hash-verified inspected font bytes loaded by the executor. */
+  readonly fontAssetPayloads?: readonly FontAssetPayload[];
   readonly layoutCompiler?: ResponsiveLayoutCompiler;
   readonly verifyRepeatability?: boolean;
 }
@@ -102,11 +111,29 @@ function compactInstruction(text: string, maximum = 54): string {
 }
 
 function commonContent(scene: ResolvedScene) {
+  const background = scene.visualAssets?.find((asset) => asset.role === "background");
   return {
     title: scene.content.title,
     ...(scene.content.eyebrow ? { eyebrow: scene.content.eyebrow } : {}),
     ...(scene.content.body ? { subtitle: scene.content.body } : {}),
+    ...(background ? { background: {
+      id: background.assetId,
+      sha256: background.sha256,
+      alt: background.alt,
+      fit: background.fit ?? "cover" as const,
+    } } : {}),
   };
+}
+
+function semanticVisual(scene: ResolvedScene, role: "primary" | "secondary" | "presenter-portrait") {
+  return scene.visualAssets?.find((asset) => asset.role === role);
+}
+
+function assetReference(scene: ResolvedScene, role: "primary" | "secondary" | "presenter-portrait", fallbackId: string, fallbackAlt: string) {
+  const visual = semanticVisual(scene, role);
+  return visual
+    ? { id: visual.assetId, sha256: visual.sha256, alt: visual.alt, fit: visual.fit ?? "contain" as const }
+    : { id: fallbackId, alt: fallbackAlt, fit: "contain" as const };
 }
 
 /**
@@ -257,14 +284,14 @@ export const resolveBuiltinSceneSpec: SceneSpecResolver = (scene) => {
     case "image-focus":
     case "document-focus":
     case "screen-recording":
-      content = { kind, ...common, asset: { id: child("asset-primary"), alt: scene.content.body ?? scene.content.title, fit: "contain" } };
+      content = { kind, ...common, asset: assetReference(scene, "primary", child("asset-primary"), scene.content.body ?? scene.content.title) };
       break;
     case "image-comparison":
       content = {
         kind,
         ...common,
-        left: { id: child("asset-left"), alt: `${scene.content.title}, first view`, fit: "contain" },
-        right: { id: child("asset-right"), alt: `${scene.content.title}, second view`, fit: "contain" },
+        left: assetReference(scene, "primary", child("asset-left"), `${scene.content.title}, first view`),
+        right: assetReference(scene, "secondary", child("asset-right"), `${scene.content.title}, second view`),
         leftLabel: optionalMetadataString(scene, "leftLabel") ?? "Before",
         rightLabel: optionalMetadataString(scene, "rightLabel") ?? "After",
       };
@@ -282,16 +309,27 @@ export const resolveBuiltinSceneSpec: SceneSpecResolver = (scene) => {
       };
       break;
     case "presenter":
-    case "presenter-slide":
+    case "presenter-slide": {
+      const requestedPlacement = optionalMetadataString(scene, "presenterPlacement") ?? "picture_in_picture";
+      const placement = requestedPlacement === "full_frame" || requestedPlacement === "full"
+        ? "full"
+        : requestedPlacement === "left" || requestedPlacement === "split-left"
+          ? "split-left"
+          : requestedPlacement === "right" || requestedPlacement === "split-right"
+            ? "split-right"
+            : "picture-in-picture";
       content = {
         kind,
         ...common,
         presenterName: optionalMetadataString(scene, "presenterName") ?? "Alystria Guide",
+        portrait: assetReference(scene, "presenter-portrait", "presenter-placeholder", "Presenter portrait"),
         talkingPoint: scene.content.body ?? lines[0]!,
         ...(kind === "presenter-slide" ? { slideItems: items } : {}),
         disclosure: optionalMetadataString(scene, "presenterDisclosure") ?? "Synthetic presenter",
+        placement,
       };
       break;
+    }
     case "quote":
       content = { kind, ...common, quote: scene.content.body ?? lines[0]!, attribution: optionalMetadataString(scene, "attribution") ?? "Tutorial narration" };
       break;
@@ -365,7 +403,7 @@ function assertSafeSvgFragment(fragment: string, sceneId: string): void {
   const forbidden = [
     /<\s*script\b/i,
     /\son[a-z]+\s*=/i,
-    /(?:href|src)\s*=\s*["']\s*(?:https?:|data:text\/html|javascript:)/i,
+    /(?:href|src)\s*=\s*["']\s*(?:https?:|file:|data:|javascript:)/i,
     /url\s*\(\s*["']?\s*(?:https?:|data:|javascript:)/i,
     /<\s*(?:iframe|object|embed)\b/i,
   ];
@@ -476,22 +514,59 @@ function appendSvgFragment(svg: string, fragment: string): string {
   return `${svg.slice(0, close)}\n${fragment}\n${svg.slice(close)}`;
 }
 
+function reserveTopCaptionBand(svg: string, manifest: RenderManifest): string {
+  const band = captionTopBandHeight(manifest.target, manifest.captionStyle);
+  if (band <= 0) return svg;
+  const scale = (manifest.target.height - band) / manifest.target.height;
+  const translateX = manifest.target.width * (1 - scale) / 2;
+  const wrapped = (content: string) => `<rect width="${manifest.target.width}" height="${manifest.target.height}" fill="#F7F8FC"/>
+  <g data-caption-reserved-scene="top" transform="translate(${translateX.toFixed(3)} ${band}) scale(${scale.toFixed(6)})">${content}</g>`;
+  const openingEnd = svg.indexOf(">");
+  const closing = svg.lastIndexOf("</svg>");
+  if (svg.startsWith("<svg") && openingEnd >= 0 && closing > openingEnd) {
+    return `${svg.slice(0, openingEnd + 1)}${wrapped(svg.slice(openingEnd + 1, closing))}${svg.slice(closing)}`;
+  }
+  return wrapped(svg);
+}
+
 function htmlShellForSvg(svg: string, context: FrameContext, description: string, language: string): string {
   const title = escapeMarkup(description || `Scene ${context.sceneId}`);
   return `<!doctype html><html lang="${escapeMarkup(language)}"><head><meta charset="utf-8"><meta name="viewport" content="width=${context.target.width},initial-scale=1"><title>${title}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#f7f8fc}svg{display:block;width:100%;height:100%}*{box-sizing:border-box}</style></head><body data-render-ready="true" data-frame="${context.globalFrame}">${svg}</body></html>`;
 }
 
+function quotedFontStack(family: string, generic: "sans-serif" | "monospace"): string {
+  const quoted = family === generic ? family : `"${family.replaceAll('"', "")}"`;
+  const platform = generic === "monospace" ? '"Cascadia Code", monospace' : '"Segoe UI", Arial, sans-serif';
+  return `${quoted}, ${platform}`;
+}
+
+function themeWithTypography(
+  base: SceneTheme,
+  typography: NonNullable<RenderManifest["typography"]>,
+): SceneTheme {
+  return Object.freeze({
+    ...base,
+    fontDisplay: quotedFontStack(typography.displayFamily, "sans-serif"),
+    fontBody: quotedFontStack(typography.bodyFamily, "sans-serif"),
+    fontMono: quotedFontStack(typography.codeFamily, "monospace"),
+  });
+}
+
 export class FrameRenderer {
   readonly #renderers: ReadonlyMap<string, SceneRenderer>;
   readonly #sceneSpecResolver: SceneSpecResolver | undefined;
-  readonly #sceneView: SceneViewStaticAdapter;
+  readonly #sceneViewOptions: SceneViewAdapterOptions;
+  readonly #visualAssetPayloads: ReadonlyMap<string, VisualAssetPayload>;
+  readonly #fontAssetPayloads: readonly FontAssetPayload[];
   readonly #layoutCompiler: ResponsiveLayoutCompiler;
   readonly #verifyRepeatability: boolean;
 
   constructor(options: FrameRendererOptions = {}) {
     this.#renderers = new Map(Object.entries(options.sceneRenderers ?? {}));
     this.#sceneSpecResolver = options.sceneSpecResolver ?? resolveBuiltinSceneSpec;
-    this.#sceneView = new SceneViewStaticAdapter(options.sceneView);
+    this.#sceneViewOptions = options.sceneView ?? {};
+    this.#visualAssetPayloads = new Map((options.visualAssetPayloads ?? []).map((payload) => [payload.id, payload]));
+    this.#fontAssetPayloads = Object.freeze([...(options.fontAssetPayloads ?? [])]);
     this.#layoutCompiler = options.layoutCompiler ?? new ResponsiveLayoutCompiler();
     this.#verifyRepeatability = options.verifyRepeatability ?? false;
   }
@@ -519,19 +594,50 @@ export class FrameRenderer {
       : this.#sceneSpecResolver?.(located.scene);
     if (sceneSpec) assertSceneSpecMatchesResolvedScene(sceneSpec, located.scene);
     const renderer = customRenderer ?? fixtureSceneRenderer;
+    const manifestBindings = (manifest.visualAssets ?? []).map((asset) => ({ id: asset.id, sha256: asset.sha256 }));
+    const manifestResolver = manifestBindings.length ? createLocalAssetResolver(manifestBindings) : undefined;
+    const fontPayloads = new Map(this.#fontAssetPayloads.map((payload) => [payload.id, payload]));
+    for (const input of manifest.fontAssets ?? []) {
+      const payload = fontPayloads.get(input.id);
+      if (!payload || payload.sha256.toLowerCase() !== input.sha256.toLowerCase() || payload.family !== input.family) {
+        throw new TypeError(`Manifest is missing verified bytes for font asset ${input.id}`);
+      }
+    }
+    if (fontPayloads.size !== (manifest.fontAssets ?? []).length) {
+      throw new TypeError("Renderer received font bytes that are not bound by the manifest");
+    }
+    const typographyTheme = manifest.typography
+      ? themeWithTypography(this.#sceneViewOptions.theme ?? PRECISION_THEME, manifest.typography)
+      : this.#sceneViewOptions.theme;
+    const sceneView = new SceneViewStaticAdapter({
+      ...this.#sceneViewOptions,
+      ...(typographyTheme ? { theme: typographyTheme } : {}),
+      ...(manifestResolver ? { resolveAsset: manifestResolver } : {}),
+    });
+    const scenePayloads = (located.scene.visualAssets ?? []).map((reference) => {
+      const payload = this.#visualAssetPayloads.get(reference.assetId);
+      if (!payload || payload.sha256.toLowerCase() !== reference.sha256.toLowerCase()) {
+        throw new TypeError(`Scene ${located.scene.id} is missing verified bytes for visual asset ${reference.assetId}`);
+      }
+      return payload;
+    });
     const run = (): { html: string; svg: string } => {
       if (sceneSpec) {
         // React's server renderer samples performance.now() internally for
         // scheduling. It never enters the markup, so retain every other guard
         // while allowing that implementation detail.
         return withDeterminismGuard(() => {
-          const rendered = this.#sceneView.renderSpec(sceneSpec, manifest.target, localTick);
-          const captionSvg = renderCaptionSvg(located.scene.captions ?? [], localTick, manifest.target);
-          const svg = appendSvgFragment(rendered.svg, captionSvg);
+          const rendered = sceneView.renderSpec(sceneSpec, manifest.target, localTick);
+          const captionSvg = renderCaptionSvg(located.scene.captions ?? [], localTick, manifest.target, manifest.captionStyle);
+          const sceneSvg = reserveTopCaptionBand(rendered.svg, manifest);
+          const svg = appendSvgFragment(sceneSvg, captionSvg);
           assertSafeSvgFragment(svg, located.scene.id);
           return {
             svg,
-            html: htmlShellForSvg(svg, context, located.scene.accessibilityDescription ?? rendered.scene.accessibilityDescription, rendered.scene.target.locale),
+            html: attachVisualAssetBootstrap(
+              htmlShellForSvg(svg, context, located.scene.accessibilityDescription ?? rendered.scene.accessibilityDescription, rendered.scene.target.locale),
+              scenePayloads,
+            ),
           };
         }, { forbidPerformanceNow: false });
       }
@@ -539,17 +645,22 @@ export class FrameRenderer {
         const random = new SeededRandom(context.seed);
         const sceneSvg = renderer({ scene: located.scene, context, layout, random });
         assertSafeSvgFragment(sceneSvg, located.scene.id);
-        const captionSvg = renderCaptionSvg(located.scene.captions ?? [], localTick, manifest.target);
-        return documentShell(`${sceneSvg}\n${captionSvg}`, context, located.scene.accessibilityDescription ?? located.scene.content.title);
+        const captionSvg = renderCaptionSvg(located.scene.captions ?? [], localTick, manifest.target, manifest.captionStyle);
+        const reservedScene = reserveTopCaptionBand(sceneSvg, manifest);
+        return documentShell(`${reservedScene}\n${captionSvg}`, context, located.scene.accessibilityDescription ?? located.scene.content.title);
       });
     };
-    const output = run();
+    const rawOutput = run();
     if (this.#verifyRepeatability) {
       const repeated = run();
-      if (output.html !== repeated.html || output.svg !== repeated.svg) {
+      if (rawOutput.html !== repeated.html || rawOutput.svg !== repeated.svg) {
         throw new Error(`Renderer for ${located.scene.kind} is nondeterministic at frame ${frame}`);
       }
     }
+    const output = {
+      ...rawOutput,
+      html: attachFontAssetBootstrap(rawOutput.html, this.#fontAssetPayloads),
+    };
     return {
       frame,
       tick: located.tick,

@@ -12,7 +12,11 @@ if (-not $Destination) {
 $Destination = [IO.Path]::GetFullPath($Destination)
 $DesktopSource = Join-Path $RepoRoot "apps\desktop\src-tauri\target\debug\alystria-studio.exe"
 $WorkerSource = Join-Path $RepoRoot "dist\runtime-packs\pipeline\current\alystria-pipeline.exe"
+$StarterAudioSource = Join-Path (Split-Path -Parent $WorkerSource) "assets\starter\audio"
+$StarterVisualSource = Join-Path (Split-Path -Parent $WorkerSource) "assets\starter\visuals"
 $ManifestPath = Join-Path $Destination "test-area-manifest.json"
+. (Join-Path $PSScriptRoot "lib\starter-audio.ps1")
+. (Join-Path $PSScriptRoot "lib\starter-visuals.ps1")
 
 foreach ($Path in @($DesktopSource, $WorkerSource)) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -41,6 +45,16 @@ $DesktopDestination = Join-Path $Destination "Alystria Studio.exe"
 $WorkerDestination = Join-Path $RuntimeDirectory "alystria-pipeline.exe"
 Copy-Item -LiteralPath $DesktopSource -Destination $DesktopDestination -Force:$Force
 Copy-Item -LiteralPath $WorkerSource -Destination $WorkerDestination -Force:$Force
+$StarterAudioDestination = Join-Path $RuntimeDirectory "assets\starter\audio"
+$StarterAudioProof = Copy-AlystriaStarterAudioRoot `
+    -Source $StarterAudioSource `
+    -Destination $StarterAudioDestination `
+    -Force:$Force
+$StarterVisualDestination = Join-Path $RuntimeDirectory "assets\starter\visuals"
+$StarterVisualProof = Copy-AlystriaStarterVisualRoot `
+    -Source $StarterVisualSource `
+    -Destination $StarterVisualDestination `
+    -Force:$Force
 
 $LauncherPath = Join-Path $Destination "Start Alystria Studio Test.cmd"
 $Launcher = @'
@@ -63,11 +77,25 @@ $Manifest = [ordered]@{
         path = "runtime\alystria-pipeline.exe"
         sha256 = (Get-FileHash -LiteralPath $WorkerDestination -Algorithm SHA256).Hash.ToLowerInvariant()
     }
+    starterAudio = [ordered]@{
+        path = "runtime\assets\starter\audio"
+        catalogSha256 = $StarterAudioProof.CatalogSha256
+        assetCount = $StarterAudioProof.AssetCount
+        totalBytes = $StarterAudioProof.TotalBytes
+    }
+    starterVisuals = [ordered]@{
+        path = "runtime\assets\starter\visuals"
+        catalogSha256 = $StarterVisualProof.CatalogSha256
+        assetCount = $StarterVisualProof.AssetCount
+        totalBytes = $StarterVisualProof.TotalBytes
+    }
     appData = "Test Data"
     launch = "Start Alystria Studio Test.cmd"
     notes = @(
         "Debug-only local test handoff; not a signed installer or release artifact.",
         "Launch variables redirect app data and the supervised test sidecar to this test area.",
+        "Bundled music and sound effects are copied beside the worker and verified against their catalog before launch.",
+        "Bundled backgrounds and fictional presenter portraits are copied beside the worker and verified against the starter-kit catalog.",
         "No model weights, provider keys, or production project folders are copied."
     )
 }

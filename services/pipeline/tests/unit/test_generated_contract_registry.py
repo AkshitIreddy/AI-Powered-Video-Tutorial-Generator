@@ -17,6 +17,7 @@ def test_generated_registry_exposes_canonical_contract_set() -> None:
         "media",
         "project",
         "research",
+        "starter-kit",
         "storyboard",
     ]
     assert len({schema.id for schema in SCHEMAS}) == len(SCHEMAS)

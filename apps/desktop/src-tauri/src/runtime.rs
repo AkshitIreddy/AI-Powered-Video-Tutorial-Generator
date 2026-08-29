@@ -32,6 +32,12 @@ const RENDERER_CLI: &str = "renderer-cli";
 const CHROMIUM: &str = "chromium";
 const FFMPEG: &str = "ffmpeg";
 const FFPROBE: &str = "ffprobe";
+const STARTER_AUDIO_CATALOG: &str = "starter-audio-catalog";
+const STARTER_AUDIO_RELATIVE_ROOT: &str = "assets/starter/audio";
+const STARTER_VISUAL_CATALOG: &str = "starter-visual-catalog";
+const STARTER_VISUAL_RELATIVE_ROOT: &str = "assets/starter/visuals";
+const STARTER_VISUAL_CATALOG_RELATIVE_PATH: &str =
+    "assets/starter/visuals/packages/themes/starter-kits/core.v1.json";
 const REQUIRED_COMPONENTS: [&str; 6] = [
     PIPELINE_WORKER,
     NODE,
@@ -222,6 +228,24 @@ impl InstalledRuntimePack {
             (FFPROBE, "ALYSTRIA_FFPROBE_PATH"),
         ] {
             environment.insert(variable.into(), self.component_path(id)?.into_os_string());
+        }
+        if let Some(catalog) = self.component(STARTER_AUDIO_CATALOG)
+            && catalog.relative_path == format!("{STARTER_AUDIO_RELATIVE_ROOT}/catalog.json")
+        {
+            environment.insert(
+                "ALYSTRIA_STARTER_AUDIO_ROOT".into(),
+                self.root.join(STARTER_AUDIO_RELATIVE_ROOT).into_os_string(),
+            );
+        }
+        if let Some(catalog) = self.component(STARTER_VISUAL_CATALOG)
+            && catalog.relative_path == STARTER_VISUAL_CATALOG_RELATIVE_PATH
+        {
+            environment.insert(
+                "ALYSTRIA_STARTER_VISUAL_ROOT".into(),
+                self.root
+                    .join(STARTER_VISUAL_RELATIVE_ROOT)
+                    .into_os_string(),
+            );
         }
         Some(WorkerLaunchConfig {
             executable: self.component_path(PIPELINE_WORKER)?,
@@ -854,7 +878,7 @@ mod tests {
         let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
         let target = current_target();
         let mut fetcher = MemoryFetcher::default();
-        let components = REQUIRED_COMPONENTS
+        let mut components: Vec<_> = REQUIRED_COMPONENTS
             .iter()
             .map(|id| {
                 let bytes = format!("fixture-{id}").into_bytes();
@@ -872,6 +896,38 @@ mod tests {
                 }
             })
             .collect();
+        let starter_catalog =
+            br#"{"schemaVersion":1,"catalogId":"alystria.starter-audio.v1","assets":[]}"#.to_vec();
+        fetcher
+            .files
+            .insert(STARTER_AUDIO_CATALOG.into(), starter_catalog.clone());
+        components.push(RuntimeComponent {
+            id: STARTER_AUDIO_CATALOG.into(),
+            version: "2.0.0-rc.0".into(),
+            target: "any".into(),
+            relative_path: format!("{STARTER_AUDIO_RELATIVE_ROOT}/catalog.json"),
+            url: format!("https://runtime.invalid/{STARTER_AUDIO_CATALOG}"),
+            sha256: format!("{:x}", Sha256::digest(&starter_catalog)),
+            size_bytes: starter_catalog.len() as u64,
+            license: "MIT".into(),
+            optional: false,
+        });
+        let visual_catalog =
+            br#"{"schemaVersion":1,"id":"alystria.starter-kit.core","assets":[]}"#.to_vec();
+        fetcher
+            .files
+            .insert(STARTER_VISUAL_CATALOG.into(), visual_catalog.clone());
+        components.push(RuntimeComponent {
+            id: STARTER_VISUAL_CATALOG.into(),
+            version: "2.0.0-rc.0".into(),
+            target: "any".into(),
+            relative_path: STARTER_VISUAL_CATALOG_RELATIVE_PATH.into(),
+            url: format!("https://runtime.invalid/{STARTER_VISUAL_CATALOG}"),
+            sha256: format!("{:x}", Sha256::digest(&visual_catalog)),
+            size_bytes: visual_catalog.len() as u64,
+            license: "MIT".into(),
+            optional: false,
+        });
         let manifest = RuntimeManifest {
             schema_version: 1,
             channel: "stable".into(),
@@ -970,6 +1026,8 @@ mod tests {
             "ALYSTRIA_CHROMIUM_PATH",
             "ALYSTRIA_FFMPEG_PATH",
             "ALYSTRIA_FFPROBE_PATH",
+            "ALYSTRIA_STARTER_AUDIO_ROOT",
+            "ALYSTRIA_STARTER_VISUAL_ROOT",
         ] {
             assert!(
                 launch
@@ -977,6 +1035,30 @@ mod tests {
                     .contains_key(std::ffi::OsStr::new(variable))
             );
         }
+        assert_eq!(
+            launch
+                .environment
+                .get(std::ffi::OsStr::new("ALYSTRIA_STARTER_AUDIO_ROOT"))
+                .map(PathBuf::from),
+            Some(
+                temp.path()
+                    .join("packs")
+                    .join(&pack.pack_id)
+                    .join(STARTER_AUDIO_RELATIVE_ROOT)
+            )
+        );
+        assert_eq!(
+            launch
+                .environment
+                .get(std::ffi::OsStr::new("ALYSTRIA_STARTER_VISUAL_ROOT"))
+                .map(PathBuf::from),
+            Some(
+                temp.path()
+                    .join("packs")
+                    .join(&pack.pack_id)
+                    .join(STARTER_VISUAL_RELATIVE_ROOT)
+            )
+        );
     }
 
     #[test]

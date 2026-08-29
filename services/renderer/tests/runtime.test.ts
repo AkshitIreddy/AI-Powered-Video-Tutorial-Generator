@@ -82,6 +82,33 @@ test("worked examples compact narration into a caption-safe procedural layout", 
   assert.match(rendered.svg, /data-scene-kind="worked-example"/);
 });
 
+test("top caption customization reserves a stable scene band instead of covering content", () => {
+  const base = fixtureManifest();
+  const manifest = {
+    ...base,
+    captionStyle: {
+      position: "top" as const,
+      style: "solid-panel" as const,
+      sizePercent: 110,
+      safeInsetPercent: 6,
+      maxLines: 2 as const,
+      textColor: "#FFF4D6",
+      panelColor: "#102033",
+      fontFamily: "Atkinson Hyperlegible Next",
+      fallbackFamilies: ["Arial", "sans-serif"],
+    },
+    scenes: [{
+      ...base.scenes[0]!,
+      captions: [{ id: "safe-top", startTick: 0, endTick: base.scenes[0]!.durationTicks, text: "A caption with its own reserved band." }],
+    }],
+  };
+  const rendered = new FrameRenderer().render(manifest, 15);
+  assert.match(rendered.svg, /data-caption-reserved-scene="top"/);
+  assert.match(rendered.svg, /data-caption-id="safe-top"/);
+  assert.match(rendered.svg, /fill="#102033"/);
+  assert.ok(rendered.svg.indexOf("data-caption-reserved-scene") < rendered.svg.indexOf("data-caption-id"));
+});
+
 test("unknown kinds and unsupported preview frame rates retain the inert fixture fallback", () => {
   const base = fixtureManifest(fixtureTarget({ frameRate: { numerator: 2, denominator: 1 } }));
   const unknownScene = { ...base.scenes[0]!, kind: "plugin:unknown/card" };

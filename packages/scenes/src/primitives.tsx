@@ -26,10 +26,15 @@ export const PRECISION_THEME: SceneTheme = {
   radius: 22,
 };
 
-export function SceneCanvas({ scene, frame, theme = PRECISION_THEME, children, debugRegions = false }: SceneRendererProps & { readonly children: ReactNode }) {
+export function SceneCanvas({ scene, frame, theme = PRECISION_THEME, children, resolveAsset, debugRegions = false }: SceneRendererProps & { readonly children: ReactNode }) {
   const { width, height } = scene.target;
   const random = new SeededRandom(scene.spec.seed);
   const patternId = `pattern-${safeId(scene.spec.id)}`;
+  const background = "background" in scene.spec.content ? scene.spec.content.background : undefined;
+  const backgroundHref = background ? resolveAsset?.(background) : undefined;
+  const safeBackgroundHref = backgroundHref && (backgroundHref.startsWith("blob:") || backgroundHref.startsWith("alystria-asset:"))
+    ? backgroundHref
+    : undefined;
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -59,7 +64,21 @@ export function SceneCanvas({ scene, frame, theme = PRECISION_THEME, children, d
         </linearGradient>
       </defs>
       <rect width={width} height={height} fill={theme.paper} />
-      <rect width={width} height={height} fill={`url(#${patternId})`} opacity="0.46" />
+      {safeBackgroundHref ? (
+        <g data-semantic-role="visual" aria-label={background?.alt}>
+          <image
+            href={safeBackgroundHref}
+            x="0"
+            y="0"
+            width={width}
+            height={height}
+            preserveAspectRatio={background?.fit === "contain" ? "xMidYMid meet" : "xMidYMid slice"}
+            opacity="0.34"
+          />
+          <rect width={width} height={height} fill={theme.paper} opacity="0.78" />
+        </g>
+      ) : null}
+      <rect width={width} height={height} fill={`url(#${patternId})`} opacity={safeBackgroundHref ? "0.28" : "0.46"} />
       <AmbientMarks scene={scene} theme={theme} random={random} />
       <ConceptThread scene={scene} theme={theme} />
       {children}
