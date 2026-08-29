@@ -155,14 +155,16 @@ export function ComparisonRenderer(props: SceneRendererProps<ComparisonContent>)
   const renderSide = (rect: Rect, label: string, items: readonly string[], tone: "primary" | "secondary") => (
     <Card rect={rect} theme={theme} tone={tone}>
       <Pill x={rect.x + props.scene.metrics.gutter} y={rect.y + props.scene.metrics.gutter} label={label.toUpperCase()} tone={tone} theme={theme} />
-      <BulletList items={items.map((text, index) => ({ id: `${tone}-${index}`, text }))} rect={{ x: rect.x + props.scene.metrics.gutter * 0.4, y: rect.y + props.scene.metrics.gutter * 2.5, width: rect.width - props.scene.metrics.gutter * 0.8, height: rect.height - props.scene.metrics.gutter * 3 }} scene={props.scene} frame={props.frame} theme={theme} />
+      <BulletList items={items.map((text, index) => ({ id: `${tone}-${index}`, text }))} rect={{ x: rect.x + props.scene.metrics.gutter * 0.4, y: rect.y + props.scene.metrics.gutter * 2.5, width: rect.width - props.scene.metrics.gutter * 0.8, height: rect.height - props.scene.metrics.gutter * 3 }} scene={props.scene} frame={props.frame} theme={theme} maxLinesPerItem={3} />
     </Card>
   );
   return withFrame(props, (
     <g id="body">
       {renderSide(first, content.left.label, content.left.items, "primary")}
       {renderSide(second, content.right.label, content.right.items, "secondary")}
-      {content.verdict ? <Pill x={body.x + body.width / 2 - content.verdict.length * props.scene.metrics.smallSize * 0.3} y={body.y + body.height - props.scene.metrics.smallSize * 2.4} label={content.verdict} tone="warning" theme={theme} /> : null}
+      {/* The same verdict is already announced in the scene header subtitle.
+          Repeating a long sentence as a bottom pill covered the comparison
+          cards and could collide with lower-third captions. */}
     </g>
   ));
 }
