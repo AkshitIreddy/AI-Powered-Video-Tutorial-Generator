@@ -17,6 +17,7 @@ This documentation is both an implementation contract and an operator guide. Whe
 - [Research and pedagogy](research/evidence-and-pedagogy.md) — safe ingestion, retrieval, atomic claims, instructional planning, grounding modes, and approval gates.
 - [Accessibility](accessibility.md) — WCAG 2.2 AA product targets and accessible-media requirements.
 - [Evaluation](testing/evaluation.md) — fixtures, measurable acceptance gates, reproducibility, and benchmark reporting.
+- [App acceptance harness](testing/app-acceptance.md) — repeatable create/approve/generate/export checks and the exact native-GUI boundary.
 - [Windows setup](setup/windows.md) and [troubleshooting](troubleshooting.md) — development and diagnostics without hidden prerequisites.
 - [Contributing](contributing.md) and [roadmap](roadmap.md) — engineering rules and the ten implementation milestones.
 - [Release policy](release-policy.md) — local release-candidate rules and the explicit approval boundary.

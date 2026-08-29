@@ -301,6 +301,195 @@ def test_real_worker_initializes_project_and_persists_generation_lifecycle(
         assert retried["result"]["state"] in {"QUEUED", "BLOCKED"}
 
 
+def test_acceptance_desktop_worker_creates_approves_generates_and_exports(
+    tmp_path: Path,
+) -> None:
+    """Exercise the same durable lifecycle exposed by the desktop command broker.
+
+    This deliberately uses the explicit fixture renderer and local deterministic
+    media adapters inherited from ``conftest.py``.  It proves the app/sidecar
+    contract without pretending that provider credentials, model weights, GPU
+    inference, Chromium, or FFmpeg were exercised.
+    """
+
+    project_id = str(uuid.uuid4())
+    project = tmp_path / "Acceptance Tutorial"
+    _create_rust_project_skeleton(project, project_id)
+
+    with running_worker() as worker:
+        initialized = worker.call(
+            "project.initialize",
+            {
+                "projectId": project_id,
+                "projectDirectory": str(project),
+                "manifestRevision": 1,
+                "initialSnapshot": {
+                    "id": "desktop-provisional-id",
+                    "title": "Karatsuba acceptance tutorial",
+                    "topic": "Explain why Karatsuba needs only three recursive products",
+                    "audience": "Undergraduate computer science students",
+                    "duration": 2,
+                    "locale": "en-US",
+                    "groundingMode": "grounded",
+                    "brief": {
+                        "topic": "Explain why Karatsuba needs only three recursive products",
+                        "audience": "Undergraduate computer science students",
+                        "durationSeconds": 120,
+                        "locale": "en-US",
+                    },
+                    "scenes": [],
+                    "sources": [],
+                },
+            },
+        )
+        assert initialized["ok"] is True
+        initial_head = initialized["result"]["headRevisionId"]
+
+        started = worker.call(
+            "generation.start",
+            {
+                "projectId": project_id,
+                "projectDirectory": str(project),
+                "snapshotId": initial_head,
+                "scope": {"kind": "project"},
+                "quality": "standard",
+                "privacy": "local",
+                "budget": {
+                    "currency": "USD",
+                    "hardLimitMinorUnits": 0,
+                    "requireKnownPricing": True,
+                },
+                "approvedProviderIds": [],
+                "preservationLocks": [],
+            },
+        )
+        assert started["ok"] is True
+        generation_id = str(uuid.UUID(started["result"]["jobId"]))
+        action = {
+            "projectId": project_id,
+            "projectDirectory": str(project),
+            "jobId": generation_id,
+        }
+
+        waiting = _poll_worker_job(
+            worker,
+            action,
+            terminal_states={"BLOCKED", "FAILED", "CANCELLED"},
+            timeout=20,
+        )
+        assert waiting["state"] == "BLOCKED", waiting
+        assert waiting["events"]
+        assert waiting["stages"][-1]["state"] == "SUCCEEDED"
+
+        approved = worker.call(
+            "generation.approve",
+            {
+                **action,
+                "name": "Acceptance storyboard",
+                "message": "Approved by the automated desktop acceptance harness",
+            },
+        )
+        assert approved["ok"] is True
+        assert approved["result"]["state"] in {"QUEUED", "RUNNING", "SUCCEEDED"}
+        assert approved["result"]["approvalRevisionId"]
+
+        completed = _poll_worker_job(
+            worker,
+            action,
+            terminal_states={"SUCCEEDED", "FAILED", "CANCELLED"},
+            timeout=30,
+        )
+        assert completed["state"] == "SUCCEEDED", completed
+        assert completed["progress"] == pytest.approx(1)
+        assert completed["finalRevisionId"]
+        assert all(stage["state"] == "SUCCEEDED" for stage in completed["stages"])
+
+        durable = worker.call(
+            "project.snapshot.get",
+            {"projectId": project_id, "projectDirectory": str(project)},
+        )
+        assert durable["ok"] is True
+        head = durable["result"]["headRevisionId"]
+        snapshot = durable["result"]["snapshot"]
+        assert snapshot["generationId"] == generation_id
+        assert snapshot["stage"] == "export"
+        assert snapshot["stageArtifactHash"]
+        assert snapshot["payload"]["exportManifest"]["qualityGate"]["status"] in {
+            "PASS",
+            "WARNING",
+        }
+
+        export_submitted = worker.call(
+            "control.exportMaster",
+            {
+                "projectId": project_id,
+                "projectDirectory": str(project),
+                "baseRevisionId": head,
+                "baseJobId": generation_id,
+                "aspect": "16:9",
+                "resolution": "1080p",
+                "fps": 30,
+                "captions": True,
+                "transcript": True,
+                "bibliography": True,
+            },
+        )
+        assert export_submitted["ok"] is True
+        export_action = {
+            "projectId": project_id,
+            "projectDirectory": str(project),
+            "jobId": str(uuid.UUID(export_submitted["result"]["jobId"])),
+        }
+        exported = _poll_worker_job(
+            worker,
+            export_action,
+            terminal_states={"SUCCEEDED", "FAILED", "CANCELLED"},
+            timeout=20,
+        )
+        assert exported["state"] == "SUCCEEDED", exported
+        export_result = exported["result"]
+        master = Path(export_result["path"])
+        assert master.is_file()
+        assert master.stat().st_size > 0
+        assert export_result["operation"] == "export_master"
+        assert export_result["qualityGate"]["status"] in {"PASS", "WARNING"}
+        assert all(Path(path).is_file() for path in export_result["sidecarPaths"])
+
+        archive = project / "exports" / "acceptance.alytutorial"
+        archived = worker.call(
+            "project.export",
+            {
+                "projectPath": str(project),
+                "destination": str(archive),
+                "overwrite": False,
+            },
+        )
+        assert archived["ok"] is True
+        assert archive.is_file()
+        assert archive.stat().st_size > master.stat().st_size
+
+
+def _poll_worker_job(
+    worker: WorkerProcess,
+    action: dict[str, Any],
+    *,
+    terminal_states: set[str],
+    timeout: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    while True:
+        response = worker.call("job.status", action)
+        assert response["ok"] is True
+        receipt = response["result"]
+        if receipt["state"] in terminal_states:
+            return receipt
+        if time.monotonic() >= deadline:
+            pytest.fail(
+                f"job {action['jobId']} did not reach {sorted(terminal_states)}: {receipt}"
+            )
+        time.sleep(0.05)
+
+
 def test_restarted_worker_recovers_an_expired_generation_lease(tmp_path: Path) -> None:
     project_id = str(uuid.uuid4())
     project = tmp_path / "Restarted Worker Project"
