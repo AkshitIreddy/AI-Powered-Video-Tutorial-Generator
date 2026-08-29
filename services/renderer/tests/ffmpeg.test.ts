@@ -7,6 +7,7 @@ import {
   planAudioMaster,
   planDeliveryEncode,
   planFrameSequenceToFfv1,
+  planPresenterComposite,
   planProbe,
   planSilentAudio,
 } from "../src/ffmpeg.js";
@@ -18,6 +19,32 @@ test("FFV1 plan is lossless, intra-only, and color tagged", () => {
   assert.ok(plan.args.includes("30000/1000") || plan.args.includes("30/1"));
   assert.ok(plan.args.includes("+bitexact"));
   assert.ok(plan.args.includes("-map_metadata"));
+});
+
+test("presenter plan trims, places, and losslessly composites local clips", () => {
+  const plan = planPresenterComposite("base.mkv", [{
+    id: "guide",
+    path: "presenter.mp4",
+    sha256: "a".repeat(64),
+    sceneId: "scene.presenter",
+    sourceStartTick: secondsToTicks(1.25),
+    timelineStartTick: secondsToTicks(2),
+    durationTicks: secondsToTicks(3),
+    placement: "picture-in-picture",
+    fit: "cover",
+    x: 120,
+    y: 80,
+    width: 480,
+    height: 540,
+  }], "composite.mkv", fixtureTarget());
+  assert.deepEqual(plan.args.slice(0, 8), ["-hide_banner", "-nostdin", "-y", "-i", "base.mkv", "-i", "presenter.mp4", "-filter_complex_threads"]);
+  const filter = plan.args[plan.args.indexOf("-filter_complex") + 1] ?? "";
+  assert.match(filter, /trim=start=1\.250000:duration=3\.000000/);
+  assert.match(filter, /setpts=PTS-STARTPTS\+2\.000000\/TB/);
+  assert.match(filter, /scale=480:540:force_original_aspect_ratio=increase/);
+  assert.match(filter, /overlay=x=120:y=80/);
+  assert.ok(plan.args.includes("ffv1"));
+  assert.equal(plan.expectedOutputs[0], "composite.mkv");
 });
 
 test("GPL encoder stays visibly separated", () => {

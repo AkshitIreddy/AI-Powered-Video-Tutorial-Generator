@@ -11,6 +11,7 @@ Core guarantees:
 - Browser capture uses `playwright-core`, denies every browser-context request, and verifies the selected Chromium executable version and SHA-256 before producing authoritative PNGs.
 - The render executor captures with bounded page concurrency, checkpoints every completed frame for resume, and renders full projects, one scene, a frame range, or a resolution-limited draft.
 - FFmpeg is spawned directly with argument arrays (never a shell) for the FFV1 mezzanine, exact-duration 48 kHz master, captioned delivery, structured ffprobe QA, and full decode validation.
+- Presenter and presenter-slide scenes may bind one absolute local video through `presenterVideos`. The executor re-hashes the clip, probes its dimensions and duration, maps source time into scene time, and composites it into fixed responsive full, picture-in-picture, or split regions before delivery. Remote/relative paths and arbitrary filter coordinates are not accepted.
 - WebVTT is canonical, with SRT and deterministic SVG caption overlays derived from the same cues.
 
 ## Commands

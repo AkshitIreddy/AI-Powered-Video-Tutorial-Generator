@@ -1,4 +1,5 @@
 import type { AudioInput, FrameRate, RenderTarget } from "./contracts.js";
+import type { PresenterCompositeLayer } from "./presenter.js";
 import { ticksToSeconds } from "./timebase.js";
 
 export interface CommandPlan {
@@ -97,6 +98,64 @@ export function planConcatFfv1(concatListPath: string, outputPath: string): Comm
     args: ["-hide_banner", "-nostdin", "-y", "-f", "concat", "-safe", "0", "-i", pathArgument(concatListPath, "concat list"), "-map", "0:v:0", "-c", "copy", pathArgument(outputPath, "output path")],
     expectedOutputs: [outputPath],
     description: "Concatenate lossless scene mezzanines without re-encoding",
+    licensingWarnings: [],
+  };
+}
+
+function fixedSeconds(ticks: number): string {
+  return ticksToSeconds(ticks).toFixed(6);
+}
+
+/**
+ * Composites immutable presenter clips into the lossless scene mezzanine.
+ * All placement/filter values are derived from validated numeric contracts;
+ * no provider-generated filter expression or argument is accepted.
+ */
+export function planPresenterComposite(
+  baseVideoPath: string,
+  layers: readonly PresenterCompositeLayer[],
+  outputPath: string,
+  target: RenderTarget,
+): CommandPlan {
+  if (layers.length === 0) throw new TypeError("Presenter composition requires at least one layer");
+  const args = ["-hide_banner", "-nostdin", "-y", "-i", pathArgument(baseVideoPath, "base video input")];
+  for (const layer of layers) args.push("-i", pathArgument(layer.path, `presenter video ${layer.id}`));
+
+  const filters: string[] = [];
+  let base = "0:v";
+  layers.forEach((layer, index) => {
+    const input = index + 1;
+    const prepared = `presenter${index}`;
+    const composed = `composed${index}`;
+    const sourceStart = fixedSeconds(layer.sourceStartTick);
+    const duration = fixedSeconds(layer.durationTicks);
+    const timelineStart = fixedSeconds(layer.timelineStartTick);
+    const timelineEnd = fixedSeconds(layer.timelineStartTick + layer.durationTicks);
+    const fit = layer.fit === "cover"
+      ? `scale=${layer.width}:${layer.height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${layer.width}:${layer.height}`
+      : `scale=${layer.width}:${layer.height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${layer.width}:${layer.height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+    filters.push(
+      `[${input}:v]trim=start=${sourceStart}:duration=${duration},setpts=PTS-STARTPTS+${timelineStart}/TB,fps=${frameRateArgument(target.frameRate)},${fit},setsar=1[${prepared}]`,
+      `[${base}][${prepared}]overlay=x=${layer.x}:y=${layer.y}:eof_action=pass:repeatlast=0:shortest=0:enable='between(t,${timelineStart},${timelineEnd})'[${composed}]`,
+    );
+    base = composed;
+  });
+
+  args.push(
+    "-filter_complex_threads", "1",
+    "-filter_complex", filters.join(";"),
+    "-map", `[${base}]`,
+    "-map_metadata", "-1",
+    "-fflags", "+bitexact",
+    "-an", "-c:v", "ffv1", "-flags:v", "+bitexact", "-level", "3", "-coder", "1", "-context", "1", "-g", "1",
+    "-pix_fmt", "gbrp10le", "-color_primaries", "bt709", "-color_trc", "iec61966-2-1", "-colorspace", "bt709",
+    "-f", "matroska", pathArgument(outputPath, "presenter composite output"),
+  );
+  return {
+    executable: "ffmpeg",
+    args,
+    expectedOutputs: [outputPath],
+    description: `Composite ${layers.length} presenter video layer${layers.length === 1 ? "" : "s"} into the lossless mezzanine`,
     licensingWarnings: [],
   };
 }

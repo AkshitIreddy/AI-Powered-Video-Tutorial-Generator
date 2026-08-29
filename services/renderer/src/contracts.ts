@@ -60,6 +60,12 @@ export interface RenderManifest {
   readonly scenes: readonly ResolvedScene[];
   readonly outputDirectory: string;
   readonly audioInputs?: readonly AudioInput[];
+  /**
+   * Immutable local presenter clips composited by FFmpeg after authoritative
+   * Chromium frame capture. Clips are bound to one presenter scene and their
+   * bytes are re-hashed immediately before rendering.
+   */
+  readonly presenterVideos?: readonly PresenterVideoInput[];
   readonly metadata?: Readonly<Record<string, string>>;
 }
 
@@ -69,6 +75,22 @@ export interface AudioInput {
   readonly startTick: number;
   readonly endTick?: number;
   readonly gainDb?: number;
+}
+
+export type PresenterVideoPlacement = "full" | "picture-in-picture" | "split-left" | "split-right";
+
+export interface PresenterVideoInput {
+  readonly id: string;
+  /** Plain absolute local filesystem path. URI schemes and control characters are rejected. */
+  readonly path: string;
+  /** Lower- or upper-case hexadecimal SHA-256 of the immutable clip bytes. */
+  readonly sha256: string;
+  /** The presenter or presenter-slide scene whose timeline this clip follows. */
+  readonly sceneId: string;
+  /** Offset into the source clip. Defaults to zero. */
+  readonly sourceStartTick?: number;
+  readonly placement: PresenterVideoPlacement;
+  readonly fit?: "cover" | "contain";
 }
 
 export interface FrameContext {
@@ -166,5 +188,41 @@ export function assertRenderManifest(manifest: RenderManifest): void {
     if (input.gainDb !== undefined && (!Number.isFinite(input.gainDb) || input.gainDb < -96 || input.gainDb > 24)) {
       throw new RangeError(`Audio input ${index} gainDb must be in [-96, 24]`);
     }
+  }
+  const presenterIds = new Set<string>();
+  const presenterSceneIds = new Set<string>();
+  const presenterPlacements = new Set<PresenterVideoPlacement>(["full", "picture-in-picture", "split-left", "split-right"]);
+  for (const [index, input] of (manifest.presenterVideos ?? []).entries()) {
+    if (!input.id.trim() || presenterIds.has(input.id)) {
+      throw new TypeError(`Presenter video ${index} id must be unique and non-empty`);
+    }
+    const windowsDrivePath = /^[a-z]:[\\/]/i.test(input.path);
+    const unixAbsolutePath = /^\//.test(input.path);
+    const uriScheme = /^[a-z][a-z0-9+.-]*:/i.test(input.path) && !windowsDrivePath;
+    if (!input.path.trim() || /[\u0000\r\n]/.test(input.path) || uriScheme || (!windowsDrivePath && !unixAbsolutePath)) {
+      throw new TypeError(`Presenter video ${input.id} must use a plain absolute local filesystem path`);
+    }
+    if (!/^[0-9a-f]{64}$/i.test(input.sha256)) {
+      throw new TypeError(`Presenter video ${input.id} must have a 64-character SHA-256 hash`);
+    }
+    const scene = manifest.scenes.find((candidate) => candidate.id === input.sceneId);
+    if (!scene) throw new TypeError(`Presenter video ${input.id} references unknown scene ${input.sceneId}`);
+    if (scene.kind !== "presenter" && scene.kind !== "presenter-slide" && scene.kind !== "presenter-with-slide") {
+      throw new TypeError(`Presenter video ${input.id} can only bind to a presenter scene, got ${scene.kind}`);
+    }
+    if (presenterSceneIds.has(input.sceneId)) {
+      throw new TypeError(`Scene ${input.sceneId} has more than one presenter video`);
+    }
+    if (!presenterPlacements.has(input.placement)) {
+      throw new TypeError(`Presenter video ${input.id} has unsupported placement ${String(input.placement)}`);
+    }
+    if (input.fit !== undefined && input.fit !== "cover" && input.fit !== "contain") {
+      throw new TypeError(`Presenter video ${input.id} has unsupported fit ${String(input.fit)}`);
+    }
+    if (input.sourceStartTick !== undefined && (!Number.isSafeInteger(input.sourceStartTick) || input.sourceStartTick < 0)) {
+      throw new RangeError(`Presenter video ${input.id} sourceStartTick must be a non-negative safe integer`);
+    }
+    presenterIds.add(input.id);
+    presenterSceneIds.add(input.sceneId);
   }
 }

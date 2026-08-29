@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -182,6 +183,88 @@ test("scene and draft selections compile to explicit frame and responsive target
     assert.equal(draft.target.width, 160);
     assert.equal(draft.target.height, 90);
     assert.equal(draft.target.pixelRatio, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("executor hash-verifies and composites presenter clips before delivery", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "alystria-presenter-executor-test-"));
+  try {
+    const browserPath = join(directory, "browser.bin");
+    const ffmpegPath = join(directory, "ffmpeg.bin");
+    const ffprobePath = join(directory, "ffprobe.bin");
+    const presenterPath = join(directory, "presenter.mp4");
+    const presenterBytes = Buffer.from("immutable presenter fixture");
+    await Promise.all([
+      writeFile(browserPath, "browser"),
+      writeFile(ffmpegPath, "ffmpeg"),
+      writeFile(ffprobePath, "ffprobe"),
+      writeFile(presenterPath, presenterBytes),
+    ]);
+    const browserFactory = async (): Promise<ChromiumDriver> => ({
+      name: "presenter-browser",
+      executablePath: browserPath,
+      version: "presenter-1",
+      networkPolicy: "deny",
+      async newPage(): Promise<BrowserPage> {
+        return {
+          async setViewportSize() {},
+          async setContent() {},
+          async waitForRenderReady() {},
+          async screenshot(options) { await writeFile(options.path, ONE_PIXEL_PNG); },
+          async close() {},
+        };
+      },
+      async close() {},
+    });
+    const base = fixtureManifest(fixtureTarget({ width: 320, height: 180, frameRate: { numerator: 1, denominator: 1 } }));
+    const manifest = {
+      ...base,
+      scenes: [{ ...base.scenes[0]!, kind: "presenter", durationTicks: 240_000, captions: [] }],
+      presenterVideos: [{
+        id: "guide",
+        path: presenterPath,
+        sha256: createHash("sha256").update(presenterBytes).digest("hex"),
+        sceneId: base.scenes[0]!.id,
+        placement: "picture-in-picture" as const,
+      }],
+    };
+    const runner = new FakeCommandRunner({ ffmpeg: ffmpegPath, ffprobe: ffprobePath, width: 320, height: 180, duration: 1, frameRate: "1/1" });
+    const output = await executeRender({
+      manifest,
+      outputDirectory: join(directory, "output"),
+      executables: { browser: browserPath, ffmpeg: ffmpegPath, ffprobe: ffprobePath },
+      dependencies: { browserFactory, commandRunner: runner },
+    });
+    const composite = runner.calls.find((call) => call.args.includes("-filter_complex") && call.args.includes(presenterPath));
+    assert.ok(composite, "presenter clip must be a separate FFmpeg input to the lossless composite");
+    assert.match(composite.args[composite.args.indexOf("-filter_complex") + 1] ?? "", /overlay=x=/);
+    assert.equal(output.frameCount, 1);
+    assert.equal(output.files.find((file) => file.kind === "mezzanine")?.path, join(directory, "output", "mezzanine.mkv"));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("executor rejects presenter bytes that do not match the manifest hash", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "alystria-presenter-hash-test-"));
+  try {
+    const ffmpegPath = join(directory, "ffmpeg.bin");
+    const ffprobePath = join(directory, "ffprobe.bin");
+    const presenterPath = join(directory, "presenter.mp4");
+    await Promise.all([writeFile(ffmpegPath, "ffmpeg"), writeFile(ffprobePath, "ffprobe"), writeFile(presenterPath, "tampered")]);
+    const base = fixtureManifest(fixtureTarget({ frameRate: { numerator: 1, denominator: 1 } }));
+    await assert.rejects(executeRender({
+      manifest: {
+        ...base,
+        scenes: [{ ...base.scenes[0]!, kind: "presenter", durationTicks: 240_000, captions: [] }],
+        presenterVideos: [{ id: "guide", path: presenterPath, sha256: "0".repeat(64), sceneId: base.scenes[0]!.id, placement: "full" }],
+      },
+      outputDirectory: join(directory, "output"),
+      executables: { ffmpeg: ffmpegPath, ffprobe: ffprobePath },
+      dependencies: { commandRunner: new FakeCommandRunner({ ffmpeg: ffmpegPath, ffprobe: ffprobePath, width: 1280, height: 720, duration: 1, frameRate: "1/1" }) },
+    }), /failed SHA-256 verification/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

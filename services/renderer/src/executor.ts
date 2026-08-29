@@ -28,11 +28,13 @@ import {
   planDecodeValidation,
   planDeliveryEncode,
   planFrameSequenceToFfv1,
+  planPresenterComposite,
   planProbe,
   planSilentAudio,
   type CommandPlan,
   type DeliveryOptions,
 } from "./ffmpeg.js";
+import { resolvePresenterCompositeLayers, type PresenterCompositeLayer } from "./presenter.js";
 import { missingRanges, planRenderChunks, type FrameRange } from "./ranges.js";
 import { FrameRenderer, RENDERER_VERSION, totalFrames } from "./runtime.js";
 import { frameToTick, tickToFrameCeil, ticksPerFrame, ticksToSeconds } from "./timebase.js";
@@ -367,6 +369,48 @@ function validateProbe(document: ProbeDocument, manifest: RenderManifest, expect
   };
 }
 
+async function validatePresenterAssets(
+  layers: readonly PresenterCompositeLayer[],
+  executables: ExecutablePaths,
+  runner: CommandRunner,
+  signal: AbortSignal | undefined,
+  cwd: string,
+  frameDurationSeconds: number,
+): Promise<void> {
+  const verifiedFiles = new Map<string, string>();
+  for (const layer of layers) {
+    throwIfAborted(signal);
+    const info = await stat(layer.path).catch(() => undefined);
+    if (!info?.isFile() || info.size <= 0) {
+      throw new Error(`Presenter video ${layer.id} is missing or empty: ${layer.path}`);
+    }
+    const previousHash = verifiedFiles.get(layer.path);
+    const actualHash = previousHash ?? await sha256File(layer.path);
+    verifiedFiles.set(layer.path, actualHash);
+    if (actualHash.toLowerCase() !== layer.sha256.toLowerCase()) {
+      throw new Error(`Presenter video ${layer.id} failed SHA-256 verification`);
+    }
+    const probeResult = await runPlan(planProbe(layer.path), executables, runner, signal, cwd);
+    let probe: ProbeDocument;
+    try {
+      probe = JSON.parse(probeResult.stdout) as ProbeDocument;
+    } catch (error) {
+      throw new Error(`Presenter video ${layer.id} probe returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (probe.error) throw new Error(`Presenter video ${layer.id} probe reported an error`);
+    const video = (probe.streams ?? []).find((stream) => stream.codec_type === "video");
+    if (!video) throw new Error(`Presenter video ${layer.id} has no video stream`);
+    if (numberField(video.width) <= 0 || numberField(video.height) <= 0) {
+      throw new Error(`Presenter video ${layer.id} has invalid dimensions`);
+    }
+    const availableSeconds = numberField(probe.format?.duration, numberField(video.duration));
+    const requiredSeconds = ticksToSeconds(layer.sourceStartTick + layer.durationTicks);
+    if (availableSeconds <= 0 || availableSeconds + frameDurationSeconds < requiredSeconds) {
+      throw new Error(`Presenter video ${layer.id} is too short: requires ${requiredSeconds.toFixed(3)}s, found ${availableSeconds.toFixed(3)}s`);
+    }
+  }
+}
+
 export class SpawnCommandRunner implements CommandRunner {
   async run(executable: string, args: readonly string[], options: Readonly<{ signal?: AbortSignal; cwd?: string }>): Promise<ProcessResult> {
     if (!executable.trim() || /[\u0000\r\n]/.test(executable)) throw new TypeError("Executable path is empty or contains control characters");
@@ -524,6 +568,7 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
   const startTick = frameToTick(frameRange.startFrame, manifest.target.frameRate);
   const durationTicks = frameCount * ticksPerFrame(manifest.target.frameRate);
   const endTick = startTick + durationTicks;
+  const presenterLayers = resolvePresenterCompositeLayers(manifest, frameRange);
   const concurrency = positiveInteger(options.concurrency ?? DEFAULT_CONCURRENCY, "concurrency", MAX_CAPTURE_CONCURRENCY);
   const maximumFramesPerChunk = positiveInteger(options.maximumFramesPerChunk ?? DEFAULT_CHUNK_FRAMES, "maximumFramesPerChunk");
   const inputManifestSha256 = sha256Text(stableJson(options.manifest));
@@ -562,6 +607,16 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     throwIfAborted(options.signal);
     for (const path of [options.executables.ffmpeg, options.executables.ffprobe]) {
       if (path.includes("/") || path.includes("\\")) await access(path, constants.R_OK);
+    }
+    if (presenterLayers.length > 0) {
+      await validatePresenterAssets(
+        presenterLayers,
+        options.executables,
+        commandRunner,
+        options.signal,
+        attemptDirectory,
+        manifest.target.frameRate.denominator / manifest.target.frameRate.numerator,
+      );
     }
     const driver = await browserFactory({
       ...(options.executables.browser === undefined ? {} : { executablePath: options.executables.browser }),
@@ -631,8 +686,13 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
 
     const framePattern = join(frameDirectory, "frame-%08d.png");
     await reporter.emit({ phase: "mezzanine", status: "started", message: "Encoding lossless FFV1 mezzanine" });
-    await runPlan(planFrameSequenceToFfv1(framePattern, mezzaninePath, manifest.target, frameRange.startFrame), options.executables, commandRunner, options.signal, attemptDirectory);
-    await reporter.emit({ phase: "mezzanine", status: "completed", message: "Lossless FFV1 mezzanine encoded", outputPath: mezzaninePath });
+    const baseMezzaninePath = presenterLayers.length > 0 ? join(attemptDirectory, "base-mezzanine.mkv") : mezzaninePath;
+    await runPlan(planFrameSequenceToFfv1(framePattern, baseMezzaninePath, manifest.target, frameRange.startFrame), options.executables, commandRunner, options.signal, attemptDirectory);
+    if (presenterLayers.length > 0) {
+      await reporter.emit({ phase: "mezzanine", status: "progress", message: `Compositing ${presenterLayers.length} verified presenter clip${presenterLayers.length === 1 ? "" : "s"}` });
+      await runPlan(planPresenterComposite(baseMezzaninePath, presenterLayers, mezzaninePath, manifest.target), options.executables, commandRunner, options.signal, attemptDirectory);
+    }
+    await reporter.emit({ phase: "mezzanine", status: "completed", message: presenterLayers.length > 0 ? "Lossless presenter composite encoded" : "Lossless FFV1 mezzanine encoded", outputPath: mezzaninePath });
 
     const cues = collectCaptions(manifest, frameRange);
     await atomicWrite(captionsVttPath, toWebVtt(cues));
