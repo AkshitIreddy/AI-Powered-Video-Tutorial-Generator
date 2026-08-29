@@ -66,7 +66,8 @@ test("audio master uses 48 kHz and measurable loudness targets", () => {
     { path: "narration.wav", role: "narration", startTick: 0 },
     { path: "music.wav", role: "music", startTick: secondsToTicks(0.5), gainDb: -21 },
   ], "master.wav");
-  assert.match(plan.args.join(" "), /loudnorm=I=-16:LRA=11:TP=-1\.5/);
+  assert.match(plan.args.join(" "), /loudnorm=I=-16:LRA=11:TP=-2/);
+  assert.match(plan.args.join(" "), /acompressor=threshold=0\.05:ratio=8/);
   assert.match(plan.args.join(" "), /sidechaincompress=/);
   assert.ok(plan.args.includes("pcm_s24le"));
   assert.ok(plan.args.includes("48000"));

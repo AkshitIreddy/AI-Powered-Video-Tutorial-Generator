@@ -285,8 +285,19 @@ function prepareAudio(inputs: readonly AudioInput[], options: AudioMasterOptions
   if (effects) finalLabels.push(effects);
   if (finalLabels.length === 1) chains.push(`${finalLabels[0]}anull[mix]`);
   else chains.push(`${finalLabels.join("")}amix=inputs=${finalLabels.length}:duration=longest:normalize=0:dropout_transition=0[mix]`);
-  const duration = options.durationTicks === undefined ? "" : `,apad=whole_dur=${ticksToSeconds(options.durationTicks).toFixed(6)},atrim=duration=${ticksToSeconds(options.durationTicks).toFixed(6)}`;
-  chains.push(`[mix]loudnorm=I=-16:LRA=11:TP=-1.5:linear=true,aresample=48000:async=1:first_pts=0${duration}[outa]`);
+  // Pad/trim before normalization so integrated loudness is measured over the
+  // exact programme duration. Normalizing first then appending intentional
+  // scene silence makes a short tutorial appear artificially quiet at delivery.
+  const exactDuration = options.durationTicks === undefined
+    ? ""
+    : `apad=whole_dur=${ticksToSeconds(options.durationTicks).toFixed(6)},atrim=duration=${ticksToSeconds(options.durationTicks).toFixed(6)},`;
+  // Bring high speech transients under control before loudness normalization.
+  // Without this gentle speech-focused compression, a programme can be too
+  // quiet to meet -16 LUFS while still already sitting at the peak ceiling.
+  // Reserve 0.5 dB beyond the public -1.5 dBTP ceiling because lossy delivery
+  // codecs can raise reconstructed peaks slightly; full-decode QA remains the
+  // authoritative release gate.
+  chains.push(`[mix]${exactDuration}acompressor=threshold=0.05:ratio=8:attack=5:release=100,loudnorm=I=-16:LRA=11:TP=-2:linear=false,aresample=48000:async=1:first_pts=0[outa]`);
   return { inputs: args, filter: chains.join(";"), outputLabel: "[outa]" };
 }
 
@@ -296,7 +307,7 @@ export function planAudioMaster(inputs: readonly AudioInput[], outputPath: strin
     executable: "ffmpeg",
     args: ["-hide_banner", "-nostdin", "-y", ...prepared.inputs, "-filter_complex", prepared.filter, "-map", prepared.outputLabel, "-c:a", "pcm_s24le", "-ar", "48000", pathArgument(outputPath, "audio output")],
     expectedOutputs: [outputPath],
-    description: "Assemble and normalize a 48 kHz lossless audio master to -16 LUFS / -1.5 dBTP",
+    description: "Assemble an exact-duration 48 kHz master for -16 LUFS / <= -1.5 dBTP delivery",
     licensingWarnings: [],
   };
 }
