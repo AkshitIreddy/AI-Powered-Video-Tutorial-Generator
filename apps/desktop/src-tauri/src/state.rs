@@ -2,7 +2,7 @@ use crate::error::CommandError;
 use crate::model_download::ModelDownloadManager;
 use crate::model_setup::ModelSetupStore;
 use crate::project_store::ProjectStore;
-use crate::runtime::RuntimeManager;
+use crate::runtime::{RuntimeManager, load_portable_debug_pack};
 use crate::secrets::CredentialManager;
 use crate::sidecar::{WorkerLaunchConfig, WorkerSupervisor};
 use crate::types::AppPaths;
@@ -74,7 +74,7 @@ impl AppState {
 
         let runtimes = RuntimeManager::load_at(paths.runtimes.clone())?;
         let credentials = Arc::new(CredentialManager::os_keyring());
-        let worker = if let Some(config) = debug_worker_override(&paths.runtimes) {
+        let worker = if let Some(config) = debug_worker_override(&paths.runtimes)? {
             WorkerSupervisor::from_launch_config(config)
         } else if let Some(pack) = runtimes.active_pack() {
             let config = pack
@@ -106,12 +106,20 @@ impl AppState {
     }
 }
 
-fn debug_worker_override(runtime_root: &std::path::Path) -> Option<WorkerLaunchConfig> {
+fn debug_worker_override(
+    runtime_root: &std::path::Path,
+) -> Result<Option<WorkerLaunchConfig>, CommandError> {
     let candidate = std::env::var_os("ALYSTRIA_PIPELINE_WORKER").map(PathBuf::from);
     if cfg!(debug_assertions)
         && let Some(candidate) = candidate
         && candidate.is_file()
     {
+        if candidate
+            .parent()
+            .is_some_and(|parent| parent.join("runtime-manifest.json").is_file())
+        {
+            return portable_debug_worker_launch(&candidate, runtime_root).map(Some);
+        }
         let mut environment = BTreeMap::new();
         if let Some(starter_audio_root) = debug_starter_audio_root(&candidate) {
             environment.insert(
@@ -125,14 +133,53 @@ fn debug_worker_override(runtime_root: &std::path::Path) -> Option<WorkerLaunchC
                 starter_visual_root.into_os_string(),
             );
         }
-        return Some(WorkerLaunchConfig {
+        return Ok(Some(WorkerLaunchConfig {
             executable: candidate,
             working_directory: runtime_root.join("work").join("pipeline-debug"),
             expected_sha256: None,
             environment,
-        });
+        }));
     }
-    None
+    Ok(None)
+}
+
+fn portable_debug_worker_launch(
+    candidate: &std::path::Path,
+    runtime_root: &std::path::Path,
+) -> Result<WorkerLaunchConfig, CommandError> {
+    let pack_root = candidate.parent().ok_or_else(|| {
+        CommandError::new(
+            "INVALID_RUNTIME_PACK",
+            "The portable debug worker has no runtime directory.",
+            false,
+        )
+    })?;
+    let pack = load_portable_debug_pack(pack_root)?;
+    let expected_worker = pack.component_path("pipeline-worker").ok_or_else(|| {
+        CommandError::new(
+            "INCOMPLETE_RUNTIME_PACK",
+            "The portable debug manifest has no pipeline worker.",
+            false,
+        )
+    })?;
+    let actual_worker = candidate
+        .canonicalize()
+        .map_err(|_| CommandError::io("portable debug worker validation"))?;
+    if actual_worker != expected_worker {
+        return Err(CommandError::new(
+            "INVALID_RUNTIME_PACK",
+            "The selected debug worker does not match the portable runtime manifest.",
+            false,
+        ));
+    }
+    pack.worker_launch_config(runtime_root.join("work").join("pipeline-debug"))
+        .ok_or_else(|| {
+            CommandError::new(
+                "INCOMPLETE_RUNTIME_PACK",
+                "The portable debug runtime does not provide every renderer component.",
+                false,
+            )
+        })
 }
 
 /// Development and portable-debug workers may use only an Alystria-owned

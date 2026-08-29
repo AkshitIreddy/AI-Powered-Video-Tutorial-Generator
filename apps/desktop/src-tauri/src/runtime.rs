@@ -256,6 +256,107 @@ impl InstalledRuntimePack {
     }
 }
 
+/// Loads the complete unsigned runtime pack emitted by the portable-debug
+/// packaging script. This path exists only to make a locally built debug app
+/// exercise the same component ledger and worker environment as an installed
+/// signed pack. Release builds always reject it.
+///
+/// The root is derived from the explicitly selected debug worker by
+/// `state.rs`; no request, project, or renderer payload can choose it. Every
+/// selected component is still path-contained, size-bound, and SHA-256
+/// verified before the worker is started.
+pub fn load_portable_debug_pack(root: &Path) -> Result<InstalledRuntimePack, CommandError> {
+    if !cfg!(debug_assertions) {
+        return Err(runtime_error(
+            "PORTABLE_DEBUG_RUNTIME_DISABLED",
+            "Unsigned portable runtime packs are disabled in release builds.",
+        ));
+    }
+    let metadata = root.symlink_metadata().map_err(|_| {
+        runtime_error(
+            "INCOMPLETE_RUNTIME_PACK",
+            "The portable debug runtime directory is missing.",
+        )
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(runtime_error(
+            "INVALID_RUNTIME_PACK",
+            "The portable debug runtime directory is unsafe.",
+        ));
+    }
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| runtime_io("canonicalize portable debug runtime"))?;
+    let manifest_path = canonical_root.join(MANIFEST_FILE);
+    let manifest_metadata = manifest_path.symlink_metadata().map_err(|_| {
+        runtime_error(
+            "INCOMPLETE_RUNTIME_PACK",
+            "The portable debug runtime manifest is missing.",
+        )
+    })?;
+    if manifest_metadata.file_type().is_symlink()
+        || !manifest_metadata.is_file()
+        || manifest_metadata.len() == 0
+        || manifest_metadata.len() > MAX_MANIFEST_BYTES
+    {
+        return Err(runtime_error(
+            "INVALID_RUNTIME_PACK",
+            "The portable debug runtime manifest is not a bounded regular file.",
+        ));
+    }
+    let manifest: RuntimeManifest = serde_json::from_reader(
+        File::open(&manifest_path).map_err(|_| runtime_io("open portable debug manifest"))?,
+    )
+    .map_err(|_| {
+        runtime_error(
+            "INVALID_RUNTIME_MANIFEST",
+            "The portable debug runtime manifest is invalid.",
+        )
+    })?;
+    if manifest.channel != "portable-debug" || manifest.signature.is_some() {
+        return Err(runtime_error(
+            "INVALID_RUNTIME_MANIFEST",
+            "A portable debug manifest must be unsigned and use the portable-debug channel.",
+        ));
+    }
+    validate_manifest_structure(&manifest)?;
+
+    let mut components = BTreeMap::new();
+    for component in selected_components(&manifest)? {
+        let path = canonical_root.join(safe_relative_path(&component.relative_path)?);
+        let canonical_path = path
+            .canonicalize()
+            .map_err(|_| runtime_io("canonicalize portable debug component"))?;
+        if !canonical_path.starts_with(&canonical_root) {
+            return Err(runtime_error(
+                "INVALID_RUNTIME_PATH",
+                format!(
+                    "Portable runtime component {} escapes its verified pack.",
+                    component.id
+                ),
+            ));
+        }
+        verify_component_file(&path, component)?;
+        components.insert(component.id.clone(), component.clone());
+    }
+    if REQUIRED_COMPONENTS
+        .iter()
+        .any(|required| !components.contains_key(*required))
+    {
+        return Err(runtime_error(
+            "INCOMPLETE_RUNTIME_PACK",
+            "The portable debug runtime is incomplete for this platform.",
+        ));
+    }
+    Ok(InstalledRuntimePack {
+        pack_id: manifest_id(&manifest)?,
+        root: canonical_root,
+        manifest_path,
+        manifest,
+        components,
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ActivationRecord {
@@ -520,7 +621,7 @@ fn validate_manifest_structure(manifest: &RuntimeManifest) -> Result<(), Command
         if component.id.trim().is_empty()
             || component.target.trim().is_empty()
             || !identities.insert(identity)
-            || Version::parse(&component.version).is_err()
+            || !valid_component_version(component)
             || component.sha256.len() != 64
             || !component
                 .sha256
@@ -553,6 +654,22 @@ fn validate_manifest_structure(manifest: &RuntimeManifest) -> Result<(), Command
         }
     }
     Ok(())
+}
+
+fn valid_component_version(component: &RuntimeComponent) -> bool {
+    if Version::parse(&component.version).is_ok() {
+        return true;
+    }
+    // Chromium reports a four-part build version (for example
+    // 151.0.7922.34), while the other managed components use SemVer. Preserve
+    // the exact browser-reported pin instead of weakening it to a three-part
+    // approximation that the renderer could not verify.
+    component.id == CHROMIUM
+        && component.version.split('.').count() == 4
+        && component
+            .version
+            .split('.')
+            .all(|part| !part.is_empty() && part.chars().all(|value| value.is_ascii_digit()))
 }
 
 fn selected_components(manifest: &RuntimeManifest) -> Result<Vec<&RuntimeComponent>, CommandError> {
@@ -937,6 +1054,111 @@ mod tests {
             note: None,
         };
         (signing_key, manifest, fetcher)
+    }
+
+    fn portable_debug_fixture(root: &Path) -> RuntimeManifest {
+        let records = [
+            (PIPELINE_WORKER, "2.0.0-rc.0", "alystria-pipeline.exe"),
+            (NODE, "24.20.0", "node/node.exe"),
+            (RENDERER_CLI, "2.0.0-rc.0", "renderer/dist/src/cli.js"),
+            (CHROMIUM, "151.0.7922.34", "chromium/chrome.exe"),
+            (FFMPEG, "9.0.1", "ffmpeg/ffmpeg.exe"),
+            (FFPROBE, "9.0.1", "ffmpeg/ffprobe.exe"),
+        ];
+        let components = records
+            .into_iter()
+            .map(|(id, version, relative_path)| {
+                let bytes = format!("portable-{id}").into_bytes();
+                let path = root.join(relative_path);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(&path, &bytes).unwrap();
+                RuntimeComponent {
+                    id: id.into(),
+                    version: version.into(),
+                    target: current_target(),
+                    relative_path: relative_path.into(),
+                    url: format!("file:///portable-debug/{relative_path}"),
+                    sha256: format!("{:x}", Sha256::digest(&bytes)),
+                    size_bytes: bytes.len() as u64,
+                    license: "test-only".into(),
+                    optional: false,
+                }
+            })
+            .collect();
+        RuntimeManifest {
+            schema_version: 1,
+            channel: "portable-debug".into(),
+            generated_at: Utc::now(),
+            components,
+            signature: None,
+            note: Some("test-only portable debug pack".into()),
+        }
+    }
+
+    #[test]
+    fn portable_debug_pack_is_hash_pinned_and_emits_complete_worker_environment() {
+        let temporary = TempDir::new().unwrap();
+        let manifest = portable_debug_fixture(temporary.path());
+        fs::write(
+            temporary.path().join(MANIFEST_FILE),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let pack = load_portable_debug_pack(temporary.path()).unwrap();
+        let config = pack
+            .worker_launch_config(temporary.path().join("work"))
+            .unwrap();
+        assert_eq!(
+            config.executable,
+            temporary
+                .path()
+                .canonicalize()
+                .unwrap()
+                .join("alystria-pipeline.exe")
+        );
+        assert!(config.expected_sha256.is_some());
+        for variable in [
+            "ALYSTRIA_RUNTIME_PACK_ROOT",
+            "ALYSTRIA_RUNTIME_MANIFEST_PATH",
+            "ALYSTRIA_RENDERER_MODE",
+            "ALYSTRIA_NODE_PATH",
+            "ALYSTRIA_RENDERER_CLI_PATH",
+            "ALYSTRIA_CHROMIUM_PATH",
+            "ALYSTRIA_FFMPEG_PATH",
+            "ALYSTRIA_FFPROBE_PATH",
+        ] {
+            assert!(
+                config
+                    .environment
+                    .contains_key(std::ffi::OsStr::new(variable))
+            );
+        }
+        assert_eq!(
+            config
+                .environment
+                .get(std::ffi::OsStr::new("ALYSTRIA_RENDERER_MODE")),
+            Some(&std::ffi::OsString::from("production"))
+        );
+    }
+
+    #[test]
+    fn portable_debug_pack_rejects_a_replaced_dependency() {
+        let temporary = TempDir::new().unwrap();
+        let manifest = portable_debug_fixture(temporary.path());
+        fs::write(
+            temporary.path().join(MANIFEST_FILE),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            temporary.path().join("renderer/dist/src/cli.js"),
+            b"replaced renderer",
+        )
+        .unwrap();
+
+        let error = load_portable_debug_pack(temporary.path()).unwrap_err();
+        assert_eq!(error.code, "RUNTIME_COMPONENT_SIZE_MISMATCH");
     }
 
     fn verifier(signing_key: &SigningKey) -> Arc<dyn RuntimeManifestVerifier> {
