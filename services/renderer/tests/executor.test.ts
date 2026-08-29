@@ -122,6 +122,7 @@ test("executor uses exact injected tools, resumes captured frames, and writes me
     const firstRunner = new FakeCommandRunner({ ffmpeg: ffmpegPath, ffprobe: ffprobePath, width: 320, height: 180, duration: 1 });
     const first = await executeRender({
       manifest,
+      inputManifestSha256: "f".repeat(64),
       selection: { kind: "range", startFrame: 1, endFrame: 3 },
       outputDirectory,
       executables: { browser: browserPath, ffmpeg: ffmpegPath, ffprobe: ffprobePath },
@@ -134,6 +135,7 @@ test("executor uses exact injected tools, resumes captured frames, and writes me
     assert.equal(captures, 2);
     assert.deepEqual(new Set(firstRunner.calls.map((call) => call.executable)), new Set([ffmpegPath, ffprobePath]));
     assert.equal(first.frameCount, 2);
+    assert.equal(first.inputManifestSha256, "f".repeat(64));
     assert.equal(first.probe.audioSampleRate, 48_000);
     assert.equal(first.qaMetrics.integratedLufs, -16.1);
     assert.equal(first.qaMetrics.truePeakDbtp, -1.7);
@@ -156,6 +158,7 @@ test("executor uses exact injected tools, resumes captured frames, and writes me
     const secondRunner = new FakeCommandRunner({ ffmpeg: ffmpegPath, ffprobe: ffprobePath, width: 320, height: 180, duration: 1 });
     await executeRender({
       manifest,
+      inputManifestSha256: "f".repeat(64),
       selection: { kind: "range", startFrame: 1, endFrame: 3 },
       outputDirectory,
       executables: { browser: browserPath, ffmpeg: ffmpegPath, ffprobe: ffprobePath },

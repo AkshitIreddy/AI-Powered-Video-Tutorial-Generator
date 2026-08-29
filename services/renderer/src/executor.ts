@@ -172,6 +172,8 @@ export interface RenderExecutorDependencies {
 
 export interface RenderExecutorOptions {
   readonly manifest: RenderManifest;
+  /** SHA-256 of the exact UTF-8 manifest document received by the CLI. */
+  readonly inputManifestSha256?: string;
   readonly selection?: RenderSelection;
   readonly outputDirectory?: string;
   readonly outputName?: string;
@@ -739,7 +741,10 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
   const presenterLayers = resolvePresenterCompositeLayers(manifest, frameRange);
   const concurrency = positiveInteger(options.concurrency ?? DEFAULT_CONCURRENCY, "concurrency", MAX_CAPTURE_CONCURRENCY);
   const maximumFramesPerChunk = positiveInteger(options.maximumFramesPerChunk ?? DEFAULT_CHUNK_FRAMES, "maximumFramesPerChunk");
-  const inputManifestSha256 = sha256Text(stableJson(options.manifest));
+  const inputManifestSha256 = options.inputManifestSha256 ?? sha256Text(stableJson(options.manifest));
+  if (!/^[0-9a-f]{64}$/.test(inputManifestSha256)) {
+    throw new TypeError("inputManifestSha256 must be 64 lowercase hexadecimal characters");
+  }
   const renderKey = sha256Text(stableJson({ inputManifestSha256, selection, target: manifest.target, rendererVersion: manifest.rendererVersion }));
   const outputDirectory = resolve(options.outputDirectory ?? manifest.outputDirectory);
   const progressPath = resolve(options.progressPath ?? join(outputDirectory, "render-progress.jsonl"));

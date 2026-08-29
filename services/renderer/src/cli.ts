@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RenderManifest } from "./contracts.js";
@@ -49,12 +50,27 @@ Render options:
 The render command starts Chromium and FFmpeg directly with argument arrays. It
 never invokes a shell. Planning commands remain side-effect-free.`;
 
-async function manifestFrom(argument: string | undefined): Promise<RenderManifest> {
+export interface ManifestDocument {
+  readonly manifest: RenderManifest;
+  /** Hash of the exact bytes parsed, before JavaScript number normalization. */
+  readonly sha256: string;
+}
+
+export async function manifestDocumentFrom(argument: string | undefined): Promise<ManifestDocument> {
   if (!argument) throw new TypeError("Manifest path is required");
-  if (argument === "--fixture") return fixtureManifest();
-  const parsed: unknown = JSON.parse(await readFile(resolve(argument), "utf8"));
+  const bytes = argument === "--fixture"
+    ? Buffer.from(JSON.stringify(fixtureManifest()), "utf8")
+    : await readFile(resolve(argument));
+  const parsed: unknown = JSON.parse(bytes.toString("utf8"));
   assertRenderManifest(parsed as RenderManifest);
-  return parsed as RenderManifest;
+  return {
+    manifest: parsed as RenderManifest,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+}
+
+async function manifestFrom(argument: string | undefined): Promise<RenderManifest> {
+  return (await manifestDocumentFrom(argument)).manifest;
 }
 
 function integer(value: string | undefined, label: string): number {
@@ -186,7 +202,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       return 0;
     }
     case "render": {
-      const manifest = await manifestFrom(args[0]);
+      const manifestDocument = await manifestDocumentFrom(args[0]);
+      const manifest = manifestDocument.manifest;
       const flags = parseFlags(args.slice(1), new Set([
         "--mode", "--scene", "--start-frame", "--end-frame", "--draft-max",
         "--output-dir", "--output", "--browser", "--browser-version", "--browser-sha256",
@@ -207,6 +224,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       try {
         const output = await executeRender({
           manifest,
+          inputManifestSha256: manifestDocument.sha256,
           selection: renderSelection(flags),
           executables: {
             ...(browserPath === undefined ? {} : { browser: browserPath }),

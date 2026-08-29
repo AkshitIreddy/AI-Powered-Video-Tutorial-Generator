@@ -323,6 +323,7 @@ class SubprocessRendererClient:
             manifest_path = _guarded_child(attempt_root, attempt_root / "render-manifest.json")
             manifest_bytes = (_canonical_json(manifest) + "\n").encode()
             manifest_path.write_bytes(manifest_bytes)
+            input_manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
             output_name = _delivery_name(self.options.codec)
             argv = self._render_argv(manifest_path, output_root, output_name)
             result = self.runner.run(
@@ -337,7 +338,12 @@ class SubprocessRendererClient:
                     f"Renderer exited with code {result.exit_code}: {detail[-4_096:]}"
                 )
             output_path = _guarded_child(output_root, output_root / "render-output.json")
-            output = self._read_output_manifest(output_path, output_root, manifest)
+            output = self._read_output_manifest(
+                output_path,
+                output_root,
+                manifest,
+                input_manifest_sha256,
+            )
             delivery = _delivery_record(output)
             delivery_path = _validated_output_file(output_root, delivery)
             content = delivery_path.read_bytes()
@@ -1086,6 +1092,7 @@ class SubprocessRendererClient:
         path: Path,
         output_root: Path,
         input_manifest: Mapping[str, Any],
+        input_manifest_sha256: str,
     ) -> dict[str, Any]:
         try:
             info = path.lstat()
@@ -1103,8 +1110,7 @@ class SubprocessRendererClient:
             raise RendererOutputError("Renderer output has an unsupported schema version")
         if value.get("manifestId") != input_manifest["id"]:
             raise RendererOutputError("Renderer output manifestId does not match its input")
-        expected_hash = hashlib.sha256(_canonical_json(input_manifest).encode()).hexdigest()
-        if value.get("inputManifestSha256") != expected_hash:
+        if value.get("inputManifestSha256") != input_manifest_sha256:
             raise RendererOutputError("Renderer output input-manifest hash does not match")
         browser = _required_mapping(value.get("browser"), "renderer browser")
         if (

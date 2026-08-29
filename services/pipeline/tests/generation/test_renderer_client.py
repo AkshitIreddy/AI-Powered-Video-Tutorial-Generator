@@ -105,7 +105,8 @@ class FakeRendererRunner:
         assert "--ffprobe" in argv
         assert "--discard-frame-cache" in argv
         manifest_path = Path(argv[3])
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_document = manifest_path.read_bytes()
+        manifest = json.loads(manifest_document.decode("utf-8"))
         assert isinstance(manifest, dict)
         self.render_manifest = manifest
         self.attempt_root = cwd
@@ -148,7 +149,7 @@ class FakeRendererRunner:
         output = {
             "schemaVersion": 1,
             "manifestId": manifest["id"],
-            "inputManifestSha256": hashlib.sha256(canonical(manifest).encode()).hexdigest(),
+            "inputManifestSha256": hashlib.sha256(manifest_document).hexdigest(),
             "renderKey": "a" * 64,
             "selection": {"kind": "full"},
             "frameRange": {"startFrame": 0, "endFrame": int(duration_ticks / 240_000 * fps)},
