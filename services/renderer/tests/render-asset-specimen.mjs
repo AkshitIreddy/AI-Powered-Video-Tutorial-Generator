@@ -28,7 +28,11 @@ const manifest = {
       eyebrow: "CUSTOM STUDIO KIT",
       title: "Your presenter, your visual language",
       body: "Upload a portrait and background, then keep every render locally hash-bound.",
-      items: ["Verified project media", "Theme-aware composition", "No remote image URLs"],
+      items: [
+        "A reserved side panel keeps a picture-in-picture presenter from covering the teaching copy.",
+        "Three readable lines let a dense explanation remain complete without a clipped visual ellipsis.",
+        "Every visible background and portrait remains hash-bound to its project provenance.",
+      ],
     },
     captions: [{ id: "custom-caption", startTick: 0, endTick: 2_400_000, text: "Every visual choice stays traceable and export-safe." }],
     // Exercise the safety-critical mode: a presenter PIP gets a reserved

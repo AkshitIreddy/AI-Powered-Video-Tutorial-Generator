@@ -264,13 +264,15 @@ export function Pill({ x, y, label, theme = PRECISION_THEME, tone = "primary", f
   );
 }
 
-export function BulletList({ items, rect, scene, frame, theme = PRECISION_THEME, ordered = false }: {
+export function BulletList({ items, rect, scene, frame, theme = PRECISION_THEME, ordered = false, maxLinesPerItem = 2 }: {
   readonly items: readonly { readonly id: string; readonly text: string; readonly supportingText?: string; readonly emphasis?: string }[];
   readonly rect: Rect;
   readonly scene: CompiledScene;
   readonly frame: FrameContext;
   readonly theme?: SceneTheme;
   readonly ordered?: boolean;
+  /** A reserved presenter panel can afford one extra line without overlap. */
+  readonly maxLinesPerItem?: number;
 }) {
   const visible = items.slice(0, scene.metrics.profile === "portrait" ? 6 : 7);
   const rowHeight = rect.height / Math.max(1, visible.length);
@@ -287,7 +289,7 @@ export function BulletList({ items, rect, scene, frame, theme = PRECISION_THEME,
             ) : (
               <circle cx={rect.x + scene.metrics.bodySize * 0.65} cy={y + scene.metrics.bodySize * 0.88} r={scene.metrics.bodySize * 0.28} fill={color} />
             )}
-            <WrappedText text={item.text} rect={{ x: rect.x + scene.metrics.bodySize * 1.8, y: y + scene.metrics.bodySize * 0.18, width: rect.width - scene.metrics.bodySize * 2, height: rowHeight * 0.58 }} theme={theme} fontSize={scene.metrics.bodySize} fontWeight="650" maxLines={2} />
+            <WrappedText text={item.text} rect={{ x: rect.x + scene.metrics.bodySize * 1.8, y: y + scene.metrics.bodySize * 0.18, width: rect.width - scene.metrics.bodySize * 2, height: rowHeight * 0.72 }} theme={theme} fontSize={scene.metrics.bodySize} fontWeight="650" maxLines={maxLinesPerItem} />
             {item.supportingText ? <WrappedText text={item.supportingText} rect={{ x: rect.x + scene.metrics.bodySize * 1.8, y: y + rowHeight * 0.56, width: rect.width - scene.metrics.bodySize * 2, height: rowHeight * 0.38 }} theme={theme} fontSize={scene.metrics.smallSize} fill={theme.mutedInk} maxLines={1} /> : null}
           </g>
         );

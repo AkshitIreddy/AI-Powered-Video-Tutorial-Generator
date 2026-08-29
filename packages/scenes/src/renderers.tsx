@@ -515,7 +515,7 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
   const nameplateY = portraitRect.y + portraitRect.height - nameplateHeight;
   return withFrame(props, (
     <g id="body" data-semantic-role="presenter">
-      {withSlide && slideRect ? <Card rect={slideRect} theme={theme} tone="primary"><BulletList items={content.slideItems ?? []} rect={insetRect(slideRect, props.scene.metrics.gutter)} scene={props.scene} frame={props.frame} theme={theme} /></Card> : null}
+      {withSlide && slideRect ? <Card rect={slideRect} theme={theme} tone="primary"><BulletList items={content.slideItems ?? []} rect={insetRect(slideRect, props.scene.metrics.gutter)} scene={props.scene} frame={props.frame} theme={theme} maxLinesPerItem={placement === "picture-in-picture" ? 3 : 2} /></Card> : null}
       <AssetFrame asset={content.portrait ?? { id: "presenter-placeholder", alt: content.presenterName ?? "Presenter portrait", fit: "cover" }} rect={portraitRect} resolveAsset={props.resolveAsset} theme={theme} label="" />
       <rect x={portraitRect.x} y={nameplateY} width={portraitRect.width} height={nameplateHeight} rx={theme.radius} fill={theme.codeBackground} opacity="0.92" />
       <text x={portraitRect.x + props.scene.metrics.gutter * 0.8} y={nameplateY + nameplateHeight * 0.62} fill={theme.surface} fontFamily={theme.fontBody} fontWeight="750" fontSize={props.scene.metrics.bodySize * 0.82}>{content.presenterName ?? "Presenter"}</text>
