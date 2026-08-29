@@ -35,3 +35,40 @@ desktop runtime manager expects the installed copy at
 absolute app-data root is shown by Alystria diagnostics. The build script does
 not install the executable, alter a power profile, download model weights, or
 publish an artifact.
+
+## Local presenter worker
+
+The service attaches an installed MuseTalk-style local worker only when
+`ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH` points to its setup record. The worker
+receives CAS-verified portrait and final narration copies in an isolated
+attempt directory. Its command is an argv template, never a shell string:
+
+```json
+{
+  "schemaVersion": 1,
+  "runtimeRoot": "C:/Alystria/runtimes/presenter/current",
+  "executable": { "relativePath": "presenter-worker.exe", "sha256": "<64 hex>" },
+  "ffprobe": { "relativePath": "ffprobe.exe", "sha256": "<64 hex>" },
+  "argumentTemplate": [
+    "--portrait", "{portrait}", "--audio", "{audio}",
+    "--output", "{output}", "--workspace", "{workspace}",
+    "--job", "{job_manifest}", "--seed", "{seed}"
+  ],
+  "modelId": "musetalk",
+  "modelRevision": "<immutable revision>",
+  "executionPolicy": "managed-verified",
+  "networkPolicy": "supervisor-deny",
+  "profiles": [{
+    "profileId": "presenter.default",
+    "portraitArtifactHash": "<project CAS SHA-256>",
+    "consentId": "<consent record ID>"
+  }],
+  "defaultProfileId": "presenter.default"
+}
+```
+
+Managed mode requires pinned worker and ffprobe files plus supervisor-enforced
+network denial. An unmanaged development invocation must declare
+`executionPolicy: "unsafe-test-only"`, `networkPolicy: "not-enforced"`, and
+`unsafeTestOnlyAcknowledged: true`; that state is preserved in artifact
+metadata and cannot be mistaken for a verified production result.

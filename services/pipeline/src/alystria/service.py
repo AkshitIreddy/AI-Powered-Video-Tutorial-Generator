@@ -21,6 +21,7 @@ from . import __version__
 from .generation import (
     DeterministicRendererClient,
     GenerationCoordinator,
+    GenerationMediaClient,
     GenerationState,
     GenerationStatus,
     RenderedTutorial,
@@ -30,6 +31,7 @@ from .generation import (
     RuntimeGenerationMediaClient,
     create_production_renderer_client,
     default_local_media_client,
+    load_local_presenter_media_client,
     request_from_desktop,
 )
 from .jobs import (
@@ -794,6 +796,7 @@ def _enqueue_generation_coordinator(
         media_client = RuntimeGenerationMediaClient(
             provider_runtime_factory.build(parse_routing_policy(routing_value))
         )
+    media_client = _configured_local_presenter(store, media_client)
     return GenerationCoordinator(
         store,
         runtime,
@@ -863,12 +866,29 @@ def _production_generation_coordinator(
             )
         provider_runtime = provider_runtime_factory.build(parse_routing_policy(routing_value))
         media_client = RuntimeGenerationMediaClient(provider_runtime)
+    media_client = _configured_local_presenter(store, media_client)
     return GenerationCoordinator(
         store,
         runtime,
         media_client=media_client,
         renderer_client=renderer,
     )
+
+
+def _configured_local_presenter(
+    store: ProjectStore, media_client: GenerationMediaClient
+) -> GenerationMediaClient:
+    """Attach the installed local presenter only through an explicit config path.
+
+    The privileged desktop/model manager owns this file. Missing configuration
+    preserves the selected visual/TTS client; malformed or unsafe configuration
+    fails closed instead of silently returning fixture presenter metadata.
+    """
+
+    config_value = os.environ.get("ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH")
+    if not config_value:
+        return media_client
+    return load_local_presenter_media_client(store, media_client, Path(config_value))
 
 
 def _production_renderer_client(store: ProjectStore) -> RendererClient:
