@@ -6,6 +6,7 @@ use crate::types::*;
 use crate::validation;
 use base64::Engine as _;
 use chrono::Utc;
+use serde_json::Value;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use tauri::State;
@@ -468,6 +469,50 @@ pub fn provider_secret_delete(
     state
         .credentials
         .delete(&input.provider_id, &input.credential_kind)
+}
+
+#[tauri::command]
+pub fn provider_routing_policy_get(
+    input: ProjectIdentityRequest,
+    state: State<'_, AppState>,
+) -> Result<ProviderRoutingPolicyReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    worker_result(&state.worker, "provider.routingPolicy.get", &input)
+}
+
+#[tauri::command]
+pub fn provider_routing_policy_save(
+    mut input: SaveProviderRoutingPolicyRequest,
+    state: State<'_, AppState>,
+) -> Result<ProviderRoutingPolicyReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    if input.expected_head_revision_id.trim().is_empty()
+        || input.expected_head_revision_id.len() > 128
+    {
+        return Err(CommandError::invalid(
+            "expectedHeadRevisionId",
+            "must identify the reviewed project revision",
+        ));
+    }
+    let policy = input.policy.as_object().ok_or_else(|| {
+        CommandError::invalid("policy", "must be a provider routing policy object")
+    })?;
+    if policy.get("version").and_then(Value::as_u64) != Some(1)
+        || !policy.get("routes").is_some_and(Value::is_array)
+        || !policy.get("approvals").is_some_and(Value::is_array)
+    {
+        return Err(CommandError::invalid(
+            "policy",
+            "must include version 1 routes and approvals",
+        ));
+    }
+    validation::snapshot(&input.policy)?;
+    input.message = validation::optional_metadata(&input.message, "message")?;
+    worker_result(&state.worker, "provider.routingPolicy.save", &input)
 }
 
 #[tauri::command]

@@ -19,6 +19,8 @@ import {
   projectSnapshotSave,
   providerSecretSet,
   providerSecretStatus,
+  providerRoutingPolicyGet,
+  providerRoutingPolicySave,
   qaRepair,
   sceneRegenerate,
   sceneRender,
@@ -156,6 +158,59 @@ describe("native desktop bridge", () => {
     expect(tauri.invoke).toHaveBeenNthCalledWith(3, "source_import", { input: source });
     expect(tauri.invoke).toHaveBeenNthCalledWith(4, "project_export_archive", { input: identity });
     expect(JSON.stringify(localStorage)).not.toContain(source.contentBase64);
+  });
+
+  it("uses narrow project routing policy commands without exposing credentials", async () => {
+    const identity = {
+      projectId: "019d0000-0000-7000-8000-000000000031",
+      projectDirectory: "C:/Users/Akshit/Alystria/Projects/routing",
+    };
+    const policy = {
+      version: 1 as const,
+      privacyMode: "cloud" as const,
+      dataClassification: "project" as const,
+      budget: { currency: "USD", hardLimitMicros: 1_000_000, requireKnownPricing: true, approved: true },
+      approvals: [],
+      routes: [],
+    };
+    tauri.invoke.mockResolvedValue({ policy, headRevisionId: "rev_2", revisionNumber: 2 });
+
+    await providerRoutingPolicyGet(identity);
+    const save = { ...identity, expectedHeadRevisionId: "rev_1", policy, message: "Approved reviewed policy" };
+    await providerRoutingPolicySave(save);
+
+    expect(tauri.invoke).toHaveBeenNthCalledWith(1, "provider_routing_policy_get", { input: identity });
+    expect(tauri.invoke).toHaveBeenNthCalledWith(2, "provider_routing_policy_save", { input: save });
+  });
+
+  it("persists reviewed routing as a separate browser project revision", async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const handle = await projectCreate({
+      parentDirectory: "/browser-demo/alystria/projects",
+      directoryName: "routing-policy",
+      title: "Routing policy",
+      locale: "en-US",
+      groundingMode: "creative",
+      initialSnapshot: { title: "Routing policy", scenes: [], sources: [] },
+    });
+    const identity = { projectId: handle.manifest.projectId, projectDirectory: handle.projectDirectory };
+    const head = await projectSnapshotGet(identity);
+    const policy = {
+      version: 1 as const,
+      privacyMode: "local" as const,
+      dataClassification: "project" as const,
+      budget: { currency: "USD", hardLimitMicros: 0, requireKnownPricing: true, approved: true },
+      approvals: [],
+      routes: [],
+    };
+
+    const saved = await providerRoutingPolicySave({ ...identity, expectedHeadRevisionId: head.headRevisionId, policy });
+    const reloaded = await providerRoutingPolicyGet(identity);
+
+    expect(saved.revisionNumber).toBe(2);
+    expect(reloaded.policy).toEqual(policy);
+    expect(reloaded.headRevisionId).toBe(saved.headRevisionId);
+    expect(tauri.invoke).not.toHaveBeenCalled();
   });
 
   it("uses narrow native control and durable history commands", async () => {

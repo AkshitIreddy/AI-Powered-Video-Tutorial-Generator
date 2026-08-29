@@ -51,6 +51,8 @@ pub fn run() {
             provider_secret_set,
             provider_secret_status,
             provider_secret_delete,
+            provider_routing_policy_get,
+            provider_routing_policy_save,
             local_model_setup_get,
             local_model_setup_save,
             runtime_manifest,

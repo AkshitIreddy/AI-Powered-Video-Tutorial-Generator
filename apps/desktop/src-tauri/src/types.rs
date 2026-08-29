@@ -398,6 +398,26 @@ pub struct ProviderSecretRef {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SaveProviderRoutingPolicyRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub policy: Value,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderRoutingPolicyReceipt {
+    pub policy: Option<Value>,
+    pub head_revision_id: String,
+    #[serde(default)]
+    pub revision_number: Option<u64>,
+}
+
 /// A no-secret, app-wide preset.  It is a user-facing setup preference, not a
 /// project approval or a provider routing policy; those remain durable project
 /// records validated by the pipeline service.

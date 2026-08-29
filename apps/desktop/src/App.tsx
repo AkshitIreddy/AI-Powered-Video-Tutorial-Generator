@@ -97,6 +97,7 @@ import {
   projectSnapshotGet,
   projectSnapshotSave,
   providerSecretDelete,
+  providerRoutingPolicySave,
   providerSecretSet,
   providerSecretStatus,
   qaRepair,
@@ -111,9 +112,11 @@ import {
   type MasterExportRequest,
   type ModelProfile,
   type ProviderSecretRef,
+  type TutorialRoutingPolicy,
   type QualityPreset,
   type SourceImportReceipt,
 } from "./native";
+import { buildProviderRoutingReview } from "./providerRouting";
 import { SharedScenePreview } from "./ScenePreview";
 import type {
   AppSnapshot,
@@ -144,6 +147,10 @@ interface TutorialCreationSettings {
   grounding: GroundingMode;
   quality: QualityPreset;
   sourceFiles: File[];
+  routingPolicy: TutorialRoutingPolicy;
+  approvedProviderIds: string[];
+  privacy: TutorialRoutingPolicy["privacyMode"];
+  hardLimitMinorUnits: number;
 }
 
 const globalNav: Array<{ id: GlobalArea; label: string; icon: LucideIcon }> = [
@@ -483,15 +490,28 @@ function App() {
       const receipt = await importSelectedFile(createdProject, file);
       createdProject = appendImportedSource(createdProject, receipt);
     }
+    const routingReceipt = await providerRoutingPolicySave({
+      projectId: handle.manifest.projectId,
+      projectDirectory: handle.projectDirectory,
+      expectedHeadRevisionId: createdProject.nativeHeadRevisionId!,
+      policy: settings.routingPolicy,
+      message: `Approved ${settings.routingPolicy.privacyMode} provider routing for tutorial creation`,
+    });
+    createdProject = {
+      ...createdProject,
+      nativeHeadRevisionId: routingReceipt.headRevisionId,
+      ...(routingReceipt.revisionNumber !== undefined ? { nativeRevisionNumber: routingReceipt.revisionNumber } : {}),
+      privacy: settings.privacy === "local" ? "Local only" : "Approved cloud",
+    };
     const receipt = await generationStart({
       projectId: handle.manifest.projectId,
       projectDirectory: handle.projectDirectory,
       snapshotId: createdProject.nativeHeadRevisionId ?? null,
       scope: { kind: "project" },
       quality: settings.quality,
-      privacy: "local",
-      budget: { currency: "USD", hardLimitMinorUnits: 34, requireKnownPricing: true },
-      approvedProviderIds: [],
+      privacy: settings.privacy,
+      budget: { currency: "USD", hardLimitMinorUnits: settings.hardLimitMinorUnits, requireKnownPricing: true },
+      approvedProviderIds: settings.approvedProviderIds,
       preservationLocks: [],
     });
     setNativeJobs((current) => ({
@@ -509,7 +529,7 @@ function App() {
     setActiveSceneId(createdProject.scenes[0]?.id ?? "");
     setWorkspace("plan");
     setJobsOpen(true);
-    notify("Local project created", `${createdProject.title} is stored under ${bootstrap.paths.projects}.`, receipt.state === "BLOCKED" || receipt.state === "FAILED" ? "warning" : "success");
+    notify("Project and routing approved", `${createdProject.title} is stored under ${bootstrap.paths.projects} with the reviewed ${settings.privacy} provider policy.`, receipt.state === "BLOCKED" || receipt.state === "FAILED" ? "warning" : "success");
   };
 
   const importSources = async (projectId: string, files: File[]) => {
@@ -1418,17 +1438,65 @@ function NewTutorialWizard({ environment, onClose, onCreate }: { environment: Ru
   const [creating, setCreating] = useState(false);
   const [sourceFiles, setSourceFiles] = useState<File[]>([]);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [setup, setSetup] = useState<LocalModelSetup | null>(null);
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [secretRefs, setSecretRefs] = useState<Record<string, ProviderSecretRef>>({});
+  const [routingApproval, setRoutingApproval] = useState(false);
+  const [routingReviewedAt, setRoutingReviewedAt] = useState<string | null>(null);
+  const [dataClassification, setDataClassification] = useState<"public" | "project">("project");
+  const [hardLimitMinorUnits, setHardLimitMinorUnits] = useState("100");
+  const [routingLoading, setRoutingLoading] = useState(true);
   const dialogRef = useRef<HTMLDivElement>(null);
   const sourceInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { dialogRef.current?.focus(); }, []);
+  useEffect(() => {
+    let active = true;
+    setRoutingLoading(true);
+    void Promise.all([
+      localModelSetupGet(),
+      Promise.all(providerConfigs.filter((provider) => !provider.local).map(async (provider) => [provider.id, await providerSecretStatus({ providerId: provider.id, credentialKind: "api_key" })] as const)),
+    ]).then(([nextSetup, refs]) => {
+      if (!active) return;
+      setSetup(nextSetup);
+      setSelectedProfileId(nextSetup.activeProfileId);
+      setSecretRefs(Object.fromEntries(refs));
+    }).catch((error: unknown) => {
+      if (active) setCreateError(`Provider setup could not be loaded: ${errorMessage(error)}`);
+    }).finally(() => { if (active) setRoutingLoading(false); });
+    return () => { active = false; };
+  }, [environment]);
+  const selectedProfile = setup?.profiles.find((profile) => profile.id === selectedProfileId) ?? setup?.profiles[0] ?? null;
+  const effectiveClassification = sourceFiles.length ? "project" : dataClassification;
+  const routingReview = selectedProfile ? buildProviderRoutingReview({
+    profile: selectedProfile,
+    secretRefs,
+    dataClassification: effectiveClassification,
+    hardLimitMinorUnits: Math.max(0, Number.parseInt(hardLimitMinorUnits, 10) || 0),
+    approvalChecked: routingApproval,
+    hasPrivateSources: sourceFiles.length > 0,
+    groundingMode: grounding.toLowerCase() as GroundingMode,
+    ...(routingReviewedAt ? { reviewedAt: routingReviewedAt } : {}),
+  }) : null;
   const create = async () => {
+    if (!routingReview?.policy) {
+      setCreateError(routingReview?.errors[0] ?? "Choose and review a provider profile before creating this tutorial.");
+      return;
+    }
     const id = `project-${Date.now()}`;
     setCreating(true);
     setCreateError(null);
     try {
       await onCreate(
         { ...defaultSnapshot.projects[0]!, id, title: topic || "Untitled tutorial", topic: topic || "A new idea", description: `A ${grounding.toLowerCase()} tutorial for ${audience.toLowerCase()}.`, audience, locale, duration: Number(duration), progress: 8, status: "Planning", updatedAt: "just now", scenes: defaultSnapshot.projects[0]!.scenes.slice(0, 4).map((scene, index) => ({ ...scene, id: `${id}-scene-${index + 1}`, status: "draft" })), sources: [] },
-        { grounding: grounding.toLowerCase() as GroundingMode, quality: quality.toLowerCase() as QualityPreset, sourceFiles },
+        {
+          grounding: grounding.toLowerCase() as GroundingMode,
+          quality: quality.toLowerCase() as QualityPreset,
+          sourceFiles,
+          routingPolicy: routingReview.policy,
+          approvedProviderIds: routingReview.approvedProviderIds,
+          privacy: routingReview.privacy,
+          hardLimitMinorUnits: Math.max(0, Number.parseInt(hardLimitMinorUnits, 10) || 0),
+        },
       );
     } catch (error) {
       setCreateError(errorMessage(error));
@@ -1444,9 +1512,17 @@ function NewTutorialWizard({ environment, onClose, onCreate }: { environment: Ru
       {step === 3 && <div className="wizard-step"><span className="section-kicker">Lock the trust boundary</span><h2>How should Alystria research?</h2><p>No cloud call happens until its provider, data class, retention policy, and cost are approved.</p><div className="choice-cards">{([
         { name: "Creative", detail: "Use the prompt as the source of truth", icon: Sparkles }, { name: "Grounded", detail: "Connect verifiable claims to reliable evidence", icon: ShieldCheck }, { name: "Strict", detail: "Block every unsupported external claim", icon: Lock },
       ] satisfies Array<{ name: string; detail: string; icon: LucideIcon }>).map(({ name, detail, icon: Icon }) => <button key={name} className={grounding === name ? "active" : ""} onClick={() => setGrounding(name)}><span><Icon size={20} /></span><strong>{name}</strong><small>{detail}</small>{grounding === name && <CheckCircle2 size={17} />}</button>)}</div><div className="privacy-selection"><Lock size={18} /><div><strong>Private sources remain local</strong><p>Imported documents start as Local only. Reclassifying them always requires an explicit decision.</p></div><span className="toggle-on"><i /></span></div></div>}
-      {step === 4 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration} minutes</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} private file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Privacy</dt><dd>Local only</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div><div className="cost-approval"><CircleDollarSign size={20} /><div><strong>Estimated plan cost: $0.12–$0.34</strong><p>Only the learning plan is generated now. Visual, speech, and render costs are approved later.</p></div></div>{createError && <div className="create-error" role="alert"><CircleAlert size={17} /><span><strong>Project creation failed</strong><small>{createError}</small></span></div>}</div>}
+      {step === 4 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration} minutes</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} private file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Privacy</dt><dd>{routingReview?.privacy ?? "Pending review"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
+        <section className="routing-review" aria-labelledby="routing-review-title">
+          <div className="routing-review-heading"><div><span className="section-kicker">Project provider policy</span><h3 id="routing-review-title">Name every route before work starts.</h3></div><span className={`routing-readiness ${routingReview?.policy ? "ready" : "attention"}`}>{routingLoading ? "Loading" : routingReview?.policy ? <><CheckCircle2 size={13} /> Ready</> : <><CircleAlert size={13} /> Review needed</>}</span></div>
+          <div className="routing-review-controls"><label><span>Creation profile</span><select aria-label="Creation profile" value={selectedProfile?.id ?? ""} disabled={routingLoading || !setup} onChange={(event) => { setSelectedProfileId(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }}>{setup?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><label><span>Content class</span><select aria-label="Content class" value={effectiveClassification} disabled={sourceFiles.length > 0} onChange={(event) => { setDataClassification(event.target.value as "public" | "project"); setRoutingApproval(false); setRoutingReviewedAt(null); }}><option value="project">Project content</option><option value="public">Public / synthetic</option></select></label><label><span>Hard budget</span><span className="currency-input"><b>$</b><input aria-label="Hard budget in cents" type="number" min="0" max="100000" value={hardLimitMinorUnits} onChange={(event) => { setHardLimitMinorUnits(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }} /><em>cents</em></span></label></div>
+          {routingReview?.routeRows.length ? <div className="routing-route-list" aria-label="Reviewed provider routes">{routingReview.routeRows.map((route) => <div key={`${route.medium}-${route.providerId}`}><span>{route.medium}</span><strong>{providerDisplayName(route.providerId)}</strong><code>{route.modelId}</code><em className={route.boundary}>{route.boundary}</em></div>)}</div> : <div className="routing-empty">Choose a saved profile with explicit writing, research, image, and narration models.</div>}
+          {routingReview?.errors.length ? <div className="routing-errors" role="status">{routingReview.errors.map((error) => <span key={error}><CircleAlert size={13} /> {error}</span>)}</div> : null}
+          <label className="routing-consent"><input type="checkbox" checked={routingApproval} onChange={(event) => { setRoutingApproval(event.target.checked); setRoutingReviewedAt(event.target.checked ? new Date().toISOString() : null); }} /><span><strong>Approve this exact routing policy</strong><small>I approve the named providers, current retention and provider-managed region, the content class above, and the hard budget. No unlisted fallback is allowed.{routingReview?.routeRows.some((route) => route.providerId === "nvidia-nim") ? " This includes NVIDIA API Trial Terms and a current per-model access check." : ""}</small></span></label>
+        </section>
+        <div className="cost-approval"><CircleDollarSign size={20} /><div><strong>Hard creation budget: ${(Math.max(0, Number.parseInt(hardLimitMinorUnits, 10) || 0) / 100).toFixed(2)}</strong><p>The approved project policy is saved as its own durable revision before generation starts.</p></div></div>{createError && <div className="create-error" role="alert"><CircleAlert size={17} /><span><strong>Project creation failed</strong><small>{createError}</small></span></div>}</div>}
     </div>
-    <footer><button className="secondary-button" disabled={creating} onClick={step === 1 ? onClose : () => setStep((value) => value - 1)}>{step === 1 ? "Cancel" : <><ArrowLeft size={15} /> Back</>}</button><span>Step {step} of 4</span>{step < 4 ? <button className="primary-button" disabled={step === 1 && !topic.trim()} onClick={() => setStep((value) => value + 1)}>Continue <ArrowRight size={15} /></button> : <button className="primary-button" disabled={creating} onClick={() => { void create(); }}>{creating ? <RefreshCw className="spin" size={16} /> : <Sparkles size={16} />}{creating ? (sourceFiles.length ? "Importing sources…" : "Creating local project…") : "Create learning plan"}</button>}</footer>
+    <footer><button className="secondary-button" disabled={creating} onClick={step === 1 ? onClose : () => setStep((value) => value - 1)}>{step === 1 ? "Cancel" : <><ArrowLeft size={15} /> Back</>}</button><span>Step {step} of 4</span>{step < 4 ? <button className="primary-button" disabled={step === 1 && !topic.trim()} onClick={() => setStep((value) => value + 1)}>Continue <ArrowRight size={15} /></button> : <button className="primary-button" disabled={creating || !routingReview?.policy} onClick={() => { void create(); }}>{creating ? <RefreshCw className="spin" size={16} /> : <Sparkles size={16} />}{creating ? (sourceFiles.length ? "Importing sources…" : "Creating project…") : "Create learning plan"}</button>}</footer>
   </div></div>;
 }
 
@@ -1494,6 +1570,12 @@ function localeCode(locale: ProjectRecord["locale"]): string {
   if (locale === "Spanish") return "es-ES";
   if (locale === "Hindi") return "hi-IN";
   return "en-US";
+}
+
+function providerDisplayName(providerId: string): string {
+  if (providerId === "local-runtime") return "Alystria local runtime";
+  if (providerId === "openai-compatible-local") return "OpenAI-compatible local";
+  return providerConfigs.find((provider) => provider.id === providerId)?.name ?? providerId;
 }
 
 function projectDirectoryName(title: string): string {

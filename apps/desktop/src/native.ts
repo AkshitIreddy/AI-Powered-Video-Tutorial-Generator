@@ -243,6 +243,68 @@ export interface ProviderSecretRef {
   updatedAt: string | null;
 }
 
+export type ProviderCapability =
+  | "llm.text"
+  | "llm.structured"
+  | "research.web"
+  | "image.generate"
+  | "image.edit"
+  | "motion.generate"
+  | "audio.tts"
+  | "audio.transcribe"
+  | "audio.align"
+  | "presenter.generate"
+  | "vlm.chat"
+  | "retrieval.embed"
+  | "retrieval.rerank";
+
+export interface ProviderApproval {
+  providerId: string;
+  capabilities: ProviderCapability[];
+  credentialRef: string | null;
+  boundary: "local" | "cloud";
+  retention: "local_only" | "zero_data_retention" | "configurable" | "provider_default" | "unknown";
+  regions: string[];
+  dataClasses: Array<"public" | "project" | "private" | "biometric" | "secret">;
+  privacyApproved: boolean;
+  retentionApproved: boolean;
+  regionApproved: boolean;
+  budgetApproved: boolean;
+  termsApproved: boolean;
+  modelAccessCheckedAt: string | null;
+}
+
+export interface TutorialRoutingPolicy {
+  version: 1;
+  privacyMode: PrivacyMode;
+  dataClassification: "public" | "project" | "private" | "biometric" | "secret";
+  budget: {
+    currency: string;
+    hardLimitMicros: number | null;
+    requireKnownPricing: boolean;
+    approved: boolean;
+  };
+  approvals: ProviderApproval[];
+  routes: Array<{
+    capability: ProviderCapability;
+    providerIds: string[];
+    model: string;
+    voice: string | null;
+  }>;
+}
+
+export interface ProviderRoutingPolicyReceipt {
+  policy: TutorialRoutingPolicy | null;
+  headRevisionId: string;
+  revisionNumber?: number;
+}
+
+export interface SaveProviderRoutingPolicyRequest extends ProjectIdentityRequest {
+  expectedHeadRevisionId: string;
+  policy: TutorialRoutingPolicy;
+  message?: string;
+}
+
 /**
  * A saved no-secret creation preset. It cannot approve a provider or cause a
  * fallback: a project still needs its own reviewed routing policy before a
@@ -613,6 +675,33 @@ export function providerSecretDelete(input: ProviderSecretRequest): Promise<Prov
   return command("provider_secret_delete", input, () => {
     browserSecretRefs.delete(secretKey(input));
     return browserSecretRef(input, "missing");
+  });
+}
+
+export function providerRoutingPolicyGet(input: ProjectIdentityRequest): Promise<ProviderRoutingPolicyReceipt> {
+  return command("provider_routing_policy_get", input, () => {
+    const project = browserProjects.get(input.projectId);
+    if (!project || project.handle.projectDirectory !== input.projectDirectory) throw new Error("Browser demo project routing policy is unavailable.");
+    const policy = project.snapshot.snapshot.providerRoutingPolicy;
+    return {
+      policy: policy && typeof policy === "object" ? structuredClone(policy) as TutorialRoutingPolicy : null,
+      headRevisionId: project.snapshot.headRevisionId,
+    };
+  });
+}
+
+export function providerRoutingPolicySave(input: SaveProviderRoutingPolicyRequest): Promise<ProviderRoutingPolicyReceipt> {
+  return command("provider_routing_policy_save", input, () => {
+    const project = browserProjects.get(input.projectId);
+    if (!project || project.handle.projectDirectory !== input.projectDirectory) throw new Error("Browser demo project routing policy is unavailable.");
+    if (project.snapshot.headRevisionId !== input.expectedHeadRevisionId) throw new Error("REVISION_CONFLICT: Reload the durable project snapshot before saving routing.");
+    const history = browserHistory.get(input.projectId) ?? { undo: [], redo: [] };
+    history.undo.push(structuredClone(project.snapshot));
+    history.redo = [];
+    browserHistory.set(input.projectId, history);
+    const next = browserSnapshot(input.projectId, { ...project.snapshot.snapshot, providerRoutingPolicy: structuredClone(input.policy) }, project.snapshot.revisionNumber + 1);
+    project.snapshot = next;
+    return { policy: structuredClone(input.policy), headRevisionId: next.headRevisionId, revisionNumber: next.revisionNumber };
   });
 }
 

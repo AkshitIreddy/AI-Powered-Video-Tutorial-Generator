@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../App";
+import { localModelSetupSave, providerSecretSet } from "../native";
 import type { AppSnapshot } from "../types";
 
 describe("Alystria desktop shell", () => {
@@ -19,8 +20,9 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByRole("heading", { name: /package the finished lesson/i })).toBeInTheDocument();
   });
 
-  it("creates and persists a local tutorial brief", async () => {
+  it("creates and persists a tutorial with reviewed provider routing", async () => {
     const user = userEvent.setup();
+    await configureCloudProfile();
     render(<App />);
     await user.click(screen.getByRole("button", { name: /create a tutorial/i }));
     const prompt = screen.getByPlaceholderText(/explain why karatsuba/i);
@@ -29,6 +31,7 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^strict/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    await user.click(await screen.findByRole("checkbox", { name: /approve this exact routing policy/i }));
     await user.click(screen.getByRole("button", { name: /create learning plan/i }));
     expect(screen.getAllByText("Teach recursion with a visual call tree").length).toBeGreaterThan(0);
     const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
@@ -93,3 +96,28 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByRole("tab", { name: "Local presenter test" })).toHaveAttribute("aria-selected", "true");
   });
 });
+
+async function configureCloudProfile() {
+  await localModelSetupSave({
+    activeProfileId: "test-cloud",
+    selectedModelIds: [],
+    lipSyncModelId: null,
+    existingModelDirectory: null,
+    profiles: [{
+      id: "test-cloud",
+      name: "Test cloud",
+      description: "Explicit browser-test routing",
+      routes: {
+        writing: { providerId: "openai", modelId: "gpt-5.4" },
+        research: { providerId: "openai", modelId: "gpt-5.4" },
+        images: { providerId: "openai", modelId: "gpt-image-2" },
+        voice: { providerId: "elevenlabs", modelId: "eleven_multilingual_v2" },
+        transcription: { providerId: "openai", modelId: "whisper-1" },
+        presenter: { providerId: "local-runtime", modelId: "off by default" },
+        lipSync: { providerId: "local-runtime", modelId: "off by default" },
+      },
+    }],
+  });
+  await providerSecretSet({ providerId: "openai", credentialKind: "api_key", secret: "browser-test-openai" });
+  await providerSecretSet({ providerId: "elevenlabs", credentialKind: "api_key", secret: "browser-test-elevenlabs" });
+}

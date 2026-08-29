@@ -19,19 +19,25 @@ test("home, project, and studio flows render without page errors", async ({ page
   expect(errors).toEqual([]);
 });
 
-test("new tutorial wizard exposes privacy and cost before creation", async ({ page }) => {
+test("new tutorial wizard exposes privacy and cost before creation", async ({ page }, testInfo) => {
+  await configureLocalRouting(page);
   await page.getByRole("button", { name: /create a tutorial/i }).click();
   await page.getByPlaceholder(/explain why karatsuba/i).fill("Explain stable sorting visually");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByText(/no cloud call happens/i)).toBeVisible();
+  await page.getByRole("button", { name: /^creative/i }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByText(/estimated plan cost/i)).toBeVisible();
+  await expect(page.getByText(/hard creation budget/i)).toBeVisible();
+  await page.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
+  await expect(page.locator(".routing-readiness")).toContainText("Ready");
+  await page.locator(".routing-review").screenshot({ path: testInfo.outputPath("routing-review-approved.png") });
   await page.getByRole("button", { name: /create learning plan/i }).click();
   await expect(page.getByText(/Explain stable sorting visually is stored under/i)).toBeVisible();
 });
 
 test("selected sources remain visible through review and portable export is wired", async ({ page }, testInfo) => {
+  await configureLocalRouting(page);
   await page.getByRole("button", { name: /create a tutorial/i }).click();
   await page.getByPlaceholder(/explain why karatsuba/i).fill("Explain source-backed recursion trees");
   await page.locator(".source-drop input[type=file]").setInputFiles({
@@ -45,8 +51,10 @@ test("selected sources remain visible through review and portable export is wire
 
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: /^creative/i }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByText(/1 private file/i)).toBeVisible();
+  await page.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
   await page.getByRole("button", { name: /create learning plan/i }).click();
   await page.getByRole("button", { name: /^sources$/i }).click();
   await expect(page.getByText(/recursion-notes.md/i)).toBeVisible();
@@ -82,3 +90,19 @@ test("local model and provider profiles remain explicit and saveable", async ({ 
   await page.locator(".model-setup-panel").screenshot({ path: testInfo.outputPath("local-model-setup.png") });
   await page.locator(".profile-panel").screenshot({ path: testInfo.outputPath("provider-profiles.png") });
 });
+
+async function configureLocalRouting(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: /models & providers/i }).click();
+  await expect(page.getByRole("heading", { name: /provider & model profiles/i })).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill("Local deterministic");
+  const routes = page.locator(".profile-route-grid");
+  for (const label of ["Writing & review", "Images", "Narration"]) {
+    await routes.locator("label", { hasText: label }).locator("select").selectOption("local-runtime");
+  }
+  await page.getByLabel("Writing & review model").fill("local/qwen3.5-9b-gguf");
+  await page.getByLabel("Images model").fill("local/flux2-klein-4b");
+  await page.getByLabel("Narration model").fill("local/kokoro");
+  await page.getByRole("button", { name: /save setup & active profile/i }).click();
+  await expect(page.getByText(/setup saved locally/i)).toBeVisible();
+  await page.getByRole("button", { name: /^home$/i }).click();
+}
