@@ -506,7 +506,7 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
           x: body.x + body.width * 0.68,
           y: body.y + body.height * 0.22,
           width: body.width * 0.3,
-          height: body.height * 0.66,
+          height: body.height * 0.58,
         }
       : withSlide
         ? insetRect(presenterPanel, props.scene.metrics.gutter * 0.5)

@@ -87,3 +87,23 @@ test("responsive presenter regions stay even-sized and above caption space", () 
     }
   }
 });
+
+test("picture-in-picture composite follows the top-caption scene transform", () => {
+  const target = fixtureTarget({ width: 1280, height: 720, frameRate: { numerator: 24, denominator: 1 } });
+  const raw = presenterRect(target, "picture-in-picture");
+  const withTopCaption = presenterRect(target, "picture-in-picture", {
+    position: "top",
+    style: "solid-panel",
+    sizePercent: 106,
+    safeInsetPercent: 9,
+    maxLines: 2,
+    textColor: "#F7F8FC",
+    panelColor: "#102033",
+    fontFamily: "Atkinson Hyperlegible Next",
+    fallbackFamilies: ["Arial", "sans-serif"],
+  });
+  assert.ok(withTopCaption.y > raw.y, "top caption should translate the PIP below its reserved band");
+  assert.ok(withTopCaption.width < raw.width, "top caption should scale the scene and PIP together");
+  assert.equal(withTopCaption.x % 2, 0);
+  assert.equal(withTopCaption.y % 2, 0);
+});
