@@ -33,7 +33,7 @@ semantic scene
 
 Pinned Chromium produces authoritative frames. Scene mezzanines use lossless RGB FFV1 in Matroska so unchanged sections can be reused without generational loss. FFmpeg/ffprobe performs media probing, assembly, audio mixing, EBU R128 loudness normalization, final codec conversion, and stream validation. See [FFmpeg](https://ffmpeg.org/ffmpeg.html), [filters](https://ffmpeg.org/ffmpeg-filters.html), and [licensing](https://ffmpeg.org/legal.html).
 
-Standard output is sRGB/Rec.709 SDR. HDR is outside 2.0 core. H.264 uses available platform/hardware encoders. An optional, separately installed, signed GPL runtime pack may provide x264; it is never silently bundled with the MIT application.
+Standard output is sRGB/Rec.709 SDR. HDR is outside 2.0 core. H.264 uses explicitly probed platform/hardware encoders. Managed presenter workers try NVENC, then hardware-forced Windows Media Foundation, and record every unavailable choice and fallback. An optional, separately installed, signed GPL runtime pack may provide x264 only after explicit consent; it is never silently bundled with the MIT application or selected as an unreported fallback.
 
 ## Captions and audio
 

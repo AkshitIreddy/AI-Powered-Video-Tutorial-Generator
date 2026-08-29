@@ -99,7 +99,8 @@
       "capabilities": ["presenter"],
       "launchStatus": "benchmark-and-artifact-pin-required",
       "hardBudgetEligible": true,
-      "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
+      "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true },
+      "notes": "Managed activation requires Alystria's pinned H.264 mux broker: real-probe h264_nvenc, then hardware-forced h264_mf, then a separately installed and explicitly approved GPL x264 pack. Upstream's hard-coded libx264 mux is not used."
     },
     {
       "id": "local/echomimicv3-flash",

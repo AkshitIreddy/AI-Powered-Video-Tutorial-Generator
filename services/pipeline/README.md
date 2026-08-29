@@ -49,6 +49,12 @@ attempt directory. Its command is an argv template, never a shell string:
   "runtimeRoot": "C:/Alystria/runtimes/presenter/current",
   "executable": { "relativePath": "presenter-worker.exe", "sha256": "<64 hex>" },
   "ffprobe": { "relativePath": "ffprobe.exe", "sha256": "<64 hex>" },
+  "presenterEncoding": {
+    "policy": "alystria-presenter-h264-v1",
+    "ffmpeg": { "relativePath": "ffmpeg.exe", "sha256": "<64 hex>" },
+    "probeTimeoutSeconds": 30,
+    "gplX264": null
+  },
   "argumentTemplate": [
     "--portrait", "{portrait}", "--audio", "{audio}",
     "--output", "{output}", "--workspace", "{workspace}",
@@ -72,3 +78,29 @@ network denial. An unmanaged development invocation must declare
 `executionPolicy: "unsafe-test-only"`, `networkPolicy: "not-enforced"`, and
 `unsafeTestOnlyAcknowledged: true`; that state is preserved in artifact
 metadata and cannot be mistaken for a verified production result.
+
+Managed MuseTalk also requires the pinned `presenterEncoding` broker and the
+`{job_manifest}` argument. Alystria performs a real one-frame probe in this
+fixed order: NVIDIA `h264_nvenc`, Windows Media Foundation `h264_mf` with
+`-hw_encoding 1`, then `libx264` only from a separately installed GPL pack with
+an immutable user-consent ID. Every failed probe and fallback is written to the
+job/artifact metadata. If no approved encoder passes, generation stops with an
+actionable diagnostic; the worker never inherits MuseTalk upstream's hard-coded
+`libx264` default.
+
+The optional GPL entry is deliberately verbose and is written only by the
+privileged runtime manager after installation and approval:
+
+```json
+"gplX264": {
+  "explicitlyApproved": true,
+  "runtimePackId": "ffmpeg-gpl-x264/9.0.1-signed",
+  "licenseId": "GPL-2.0-or-later",
+  "consentId": "approval:project-id:revision-id"
+}
+```
+
+The selected encoder and fixed mux arguments are placed under `encoding` in
+`presenter-job.json`. Packaged MuseTalk workers must consume that record (or
+the pipeline's `build_presenter_mux_argv` helper) when combining the silent
+face render with final narration.

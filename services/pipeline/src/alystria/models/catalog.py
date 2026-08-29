@@ -216,6 +216,11 @@ BUILTIN_CATALOG = ModelCatalog(
             supported_backends=frozenset({ComputeBackend.NVIDIA_CUDA}),
             verified_revision=None,
             license_id="upstream-review-required",
+            notes=(
+                "Managed activation requires Alystria's pinned H.264 mux broker: real-probe "
+                "h264_nvenc, hardware-forced h264_mf, then an explicitly approved separate "
+                "GPL x264 pack. The upstream hard-coded libx264 mux is not permitted."
+            ),
         ),
         ModelCatalogEntry(
             model_id="echomimicv3-flash",

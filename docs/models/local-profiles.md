@@ -166,6 +166,29 @@ descendants, scene renders, and final composition; it preserves narration and
 accepted scenes. The selector shows disk size, VRAM estimate, supported locales,
 rights/consent requirements, and exact reasons a pack is unavailable.
 
+### MuseTalk delivery encoder policy
+
+MuseTalk 1.5 upstream currently hard-codes `libx264` for its final video/audio
+mux. Alystria does not carry that choice into its MIT/LGPL-first managed
+runtime. The signed Alystria worker receives a brokered encoder selection in
+its attempt manifest and must use the fixed mux helper rather than upstream's
+direct mux call.
+
+Selection is based on a real, pinned-FFmpeg one-frame encode—not the encoder
+name merely appearing in `ffmpeg -encoders`—and has one immutable priority:
+
+1. `h264_nvenc` after its real hardware/API probe succeeds;
+2. `h264_mf` only with Media Foundation hardware encoding forced;
+3. `libx264` only from the optional separately installed GPL runtime pack,
+   after an explicit license approval is durably recorded.
+
+Fallbacks are never silent. The attempt ledger records each encoder, result,
+diagnostic code, final choice, GPL pack ID and consent ID when applicable. An
+NVENC driver/API mismatch tells the user to update the NVIDIA driver, restart
+Windows and rerun Diagnostics. If neither hardware encoder works and the GPL
+pack is absent or unapproved, presenter generation blocks instead of selecting
+an unapproved software codec.
+
 ## Verification protocol before marking a profile supported
 
 Each candidate needs a pinned model/runtime manifest and a short, deterministic

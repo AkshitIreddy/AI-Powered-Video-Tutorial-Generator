@@ -27,6 +27,12 @@ from alystria.project import ProjectStore
 from alystria.security.files import detect_mime
 
 from .adapters import GeneratedMedia, GenerationMediaClient
+from .presenter_encoding import (
+    GplX264Approval,
+    PresenterEncoderPolicy,
+    PresenterEncoderPolicyError,
+    PresenterEncoderSelection,
+)
 
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 PLACEHOLDER_PATTERN = re.compile(r"\{[a-z_]+\}")
@@ -225,6 +231,7 @@ class LocalPresenterRuntime:
     maximum_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES
     environment: Mapping[str, str] = field(default_factory=dict)
     additional_pins: tuple[PinnedPresenterFile, ...] = ()
+    encoder_policy: PresenterEncoderPolicy | None = None
 
     def __post_init__(self) -> None:
         if not self.model_id.strip() or not self.model_revision.strip():
@@ -282,6 +289,16 @@ class LocalPresenterRuntime:
                 raise ValueError(
                     "Managed presenter mode requires a pinned entrypoint file, not inline/module code"
                 )
+            if self.model_id.casefold() in {"musetalk", "musetalk-1.5"}:
+                if self.encoder_policy is None:
+                    raise ValueError(
+                        "Managed MuseTalk requires an explicitly probed H.264 encoder policy"
+                    )
+                if "{job_manifest}" not in placeholders:
+                    raise ValueError(
+                        "Managed MuseTalk requires the brokered job manifest; direct upstream "
+                        "libx264 muxing is not permitted"
+                    )
         elif not self.unsafe_test_only_acknowledged:
             raise ValueError("Unsafe test-only presenter mode requires explicit acknowledgement")
 
@@ -316,6 +333,8 @@ class LocalPresenterMediaClient:
         self.provider_id = base.provider_id
         self.model_revision = f"{base.model_revision}+presenter:{runtime.model_revision}"
         self._cancelled = threading.Event()
+        self._encoder_lock = threading.Lock()
+        self._encoder_selection: PresenterEncoderSelection | None = None
 
     def cancel(self) -> None:
         self._cancelled.set()
@@ -371,6 +390,7 @@ class LocalPresenterMediaClient:
             raise LocalPresenterPolicyError("Narration input must be a project CAS SHA-256 digest")
         self._raise_if_cancelled()
         runtime_root = self._verify_runtime()
+        encoder_selection = self._select_encoder(runtime_root)
         portrait = self._artifact_record(
             profile.portrait_artifact_hash,
             kind="portrait",
@@ -430,6 +450,14 @@ class LocalPresenterMediaClient:
                 },
                 "output": {"path": str(output_path), "mediaType": "video/mp4"},
             }
+            if encoder_selection is not None:
+                encoder_policy = self.runtime.encoder_policy
+                if encoder_policy is None:  # pragma: no cover - guarded by _select_encoder
+                    raise LocalPresenterRuntimeError("Presenter encoder policy disappeared")
+                job_manifest["encoding"] = {
+                    **encoder_selection.as_manifest(),
+                    "ffmpegPath": str(encoder_policy.ffmpeg_path),
+                }
             manifest_path = _guarded_child(attempt_root, attempt_root / "presenter-job.json")
             manifest_path.write_text(
                 json.dumps(job_manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -500,6 +528,11 @@ class LocalPresenterMediaClient:
                         else "container-signature-only"
                     ),
                     "probe": probe,
+                    "encoderSelection": (
+                        encoder_selection.as_manifest()
+                        if encoder_selection is not None
+                        else None
+                    ),
                     "seed": seed,
                 },
                 actual_cost_micros=0,
@@ -539,6 +572,17 @@ class LocalPresenterMediaClient:
         for label, pin in (
             ("worker executable", self.runtime.executable),
             ("ffprobe", self.runtime.ffprobe),
+            (
+                "presenter FFmpeg",
+                (
+                    PinnedPresenterFile(
+                        self.runtime.encoder_policy.ffmpeg_path,
+                        self.runtime.encoder_policy.ffmpeg_sha256,
+                    )
+                    if self.runtime.encoder_policy is not None
+                    else None
+                ),
+            ),
             *(("runtime file", pin) for pin in self.runtime.additional_pins),
         ):
             if pin is None:
@@ -558,6 +602,29 @@ class LocalPresenterMediaClient:
                         f"Managed presenter command references unpinned runtime file {candidate.name!r}"
                     )
         return root
+
+    def _select_encoder(self, runtime_root: Path) -> PresenterEncoderSelection | None:
+        policy = self.runtime.encoder_policy
+        if policy is None:
+            return None
+        # A client can generate multiple presenter scenes.  The first request
+        # performs real one-frame probes; later scenes reuse the auditable
+        # result from the same verified runtime.  Runtime pins are rechecked on
+        # every scene before this cache is consulted.
+        with self._encoder_lock:
+            if self._encoder_selection is not None:
+                return self._encoder_selection
+            try:
+                selected = policy.select(
+                    self.runner,
+                    cwd=runtime_root,
+                    environment=self._safe_environment(),
+                    cancelled=self._is_cancelled,
+                )
+            except PresenterEncoderPolicyError as error:
+                raise LocalPresenterRuntimeError(str(error)) from error
+            self._encoder_selection = selected
+            return selected
 
     @staticmethod
     def _verify_pin(pin: PinnedPresenterFile, root: Path, label: str) -> None:
@@ -790,6 +857,7 @@ def load_local_presenter_media_client(
     executable = _config_pin(value.get("executable"), runtime_root, "executable")
     ffprobe_value = value.get("ffprobe")
     ffprobe = None if ffprobe_value is None else _config_pin(ffprobe_value, runtime_root, "ffprobe")
+    encoder_policy = _config_encoder_policy(value.get("presenterEncoding"), runtime_root)
     additional_value = value.get("pinnedFiles", [])
     if not isinstance(additional_value, list):
         raise LocalPresenterPolicyError("pinnedFiles must be a list")
@@ -840,6 +908,7 @@ def load_local_presenter_media_client(
             maximum_output_bytes=int(value.get("maximumOutputBytes", DEFAULT_MAX_OUTPUT_BYTES)),
             environment=cast(dict[str, str], environment),
             additional_pins=additional,
+            encoder_policy=encoder_policy,
         )
     except (TypeError, ValueError) as error:
         raise LocalPresenterPolicyError(f"Invalid local presenter runtime: {error}") from error
@@ -852,6 +921,44 @@ def load_local_presenter_media_client(
         runner=runner,
         cancel_check=cancel_check,
     )
+
+
+def _config_encoder_policy(value: object, root: Path) -> PresenterEncoderPolicy | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise LocalPresenterPolicyError("presenterEncoding must be an object")
+    if value.get("policy") != "alystria-presenter-h264-v1":
+        raise LocalPresenterPolicyError(
+            "presenterEncoding.policy must be alystria-presenter-h264-v1"
+        )
+    ffmpeg = _config_pin(value.get("ffmpeg"), root, "presenterEncoding.ffmpeg")
+    gpl_value = value.get("gplX264")
+    approval: GplX264Approval | None = None
+    if gpl_value is not None:
+        if not isinstance(gpl_value, dict):
+            raise LocalPresenterPolicyError("presenterEncoding.gplX264 must be an object")
+        if gpl_value.get("explicitlyApproved") is not True:
+            raise LocalPresenterPolicyError(
+                "presenterEncoding.gplX264 requires explicitlyApproved: true"
+            )
+        try:
+            approval = GplX264Approval(
+                runtime_pack_id=_config_string(gpl_value, "runtimePackId"),
+                consent_id=_config_string(gpl_value, "consentId"),
+                license_id=_config_string(gpl_value, "licenseId"),
+            )
+        except ValueError as error:
+            raise LocalPresenterPolicyError(f"Invalid GPL x264 approval: {error}") from error
+    try:
+        return PresenterEncoderPolicy(
+            ffmpeg_path=ffmpeg.path,
+            ffmpeg_sha256=ffmpeg.sha256,
+            probe_timeout_seconds=float(value.get("probeTimeoutSeconds", 30)),
+            gpl_x264_approval=approval,
+        )
+    except (TypeError, ValueError) as error:
+        raise LocalPresenterPolicyError(f"Invalid presenter encoder policy: {error}") from error
 
 
 def _config_pin(value: object, root: Path, label: str) -> PinnedPresenterFile:

@@ -25,6 +25,7 @@ from alystria.generation.local_presenter import (
     LocalPresenterProfileBinding,
     LocalPresenterRuntime,
     PinnedPresenterFile,
+    PresenterEncoderPolicy,
     PresenterExecutionPolicy,
     PresenterNetworkPolicy,
     PresenterProcessResult,
@@ -75,11 +76,16 @@ class FakePresenterRunner:
                 job = json.loads(manifest.read_text(encoding="utf-8"))
                 assert Path(job["inputs"]["portrait"]["path"]) == portrait
                 assert Path(job["output"]["path"]) == output
+                if "encoding" in job:
+                    assert job["encoding"]["policy"] == "alystria-presenter-h264-v1"
+                    assert job["encoding"]["encoder"] == "h264_nvenc"
             if self.mutate_portrait:
                 portrait.chmod(0o666)
                 portrait.write_bytes(b"changed")
             output.write_bytes(_mp4())
             return PresenterProcessResult(self.worker_exit_code, "worker complete", "")
+        if "lavfi" in call:
+            return PresenterProcessResult(0, "", "")
         assert self.ffprobe is not None and Path(call[0]) == self.ffprobe.resolve()
         if self.invalid_probe:
             return PresenterProcessResult(0, json.dumps({"streams": []}), "")
@@ -108,8 +114,10 @@ def _runtime(root: Path, *, managed: bool = True) -> tuple[LocalPresenterRuntime
     root.mkdir()
     worker = root / "presenter-worker.exe"
     ffprobe = root / "ffprobe.exe"
+    ffmpeg = root / "ffmpeg.exe"
     worker.write_bytes(b"pinned presenter worker")
     ffprobe.write_bytes(b"pinned ffprobe")
+    ffmpeg.write_bytes(b"pinned LGPL ffmpeg")
     runtime = LocalPresenterRuntime(
         runtime_root=root,
         executable=PinnedPresenterFile(worker, _digest(worker)),
@@ -142,6 +150,9 @@ def _runtime(root: Path, *, managed: bool = True) -> tuple[LocalPresenterRuntime
         ),
         unsafe_test_only_acknowledged=not managed,
         minimum_output_bytes=32,
+        encoder_policy=(
+            PresenterEncoderPolicy(ffmpeg, _digest(ffmpeg)) if managed else None
+        ),
     )
     return runtime, worker, ffprobe
 
@@ -215,7 +226,8 @@ def test_managed_worker_returns_ffprobe_validated_video_generated_media(tmp_path
             "videoCodec": "h264",
             "audioCodecs": ["aac"],
         }
-        assert len(runner.calls) == 2
+        assert len(runner.calls) == 3
+        assert "lavfi" in runner.calls[0]
         assert all("scene/unsafe name" not in item for call in runner.calls for item in call)
     finally:
         store.close()
@@ -231,7 +243,7 @@ def test_worker_cannot_modify_immutable_cas_inputs(tmp_path: Path) -> None:
                 {"id": "scene-1"}, narration_hash=narration_hash, seed=1
             )
         assert store.cas.verify(portrait_hash)
-        assert len(runner.calls) == 1
+        assert len(runner.calls) == 2
     finally:
         store.close()
 
@@ -264,6 +276,14 @@ def test_managed_policy_rejects_unverified_or_incomplete_runtime(tmp_path: Path)
             ("{portrait}", "{audio}", "{output}"),
             execution_policy=PresenterExecutionPolicy.UNSAFE_TEST_ONLY,
             network_policy=PresenterNetworkPolicy.NOT_ENFORCED,
+        )
+    with pytest.raises(ValueError, match=r"explicitly probed H\.264 encoder policy"):
+        LocalPresenterRuntime(
+            root,
+            pin,
+            pin,
+            ("{portrait}", "{audio}", "{output}", "{job_manifest}"),
+            model_id="musetalk",
         )
 
 
@@ -351,6 +371,65 @@ def test_json_config_loader_preserves_explicit_unsafe_policy(tmp_path: Path) -> 
             store, DeterministicMediaClient(), config, runner=runner
         ).create_presenter({"id": "scene-1"}, narration_hash=narration_hash, seed=3)
         assert media.metadata["unsafeTestOnly"] is True
+    finally:
+        store.close()
+
+
+def test_managed_musetalk_config_loads_brokered_encoder_policy(tmp_path: Path) -> None:
+    store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    worker = runtime_root / "worker.exe"
+    ffprobe = runtime_root / "ffprobe.exe"
+    ffmpeg = runtime_root / "ffmpeg.exe"
+    worker.write_bytes(b"worker")
+    ffprobe.write_bytes(b"ffprobe")
+    ffmpeg.write_bytes(b"LGPL ffmpeg")
+    config = tmp_path / "presenter-managed.json"
+    config.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "runtimeRoot": str(runtime_root),
+                "executable": {"relativePath": worker.name, "sha256": _digest(worker)},
+                "ffprobe": {"relativePath": ffprobe.name, "sha256": _digest(ffprobe)},
+                "presenterEncoding": {
+                    "policy": "alystria-presenter-h264-v1",
+                    "ffmpeg": {"relativePath": ffmpeg.name, "sha256": _digest(ffmpeg)},
+                    "probeTimeoutSeconds": 10,
+                    "gplX264": None,
+                },
+                "argumentTemplate": [
+                    "--portrait",
+                    "{portrait}",
+                    "--audio",
+                    "{audio}",
+                    "--output",
+                    "{output}",
+                    "--job",
+                    "{job_manifest}",
+                ],
+                "modelId": "musetalk",
+                "modelRevision": "musetalk-1.5-pinned",
+                "executionPolicy": "managed-verified",
+                "networkPolicy": "supervisor-deny",
+                "minimumOutputBytes": 32,
+                "profiles": [
+                    {"profileId": "default", "portraitArtifactHash": portrait_hash}
+                ],
+                "defaultProfileId": "default",
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = FakePresenterRunner(worker, ffprobe)
+    try:
+        media = load_local_presenter_media_client(
+            store, DeterministicMediaClient(), config, runner=runner
+        ).create_presenter({"id": "scene-1"}, narration_hash=narration_hash, seed=3)
+        assert media.metadata["encoderSelection"]["encoder"] == "h264_nvenc"
+        assert media.metadata["encoderSelection"]["fallbackOccurred"] is False
+        assert Path(runner.calls[0][0]) == ffmpeg.resolve()
     finally:
         store.close()
 
