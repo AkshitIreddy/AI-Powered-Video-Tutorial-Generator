@@ -54,6 +54,34 @@ test("default presenter mapping is semantic and never consumes path-like metadat
   assert.doesNotMatch(rendered.svg, /https:\/\/tracker\.invalid/);
 });
 
+test("worked examples compact narration into a caption-safe procedural layout", () => {
+  const base = fixtureManifest();
+  const scene = {
+    ...base.scenes[0]!,
+    id: "worked-caption-safe",
+    kind: "worked-example",
+    content: {
+      title: "Trace the target",
+      body: "Follow low, middle, and high without losing the invariant.",
+      items: [
+        "Find forty-four in a sorted list of three, eight, twelve, seventeen, twenty-three, thirty-one, forty-four, fifty-eight, and seventy-two.",
+        "The middle value is twenty-three, so move the lower boundary past it.",
+        "The next middle value is forty-four, which completes the search.",
+        "State why the target remains inside the retained interval at every step.",
+        "A fifth long narration sentence must remain in audio rather than overcrowding the card.",
+      ],
+    },
+  };
+  const spec = resolveBuiltinSceneSpec(scene);
+  assert.equal(spec?.content.kind, "worked-example");
+  if (spec?.content.kind !== "worked-example") throw new Error("Expected worked example content");
+  assert.equal(spec.content.steps.length, 4);
+  assert.ok(spec.content.steps.every((step) => step.text.length <= 54));
+  const rendered = new FrameRenderer().render({ ...base, scenes: [scene] }, 24);
+  assert.match(rendered.svg, /ANSWER/);
+  assert.match(rendered.svg, /data-scene-kind="worked-example"/);
+});
+
 test("unknown kinds and unsupported preview frame rates retain the inert fixture fallback", () => {
   const base = fixtureManifest(fixtureTarget({ frameRate: { numerator: 2, denominator: 1 } }));
   const unknownScene = { ...base.scenes[0]!, kind: "plugin:unknown/card" };

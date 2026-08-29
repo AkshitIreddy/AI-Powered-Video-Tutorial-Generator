@@ -93,6 +93,14 @@ function textItems(scene: ResolvedScene): readonly TextItem[] {
   }));
 }
 
+function compactInstruction(text: string, maximum = 54): string {
+  const normalized = text.replace(/\s+/gu, " ").trim();
+  if (normalized.length <= maximum) return normalized;
+  const boundary = normalized.lastIndexOf(" ", maximum - 1);
+  const end = boundary >= Math.floor(maximum * 0.55) ? boundary : maximum - 1;
+  return `${normalized.slice(0, end).replace(/[,:;\s]+$/u, "")}…`;
+}
+
 function commonContent(scene: ResolvedScene) {
   return {
     title: scene.content.title,
@@ -291,7 +299,20 @@ export const resolveBuiltinSceneSpec: SceneSpecResolver = (scene) => {
       content = { kind, ...common, question: scene.content.body ?? lines[0]!, ...(lines[1] ? { prompt: lines[1] } : {}), thinkingTimeSeconds: 5 };
       break;
     case "worked-example":
-      content = { kind, ...common, problem: scene.content.body ?? scene.content.title, steps: items, answer: lines.at(-1)! };
+      // Worked-example cards need room for their answer and the persistent
+      // caption-safe lower band. Keep instructional steps concise instead of
+      // pouring narration paragraphs into a compact procedural layout.
+      content = {
+        kind,
+        ...common,
+        problem: compactInstruction(scene.content.body ?? scene.content.title, 76),
+        steps: lines.slice(0, 4).map((text, index) => ({
+          id: child(`worked-step-${index + 1}`),
+          text: compactInstruction(text),
+          ...(index === 0 ? { emphasis: "primary" as const } : {}),
+        })),
+        answer: compactInstruction(lines.at(-1)!, 72),
+      };
       break;
     case "quiz": {
       const choices = lines.length > 1 ? lines.slice(0, 6) : [lines[0]!, "Review the explanation"];
