@@ -463,6 +463,58 @@ pub struct LocalModelSetup {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ModelDownloadStartRequest {
+    pub model_id: String,
+    pub license_sha256: String,
+    pub license_accepted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ModelDownloadCatalogEntry {
+    pub model_id: String,
+    pub display_name: String,
+    pub immutable_revision: String,
+    pub total_bytes: u64,
+    pub artifact_count: usize,
+    pub license_id: String,
+    pub license_url: String,
+    pub license_sha256: String,
+    pub available: bool,
+    pub download_only_reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ModelDownloadPhase {
+    ManifestRequired,
+    Downloading,
+    Verifying,
+    DownloadedQuarantined,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ModelDownloadStatus {
+    pub model_id: String,
+    pub immutable_revision: Option<String>,
+    pub phase: ModelDownloadPhase,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub verified_artifacts: usize,
+    pub artifact_count: usize,
+    pub license_id: Option<String>,
+    pub license_url: Option<String>,
+    pub license_sha256: Option<String>,
+    pub license_accepted_at: Option<DateTime<Utc>>,
+    pub detail: String,
+    pub activation_blocked: bool,
+    pub updated_at: DateTime<Utc>,
+}
+
 impl From<LocalModelSetup> for LocalModelSetupSaveRequest {
     fn from(value: LocalModelSetup) -> Self {
         Self {

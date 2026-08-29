@@ -88,6 +88,9 @@ import {
   jobStatus,
   localModelSetupGet,
   localModelSetupSave,
+  localModelDownloadCatalog,
+  localModelDownloadStart,
+  localModelDownloadStatus,
   masterExport,
   projectCreate,
   projectExportArchive,
@@ -109,6 +112,8 @@ import {
   type GroundingMode,
   type JobReceipt,
   type LocalModelSetup,
+  type ModelDownloadCatalogEntry,
+  type ModelDownloadStatus,
   type MasterExportRequest,
   type ModelProfile,
   type ProviderSecretRef,
@@ -1096,6 +1101,10 @@ function ProvidersView({ environment, onNotify }: { environment: RuntimeState["e
   const [setup, setSetup] = useState<LocalModelSetup | null>(null);
   const [setupLoading, setSetupLoading] = useState(true);
   const [setupSaving, setSetupSaving] = useState(false);
+  const [downloadCatalog, setDownloadCatalog] = useState<ModelDownloadCatalogEntry[]>([]);
+  const [downloadStatuses, setDownloadStatuses] = useState<ModelDownloadStatus[]>([]);
+  const [licenseAccepted, setLicenseAccepted] = useState(false);
+  const [downloadStarting, setDownloadStarting] = useState(false);
   const providers = providerConfigs;
 
   useEffect(() => {
@@ -1114,6 +1123,16 @@ function ProvidersView({ environment, onNotify }: { environment: RuntimeState["e
       if (active) onNotify("Local model setup needs attention", errorMessage(error), "warning");
     }).finally(() => { if (active) setSetupLoading(false); });
     return () => { active = false; };
+  }, [environment, onNotify]);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => Promise.all([localModelDownloadCatalog(), localModelDownloadStatus()]).then(([catalog, statuses]) => {
+      if (active) { setDownloadCatalog(catalog); setDownloadStatuses(statuses); }
+    }).catch((error: unknown) => { if (active) onNotify("Model download status needs attention", errorMessage(error), "warning"); });
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 2000);
+    return () => { active = false; window.clearInterval(timer); };
   }, [environment, onNotify]);
 
   const mutateSetup = (update: (current: LocalModelSetup) => LocalModelSetup) => setSetup((current) => current ? update(current) : current);
@@ -1137,6 +1156,18 @@ function ProvidersView({ environment, onNotify }: { environment: RuntimeState["e
     return { ...current, selectedModelIds: [...next], lipSyncModelId: current.lipSyncModelId === modelId && !selected ? null : current.lipSyncModelId };
   });
   const selectLipSync = (modelId: string) => mutateSetup((current) => ({ ...current, lipSyncModelId: modelId, selectedModelIds: [...new Set([...current.selectedModelIds, modelId])] }));
+  const selectedDownload = downloadCatalog.find((entry) => entry.modelId === setup?.lipSyncModelId) ?? null;
+  const selectedDownloadStatus = downloadStatuses.find((status) => status.modelId === selectedDownload?.modelId) ?? null;
+  const beginModelDownload = async () => {
+    if (!selectedDownload || !licenseAccepted) return;
+    setDownloadStarting(true);
+    try {
+      const status = await localModelDownloadStart({ modelId: selectedDownload.modelId, licenseSha256: selectedDownload.licenseSha256, licenseAccepted: true });
+      setDownloadStatuses((current) => [...current.filter((item) => item.modelId !== status.modelId), status]);
+      onNotify(status.downloadedBytes > 0 ? "Model download resumed" : "Model download started", "Artifacts are entering the hash-verified quarantine. This does not activate a model or use the GPU.", "success");
+    } catch (error) { onNotify("Model download did not start", errorMessage(error), "warning"); }
+    finally { setDownloadStarting(false); }
+  };
   const saveSetup = async () => {
     if (!setup) return;
     setSetupSaving(true);
@@ -1179,9 +1210,17 @@ function ProvidersView({ environment, onNotify }: { environment: RuntimeState["e
     <section className="model-setup-panel" aria-labelledby="local-model-setup-title">
       <div className="model-setup-heading"><div><span className="section-kicker">First-run setup</span><h2 id="local-model-setup-title">Local models, without surprise downloads.</h2><p>Pick a small local profile, bring a pre-existing model folder, or stay API-first. Model weights are never bundled or activated until a signed immutable manifest, license acceptance, hash check, and hardware preflight all pass.</p></div><span className="setup-state"><HardDrive size={15} /> {setupLoading ? "Loading setup" : `${setup?.selectedModelIds.length ?? 0} choices saved`}</span></div>
       <div className="local-model-grid" aria-busy={setupLoading}>{localModelOptions.map((model) => { const selected = setup?.selectedModelIds.includes(model.id) ?? false; return <label className={`local-model-choice ${selected ? "selected" : ""}`} key={model.id}><input type="checkbox" checked={selected} disabled={!setup} onChange={(event) => toggleLocalModel(model.id, event.target.checked)} /><span><b>{model.name}</b><small>{model.medium} · {model.detail}</small></span><em>Manifest required</em></label>; })}</div>
-      <div className="existing-model-row"><div><b>Use an existing model folder</b><small>The native app verifies only that this is a local folder at save time. It does not execute, copy, trust, or activate anything in it until a future signed-manifest inspection succeeds.</small></div><label><span>Folder path</span><input value={setup?.existingModelDirectory ?? ""} disabled={!setup} placeholder={environment === "native" ? "C:\\Models\\Alystria" : "/your/local/model-folder"} onChange={(event) => mutateSetup((current) => ({ ...current, existingModelDirectory: event.target.value || null }))} /></label></div>
-      <div className="lipsync-chooser"><div><span className="section-kicker">Optional presenter pack</span><h3>Choose your local lip-sync model</h3><p>Presenter shots are selective. Choosing a pack records a setup preference only; no model is downloaded or made active in this RC.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onChange={() => selectLipSync(model.id)} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{model.tag}</em></label>)}</div></div>
-      <div className="model-setup-actions"><button className="secondary-button" disabled><Download size={16} /> Verified download unavailable</button><small>When signed packs are published, downloads resume into the managed model cache with hashes, license acceptance, atomic activation, and rollback.</small></div>
+      <div className="existing-model-row"><div><b>Use an existing model folder</b><small>The native app proves the folder exists when you save. It records the location but never executes or activates its contents; a later manifest inspection still has to identify every revision, license, file, and hash.</small>{setup?.existingModelDirectory && <span className="folder-record-state"><FolderClock size={13} /> Folder path entered · save to verify it exists</span>}</div><label><span>Existing folder path</span><input value={setup?.existingModelDirectory ?? ""} disabled={!setup} placeholder={environment === "native" ? "C:\\Models\\Alystria" : "/your/local/model-folder"} onChange={(event) => mutateSetup((current) => ({ ...current, existingModelDirectory: event.target.value || null }))} /></label></div>
+      <div className="lipsync-chooser"><div><span className="section-kicker">Optional presenter pack</span><h3>Choose your local lip-sync model</h3><p>Presenter shots are selective. Choosing a pack saves a preference; downloading is a separate, explicit step and inference stays blocked until activation review.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onChange={() => { selectLipSync(model.id); setLicenseAccepted(false); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{downloadCatalog.some((entry) => entry.modelId === model.id) ? "Download declaration ready" : model.tag}</em></label>)}</div></div>
+      <div className="model-download-panel" aria-live="polite">
+        {selectedDownload ? <>
+          <div className="download-record"><span className="download-record-mark"><PackageCheck size={19} /></span><div><b>{selectedDownload.displayName} · download-only pack</b><small>{formatBytes(selectedDownload.totalBytes)} across {selectedDownload.artifactCount} artifacts · revision <code>{selectedDownload.immutableRevision}</code></small><p>{selectedDownload.downloadOnlyReason}</p></div><span className={`download-phase ${selectedDownloadStatus?.phase ?? "manifestRequired"}`}>{downloadPhaseLabel(selectedDownloadStatus?.phase)}</span></div>
+          <div className="download-progress" aria-label={`${selectedDownload.displayName} download progress`}><i style={{ width: `${selectedDownloadStatus?.totalBytes ? Math.min(100, (selectedDownloadStatus.downloadedBytes / selectedDownloadStatus.totalBytes) * 100) : 0}%` }} /></div>
+          <div className="download-detail"><span>{selectedDownloadStatus?.detail ?? "Pinned declaration ready for review."}</span><span>{formatBytes(selectedDownloadStatus?.downloadedBytes ?? 0)} / {formatBytes(selectedDownload.totalBytes)} · {selectedDownloadStatus?.verifiedArtifacts ?? 0}/{selectedDownload.artifactCount} hashes verified</span></div>
+          <label className="license-accept"><input type="checkbox" checked={licenseAccepted} disabled={selectedDownloadStatus?.phase === "downloadedQuarantined"} onChange={(event) => setLicenseAccepted(event.target.checked)} /><span>I accept <a href={selectedDownload.licenseUrl} target="_blank" rel="noreferrer">{selectedDownload.licenseId}</a> for this exact license hash <code>{selectedDownload.licenseSha256.slice(0, 12)}…</code>.</span></label>
+          <div className="model-setup-actions"><button className="secondary-button" disabled={!licenseAccepted || downloadStarting || environment !== "native" || selectedDownloadStatus?.phase === "downloadedQuarantined" || selectedDownloadStatus?.phase === "downloading" || selectedDownloadStatus?.phase === "verifying"} onClick={() => { void beginModelDownload(); }}><Download size={16} /> {downloadStarting ? "Starting…" : selectedDownloadStatus?.downloadedBytes ? "Resume verified download" : "Start verified download"}</button><small>{environment === "native" ? "Download uses no GPU. Completion means hash-verified and quarantined—not installed, active, or ready for inference." : "Open the native app to download; browser preview never fetches model bytes. A completed native download is still quarantined—not installed, active, or ready for inference."}</small></div>
+        </> : <div className="download-empty"><ShieldCheck size={18} /><div><b>No immutable download declaration for this choice</b><small>Keep the preference or choose an existing folder. Alystria will not fetch a mutable repository snapshot or guess a license.</small></div></div>}
+      </div>
     </section>
     <section className="profile-panel" aria-labelledby="profile-title">
       <div className="profile-heading"><div><span className="section-kicker">Switchable creation presets</span><h2 id="profile-title">Provider & model profiles</h2><p>Keep several named combinations for each medium and choose one before creation. The profile only records an explicit preference—routes never switch automatically, no key is stored here, and no cloud use occurs until a project approval gate is completed.</p></div><div className="profile-actions"><button className="secondary-button" disabled={!setup} onClick={createProfile}><Plus size={15} /> Add profile</button><button className="secondary-button danger-text" disabled={!setup || setup.profiles.length <= 1} onClick={removeProfile}><X size={15} /> Remove</button></div></div>
@@ -1675,7 +1714,16 @@ function inferredMimeType(filename: string): string {
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function downloadPhaseLabel(phase: ModelDownloadStatus["phase"] | undefined): string {
+  if (phase === "downloading") return "Downloading";
+  if (phase === "verifying") return "Verifying hashes";
+  if (phase === "downloadedQuarantined") return "Verified · inactive";
+  if (phase === "failed") return "Paused · resumable";
+  return "License review";
 }
 
 function receiptJob(receipt: JobReceipt, title: string, detail: string, project?: Pick<NativeJobLink, "projectId" | "projectDirectory">): JobRecord {

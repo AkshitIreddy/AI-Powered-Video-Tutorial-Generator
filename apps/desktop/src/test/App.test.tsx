@@ -84,9 +84,12 @@ describe("Alystria desktop shell", () => {
     render(<App />);
     await user.click(screen.getByRole("button", { name: /models & providers/i }));
     expect(await screen.findByRole("heading", { name: /local models, without surprise downloads/i })).toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: /echomimicv3 flash/i }));
-    expect(screen.getByRole("radio", { name: /echomimicv3 flash/i })).toBeChecked();
-    expect(screen.getByRole("button", { name: /verified download unavailable/i })).toBeDisabled();
+    await user.click(screen.getByRole("radio", { name: /musetalk 1.5/i }));
+    expect(screen.getByRole("radio", { name: /musetalk 1.5/i })).toBeChecked();
+    expect(await screen.findByText(/download-only pack/i)).toBeInTheDocument();
+    expect(screen.getByText(/browser preview never fetches model bytes/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start verified download/i })).toBeDisabled();
+    expect(screen.getByText(/not installed, active, or ready for inference/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /add profile/i }));
     await user.clear(screen.getByLabelText(/^name$/i));

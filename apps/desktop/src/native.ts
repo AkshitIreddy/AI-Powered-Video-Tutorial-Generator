@@ -337,6 +337,44 @@ export interface LocalModelSetup extends Omit<LocalModelSetupSaveRequest, "lipSy
   updatedAt: string;
 }
 
+export type ModelDownloadPhase = "manifestRequired" | "downloading" | "verifying" | "downloadedQuarantined" | "failed";
+
+export interface ModelDownloadCatalogEntry {
+  modelId: string;
+  displayName: string;
+  immutableRevision: string;
+  totalBytes: number;
+  artifactCount: number;
+  licenseId: string;
+  licenseUrl: string;
+  licenseSha256: string;
+  available: boolean;
+  downloadOnlyReason: string;
+}
+
+export interface ModelDownloadStatus {
+  modelId: string;
+  immutableRevision: string | null;
+  phase: ModelDownloadPhase;
+  downloadedBytes: number;
+  totalBytes: number;
+  verifiedArtifacts: number;
+  artifactCount: number;
+  licenseId: string | null;
+  licenseUrl: string | null;
+  licenseSha256: string | null;
+  licenseAcceptedAt: string | null;
+  detail: string;
+  activationBlocked: boolean;
+  updatedAt: string;
+}
+
+export interface ModelDownloadStartRequest {
+  modelId: string;
+  licenseSha256: string;
+  licenseAccepted: boolean;
+}
+
 export interface DiagnosticCheck {
   id: string;
   label: string;
@@ -720,6 +758,46 @@ export function localModelSetupSave(input: LocalModelSetupSaveRequest): Promise<
     };
     return structuredClone(browserModelSetup);
   });
+}
+
+const browserDownloadCatalog: ModelDownloadCatalogEntry[] = [{
+  modelId: "local/musetalk-1.5",
+  displayName: "MuseTalk 1.5",
+  immutableRevision: "musetalk-3ef28bc5+audited-dependencies-2026-08-29",
+  totalBytes: 4_392_963_609,
+  artifactCount: 10,
+  licenseId: "MIT-main-repository",
+  licenseUrl: "https://github.com/TMElyralab/MuseTalk/blob/3ef28bc5cff08c90ad8178a25f1b570cd800170f/LICENSE",
+  licenseSha256: "992ec5fd1dd4964cfa003665196cd0c0c10a7a5aa10109991e964eebd2c7f116",
+  available: false,
+  downloadOnlyReason: "Native app required. Browser demo mode never downloads model bytes.",
+}];
+
+export function localModelDownloadCatalog(): Promise<ModelDownloadCatalogEntry[]> {
+  return command("local_model_download_catalog", undefined, () => structuredClone(browserDownloadCatalog));
+}
+
+export function localModelDownloadStatus(): Promise<ModelDownloadStatus[]> {
+  return command("local_model_download_status", undefined, () => browserDownloadCatalog.map((entry) => ({
+    modelId: entry.modelId,
+    immutableRevision: entry.immutableRevision,
+    phase: "manifestRequired" as const,
+    downloadedBytes: 0,
+    totalBytes: entry.totalBytes,
+    verifiedArtifacts: 0,
+    artifactCount: entry.artifactCount,
+    licenseId: entry.licenseId,
+    licenseUrl: entry.licenseUrl,
+    licenseSha256: entry.licenseSha256,
+    licenseAcceptedAt: null,
+    detail: "Open the native app to stage this pack. Browser demo mode never downloads model bytes.",
+    activationBlocked: true,
+    updatedAt: new Date().toISOString(),
+  })));
+}
+
+export function localModelDownloadStart(input: ModelDownloadStartRequest): Promise<ModelDownloadStatus> {
+  return command("local_model_download_start", input, () => Promise.reject(new Error("Open the native app to download model packs. Browser demo mode never downloads model bytes.")));
 }
 
 function defaultLocalModelSetup(): LocalModelSetup {

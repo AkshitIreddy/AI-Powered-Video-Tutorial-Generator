@@ -19,9 +19,11 @@ This is still a **local RC candidate**, not a published installer. Clean-machine
 - HTTP provider contracts have offline tests; this README does **not** claim live API smoke tests.
 - Runtime manifests describe required signed packs, but no signed production FFmpeg/pipeline pack is shipped.
 - Local model weights are **not bundled**. The setup surface records broad local
-  choices and switchable provider/model profiles, but a managed download stays
-  disabled until an immutable revision, signed manifest, size, SHA-256,
-  license, and hardware check have been published and pass.
+  choices and switchable provider/model profiles. One exact MuseTalk 1.5 pack
+  can be resumed into a download-only quarantine after license review and is
+  size/SHA-256 verified there; it is never treated as installed, activated, or
+  inference-ready. Other packs remain blocked until immutable declarations,
+  licenses, hashes, and hardware checks are published and pass.
 
 ## Guided and Studio workflows
 

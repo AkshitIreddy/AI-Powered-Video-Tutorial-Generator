@@ -79,15 +79,18 @@ test("narrow desktop does not overflow horizontally", async ({ page }, testInfo)
 test("local model and provider profiles remain explicit and saveable", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: /models & providers/i }).click();
   await expect(page.getByRole("heading", { name: /local models, without surprise downloads/i })).toBeVisible();
-  await page.getByRole("radio", { name: /echomimicv3 flash/i }).check();
-  await expect(page.getByRole("radio", { name: /echomimicv3 flash/i })).toBeChecked();
-  await expect(page.getByRole("button", { name: /verified download unavailable/i })).toBeDisabled();
+  await page.getByRole("radio", { name: /musetalk 1.5/i }).check();
+  await expect(page.getByRole("radio", { name: /musetalk 1.5/i })).toBeChecked();
+  await expect(page.getByText(/download-only pack/i)).toBeVisible();
+  await expect(page.getByText(/browser preview never fetches model bytes/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /start verified download/i })).toBeDisabled();
   await page.getByRole("button", { name: /add profile/i }).click();
   await page.getByLabel("Name", { exact: true }).fill("Offline presenter review");
   await page.getByRole("button", { name: /save setup & active profile/i }).click();
   await expect(page.getByText(/setup saved locally/i)).toBeVisible();
   await page.locator(".toast button").click();
   await page.locator(".model-setup-panel").screenshot({ path: testInfo.outputPath("local-model-setup.png") });
+  await page.locator(".model-download-panel").screenshot({ path: testInfo.outputPath("local-model-download-detail.png") });
   await page.locator(".profile-panel").screenshot({ path: testInfo.outputPath("provider-profiles.png") });
 });
 

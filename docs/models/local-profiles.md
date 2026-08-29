@@ -128,12 +128,19 @@ or eventually installed. Disk and safe system-RAM caching are acceptable for
 this non-latency-critical product, while the scheduler keeps one GPU-heavy
 family active at a time.
 
-The screen intentionally labels managed download as unavailable today. No
-signed immutable model manifests have been published for this RC, so enabling
-the button would fetch mutable upstream content and violate the trust model.
-The already-implemented model manager will only make a selected pack active
-after its signed manifest, license acceptance, hashes, hardware preflight,
-resumable download, atomic promotion, and rollback record pass.
+The screen now offers one deliberately narrower managed path for the exact
+MuseTalk 1.5 artifact set verified during the RC spike. It records the pinned
+revisions, exact byte counts and SHA-256 hashes, requires acceptance of the
+main repository's immutable MIT license hash, resumes `.part` files, and stops
+in a **downloaded, verified, quarantined** state. Several upstream `.pth` files
+remain unsafe to load, and dependency licenses still need final review, so this
+path cannot activate a model or start inference. Other candidates remain
+blocked when no exact declaration is available; Alystria never substitutes a
+mutable upstream snapshot.
+
+The Python model manager remains the only activation owner. It can make a pack
+active only after a signed manifest, every required license acceptance, hashes,
+hardware preflight, atomic promotion, and rollback record pass.
 
 ### Presenter/LipSync model chooser
 

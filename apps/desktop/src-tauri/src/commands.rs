@@ -529,6 +529,24 @@ pub fn local_model_setup_save(
 }
 
 #[tauri::command]
+pub fn local_model_download_catalog(state: State<'_, AppState>) -> Vec<ModelDownloadCatalogEntry> {
+    state.model_downloads.catalog()
+}
+
+#[tauri::command]
+pub fn local_model_download_status(state: State<'_, AppState>) -> Vec<ModelDownloadStatus> {
+    state.model_downloads.statuses()
+}
+
+#[tauri::command]
+pub fn local_model_download_start(
+    input: ModelDownloadStartRequest,
+    state: State<'_, AppState>,
+) -> Result<ModelDownloadStatus, CommandError> {
+    state.model_downloads.start(input)
+}
+
+#[tauri::command]
 pub fn runtime_manifest(state: State<'_, AppState>) -> RuntimeManifest {
     state.runtimes.manifest()
 }

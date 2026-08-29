@@ -2,6 +2,7 @@ mod commands;
 mod diagnostics;
 mod error;
 pub mod generated;
+mod model_download;
 mod model_setup;
 mod project_store;
 mod runtime;
@@ -55,6 +56,9 @@ pub fn run() {
             provider_routing_policy_save,
             local_model_setup_get,
             local_model_setup_save,
+            local_model_download_catalog,
+            local_model_download_status,
+            local_model_download_start,
             runtime_manifest,
             updater_status
         ])
