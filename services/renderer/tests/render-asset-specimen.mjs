@@ -31,7 +31,9 @@ const manifest = {
       items: ["Verified project media", "Theme-aware composition", "No remote image URLs"],
     },
     captions: [{ id: "custom-caption", startTick: 0, endTick: 2_400_000, text: "Every visual choice stays traceable and export-safe." }],
-    metadata: { presenterName: "Minji", presenterPlacement: "right", presenterDisclosure: "Fictional synthetic presenter" },
+    // Exercise the safety-critical mode: a presenter PIP gets a reserved
+    // slide panel instead of obscuring bullets beneath it.
+    metadata: { presenterName: "Minji", presenterPlacement: "picture_in_picture", presenterDisclosure: "Fictional synthetic presenter" },
     visualAssets: [
       { assetId: "background-owned", sha256: backgroundHash, role: "background", alt: "Modern abstract studio background", fit: "cover" },
       { assetId: "portrait-owned", sha256: portraitHash, role: "presenter-portrait", alt: "Selected synthetic presenter", fit: "cover" },

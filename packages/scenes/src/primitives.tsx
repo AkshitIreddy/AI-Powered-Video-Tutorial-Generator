@@ -73,9 +73,15 @@ export function SceneCanvas({ scene, frame, theme = PRECISION_THEME, children, r
             width={width}
             height={height}
             preserveAspectRatio={background?.fit === "contain" ? "xMidYMid meet" : "xMidYMid slice"}
-            opacity="0.34"
+            // Keep a selected background visibly present. The old two-layer
+            // wash left less than 8% of its colour contribution, which made
+            // an owned background look like a failed upload in final frames.
+            opacity="0.80"
           />
-          <rect width={width} height={height} fill={theme.paper} opacity="0.78" />
+          {/* The light paper veil keeps bare header and footer text readable
+              without bleaching the user's selected image away. Cards still
+              provide the stronger local contrast for dense teaching copy. */}
+          <rect width={width} height={height} fill={theme.paper} opacity="0.52" />
         </g>
       ) : null}
       <rect width={width} height={height} fill={`url(#${patternId})`} opacity={safeBackgroundHref ? "0.28" : "0.46"} />

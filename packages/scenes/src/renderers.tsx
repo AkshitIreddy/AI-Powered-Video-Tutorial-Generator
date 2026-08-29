@@ -489,16 +489,24 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
   const slideRect = !withSlide || placement === "full"
     ? undefined
     : placement === "picture-in-picture"
-      ? body
+      // A PIP must reserve a real text panel rather than simply float above
+      // the slide. Otherwise long bullets run underneath the portrait/video,
+      // exactly where learners need to read them.
+      ? {
+          x: body.x,
+          y: body.y,
+          width: body.width * 0.62,
+          height: body.height,
+        }
       : placement === "split-right" ? split[0] : split[1];
   const portraitRect: Rect = placement === "full"
     ? body
     : placement === "picture-in-picture"
       ? {
-          x: body.x + body.width * 0.67,
-          y: body.y + body.height * 0.34,
+          x: body.x + body.width * 0.68,
+          y: body.y + body.height * 0.22,
           width: body.width * 0.3,
-          height: body.height * 0.58,
+          height: body.height * 0.66,
         }
       : withSlide
         ? insetRect(presenterPanel, props.scene.metrics.gutter * 0.5)
