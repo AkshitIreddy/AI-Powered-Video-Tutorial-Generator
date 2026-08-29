@@ -170,6 +170,49 @@ def _create_rust_project_skeleton(root: Path, project_id: str) -> None:
     (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
+def _local_routing_policy() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "privacyMode": "local",
+        "dataClassification": "project",
+        "budget": {
+            "currency": "USD",
+            "hardLimitMicros": 0,
+            "requireKnownPricing": True,
+            "approved": True,
+        },
+        "approvals": [
+            {
+                "providerId": "mock",
+                "capabilities": ["image.generate", "audio.tts"],
+                "credentialRef": None,
+                "boundary": "local",
+                "retention": "local_only",
+                "regions": ["local"],
+                "dataClasses": ["project"],
+                "privacyApproved": True,
+                "retentionApproved": True,
+                "regionApproved": True,
+                "budgetApproved": True,
+            }
+        ],
+        "routes": [
+            {
+                "capability": "image.generate",
+                "providerIds": ["mock"],
+                "model": "mock-image-v1",
+                "voice": None,
+            },
+            {
+                "capability": "audio.tts",
+                "providerIds": ["mock"],
+                "model": "mock-tts-v1",
+                "voice": "mock-voice-en",
+            },
+        ],
+    }
+
+
 def test_real_worker_handshake_authentication_ping_and_shutdown() -> None:
     with running_worker() as worker:
         rejected = worker.call("system.ping", None, token="incorrect-token-0123456789abcdef")
@@ -182,6 +225,55 @@ def test_real_worker_handshake_authentication_ping_and_shutdown() -> None:
         assert ping["result"]["status"] == "ok"
 
         worker.shutdown()
+
+
+def test_real_worker_persists_provider_routing_policy_from_desktop_shape(
+    tmp_path: Path,
+) -> None:
+    project_id = str(uuid.uuid4())
+    project = tmp_path / "Provider Routing Project"
+    _create_rust_project_skeleton(project, project_id)
+
+    with running_worker() as worker:
+        initialized = worker.call(
+            "project.initialize",
+            {
+                "projectId": project_id,
+                "projectDirectory": str(project),
+                "manifestRevision": 1,
+                "initialSnapshot": {
+                    "id": project_id,
+                    "title": "Provider routing",
+                    "sources": [],
+                },
+            },
+        )
+        assert initialized["ok"] is True
+
+        policy = _local_routing_policy()
+        saved = worker.call(
+            "provider.routingPolicy.save",
+            {
+                "projectId": project_id,
+                "projectDirectory": str(project),
+                "expectedHeadRevisionId": initialized["result"]["headRevisionId"],
+                "policy": policy,
+                "message": "Approve local media routes",
+            },
+        )
+        assert saved["ok"] is True, saved
+        saved_policy = saved["result"]["policy"]
+        assert saved_policy["privacyMode"] == "local"
+        assert saved_policy["routes"] == policy["routes"]
+        assert saved_policy["approvals"][0]["providerId"] == "mock"
+
+        loaded = worker.call(
+            "provider.routingPolicy.get",
+            {"projectId": project_id, "projectDirectory": str(project)},
+        )
+        assert loaded["ok"] is True, loaded
+        assert loaded["result"]["policy"] == saved_policy
+        assert loaded["result"]["headRevisionId"] == saved["result"]["headRevisionId"]
 
 
 def test_real_worker_initializes_project_and_persists_generation_lifecycle(

@@ -439,9 +439,21 @@ class RouterMediaClient:
 
 
 class RuntimeGenerationMediaClient:
-    """Generation media client with separately approved image and TTS routes."""
+    """Generation media client with separately approved image and TTS routes.
 
-    def __init__(self, runtime: ProviderRuntime) -> None:
+    ``local-runtime`` narration is a composition route, not a provider
+    failover.  It is used only when the persisted policy explicitly names the
+    local runtime for TTS and pins the Windows System.Speech model.  A missing,
+    unavailable, or differently configured local engine fails closed instead
+    of crossing a provider or local/cloud boundary silently.
+    """
+
+    def __init__(
+        self,
+        runtime: ProviderRuntime,
+        *,
+        windows_speech: WindowsNarrationAdapter | None = None,
+    ) -> None:
         self.runtime = runtime
         self.client = ProviderMediaClient(runtime)
         image_route = runtime.policy.route_for(Capability.IMAGE_GENERATION)
@@ -452,6 +464,43 @@ class RuntimeGenerationMediaClient:
         self._image_model = image_route.model
         self._speech_model = speech_route.model
         self._voice = speech_route.voice or "default"
+        self._local_narration: WindowsNarrationAdapter | None = None
+        if "local-runtime" in speech_route.provider_ids:
+            if speech_route.provider_ids != ("local-runtime",):
+                raise ValueError(
+                    "The local narration route must be an explicit single-provider route"
+                )
+            if speech_route.model != WINDOWS_SPEECH_MODEL:
+                raise ValueError(
+                    "The local narration route must pin "
+                    f"{WINDOWS_SPEECH_MODEL!r}; no implicit local model substitution is allowed"
+                )
+            approval = runtime.policy.approval_for("local-runtime")
+            if (
+                approval.boundary.value != "local"
+                or approval.retention.value != "local_only"
+                or Capability.TTS not in approval.capabilities
+            ):
+                raise ValueError(
+                    "The local narration route requires an approved local-only TTS boundary"
+                )
+            adapter = windows_speech or WindowsSpeechAdapter()
+            capabilities = adapter.capabilities()
+            if (
+                not capabilities.available
+                or not capabilities.local_only
+                or capabilities.model != WINDOWS_SPEECH_MODEL
+            ):
+                reason = capabilities.reason or "the approved System.Speech engine is unavailable"
+                raise WindowsSpeechUnavailableError(reason)
+            selected_voice = None if self._voice == "default" else self._voice
+            if selected_voice is not None and selected_voice not in {
+                voice.voice_id for voice in capabilities.voices
+            }:
+                raise WindowsSpeechUnavailableError(
+                    f"The approved Windows voice is not installed: {selected_voice}"
+                )
+            self._local_narration = adapter
 
     def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
         result = self.client.generate(
@@ -474,6 +523,37 @@ class RuntimeGenerationMediaClient:
     def synthesize_narration(
         self, scene: dict[str, Any], *, locale: str, seed: int
     ) -> GeneratedMedia:
+        if self._local_narration is not None:
+            narration = str(scene["narration"])
+            audio = self._local_narration.synthesize(
+                AudioSpeechRequest(
+                    request_id=str(scene["id"]),
+                    text=narration,
+                    locale=locale,
+                    voice_id=None if self._voice == "default" else self._voice,
+                    deterministic_seed=seed,
+                )
+            )
+            return GeneratedMedia(
+                audio.wav_bytes,
+                "audio/wav",
+                f"{scene['id']}.wav",
+                audio.provider_id,
+                audio.model,
+                {
+                    "locale": audio.locale,
+                    "voiceId": audio.voice_id,
+                    "sampleRateHz": audio.sample_rate_hz,
+                    "channels": audio.channels,
+                    "durationMs": audio.duration_ms,
+                    "rightsStatus": "owned",
+                    "localOnly": True,
+                    "approvedRouteProvider": "local-runtime",
+                    "approvedRouteModel": self._speech_model,
+                },
+                0,
+                {"characters": float(len(narration))},
+            )
         result = self.client.generate(
             ProviderSpeechRequest(
                 text=str(scene["narration"]),

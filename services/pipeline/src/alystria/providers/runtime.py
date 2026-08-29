@@ -458,6 +458,11 @@ class ProviderRuntimeFactory:
         provider_id = approval.provider_id
         if provider_id == "mock":
             return [MockProviderAdapter()]
+        # The local runtime is resolved by the capability-specific generation
+        # boundary.  It must never acquire a transport or be treated as a
+        # cloud/provider fallback by this router.
+        if provider_id == "local-runtime":
+            return []
         transport = self.transport_factory(provider_id)
         adapters: list[ProviderAdapter] = []
         if provider_id == "openai":

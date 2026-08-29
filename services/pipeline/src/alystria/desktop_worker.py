@@ -41,6 +41,8 @@ ALLOWED_METHODS = frozenset(
         "project.history.redo",
         "project.export",
         "source.import",
+        "provider.routingPolicy.get",
+        "provider.routingPolicy.save",
         "generation.start",
         "generation.approve",
         "generation.cancel",
@@ -144,7 +146,11 @@ class _DesktopRequestHandler(socketserver.StreamRequestHandler):
             else:
                 service_response = handle_request(
                     self.server.pipeline_service,
-                    {"id": request_id, "method": method, "params": payload},
+                    {
+                        "id": request_id,
+                        "method": method,
+                        "params": _service_payload(method, payload),
+                    },
                 )
                 response = {
                     "protocolVersion": self.server.protocol_version,
@@ -348,6 +354,19 @@ def _validate_request(
     if not isinstance(payload, dict):
         raise DesktopProtocolError("INVALID_ARGUMENT", "Worker payload must be a JSON object")
     return request_id, method, payload
+
+
+def _service_payload(method: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Translate the desktop command shape to the internal service contract."""
+
+    if method not in {"provider.routingPolicy.get", "provider.routingPolicy.save"}:
+        return payload
+    project_directory = payload.get("projectDirectory")
+    if project_directory is None:
+        return payload
+    translated = dict(payload)
+    translated["projectPath"] = translated.pop("projectDirectory")
+    return translated
 
 
 def _success_envelope(

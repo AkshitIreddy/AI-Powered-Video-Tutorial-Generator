@@ -783,6 +783,8 @@ fn valid_method(method: &str) -> bool {
             | "project.history.redo"
             | "project.export"
             | "source.import"
+            | "provider.routingPolicy.get"
+            | "provider.routingPolicy.save"
             | "generation.start"
             | "generation.approve"
             | "generation.cancel"
@@ -833,6 +835,8 @@ mod tests {
         assert!(valid_method("control.renderScene"));
         assert!(valid_method("source.import"));
         assert!(valid_method("project.export"));
+        assert!(valid_method("provider.routingPolicy.get"));
+        assert!(valid_method("provider.routingPolicy.save"));
         assert!(!valid_method("shell.execute"));
         assert!(!valid_method("filesystem.read"));
     }
