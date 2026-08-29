@@ -25,6 +25,7 @@ from alystria.generation import (
 from alystria.generation.workflow import _presenter_direction, _presenter_fit
 from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
+from alystria.qa import Finding, QualityGate, Severity
 from alystria.research import GroundingMode
 
 
@@ -200,6 +201,123 @@ def test_retry_rolls_back_all_stage_transitions_on_failure(
             coordinator.retry(generation_id)
         assert {job.job_id: job.state for job in coordinator._jobs(generation_id)} == states_before
         assert coordinator.status(generation_id).state is GenerationState.CANCELLED
+    finally:
+        store.close()
+
+
+def test_retry_rechecks_final_qa_after_policy_only_export_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, coordinator = open_coordinator(tmp_path)
+    original_quality_gates = coordinator.workflow._candidate_quality_gates
+
+    def obsolete_policy_gate(
+        candidate: dict[str, Any],
+        approved: dict[str, Any],
+        generation_request: GenerationRequest,
+    ) -> tuple[QualityGate, ...]:
+        return (
+            *original_quality_gates(candidate, approved, generation_request),
+            QualityGate.from_findings(
+                "generation.obsolete_local_policy",
+                "policy",
+                (
+                    Finding(
+                        "policy.obsolete_local_rule",
+                        "An obsolete local policy blocks this otherwise valid export.",
+                        Severity.MAJOR,
+                        "render:master",
+                    ),
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(
+        coordinator.workflow,
+        "_candidate_quality_gates",
+        obsolete_policy_gate,
+    )
+    try:
+        generation_id = coordinator.start(request()).generation_id
+        coordinator.run_pending()
+        coordinator.approve(generation_id)
+        failed = coordinator.run_pending()
+        assert failed is not None and failed.state is GenerationState.FAILED
+
+        old_qa_stage = next(
+            stage for stage in failed.stages if stage.stage is GenerationStage.QA_FINAL
+        )
+        old_qa_job = coordinator.runtime.get_job(old_qa_stage.job_id)
+        assert old_qa_job.result is not None
+        old_qa_artifact_hash = str(old_qa_job.result["artifactHash"])
+        old_qa_revision_id = str(old_qa_job.result["revisionId"])
+        assert old_qa_job.result["payload"]["passed"] is False
+        assert store.cas.verify(old_qa_artifact_hash)
+
+        # Simulate retrying after installing a local policy/code update. The
+        # immutable render remains valid, but the old QA decision does not.
+        monkeypatch.setattr(
+            coordinator.workflow,
+            "_candidate_quality_gates",
+            original_quality_gates,
+        )
+        retried = coordinator.retry(generation_id)
+        assert retried.state is GenerationState.QUEUED
+
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        new_qa_stage = next(
+            stage for stage in completed.stages if stage.stage is GenerationStage.QA_FINAL
+        )
+        new_qa_job = coordinator.runtime.get_job(new_qa_stage.job_id)
+        assert new_qa_job.result is not None
+        assert new_qa_job.attempt_count == old_qa_job.attempt_count + 1
+        assert new_qa_job.result["payload"]["passed"] is True
+        assert new_qa_job.result["artifactHash"] != old_qa_artifact_hash
+
+        # Stage artifacts and revisions are immutable history even though the
+        # durable job advances to a fresh attempt and result pointer.
+        assert store.cas.verify(old_qa_artifact_hash)
+        revisions = {
+            revision.revision_id: revision
+            for revision in store.list_revisions(limit=100)
+        }
+        assert revisions[old_qa_revision_id].snapshot["stageArtifactHash"] == old_qa_artifact_hash
+        assert new_qa_job.result["revisionId"] in revisions
+    finally:
+        store.close()
+
+
+def test_retry_does_not_recompute_qa_for_non_policy_export_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, coordinator = open_coordinator(tmp_path)
+    original_export = coordinator.workflow._export
+
+    def fail_export_write(*_: Any, **__: Any) -> dict[str, Any]:
+        raise OSError("injected export filesystem failure")
+
+    monkeypatch.setattr(coordinator.workflow, "_export", fail_export_write)
+    try:
+        generation_id = coordinator.start(request()).generation_id
+        coordinator.run_pending()
+        coordinator.approve(generation_id)
+        failed = coordinator.run_pending()
+        assert failed is not None and failed.state is GenerationState.FAILED
+        qa_stage = next(
+            stage for stage in failed.stages if stage.stage is GenerationStage.QA_FINAL
+        )
+        qa_before = coordinator.runtime.get_job(qa_stage.job_id)
+        assert qa_before.result is not None
+        assert qa_before.result["payload"]["passed"] is True
+
+        monkeypatch.setattr(coordinator.workflow, "_export", original_export)
+        coordinator.retry(generation_id)
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        qa_after = coordinator.runtime.get_job(qa_stage.job_id)
+        assert qa_after.attempt_count == qa_before.attempt_count
+        assert qa_after.result == qa_before.result
     finally:
         store.close()
 

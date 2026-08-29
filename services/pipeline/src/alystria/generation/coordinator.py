@@ -41,7 +41,7 @@ from .models import (
     StageStatus,
 )
 from .visual_customization import resolve_visual_customization
-from .workflow import GenerationWorkflow
+from .workflow import ExportQualityGateError, GenerationWorkflow
 
 
 class GenerationNotFoundError(KeyError):
@@ -340,6 +340,19 @@ class GenerationCoordinator:
         with transaction(self.store.connection):
             cancelled_control = self._control_state(generation_id) == "CANCELLED"
             retried = False
+            final_qa = self._policy_retry_qa_job(jobs)
+            if final_qa is not None:
+                # Export policy is evaluated by QA_FINAL as well as EXPORT. A
+                # local policy/code update must create a new QA stage artifact
+                # and revision instead of making export consume the prior
+                # decision again. mark_stale + retry preserves the old CAS
+                # object, revision, attempts, and events as immutable history.
+                self.runtime.mark_stale(
+                    final_qa.job_id,
+                    reason="export_policy_recheck",
+                )
+                self.runtime.retry(final_qa.job_id)
+                retried = True
             for job in jobs:
                 if job.state in {JobState.FAILED, JobState.CANCELLED, JobState.STALE}:
                     self.runtime.retry(job.job_id)
@@ -350,6 +363,56 @@ class GenerationCoordinator:
             if not retried:
                 raise ValueError("Generation has no failed, cancelled, or stale stages to retry")
         return self.status(generation_id)
+
+    @staticmethod
+    def _policy_retry_qa_job(jobs: list[Job]) -> Job | None:
+        """Return final QA only when export failed solely on its quality gate.
+
+        ``ExportQualityGateError`` identifies new failures precisely. The
+        message fallback recovers projects created before that exception type
+        existed, which persisted the same failure as a generic ``ValueError``.
+        """
+
+        by_stage = {
+            str(job.parameters.get("stage")): job
+            for job in jobs
+            if isinstance(job.parameters.get("stage"), str)
+        }
+        export = by_stage.get(GenerationStage.EXPORT.value)
+        final_qa = by_stage.get(GenerationStage.QA_FINAL.value)
+        if (
+            export is None
+            or export.state is not JobState.FAILED
+            or final_qa is None
+            or final_qa.state is not JobState.SUCCEEDED
+        ):
+            return None
+        if any(
+            job.job_id != export.job_id
+            and job.state in {JobState.FAILED, JobState.CANCELLED, JobState.STALE}
+            for job in jobs
+        ):
+            return None
+        error = export.error
+        if not isinstance(error, dict):
+            return None
+        exception_type = error.get("exceptionType")
+        message = error.get("message")
+        is_quality_failure = exception_type == ExportQualityGateError.__name__ or (
+            exception_type == "ValueError"
+            and isinstance(message, str)
+            and message.startswith("Export blocked after ")
+        )
+        if not is_quality_failure:
+            return None
+        result = final_qa.result
+        payload = result.get("payload") if isinstance(result, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        gate = payload.get("qualityGate")
+        if not isinstance(gate, dict) or gate.get("status") not in {"FAIL", "BLOCKED"}:
+            return None
+        return final_qa
 
     def run_pending(
         self,

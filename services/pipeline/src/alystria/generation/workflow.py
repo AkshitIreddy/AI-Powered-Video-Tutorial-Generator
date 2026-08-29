@@ -95,6 +95,10 @@ PROMPT_VERSION = "offline-education-v1"
 MODEL_REVISION = "deterministic-v1"
 
 
+class ExportQualityGateError(ValueError):
+    """The immutable candidate was rejected by the current export policy."""
+
+
 def _stable_id(prefix: str, *parts: object) -> str:
     payload = "\x1f".join(str(part) for part in parts).encode()
     return f"{prefix}_{hashlib.sha256(payload).hexdigest()[:24]}"
@@ -1299,7 +1303,7 @@ class GenerationWorkflow:
         qa_gate_status = GateStatus(str(qa["qualityGate"]["status"]))
         if not qa["passed"] or not qa_gate_status.permits_export or blocking_codes:
             suffix = f": {', '.join(blocking_codes)}" if blocking_codes else ""
-            raise ValueError(
+            raise ExportQualityGateError(
                 f"Export blocked after {MAX_AUTOMATIC_REPAIRS} automatic repair attempts{suffix}"
             )
         storyboard = approved["storyboard"]
