@@ -253,6 +253,7 @@ class NativeControlCoordinator:
         scene = _scene(head.snapshot, str(params["sceneId"]))
         generation_id = params.get("baseGenerationId")
         narration, captions = self._scene_media(generation_id, str(scene["id"]))
+        presenters = self._scene_presenters(generation_id, str(scene["id"]))
         context.set_progress(0.1, message="Submitting one immutable scene to the pinned renderer")
         rendered = self.renderer.render(
             {
@@ -264,6 +265,7 @@ class NativeControlCoordinator:
                 "scenes": [_renderer_scene(scene)],
                 "narration": narration,
                 "captions": captions,
+                "presenters": presenters,
             }
         )
         artifact = self.store.add_artifact_bytes(
@@ -351,6 +353,7 @@ class NativeControlCoordinator:
         storyboard = self._stage_payload(generation_id, "storyboard")["storyboard"]
         narration_payload = self._stage_payload(generation_id, "narration")
         captions_payload = self._stage_payload(generation_id, "captions")
+        presenter_payload = self._stage_payload(generation_id, "presenter")
         qa_payload = self._stage_payload(generation_id, "qa_final")
         gate = qa_payload.get("qualityGate")
         if not isinstance(gate, dict) or gate.get("status") not in {"PASS", "WARNING"}:
@@ -366,6 +369,7 @@ class NativeControlCoordinator:
                 "scenes": storyboard["scenes"],
                 "narration": narration_payload["narration"],
                 "captions": captions_payload if params["captions"] else {"captionsEnabled": False},
+                "presenters": presenter_payload.get("presenters", []),
                 "locale": storyboard.get("locale", "en-US"),
             }
         )
@@ -467,6 +471,21 @@ class NativeControlCoordinator:
             "captionsEnabled": bool(captions_payload.get("captionsEnabled", True)),
             "byScene": {scene_id: cues.get(scene_id, []) if isinstance(cues, dict) else []},
         }
+
+    def _scene_presenters(self, generation_id: Any, scene_id: str) -> list[dict[str, Any]]:
+        """Return only the durable presenter candidate bound to this scene."""
+
+        if not isinstance(generation_id, str):
+            return []
+        presenter_payload = self._stage_payload(generation_id, "presenter")
+        values = presenter_payload.get("presenters", [])
+        if not isinstance(values, list):
+            raise ValueError("Completed presenter stage has an invalid presenters payload")
+        return [
+            item
+            for item in values
+            if isinstance(item, dict) and item.get("sceneId") == scene_id
+        ]
 
     def _invalidate_scene(
         self,

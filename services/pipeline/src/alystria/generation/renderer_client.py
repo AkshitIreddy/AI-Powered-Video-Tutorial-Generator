@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import signal
@@ -297,10 +298,12 @@ class SubprocessRendererClient:
         with tempfile.TemporaryDirectory(prefix="attempt-", dir=staging_parent) as temporary:
             attempt_root = _guarded_child(staging_parent, Path(temporary))
             audio_root = _guarded_child(attempt_root, attempt_root / "audio")
+            presenter_root = _guarded_child(attempt_root, attempt_root / "presenters")
             output_root = _guarded_child(attempt_root, attempt_root / "output")
             audio_root.mkdir()
+            presenter_root.mkdir()
             output_root.mkdir()
-            manifest = self._build_manifest(request, audio_root, output_root)
+            manifest = self._build_manifest(request, audio_root, presenter_root, output_root)
             manifest_path = _guarded_child(attempt_root, attempt_root / "render-manifest.json")
             manifest_bytes = (_canonical_json(manifest) + "\n").encode()
             manifest_path.write_bytes(manifest_bytes)
@@ -339,6 +342,7 @@ class SubprocessRendererClient:
         self,
         request: Mapping[str, Any],
         audio_root: Path,
+        presenter_root: Path,
         output_root: Path,
     ) -> dict[str, Any]:
         if request.get("schemaVersion") != 1:
@@ -368,6 +372,16 @@ class SubprocessRendererClient:
         for item in narration_value:
             entry = _required_mapping(item, "narration entry")
             narration_by_scene[_required_string(entry, "sceneId")] = entry
+        presenters_value = request.get("presenters", [])
+        if not isinstance(presenters_value, list):
+            raise ValueError("Renderer presenters must be a list")
+        presenters_by_scene: dict[str, Mapping[str, Any]] = {}
+        for index, item in enumerate(presenters_value):
+            entry = _required_mapping(item, f"presenter entry {index}")
+            scene_id = _required_string(entry, "sceneId")
+            if scene_id in presenters_by_scene:
+                raise ValueError(f"Renderer has more than one presenter for scene {scene_id}")
+            presenters_by_scene[scene_id] = entry
 
         resolved_scenes: list[dict[str, Any]] = []
         audio_inputs: list[dict[str, Any]] = []
@@ -427,6 +441,19 @@ class SubprocessRendererClient:
             timeline_tick += duration_ticks
         if set(narration_by_scene) - {str(scene["id"]) for scene in resolved_scenes}:
             raise ValueError("Renderer narration references an unknown scene")
+        unknown_presenters = set(presenters_by_scene) - {
+            str(scene["id"]) for scene in resolved_scenes
+        }
+        if unknown_presenters:
+            raise ValueError(
+                "Renderer presenter references an unknown scene: "
+                + ", ".join(sorted(unknown_presenters))
+            )
+        presenter_videos = self._materialize_presenter_videos(
+            presenters_by_scene,
+            resolved_scenes,
+            presenter_root,
+        )
         return {
             "id": f"{_safe_name(generation_id)}-{target['name']}",
             "schemaVersion": 1,
@@ -435,12 +462,96 @@ class SubprocessRendererClient:
             "scenes": resolved_scenes,
             "outputDirectory": str(output_root),
             "audioInputs": audio_inputs,
+            **({"presenterVideos": presenter_videos} if presenter_videos else {}),
             "metadata": {
                 "generationId": generation_id,
                 "locale": str(storyboard_value.get("locale", request.get("locale", "en-US"))),
                 "sourceTimebase": str(request.get("timebase", TICKS_PER_SECOND)),
             },
         }
+
+    def _materialize_presenter_videos(
+        self,
+        presenters_by_scene: Mapping[str, Mapping[str, Any]],
+        scenes: Sequence[Mapping[str, Any]],
+        presenter_root: Path,
+    ) -> list[dict[str, Any]]:
+        """Stage only verified MP4 presenter artifacts for the renderer.
+
+        The durable presenter stage can also contain a deterministic JSON
+        placeholder when no installed local presenter is selected.  That
+        placeholder remains visible in provenance but never crosses the
+        Chromium/FFmpeg media boundary.  A real video candidate must be a
+        registered, hash-verified MP4 in the project CAS and must bind to a
+        semantically compatible presenter scene.
+        """
+
+        bindings: list[dict[str, Any]] = []
+        presenter_kinds = {"presenter", "presenter-slide", "presenter-with-slide"}
+        for index, scene in enumerate(scenes):
+            scene_id = _required_string(scene, "id")
+            presenter = presenters_by_scene.get(scene_id)
+            if presenter is None:
+                continue
+            artifact_hash = _required_string(presenter, "artifactHash").lower()
+            if not SHA256_PATTERN.fullmatch(artifact_hash) or not self.store.cas.verify(artifact_hash):
+                raise RendererOutputError(
+                    f"Presenter artifact for scene {scene_id} is missing or corrupt"
+                )
+            row = self.store.connection.execute(
+                "SELECT media_type FROM artifacts WHERE hash=?", (artifact_hash,)
+            ).fetchone()
+            if row is None:
+                raise RendererOutputError(
+                    f"Presenter artifact for scene {scene_id} is not registered"
+                )
+            media_type = str(row["media_type"]).casefold()
+            # Deterministic fixture presenter records intentionally use a JSON
+            # metadata envelope. They are not videos and cannot be rendered as
+            # one. Keeping this branch explicit prevents a disguised fallback.
+            if media_type != "video/mp4":
+                continue
+            kind = _required_string(scene, "kind")
+            if kind not in presenter_kinds:
+                raise RendererOutputError(
+                    f"Presenter video for scene {scene_id} requires a presenter scene, got {kind}"
+                )
+            destination = _guarded_child(
+                presenter_root,
+                presenter_root / f"{index:04d}-{_safe_name(scene_id)}.mp4",
+            )
+            self.store.cas.copy_to(artifact_hash, destination)
+            try:
+                info = destination.lstat()
+                resolved = destination.resolve(strict=True)
+                resolved.relative_to(presenter_root.resolve(strict=True))
+            except (OSError, ValueError) as error:
+                raise RendererOutputError(
+                    f"Presenter staging artifact for scene {scene_id} is unavailable"
+                ) from error
+            if destination.is_symlink() or not resolved.is_file() or info.st_size <= 0:
+                raise RendererOutputError(
+                    f"Presenter staging artifact for scene {scene_id} is not a regular file"
+                )
+            if _sha256_file(resolved) != artifact_hash:
+                raise RendererOutputError(
+                    f"Presenter staging artifact for scene {scene_id} changed during copy"
+                )
+            binding: dict[str, Any] = {
+                "id": f"presenter-{index:04d}-{_safe_name(scene_id)}",
+                "path": str(resolved),
+                "sha256": artifact_hash,
+                "sceneId": scene_id,
+                "placement": _presenter_placement(presenter),
+                "fit": _presenter_fit(presenter),
+            }
+            source_start = presenter.get("sourceStartTick")
+            if source_start is not None:
+                binding["sourceStartTick"] = _required_int(
+                    presenter, "sourceStartTick", minimum=0
+                )
+            bindings.append(binding)
+        return bindings
 
     def _render_argv(
         self, manifest_path: Path, output_root: Path, output_name: str
@@ -856,6 +967,42 @@ def _safe_name(value: str) -> str:
     return result[:96]
 
 
+def _presenter_placement(value: Mapping[str, Any]) -> str:
+    """Map the typed presenter-direction vocabulary to renderer placements."""
+
+    direction = value.get("direction")
+    raw = value.get("placement")
+    if raw is None and isinstance(direction, Mapping):
+        raw = direction.get("placement")
+    normalized = "picture_in_picture" if raw is None else str(raw).strip().casefold()
+    placements = {
+        "full": "full",
+        "full_frame": "full",
+        "picture-in-picture": "picture-in-picture",
+        "picture_in_picture": "picture-in-picture",
+        "left": "split-left",
+        "split-left": "split-left",
+        "split_left": "split-left",
+        "right": "split-right",
+        "split-right": "split-right",
+        "split_right": "split-right",
+        # The canonical renderer deliberately has no lower-third filter
+        # surface. PIP is the fixed caption-safe equivalent.
+        "lower_third": "picture-in-picture",
+    }
+    try:
+        return placements[normalized]
+    except KeyError as error:
+        raise ValueError(f"Unsupported presenter placement {raw!r}") from error
+
+
+def _presenter_fit(value: Mapping[str, Any]) -> str:
+    raw = value.get("fit", "cover")
+    if not isinstance(raw, str) or raw not in {"cover", "contain"}:
+        raise ValueError("Presenter fit must be cover or contain")
+    return raw
+
+
 def _scene_kind(value: object) -> str:
     normalized = str(value).strip().casefold().replace("_", "-").replace(" ", "-")
     aliases = {
@@ -1012,7 +1159,21 @@ def _portable_output_manifest(value: Mapping[str, Any]) -> dict[str, Any]:
 
 def _render_metrics(output: Mapping[str, Any]) -> dict[str, Any]:
     probe = _required_mapping(output.get("probe"), "renderer probe")
-    return {
+    qa = _required_mapping(output.get("qaMetrics"), "renderer QA metrics")
+
+    def finite(name: str) -> float:
+        value = qa.get(name)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+        ):
+            raise RendererOutputError(f"Renderer QA metric {name} is not finite")
+        return float(value)
+
+    if qa.get("audioIsSilent") is not False:
+        raise RendererOutputError("Renderer delivery audio is silent")
+    metrics: dict[str, Any] = {
         "deterministic": True,
         "networkPolicy": "deny",
         "frameCount": _required_int(output, "frameCount", minimum=1),
@@ -1023,12 +1184,22 @@ def _render_metrics(output: Mapping[str, Any]) -> dict[str, Any]:
         "audioSampleRateHz": _required_int(probe, "audioSampleRate", minimum=1),
         "audioChannels": _required_int(probe, "audioChannels", minimum=1),
         "captionCodec": str(probe.get("captionCodec", "unknown")),
+        "colorTagStatus": str(probe.get("colorTagStatus", "unknown")),
         "width": _required_int(probe, "width", minimum=1),
         "height": _required_int(probe, "height", minimum=1),
         "frameRate": str(probe.get("frameRate", "unknown")),
         "blankFrames": 0,
         "captionCollisions": 0,
+        "integratedLufs": finite("integratedLufs"),
+        "truePeakDbtp": finite("truePeakDbtp"),
+        "clippedSamples": _required_int(qa, "clippedSamples", minimum=0),
+        "decodedSamplesPerChannel": _required_int(qa, "decodedSamplesPerChannel", minimum=1),
+        "measurementSource": _required_string(qa, "measurementSource"),
     }
+    for name in ("avDriftSeconds", "avDriftFrames"):
+        if qa.get(name) is not None:
+            metrics[name] = finite(name)
+    return metrics
 
 
 def _read_json_object(path: Path, label: str) -> Mapping[str, Any]:

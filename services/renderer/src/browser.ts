@@ -64,6 +64,7 @@ export async function createPlaywrightChromiumDriver(options: PlaywrightChromium
   const playwright = await import("playwright-core");
   const executablePath = options.executablePath ?? playwright.chromium.executablePath();
   await access(executablePath, constants.R_OK);
+  const softwareOnly = process.env.ALYSTRIA_RENDERER_SOFTWARE_ONLY === "1";
   const browser = await playwright.chromium.launch({
     executablePath,
     headless: true,
@@ -77,6 +78,11 @@ export async function createPlaywrightChromiumDriver(options: PlaywrightChromium
       "--metrics-recording-only",
       "--no-first-run",
       "--no-pings",
+      // An explicit CPU-only test/diagnostic path for shared workstations.
+      // It does not alter the normal production policy, but prevents a
+      // Chromium render from contending for the NVIDIA device when the owner
+      // has reserved it for another task.
+      ...(softwareOnly ? ["--disable-gpu", "--disable-gpu-compositing", "--use-angle=swiftshader"] : []),
     ],
   });
   let closed = false;

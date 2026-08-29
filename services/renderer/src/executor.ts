@@ -25,6 +25,7 @@ import { toSrt, toWebVtt } from "./captions.js";
 import { assertRenderManifest, type AudioInput, type CaptionCue, type RenderManifest } from "./contracts.js";
 import {
   planAudioMaster,
+  planAudioAnalysis,
   planDecodeValidation,
   planDeliveryEncode,
   planFrameSequenceToFfv1,
@@ -104,6 +105,34 @@ export interface RenderProbeSummary {
   readonly colorSpace: string;
   readonly colorTransfer: string;
   readonly colorPrimaries: string;
+  /** Full tags when the delivery container preserves them; VP9/AV1 WebM may retain only the matrix tag. */
+  readonly colorTagStatus: "full" | "container-limited";
+  readonly videoEndSeconds: number | null;
+  readonly audioEndSeconds: number | null;
+}
+
+export interface RenderQaMetrics {
+  /** EBU R128 integrated loudness measured from the fully decoded delivery. */
+  readonly integratedLufs: number;
+  /** EBU R128 oversampled true peak from a non-silent delivery. */
+  readonly truePeakDbtp: number;
+  /** Exact decoded channel-sample count at or beyond full scale. */
+  readonly clippedSamples: number;
+  readonly decodedSamplesPerChannel: number;
+  readonly audioIsSilent: false;
+  /** Actual stream-end difference from ffprobe; null means the container did not expose it. */
+  readonly avDriftSeconds: number | null;
+  readonly avDriftFrames: number | null;
+  readonly measurementSource: "delivery-full-decode:ffmpeg-ebur128+astats;timeline:ffprobe-streams";
+}
+
+export interface AudioAnalysisMetrics {
+  readonly integratedLufs: number;
+  /** Null is retained by the parser so the executor can reject digital silence explicitly. */
+  readonly truePeakDbtp: number | null;
+  readonly clippedSamples: number;
+  readonly decodedSamplesPerChannel: number;
+  readonly audioIsSilent: boolean;
 }
 
 export interface RenderOutputManifest {
@@ -122,6 +151,7 @@ export interface RenderOutputManifest {
   readonly frames: readonly Readonly<{ frame: number; contentSha256: string; pngSha256: string }>[];
   readonly files: readonly RenderOutputFile[];
   readonly probe: RenderProbeSummary;
+  readonly qaMetrics: RenderQaMetrics;
   readonly progressPath: string;
   readonly outputManifestPath: string;
 }
@@ -317,6 +347,101 @@ function stringField(value: unknown, fallback = "unknown"): string {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
+function parseTimeBase(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const [numeratorText, denominatorText] = value.split("/");
+  const numerator = Number(numeratorText);
+  const denominator = Number(denominatorText);
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) return undefined;
+  return numerator / denominator;
+}
+
+function parseClockDuration(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = /^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$/.exec(value.trim());
+  if (!match) return undefined;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+  const duration = hours * 3_600 + minutes * 60 + seconds;
+  return Number.isFinite(duration) && duration >= 0 ? duration : undefined;
+}
+
+function streamDurationSeconds(stream: Readonly<Record<string, unknown>>): number | null {
+  const direct = numberField(stream.duration, Number.NaN);
+  if (Number.isFinite(direct) && direct >= 0) return direct;
+  const durationTicks = numberField(stream.duration_ts, Number.NaN);
+  const timeBase = parseTimeBase(stream.time_base);
+  if (Number.isFinite(durationTicks) && durationTicks >= 0 && timeBase !== undefined) {
+    return durationTicks * timeBase;
+  }
+  const tags = stream.tags;
+  if (tags && typeof tags === "object" && !Array.isArray(tags)) {
+    return parseClockDuration((tags as Readonly<Record<string, unknown>>).DURATION) ?? null;
+  }
+  return null;
+}
+
+function streamEndSeconds(stream: Readonly<Record<string, unknown>>): number | null {
+  const duration = streamDurationSeconds(stream);
+  if (duration === null) return null;
+  const start = numberField(stream.start_time, 0);
+  return start + duration;
+}
+
+function stripFfmpegPrefix(line: string): string {
+  return line.replace(/^\[[^\]]+\]\s*/, "");
+}
+
+/** Parse the final summaries emitted by planAudioAnalysis, rejecting partial logs. */
+export function parseAudioAnalysis(stderr: string): AudioAnalysisMetrics {
+  const clean = stderr.split(/\r?\n/).map(stripFfmpegPrefix).join("\n");
+  const summaries = [...clean.matchAll(
+    /Summary:\s*[\s\S]*?Integrated loudness:\s*I:\s*(-?(?:\d+(?:\.\d+)?|inf))\s*LUFS[\s\S]*?True peak:\s*Peak:\s*(-?(?:\d+(?:\.\d+)?|inf))\s*dBFS/g,
+  )];
+  const summary = summaries.at(-1);
+  if (!summary) throw new Error("Delivery audio QA failed: EBU R128 summary is missing");
+  const integratedLufs = Number(summary[1]);
+  if (!Number.isFinite(integratedLufs)) {
+    throw new Error("Delivery audio QA failed: integrated loudness is not finite");
+  }
+  const rawTruePeak = summary[2]?.toLowerCase();
+  const audioIsSilent = rawTruePeak === "-inf";
+  const truePeakDbtp = audioIsSilent ? null : Number(rawTruePeak);
+  if (!audioIsSilent && !Number.isFinite(truePeakDbtp)) {
+    throw new Error("Delivery audio QA failed: true peak is not finite");
+  }
+
+  const overallIndex = clean.lastIndexOf("Overall");
+  if (overallIndex < 0) throw new Error("Delivery audio QA failed: astats overall summary is missing");
+  const overall = clean.slice(overallIndex);
+  const maxLevel = Number(/Max level:\s*(-?\d+(?:\.\d+)?)/.exec(overall)?.[1]);
+  const absolutePeakCount = Number(/Abs Peak count:\s*(\d+(?:\.\d+)?)/.exec(overall)?.[1]);
+  const decodedSamplesPerChannel = Number(/Number of samples:\s*(\d+(?:\.\d+)?)/.exec(overall)?.[1]);
+  if (![maxLevel, absolutePeakCount, decodedSamplesPerChannel].every(Number.isFinite) || decodedSamplesPerChannel <= 0) {
+    throw new Error("Delivery audio QA failed: astats clipping measurements are incomplete");
+  }
+  const clippedSamples = maxLevel > 0 ? Math.round(absolutePeakCount) : 0;
+  if (!Number.isSafeInteger(clippedSamples) || clippedSamples < 0 || !Number.isSafeInteger(Math.round(decodedSamplesPerChannel))) {
+    throw new Error("Delivery audio QA failed: astats clipping measurements are outside the safe integer range");
+  }
+  return {
+    integratedLufs,
+    truePeakDbtp,
+    clippedSamples,
+    decodedSamplesPerChannel: Math.round(decodedSamplesPerChannel),
+    audioIsSilent,
+  };
+}
+
+export function requireNonSilentAudio(
+  metrics: AudioAnalysisMetrics,
+): asserts metrics is AudioAnalysisMetrics & Readonly<{ truePeakDbtp: number; audioIsSilent: false }> {
+  if (metrics.audioIsSilent || metrics.truePeakDbtp === null) {
+    throw new Error("Delivery audio QA failed: decoded delivery is digital silence");
+  }
+}
+
 function validateProbe(document: ProbeDocument, manifest: RenderManifest, expectedDurationSeconds: number): RenderProbeSummary {
   if (document.error) throw new Error(`ffprobe reported an error: ${JSON.stringify(document.error)}`);
   const streams = document.streams ?? [];
@@ -345,7 +470,14 @@ function validateProbe(document: ProbeDocument, manifest: RenderManifest, expect
   const colorSpace = stringField(video.color_space);
   const colorTransfer = stringField(video.color_transfer);
   const colorPrimaries = stringField(video.color_primaries);
-  if (colorSpace !== "bt709" || colorTransfer !== "iec61966-2-1" || colorPrimaries !== "bt709") {
+  const fullSdrTags = colorSpace === "bt709"
+    && colorTransfer === "iec61966-2-1"
+    && colorPrimaries === "bt709";
+  const containerLimitedWebmTags = (video.codec_name === "vp9" || video.codec_name === "av1")
+    && colorSpace === "bt709"
+    && colorTransfer === "unknown"
+    && colorPrimaries === "unknown";
+  if (!fullSdrTags && !containerLimitedWebmTags) {
     throw new Error(`Delivery QA failed: expected Rec.709/sRGB tags, got ${colorSpace}/${colorTransfer}/${colorPrimaries}`);
   }
   const durationSeconds = numberField(document.format?.duration, numberField(video.duration));
@@ -366,6 +498,9 @@ function validateProbe(document: ProbeDocument, manifest: RenderManifest, expect
     colorSpace,
     colorTransfer,
     colorPrimaries,
+    colorTagStatus: fullSdrTags ? "full" : "container-limited",
+    videoEndSeconds: streamEndSeconds(video),
+    audioEndSeconds: streamEndSeconds(audio),
   };
 }
 
@@ -711,7 +846,7 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     await runPlan(deliveryPlan, options.executables, commandRunner, options.signal, attemptDirectory);
     await reporter.emit({ phase: "delivery", status: "completed", message: "Delivery encode completed", outputPath: deliveryPath });
 
-    await reporter.emit({ phase: "qa", status: "started", message: "Probing streams and decoding every output packet" });
+    await reporter.emit({ phase: "qa", status: "started", message: "Probing streams and measuring every decoded audio sample" });
     const probeResult = await runPlan(planProbe(deliveryPath), options.executables, commandRunner, options.signal, attemptDirectory);
     let probeDocument: ProbeDocument;
     try {
@@ -721,7 +856,23 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     }
     const probe = validateProbe(probeDocument, manifest, ticksToSeconds(durationTicks));
     await runPlan(planDecodeValidation(deliveryPath), options.executables, commandRunner, options.signal, attemptDirectory);
-    await reporter.emit({ phase: "qa", status: "completed", message: `QA passed: ${probe.width}x${probe.height}, ${probe.audioSampleRate} Hz, ${probe.durationSeconds.toFixed(3)}s` });
+    const audioAnalysisResult = await runPlan(planAudioAnalysis(deliveryPath), options.executables, commandRunner, options.signal, attemptDirectory);
+    const measuredAudio = parseAudioAnalysis(audioAnalysisResult.stderr);
+    requireNonSilentAudio(measuredAudio);
+    const avDriftSeconds = probe.videoEndSeconds === null || probe.audioEndSeconds === null
+      ? null
+      : probe.audioEndSeconds - probe.videoEndSeconds;
+    const framesPerSecond = manifest.target.frameRate.numerator / manifest.target.frameRate.denominator;
+    const qaMetrics: RenderQaMetrics = {
+      ...measuredAudio,
+      truePeakDbtp: measuredAudio.truePeakDbtp,
+      audioIsSilent: false,
+      avDriftSeconds,
+      avDriftFrames: avDriftSeconds === null ? null : avDriftSeconds * framesPerSecond,
+      measurementSource: "delivery-full-decode:ffmpeg-ebur128+astats;timeline:ffprobe-streams",
+    };
+    const driftSummary = qaMetrics.avDriftFrames === null ? "A/V drift unavailable" : `A/V drift ${qaMetrics.avDriftFrames.toFixed(3)} frames`;
+    await reporter.emit({ phase: "qa", status: "completed", message: `QA measured: ${qaMetrics.integratedLufs.toFixed(1)} LUFS, ${qaMetrics.clippedSamples} clipped samples, ${driftSummary}` });
 
     const frameRecords = Object.entries(checkpoint.frames)
       .map(([frame, record]) => ({ frame: Number(frame), contentSha256: record.contentHash, pngSha256: record.outputSha256 }))
@@ -756,6 +907,7 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
       frames: frameRecords,
       files,
       probe,
+      qaMetrics,
       progressPath,
       outputManifestPath,
     };

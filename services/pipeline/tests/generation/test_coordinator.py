@@ -22,6 +22,8 @@ from alystria.generation import (
     request_from_desktop,
     request_from_fixture,
 )
+from alystria.generation.workflow import _presenter_direction, _presenter_fit
+from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
 from alystria.research import GroundingMode
 
@@ -52,6 +54,16 @@ def request(*, faults: int = 0) -> GenerationRequest:
 def open_coordinator(tmp_path: Path) -> tuple[ProjectStore, GenerationCoordinator]:
     store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
     return store, GenerationCoordinator(store)
+
+
+def test_presenter_direction_uses_only_explicit_semantic_placements() -> None:
+    assert _presenter_direction({}).placement is PresenterPlacement.PICTURE_IN_PICTURE
+    assert _presenter_direction({"presenterPlacement": "full_frame"}).placement is PresenterPlacement.FULL_FRAME
+    assert _presenter_fit({"presenterFit": "contain"}) == "contain"
+    with pytest.raises(ValueError, match="Unsupported presenter placement"):
+        _presenter_direction({"presenterPlacement": "arbitrary-filter-coordinate"})
+    with pytest.raises(ValueError, match="Presenter fit"):
+        _presenter_fit({"presenterFit": "unknown"})
 
 
 def test_staged_workflow_pauses_for_approval_then_exports(tmp_path: Path) -> None:
@@ -493,6 +505,9 @@ def test_renderer_client_receives_immutable_complete_request(tmp_path: Path) -> 
         assert len(sent["assets"]) == len(sent["scenes"])
         assert len(sent["narration"]) == len(sent["scenes"])
         assert all("artifactHash" in item for item in sent["assets"])
+        assert sent["scenes"][0]["type"] == "presenter-slide"
+        assert sent["presenters"]
+        assert sent["presenters"][0]["sceneId"] == sent["scenes"][0]["id"]
     finally:
         store.close()
 

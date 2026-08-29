@@ -265,6 +265,7 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
         completed = control.status(job.job_id)
         assert completed.state.value == "SUCCEEDED"
         assert len(renderer.requests) == calls_before + 1
+        assert "presenters" in renderer.requests[-1]
         assert Path(completed.result["path"]).is_file()
         assert len(completed.result["sidecarPaths"]) == 4
         assert all(Path(path).is_file() for path in completed.result["sidecarPaths"])

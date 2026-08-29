@@ -7,15 +7,38 @@ import { join } from "node:path";
 import type { BrowserPage, ChromiumDriver } from "../src/browser.js";
 import {
   executeRender,
+  parseAudioAnalysis,
+  requireNonSilentAudio,
+  SpawnCommandRunner,
   type CommandRunner,
   type ProcessResult,
 } from "../src/executor.js";
 import { fixtureManifest, fixtureTarget } from "../src/fixture.js";
+import { planAudioAnalysis } from "../src/ffmpeg.js";
 
 const ONE_PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
 );
+
+const AUDIO_ANALYSIS_STDERR = `
+[Parsed_ebur128_1 @ fixture] Summary:
+  Integrated loudness:
+    I:         -70.0 LUFS
+  True peak:
+    Peak:        0.0 dBFS
+[Parsed_astats_4 @ fixture] Overall
+[Parsed_astats_4 @ fixture] Max level: 0.000000
+[Parsed_astats_4 @ fixture] Abs Peak count: 48000.000000
+[Parsed_astats_4 @ fixture] Number of samples: 48000
+[Parsed_ebur128_1 @ fixture] Summary:
+  Integrated loudness:
+    I:         -16.1 LUFS
+  Loudness range:
+    LRA:         2.0 LU
+  True peak:
+    Peak:        -1.7 dBFS
+`;
 
 class FakeCommandRunner implements CommandRunner {
   readonly calls: Array<Readonly<{ executable: string; args: readonly string[] }>> = [];
@@ -42,8 +65,8 @@ class FakeCommandRunner implements CommandRunner {
         exitCode: 0,
         stdout: JSON.stringify({
           streams: [
-            { codec_type: "video", codec_name: "vp9", width: this.#width, height: this.#height, avg_frame_rate: this.#frameRate, color_space: "bt709", color_transfer: "iec61966-2-1", color_primaries: "bt709" },
-            { codec_type: "audio", codec_name: "opus", sample_rate: "48000", channels: 2 },
+            { codec_type: "video", codec_name: "vp9", width: this.#width, height: this.#height, avg_frame_rate: this.#frameRate, duration: String(this.#duration), start_time: "0", color_space: "bt709", color_transfer: "iec61966-2-1", color_primaries: "bt709" },
+            { codec_type: "audio", codec_name: "opus", sample_rate: "48000", channels: 2, duration: String(this.#duration), start_time: "0" },
             { codec_type: "subtitle", codec_name: "webvtt" },
           ],
           format: { duration: String(this.#duration) },
@@ -52,6 +75,9 @@ class FakeCommandRunner implements CommandRunner {
       };
     }
     assert.equal(executable, this.#ffmpeg);
+    if (args.some((argument) => argument.includes("ebur128=peak=true:framelog=verbose[loudness_out]"))) {
+      return { exitCode: 0, stdout: "", stderr: AUDIO_ANALYSIS_STDERR };
+    }
     const output = args.at(-1);
     if (output && output !== "-") await writeFile(output, Buffer.from(`fake media ${this.calls.length}`));
     return { exitCode: 0, stdout: "", stderr: "" };
@@ -109,6 +135,10 @@ test("executor uses exact injected tools, resumes captured frames, and writes me
     assert.deepEqual(new Set(firstRunner.calls.map((call) => call.executable)), new Set([ffmpegPath, ffprobePath]));
     assert.equal(first.frameCount, 2);
     assert.equal(first.probe.audioSampleRate, 48_000);
+    assert.equal(first.qaMetrics.integratedLufs, -16.1);
+    assert.equal(first.qaMetrics.truePeakDbtp, -1.7);
+    assert.equal(first.qaMetrics.clippedSamples, 0);
+    assert.equal(first.qaMetrics.avDriftFrames, 0);
     assert.equal(first.files.find((file) => file.kind === "delivery")?.path, join(outputDirectory, "delivery.webm"));
     assert.ok(firstRunner.calls.some((call) => call.args.includes("ffv1")));
     assert.ok(firstRunner.calls.some((call) => call.args.includes("anullsrc=r=48000:cl=stereo")));
@@ -118,9 +148,10 @@ test("executor uses exact injected tools, resumes captured frames, and writes me
     const progress = (await readFile(first.progressPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { sequence: number; phase: string });
     assert.deepEqual(progress.map((event) => event.sequence), progress.map((_, index) => index));
     assert.equal(progress.at(-1)?.phase, "complete");
-    const written = JSON.parse(await readFile(first.outputManifestPath, "utf8")) as { renderKey: string; files: unknown[] };
+    const written = JSON.parse(await readFile(first.outputManifestPath, "utf8")) as { renderKey: string; files: unknown[]; qaMetrics: { integratedLufs: number } };
     assert.equal(written.renderKey, first.renderKey);
     assert.equal(written.files.length, 5);
+    assert.equal(written.qaMetrics.integratedLufs, -16.1);
 
     const secondRunner = new FakeCommandRunner({ ffmpeg: ffmpegPath, ffprobe: ffprobePath, width: 320, height: 180, duration: 1 });
     await executeRender({
@@ -135,6 +166,54 @@ test("executor uses exact injected tools, resumes captured frames, and writes me
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("audio analysis parser uses the final EBU summary and exact full-scale mask count", () => {
+  const metrics = parseAudioAnalysis(`
+[Parsed_ebur128_1 @ fixture] Summary:
+  Integrated loudness:
+    I:         -70.0 LUFS
+  True peak:
+    Peak:        0.0 dBFS
+[Parsed_astats_4 @ fixture] Overall
+[Parsed_astats_4 @ fixture] Max level: 1000000000.000000
+[Parsed_astats_4 @ fixture] Abs Peak count: 37.000000
+[Parsed_astats_4 @ fixture] Number of samples: 96000
+[Parsed_ebur128_1 @ fixture] Summary:
+  Integrated loudness:
+    I:         -15.9 LUFS
+  True peak:
+    Peak:         0.3 dBFS
+`);
+  assert.deepEqual(metrics, {
+    integratedLufs: -15.9,
+    truePeakDbtp: 0.3,
+    clippedSamples: 37,
+    decodedSamplesPerChannel: 96_000,
+    audioIsSilent: false,
+  });
+});
+
+test("audio analysis parser represents digital silence without inventing a finite true peak", () => {
+  const metrics = parseAudioAnalysis(`
+[Parsed_astats_4 @ fixture] Overall
+[Parsed_astats_4 @ fixture] Max level: 0.000000
+[Parsed_astats_4 @ fixture] Abs Peak count: 48000.000000
+[Parsed_astats_4 @ fixture] Number of samples: 48000
+[Parsed_ebur128_1 @ fixture] Summary:
+  Integrated loudness:
+    I:         -70.0 LUFS
+  True peak:
+    Peak:        -inf dBFS
+`);
+  assert.equal(metrics.audioIsSilent, true);
+  assert.equal(metrics.truePeakDbtp, null);
+  assert.equal(metrics.clippedSamples, 0);
+  assert.throws(() => requireNonSilentAudio(metrics), /digital silence/);
+});
+
+test("audio analysis parser fails closed on truncated measurements", () => {
+  assert.throws(() => parseAudioAnalysis("Summary: Integrated loudness: I: -16.0 LUFS"), /summary is missing/);
 });
 
 test("scene and draft selections compile to explicit frame and responsive target contracts", async () => {
@@ -295,6 +374,30 @@ test("executor honors an already-aborted cancellation signal", async () => {
 const realBrowser = process.env.ALYSTRIA_TEST_CHROMIUM_PATH;
 const realFfmpeg = process.env.ALYSTRIA_TEST_FFMPEG_PATH;
 const realFfprobe = process.env.ALYSTRIA_TEST_FFPROBE_PATH;
+
+test("real FFmpeg analysis measures decoded samples instead of trusting encode settings", { skip: !realFfmpeg, timeout: 30_000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "alystria-real-audio-analysis-"));
+  try {
+    const audioPath = join(directory, "full-scale-fixture.wav");
+    const runner = new SpawnCommandRunner();
+    const generated = await runner.run(realFfmpeg!, [
+      "-hide_banner", "-nostdin", "-y",
+      "-f", "lavfi", "-i", "sine=frequency=1000:duration=1:sample_rate=48000",
+      "-af", "volume=20dB", "-c:a", "pcm_f32le", audioPath,
+    ], {});
+    assert.equal(generated.exitCode, 0, generated.stderr);
+    const plan = planAudioAnalysis(audioPath);
+    const measured = await runner.run(realFfmpeg!, plan.args, {});
+    assert.equal(measured.exitCode, 0, measured.stderr);
+    const metrics = parseAudioAnalysis(measured.stderr);
+    assert.ok(metrics.integratedLufs > -5 && metrics.integratedLufs < 0);
+    assert.ok(metrics.truePeakDbtp !== null && metrics.truePeakDbtp > 0);
+    assert.equal(metrics.decodedSamplesPerChannel, 48_000);
+    assert.ok(metrics.clippedSamples > 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("short real Chromium and FFmpeg render", { skip: !(realBrowser && realFfmpeg && realFfprobe), timeout: 120_000 }, async () => {
   const requestedOutput = process.env.ALYSTRIA_TEST_OUTPUT_DIRECTORY;

@@ -659,7 +659,16 @@ class GenerationWorkflow:
                 {
                     "id": scene_id,
                     "sectionId": section["outlineSectionId"],
-                    "type": types[min(index, len(types) - 1)],
+                    # The opening is the one sparse presenter moment in the
+                    # default plan.  A configured presenter can only be
+                    # composited into an explicit presenter family; the
+                    # renderer rejects a clip bound to an unrelated visual
+                    # scene rather than guessing a placement.
+                    "type": (
+                        "presenter-slide"
+                        if index == 0 and request.presenter_mode != "off"
+                        else types[min(index, len(types) - 1)]
+                    ),
                     "title": _title_from_narration(section["narration"], index),
                     "narration": section["narration"],
                     "visualIntent": section["visualIntent"],
@@ -960,13 +969,9 @@ class GenerationWorkflow:
         links: list[dict[str, str]] = []
         scenes = approved["storyboard"]["scenes"]
         selected = scenes if request.presenter_mode == "on" else scenes[:1]
-        direction = PresenterDirection(
-            placement=PresenterPlacement.PICTURE_IN_PICTURE,
-            background="transparent",
-            eye_contact_required=True,
-        )
         for index, scene in enumerate(selected):
             item = narration_by_scene[scene["id"]]
+            direction = _presenter_direction(scene)
             media = self.media_client.create_presenter(
                 scene,
                 narration_hash=str(item["artifactHash"]),
@@ -987,6 +992,7 @@ class GenerationWorkflow:
                     "artifactHash": artifact.hash,
                     "syntheticDisclosureRequired": True,
                     "direction": asdict(direction),
+                    "fit": _presenter_fit(scene),
                 }
             )
             links.append(
@@ -2148,6 +2154,37 @@ def _script_workflow_to_dict(result: ScriptWorkflowResult) -> dict[str, Any]:
 def _title_from_narration(value: str, index: int) -> str:
     words = re.findall(r"\b[\w'-]+\b", value, re.UNICODE)
     return " ".join(words[:7]).strip().capitalize() or f"Scene {index + 1}"
+
+
+def _presenter_direction(scene: dict[str, Any]) -> PresenterDirection:
+    """Use an explicit semantic placement only when the storyboard requests it.
+
+    ``picture_in_picture`` remains the sparse product default.  Full-frame,
+    split, and lower-third choices are authored storyboard data rather than
+    provider-supplied layout coordinates, so the renderer can map them to its
+    fixed caption-safe regions.
+    """
+
+    raw = scene.get("presenterPlacement", PresenterPlacement.PICTURE_IN_PICTURE.value)
+    if not isinstance(raw, str):
+        raise ValueError("Presenter placement must be a string")
+    try:
+        placement = PresenterPlacement(raw.strip().casefold())
+    except ValueError as error:
+        allowed = ", ".join(item.value for item in PresenterPlacement)
+        raise ValueError(f"Unsupported presenter placement {raw!r}; expected {allowed}") from error
+    return PresenterDirection(
+        placement=placement,
+        background="transparent",
+        eye_contact_required=True,
+    )
+
+
+def _presenter_fit(scene: dict[str, Any]) -> str:
+    raw = scene.get("presenterFit", "cover")
+    if raw not in {"cover", "contain"}:
+        raise ValueError("Presenter fit must be cover or contain")
+    return str(raw)
 
 
 def _objective_ids_for_section(plan: dict[str, Any], section_id: str) -> list[str]:

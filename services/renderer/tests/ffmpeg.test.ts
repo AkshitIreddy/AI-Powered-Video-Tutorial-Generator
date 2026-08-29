@@ -4,6 +4,7 @@ import { fixtureTarget } from "../src/fixture.js";
 import {
   ffmpegDistributionWarnings,
   parseFfmpegCapabilities,
+  planAudioAnalysis,
   planAudioMaster,
   planDeliveryEncode,
   planFrameSequenceToFfv1,
@@ -89,6 +90,16 @@ test("silent master is exact-duration stereo PCM at 48 kHz", () => {
 
 test("probe plan requests structured streams and format", () => {
   assert.deepEqual(planProbe("out.mp4").args.slice(-2), ["json", "out.mp4"]);
+});
+
+test("audio analysis fully decodes delivery into loudness and full-scale sample meters", () => {
+  const plan = planAudioAnalysis("delivery.mp4");
+  const filter = plan.args[plan.args.indexOf("-filter_complex") + 1] ?? "";
+  assert.equal(plan.executable, "ffmpeg");
+  assert.match(filter, /ebur128=peak=true/);
+  assert.match(filter, /gte\(abs\(val\(ch\)\),1\)\*1000000000/);
+  assert.match(filter, /astats=metadata=0:reset=0/);
+  assert.deepEqual(plan.args.slice(-3), ["-f", "null", "-"]);
 });
 
 test("FFmpeg build flags produce redistribution warnings", () => {

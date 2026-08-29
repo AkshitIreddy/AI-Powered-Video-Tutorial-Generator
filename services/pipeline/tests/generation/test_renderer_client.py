@@ -108,6 +108,11 @@ class FakeRendererRunner:
             audio_path = Path(audio["path"])
             assert audio_path.is_file()
             audio_path.resolve().relative_to(cwd.resolve())
+        for presenter in manifest.get("presenterVideos", []):
+            presenter_path = Path(presenter["path"])
+            assert presenter_path.is_file()
+            assert digest(presenter_path) == presenter["sha256"]
+            presenter_path.resolve().relative_to(cwd.resolve())
         output_root = Path(argv[argv.index("--output-dir") + 1])
         output_name = argv[argv.index("--output") + 1]
         delivery_path = output_root / output_name
@@ -160,6 +165,16 @@ class FakeRendererRunner:
                 "colorSpace": "bt709",
                 "colorTransfer": "iec61966-2-1",
                 "colorPrimaries": "bt709",
+            },
+            "qaMetrics": {
+                "integratedLufs": -16.0,
+                "truePeakDbtp": -1.5,
+                "clippedSamples": 0,
+                "decodedSamplesPerChannel": 96_000,
+                "audioIsSilent": False,
+                "avDriftSeconds": 0.0,
+                "avDriftFrames": 0.0,
+                "measurementSource": "delivery-full-decode:ffmpeg-ebur128+astats;timeline:ffprobe-streams",
             },
             "progressPath": str(output_root / "render-progress.jsonl"),
             "outputManifestPath": str(output_root / "render-output.json"),
@@ -301,6 +316,73 @@ def test_renderer_rejects_output_path_escape_and_cleans(tmp_path: Path) -> None:
         with pytest.raises(RendererOutputError, match="escapes guarded root"):
             client.render(render_request(first.hash, second.hash))
         assert runner.attempt_root is not None and not runner.attempt_root.exists()
+    finally:
+        store.close()
+
+
+def test_renderer_stages_real_presenter_video_only_for_presenter_scene(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        presenter = store.add_artifact_bytes(
+            b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2avc1mp41" + bytes(128),
+            media_type="video/mp4",
+            original_name="synthetic-presenter.mp4",
+            metadata={"rightsStatus": "owned"},
+        )
+        request = render_request(first.hash, second.hash)
+        request["scenes"][0]["type"] = "presenter-slide"
+        request["presenters"] = [
+            {
+                "sceneId": "scene_intro",
+                "artifactHash": presenter.hash,
+                "direction": {"placement": "picture_in_picture"},
+            }
+        ]
+        rendered = SubprocessRendererClient(store, pins, runner=runner).render(request)
+
+        assert rendered.content == b"deterministic-delivery"
+        assert runner.render_manifest is not None
+        videos = runner.render_manifest["presenterVideos"]
+        assert videos == [
+            {
+                "id": "presenter-0000-scene_intro",
+                "path": videos[0]["path"],
+                "sha256": presenter.hash,
+                "sceneId": "scene_intro",
+                "placement": "picture-in-picture",
+                "fit": "cover",
+            }
+        ]
+        assert not Path(videos[0]["path"]).exists()
+    finally:
+        store.close()
+
+
+def test_renderer_skips_explicit_nonvideo_presenter_placeholder(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        placeholder = store.add_artifact_bytes(
+            b'{"synthetic":true}',
+            media_type="application/vnd.alystria.presenter+json",
+            original_name="fixture-presenter.json",
+            metadata={"rightsStatus": "owned"},
+        )
+        request = render_request(first.hash, second.hash)
+        request["scenes"][0]["type"] = "presenter-slide"
+        request["presenters"] = [
+            {"sceneId": "scene_intro", "artifactHash": placeholder.hash}
+        ]
+        SubprocessRendererClient(store, pins, runner=runner).render(request)
+        assert runner.render_manifest is not None
+        assert "presenterVideos" not in runner.render_manifest
     finally:
         store.close()
 

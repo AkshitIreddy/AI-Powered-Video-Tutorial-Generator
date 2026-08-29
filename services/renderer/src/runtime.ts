@@ -1,4 +1,11 @@
 import { createHash } from "node:crypto";
+import {
+  BUILTIN_SCENE_KINDS,
+  type BuiltinSceneKind,
+  type SceneContent as BuiltinSceneContent,
+  type SceneSpec,
+  type TextItem,
+} from "@alystria/scenes";
 import type {
   CompiledLayout,
   FrameContext,
@@ -38,6 +45,282 @@ export interface FrameRendererOptions {
   readonly verifyRepeatability?: boolean;
 }
 
+const BUILTIN_SCENE_KIND_SET = new Set<string>(BUILTIN_SCENE_KINDS);
+
+function stableNumericSeed(value: string): number {
+  let hash = 2_166_136_261;
+  for (const character of value) {
+    hash ^= character.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return hash >>> 0;
+}
+
+function safeChildId(sceneId: string, suffix: string): string {
+  const prefix = sceneId.replace(/[^a-zA-Z0-9._:-]/gu, "-").replace(/^-+/u, "");
+  return `${prefix || "scene"}.${suffix}`;
+}
+
+function optionalMetadataString(scene: ResolvedScene, key: string): string | undefined {
+  const value = scene.metadata?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function sourceLines(scene: ResolvedScene): readonly string[] {
+  const explicitItems = scene.content.items ?? [];
+  const candidates = explicitItems.length
+    ? explicitItems
+    : scene.content.body
+      ? [scene.content.body]
+      : [scene.content.title];
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const text = candidate.trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    unique.push(text);
+    if (unique.length === 7) break;
+  }
+  return unique.length ? unique : [scene.content.title];
+}
+
+function textItems(scene: ResolvedScene): readonly TextItem[] {
+  return sourceLines(scene).map((text, index) => ({
+    id: safeChildId(scene.id, `item-${index + 1}`),
+    text,
+    ...(index === 0 ? { emphasis: "primary" as const } : {}),
+  }));
+}
+
+function commonContent(scene: ResolvedScene) {
+  return {
+    title: scene.content.title,
+    ...(scene.content.eyebrow ? { eyebrow: scene.content.eyebrow } : {}),
+    ...(scene.content.body ? { subtitle: scene.content.body } : {}),
+  };
+}
+
+/**
+ * Deterministically upgrades the intentionally narrow renderer wire record to
+ * the built-in semantic scene DSL. The bridge derives display-only data from
+ * manifest text; it never interprets metadata as a path, URL, or executable
+ * payload. Media scenes therefore receive stable asset ids and can only show
+ * bytes supplied by the separately verified CAS asset resolver.
+ */
+export const resolveBuiltinSceneSpec: SceneSpecResolver = (scene) => {
+  if (!BUILTIN_SCENE_KIND_SET.has(scene.kind)) return undefined;
+  const kind = scene.kind as BuiltinSceneKind;
+  const lines = sourceLines(scene);
+  const items = textItems(scene);
+  const common = commonContent(scene);
+  const child = (suffix: string) => safeChildId(scene.id, suffix);
+  const dataSeries = [{
+    id: child("series-1"),
+    label: scene.content.title,
+    values: lines.map((text, index) => ({
+      x: index + 1,
+      y: Math.max(1, Math.min(100, text.length)),
+      label: text,
+    })),
+  }];
+  let content: BuiltinSceneContent;
+
+  switch (kind) {
+    case "title": {
+      const author = optionalMetadataString(scene, "author");
+      content = {
+        kind,
+        ...common,
+        ...(author ? { author } : {}),
+        ...(scene.content.eyebrow ? { module: scene.content.eyebrow } : {}),
+      };
+      break;
+    }
+    case "section-intro":
+      content = { kind, ...common, sectionNumber: optionalMetadataString(scene, "sectionNumber") ?? "01", objectives: lines.slice(0, 3) };
+      break;
+    case "definition":
+      content = {
+        kind,
+        ...common,
+        term: optionalMetadataString(scene, "term") ?? scene.content.title,
+        definition: scene.content.body ?? lines[0]!,
+        ...(lines[1] ? { example: lines[1] } : {}),
+      };
+      break;
+    case "bullets":
+    case "recap":
+    case "summary":
+      content = { kind, ...common, items };
+      break;
+    case "comparison": {
+      const split = Math.max(1, Math.ceil(lines.length / 2));
+      const left = lines.slice(0, split);
+      const right = lines.slice(split);
+      content = {
+        kind,
+        ...common,
+        left: { label: optionalMetadataString(scene, "leftLabel") ?? "First view", items: left },
+        right: { label: optionalMetadataString(scene, "rightLabel") ?? "Second view", items: right.length ? right : left },
+        ...(scene.content.body ? { verdict: scene.content.body } : {}),
+      };
+      break;
+    }
+    case "diagram": {
+      const nodes = lines.map((text, index) => ({
+        id: child(`node-${index + 1}`),
+        label: text,
+        tone: index === 0 ? "primary" as const : index === lines.length - 1 ? "secondary" as const : "neutral" as const,
+      }));
+      content = {
+        kind,
+        ...common,
+        nodes,
+        edges: nodes.slice(1).map((node, index) => ({ id: child(`edge-${index + 1}`), from: nodes[index]!.id, to: node.id })),
+        direction: "left-to-right",
+      };
+      break;
+    }
+    case "timeline":
+      content = { kind, ...common, events: lines.map((text, index) => ({ id: child(`event-${index + 1}`), date: String(index + 1).padStart(2, "0"), label: text })) };
+      break;
+    case "formula":
+    case "derivation":
+      content = {
+        kind,
+        ...common,
+        expression: lines[0]!,
+        ...(lines.length > 1 ? { steps: lines.slice(1).map((expression, index) => ({ id: child(`step-${index + 1}`), expression })) } : {}),
+        ...(scene.content.body ? { result: scene.content.body } : {}),
+      };
+      break;
+    case "graph":
+      content = { kind, ...common, series: dataSeries, xLabel: "Step", yLabel: "Relative emphasis" };
+      break;
+    case "code":
+    case "walkthrough":
+    case "diff":
+    case "terminal":
+      content = {
+        kind,
+        ...common,
+        language: kind === "terminal" ? "text" : optionalMetadataString(scene, "language") ?? "text",
+        filename: kind === "terminal" ? "Tutorial console" : "lesson.txt",
+        lines: lines.map((text, index) => ({ id: child(`line-${index + 1}`), text, highlight: index === 0 })),
+      };
+      break;
+    case "file-tree":
+      content = {
+        kind,
+        ...common,
+        entries: lines.map((_, index) => ({ id: child(`entry-${index + 1}`), path: `lesson/step-${String(index + 1).padStart(2, "0")}.md`, type: "file" as const, emphasis: index === 0 })),
+      };
+      break;
+    case "execution-trace":
+      content = {
+        kind,
+        ...common,
+        frames: lines.map((text, index) => ({ id: child(`frame-${index + 1}`), label: text, line: index + 1, variables: { concept: text } })),
+        activeFrame: 0,
+      };
+      break;
+    case "variable-state":
+      content = { kind, ...common, before: { concept: lines[0]! }, after: { concept: lines.at(-1)! }, operation: scene.content.body ?? "Transform" };
+      break;
+    case "chart":
+      content = { kind, ...common, chartType: "bar", series: dataSeries, xLabel: "Step", yLabel: "Relative emphasis" };
+      break;
+    case "table":
+      content = {
+        kind,
+        ...common,
+        columns: [{ id: child("column-step"), label: "Step" }, { id: child("column-detail"), label: "Detail" }],
+        rows: lines.map((text, index) => ({ id: child(`row-${index + 1}`), cells: [String(index + 1), text], emphasis: index === 0 })),
+      };
+      break;
+    case "map":
+      content = {
+        kind,
+        ...common,
+        points: lines.map((text, index) => ({ id: child(`point-${index + 1}`), label: text, x: 0.18 + ((index * 0.29) % 0.68), y: 0.22 + ((index * 0.19) % 0.56) })),
+      };
+      break;
+    case "image-focus":
+    case "document-focus":
+    case "screen-recording":
+      content = { kind, ...common, asset: { id: child("asset-primary"), alt: scene.content.body ?? scene.content.title, fit: "contain" } };
+      break;
+    case "image-comparison":
+      content = {
+        kind,
+        ...common,
+        left: { id: child("asset-left"), alt: `${scene.content.title}, first view`, fit: "contain" },
+        right: { id: child("asset-right"), alt: `${scene.content.title}, second view`, fit: "contain" },
+        leftLabel: optionalMetadataString(scene, "leftLabel") ?? "Before",
+        rightLabel: optionalMetadataString(scene, "rightLabel") ?? "After",
+      };
+      break;
+    case "ui-demo":
+      content = { kind, ...common, windowTitle: optionalMetadataString(scene, "windowTitle") ?? "Tutorial workspace", steps: items, activeStep: 0, mockup: "desktop" };
+      break;
+    case "simulation":
+      content = {
+        kind,
+        ...common,
+        variables: lines.slice(0, 5).map((text, index) => ({ id: child(`variable-${index + 1}`), label: text, value: index + 1, min: 0, max: Math.max(2, lines.length) })),
+        observation: scene.content.body ?? lines[0]!,
+        series: dataSeries,
+      };
+      break;
+    case "presenter":
+    case "presenter-slide":
+      content = {
+        kind,
+        ...common,
+        presenterName: optionalMetadataString(scene, "presenterName") ?? "Alystria Guide",
+        talkingPoint: scene.content.body ?? lines[0]!,
+        ...(kind === "presenter-slide" ? { slideItems: items } : {}),
+        disclosure: optionalMetadataString(scene, "presenterDisclosure") ?? "Synthetic presenter",
+      };
+      break;
+    case "quote":
+      content = { kind, ...common, quote: scene.content.body ?? lines[0]!, attribution: optionalMetadataString(scene, "attribution") ?? "Tutorial narration" };
+      break;
+    case "question":
+      content = { kind, ...common, question: scene.content.body ?? lines[0]!, ...(lines[1] ? { prompt: lines[1] } : {}), thinkingTimeSeconds: 5 };
+      break;
+    case "worked-example":
+      content = { kind, ...common, problem: scene.content.body ?? scene.content.title, steps: items, answer: lines.at(-1)! };
+      break;
+    case "quiz": {
+      const choices = lines.length > 1 ? lines.slice(0, 6) : [lines[0]!, "Review the explanation"];
+      content = {
+        kind,
+        ...common,
+        question: scene.content.body ?? scene.content.title,
+        options: choices.map((label, index) => ({ id: child(`option-${index + 1}`), label, correct: index === 0 })),
+        revealAnswer: false,
+      };
+      break;
+    }
+    case "sources":
+      content = { kind, ...common, sources: lines.map((title, index) => ({ id: child(`source-${index + 1}`), title, license: "Project evidence" })) };
+      break;
+    case "outro":
+      content = { kind, ...common, nextSteps: lines.slice(0, 4), callToAction: scene.content.body ?? "Continue learning" };
+      break;
+  }
+
+  return {
+    id: scene.id,
+    content,
+    durationTicks: scene.durationTicks,
+    seed: stableNumericSeed(`${scene.id}:${scene.seed}`),
+    ...(scene.accessibilityDescription ? { accessibilityDescription: scene.accessibilityDescription } : {}),
+  };
+};
+
 interface LocatedScene {
   readonly scene: ResolvedScene;
   readonly startTick: number;
@@ -49,6 +332,12 @@ interface LocatedScene {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function sceneViewSupportsTarget(manifest: RenderManifest): boolean {
+  const { numerator, denominator } = manifest.target.frameRate;
+  if (numerator % denominator !== 0) return false;
+  return [24, 25, 30, 48, 50, 60].includes(numerator / denominator);
 }
 
 function assertSafeSvgFragment(fragment: string, sceneId: string): void {
@@ -180,7 +469,7 @@ export class FrameRenderer {
 
   constructor(options: FrameRendererOptions = {}) {
     this.#renderers = new Map(Object.entries(options.sceneRenderers ?? {}));
-    this.#sceneSpecResolver = options.sceneSpecResolver;
+    this.#sceneSpecResolver = options.sceneSpecResolver ?? resolveBuiltinSceneSpec;
     this.#sceneView = new SceneViewStaticAdapter(options.sceneView);
     this.#layoutCompiler = options.layoutCompiler ?? new ResponsiveLayoutCompiler();
     this.#verifyRepeatability = options.verifyRepeatability ?? false;
@@ -204,7 +493,9 @@ export class FrameRenderer {
     });
     const layout = withDeterminismGuard(() => this.#layoutCompiler.compile({ target: manifest.target, scene: located.scene }));
     const customRenderer = this.#renderers.get(located.scene.kind) ?? this.#renderers.get("*");
-    const sceneSpec = customRenderer ? undefined : this.#sceneSpecResolver?.(located.scene);
+    const sceneSpec = customRenderer || !sceneViewSupportsTarget(manifest)
+      ? undefined
+      : this.#sceneSpecResolver?.(located.scene);
     if (sceneSpec) assertSceneSpecMatchesResolvedScene(sceneSpec, located.scene);
     const renderer = customRenderer ?? fixtureSceneRenderer;
     const run = (): { html: string; svg: string } => {

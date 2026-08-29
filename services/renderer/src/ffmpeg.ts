@@ -133,7 +133,7 @@ export function planPresenterComposite(
     const timelineEnd = fixedSeconds(layer.timelineStartTick + layer.durationTicks);
     const fit = layer.fit === "cover"
       ? `scale=${layer.width}:${layer.height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${layer.width}:${layer.height}`
-      : `scale=${layer.width}:${layer.height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${layer.width}:${layer.height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+      : `scale=${layer.width}:${layer.height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${layer.width}:${layer.height}:(ow-iw)/2:(oh-ih)/2:color=0xF7F8FC`;
     filters.push(
       `[${input}:v]trim=start=${sourceStart}:duration=${duration},setpts=PTS-STARTPTS+${timelineStart}/TB,fps=${frameRateArgument(target.frameRate)},${fit},setsar=1[${prepared}]`,
       `[${base}][${prepared}]overlay=x=${layer.x}:y=${layer.y}:eof_action=pass:repeatlast=0:shortest=0:enable='between(t,${timelineStart},${timelineEnd})'[${composed}]`,
@@ -185,6 +185,35 @@ export function planDecodeValidation(path: string): CommandPlan {
     args: ["-v", "error", "-nostdin", "-xerror", "-i", pathArgument(path, "validation path"), "-map", "0:v?", "-map", "0:a?", "-sn", "-f", "null", "-"],
     expectedOutputs: [],
     description: "Decode every audio/video output packet and fail on the first media error",
+    licensingWarnings: [],
+  };
+}
+
+/**
+ * Fully decodes the delivery audio and emits machine-parseable measurements to
+ * stderr.  The ebur128 branch supplies integrated LUFS and oversampled true
+ * peak.  The astats branch receives a binary full-scale mask, amplified only
+ * to preserve integer-count precision in FFmpeg's six-decimal log output.
+ * When the mask has any non-zero value, `Abs Peak count` is therefore the
+ * exact number of decoded channel samples at or beyond full scale.
+ */
+export function planAudioAnalysis(path: string): CommandPlan {
+  const filter = [
+    "[0:a:0]asplit=2[loudness][clip_source]",
+    "[loudness]ebur128=peak=true:framelog=verbose[loudness_out]",
+    "[clip_source]aformat=sample_fmts=dbl,aeval=exprs='gte(abs(val(ch)),1)*1000000000',astats=metadata=0:reset=0[clip_out]",
+  ].join(";");
+  return {
+    executable: "ffmpeg",
+    args: [
+      "-hide_banner", "-nostdin", "-nostats",
+      "-i", pathArgument(path, "audio analysis input"),
+      "-filter_complex", filter,
+      "-map", "[loudness_out]", "-map", "[clip_out]",
+      "-f", "null", "-",
+    ],
+    expectedOutputs: [],
+    description: "Measure decoded delivery loudness, true peak, and clipped samples",
     licensingWarnings: [],
   };
 }

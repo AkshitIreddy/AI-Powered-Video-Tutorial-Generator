@@ -1,7 +1,67 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { BUILTIN_SCENE_KINDS } from "@alystria/scenes";
 import { fixtureManifest, fixtureTarget } from "../src/fixture.js";
-import { FrameRenderer, totalFrames } from "../src/runtime.js";
+import { FrameRenderer, resolveBuiltinSceneSpec, totalFrames } from "../src/runtime.js";
+
+test("production defaults resolve every built-in kind through SceneView", () => {
+  const base = fixtureManifest();
+  const renderer = new FrameRenderer({ verifyRepeatability: true });
+  for (const kind of BUILTIN_SCENE_KINDS) {
+    const manifest = {
+      ...base,
+      scenes: [{
+        ...base.scenes[0]!,
+        id: `production-${kind}`,
+        kind,
+        content: {
+          title: `Production ${kind}`,
+          body: "A manifest-derived explanation, kept inert and deterministic.",
+          items: ["First teaching point", "Second teaching point", "Third teaching point"],
+        },
+      }],
+    };
+    const rendered = renderer.render(manifest, 15);
+    assert.match(rendered.svg, new RegExp(`data-scene-kind="${kind}"`), kind);
+    assert.doesNotMatch(rendered.svg, /<foreignObject/, kind);
+  }
+});
+
+test("default presenter mapping is semantic and never consumes path-like metadata", () => {
+  const base = fixtureManifest();
+  const scene = {
+    ...base.scenes[0]!,
+    id: "guide-scene",
+    kind: "presenter-slide",
+    content: {
+      title: "Meet the three-product insight",
+      body: "One algebraic identity changes the recursion tree.",
+      items: ["Split the inputs", "Compute three products", "Recombine"],
+    },
+    metadata: {
+      presenterName: "Alystria Guide",
+      presenterDisclosure: "Synthetic presenter",
+      portraitPath: "C:\\untrusted\\portrait.png",
+      portraitUrl: "https://tracker.invalid/portrait.png",
+    },
+  };
+  const spec = resolveBuiltinSceneSpec(scene);
+  assert.equal(spec?.content.kind, "presenter-slide");
+  const rendered = new FrameRenderer().render({ ...base, scenes: [scene] }, 15);
+  assert.match(rendered.svg, /data-scene-kind="presenter-slide"/);
+  assert.match(rendered.svg, /Meet the three-product insight/);
+  assert.doesNotMatch(rendered.svg, /C:\\untrusted/);
+  assert.doesNotMatch(rendered.svg, /https:\/\/tracker\.invalid/);
+});
+
+test("unknown kinds and unsupported preview frame rates retain the inert fixture fallback", () => {
+  const base = fixtureManifest(fixtureTarget({ frameRate: { numerator: 2, denominator: 1 } }));
+  const unknownScene = { ...base.scenes[0]!, kind: "plugin:unknown/card" };
+  assert.equal(resolveBuiltinSceneSpec(unknownScene), undefined);
+  const rendered = new FrameRenderer().render({ ...base, scenes: [unknownScene] }, 1);
+  assert.doesNotMatch(rendered.svg, /data-scene-kind=/);
+  assert.match(rendered.svg, /ALYSTRIA \/ SCENE-TITLE/);
+});
 
 test("same frame is byte deterministic and adjacent frames evolve", () => {
   const manifest = fixtureManifest();
