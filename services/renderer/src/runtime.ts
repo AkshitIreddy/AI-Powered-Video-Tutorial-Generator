@@ -346,10 +346,13 @@ export const resolveBuiltinSceneSpec: SceneSpecResolver = (scene) => {
         problem: compactInstruction(scene.content.body ?? scene.content.title, 76),
         steps: lines.slice(0, 4).map((text, index) => ({
           id: child(`worked-step-${index + 1}`),
-          text: compactInstruction(text),
+          // The worked-example renderer has two deliberate lines per row.
+          // Keep the visual explanation complete instead of pre-truncating it
+          // to a single narration fragment with an ellipsis.
+          text: compactInstruction(text, 180),
           ...(index === 0 ? { emphasis: "primary" as const } : {}),
         })),
-        answer: compactInstruction(lines.at(-1)!, 72),
+        answer: compactInstruction(lines.at(-1)!, 112),
       };
       break;
     case "quiz": {

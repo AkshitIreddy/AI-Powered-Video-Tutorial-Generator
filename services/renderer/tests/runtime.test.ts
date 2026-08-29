@@ -76,10 +76,12 @@ test("worked examples compact narration into a caption-safe procedural layout", 
   assert.equal(spec?.content.kind, "worked-example");
   if (spec?.content.kind !== "worked-example") throw new Error("Expected worked example content");
   assert.equal(spec.content.steps.length, 4);
-  assert.ok(spec.content.steps.every((step) => step.text.length <= 54));
+  assert.ok(spec.content.steps.every((step) => step.text.length <= 180));
   const rendered = new FrameRenderer().render({ ...base, scenes: [scene] }, 24);
   assert.match(rendered.svg, /ANSWER/);
   assert.match(rendered.svg, /data-scene-kind="worked-example"/);
+  assert.match(rendered.svg, /fifty-eight, and seventy-two/);
+  assert.match(rendered.svg, /A fifth long narration sentence/);
 });
 
 test("top caption customization reserves a stable scene band instead of covering content", () => {

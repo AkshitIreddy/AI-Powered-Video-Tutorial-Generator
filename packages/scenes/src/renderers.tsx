@@ -565,12 +565,12 @@ export function WorkedExampleRenderer(props: SceneRendererProps<WorkedExampleCon
   const theme = props.theme ?? PRECISION_THEME;
   const body = bodyRect(props);
   const content = props.scene.spec.content;
-  // Reserve the lower band for persistent captions. The old full-height
-  // answer card collided with the accessible caption overlay and left too
-  // little vertical room for procedural steps at 16:9.
-  const problem: Rect = { x: body.x, y: body.y, width: body.width, height: body.height * 0.20 };
-  const answer: Rect = { x: body.x, y: body.y + body.height * 0.61, width: body.width, height: body.height * 0.15 };
-  const steps: Rect = { x: body.x + props.scene.metrics.gutter, y: body.y + body.height * 0.25, width: body.width - props.scene.metrics.gutter * 2, height: body.height * 0.30 };
+  // A worked example must show the actual instructional steps, not a stack of
+  // single-line fragments. Keep the answer clear of the caption-safe lower
+  // edge while giving four ordered steps two readable lines each.
+  const problem: Rect = { x: body.x, y: body.y, width: body.width, height: body.height * 0.18 };
+  const steps: Rect = { x: body.x + props.scene.metrics.gutter, y: body.y + body.height * 0.22, width: body.width - props.scene.metrics.gutter * 2, height: body.height * 0.45 };
+  const answer: Rect = { x: body.x, y: body.y + body.height * 0.72, width: body.width, height: body.height * 0.16 };
   return withFrame(props, <g id="body"><Card rect={problem} theme={theme} tone="warning"><Pill x={problem.x + props.scene.metrics.gutter} y={problem.y + props.scene.metrics.gutter} label="PROBLEM" tone="warning" theme={theme} /><WrappedText text={content.problem} rect={{ x: problem.x + problem.width * 0.22, y: problem.y + props.scene.metrics.gutter * 0.45, width: problem.width * 0.74, height: problem.height - props.scene.metrics.gutter }} theme={theme} fontSize={props.scene.metrics.bodySize * 0.92} fontWeight="650" maxLines={2} /></Card><BulletList items={content.steps.slice(0, 4)} rect={steps} scene={props.scene} frame={props.frame} theme={theme} ordered /><Card rect={answer} theme={theme} tone="secondary"><Pill x={answer.x + props.scene.metrics.gutter} y={answer.y + props.scene.metrics.gutter * 0.55} label="ANSWER" tone="secondary" theme={theme} fontSize={props.scene.metrics.smallSize * 0.82} /><WrappedText text={content.answer} rect={{ x: answer.x + answer.width * 0.22, y: answer.y + props.scene.metrics.gutter * 0.25, width: answer.width * 0.74, height: answer.height - props.scene.metrics.gutter * 0.4 }} theme={theme} fontSize={props.scene.metrics.bodySize * 0.9} fontWeight="750" maxLines={2} /></Card></g>);
 }
 
