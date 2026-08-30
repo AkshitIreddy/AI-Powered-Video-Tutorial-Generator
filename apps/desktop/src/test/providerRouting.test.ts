@@ -13,6 +13,8 @@ const profile: ModelProfile = {
     voice: { providerId: "elevenlabs", modelId: "eleven_multilingual_v2" },
     transcription: { providerId: "openai", modelId: "whisper-1" },
     presenter: { providerId: "local-runtime", modelId: "off by default" },
+    portraitAnimation: { providerId: "local-runtime", modelId: "off by default" },
+    lipSync: { providerId: "local-runtime", modelId: "off by default" },
   },
 };
 
@@ -82,6 +84,107 @@ describe("provider routing review", () => {
     expect(review.policy).toBeNull();
     expect(review.errors).toContain("Private source files cannot enter this cloud profile. Use an all-local profile or create the project without those files.");
     expect(review.errors).toContain("NVIDIA hosted preview accepts only public or synthetic project content.");
+  });
+
+  it("routes portrait animation and lip-sync independently and snapshots exact local installs", () => {
+    const installFingerprint = "a".repeat(64);
+    const localProfile: ModelProfile = {
+      ...profile,
+      routes: {
+        ...profile.routes,
+        portraitAnimation: {
+          providerId: "local-runtime",
+          modelId: "local/liveportrait",
+          modelRevision: "liveportrait-hf-82a4fa67",
+          installFingerprint,
+        },
+        lipSync: {
+          providerId: "local-runtime",
+          modelId: "local/musetalk-1.5",
+          modelRevision: "musetalk-hf-3ef28bc5+code-0a89dec4",
+          installFingerprint,
+          presenterProfileId: "presenter.ava",
+        },
+      },
+    };
+    const review = buildProviderRoutingReview({
+      profile: localProfile,
+      secretRefs: secrets,
+      dataClassification: "project",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "grounded",
+      reviewedAt: "2026-08-29T12:00:00.000Z",
+      setupUpdatedAt: "2026-08-29T11:00:00.000Z",
+    });
+
+    expect(review.errors).toEqual([]);
+    expect(review.policy?.routes.slice(-2).map((route) => route.capability)).toEqual(["portrait.animate", "lipsync.generate"]);
+    expect(review.profileSnapshot).toEqual(expect.objectContaining({
+      schemaVersion: 1,
+      profileId: localProfile.id,
+      capturedAt: "2026-08-29T12:00:00.000Z",
+      sourceSetupUpdatedAt: "2026-08-29T11:00:00.000Z",
+    }));
+    expect(review.profileSnapshot?.routes.slice(-2)).toEqual([
+      expect.objectContaining({ medium: "portraitAnimation", capability: "portrait.animate", modelRevision: "liveportrait-hf-82a4fa67", installFingerprint }),
+      expect.objectContaining({ medium: "lipSync", capability: "lipsync.generate", presenterProfileId: "presenter.ava", installFingerprint }),
+    ]);
+  });
+
+  it("fails closed when a local route is only a label rather than a verified install", () => {
+    const localProfile: ModelProfile = {
+      ...profile,
+      routes: { ...profile.routes, lipSync: { providerId: "local-runtime", modelId: "local/musetalk-1.5" } },
+    };
+    const review = buildProviderRoutingReview({
+      profile: localProfile,
+      secretRefs: secrets,
+      dataClassification: "project",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "grounded",
+    });
+
+    expect(review.policy).toBeNull();
+    expect(review.profileSnapshot).toBeNull();
+    expect(review.errors).toEqual(expect.arrayContaining([
+      "Lip-sync needs an exact local model revision before project selection.",
+      "Lip-sync needs a verified local install fingerprint before project selection.",
+    ]));
+  });
+
+  it("keeps the pinned local speech model separate from its installed voice", () => {
+    const localVoiceProfile: ModelProfile = {
+      ...profile,
+      routes: {
+        ...profile.routes,
+        voice: {
+          providerId: "local-runtime",
+          modelId: "System.Speech.Synthesis",
+          modelRevision: "windows-11-10.0.26200",
+          installFingerprint: "7".repeat(64),
+          voiceId: "Microsoft Zira Desktop",
+        },
+      },
+    };
+    const review = buildProviderRoutingReview({
+      profile: localVoiceProfile,
+      secretRefs: secrets,
+      dataClassification: "public",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "creative",
+      reviewedAt: "2026-08-29T12:00:00.000Z",
+    });
+
+    expect(review.errors).toEqual([]);
+    expect(review.policy?.routes.find((route) => route.capability === "audio.tts")).toEqual(
+      expect.objectContaining({ model: "System.Speech.Synthesis", voice: "Microsoft Zira Desktop" }),
+    );
   });
 });
 

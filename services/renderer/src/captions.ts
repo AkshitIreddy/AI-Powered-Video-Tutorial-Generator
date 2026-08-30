@@ -17,6 +17,14 @@ function escapeCaptionText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
+function plainCaptionText(value: string): string {
+  return value
+    .normalize("NFC")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .trim();
+}
+
 export function validateCaptionCues(cues: readonly CaptionCue[]): void {
   let previousStart = -1;
   const ids = new Set<string>();
@@ -27,7 +35,7 @@ export function validateCaptionCues(cues: readonly CaptionCue[]): void {
       throw new RangeError(`Caption ${cue.id} has an invalid tick interval`);
     }
     if (cue.startTick < previousStart) throw new RangeError("Caption cues must be sorted by startTick");
-    if (!cue.text.trim()) throw new TypeError(`Caption ${cue.id} text must not be empty`);
+    if (!plainCaptionText(cue.text)) throw new TypeError(`Caption ${cue.id} text must not be empty`);
     previousStart = cue.startTick;
   }
 }
@@ -51,14 +59,44 @@ export function toWebVtt(cues: readonly CaptionCue[]): string {
   const blocks = cues.map((cue) => {
     const settings = cue.position === "top" ? " line:10%" : " line:90%";
     const speaker = cue.speaker ? `<v ${escapeCaptionText(cue.speaker)}>` : "";
-    return `${cue.id}\n${timestamp(cue.startTick, ".")} --> ${timestamp(cue.endTick, ".")}${settings}\n${speaker}${escapeCaptionText(cue.text)}`;
+    return `${cue.id}\n${timestamp(cue.startTick, ".")} --> ${timestamp(cue.endTick, ".")}${settings}\n${speaker}${escapeCaptionText(plainCaptionText(cue.text))}`;
   });
   return `WEBVTT\n\n${blocks.join("\n\n")}\n`;
 }
 
 export function toSrt(cues: readonly CaptionCue[]): string {
   validateCaptionCues(cues);
-  return `${cues.map((cue, index) => `${index + 1}\n${timestamp(cue.startTick, ",")} --> ${timestamp(cue.endTick, ",")}\n${cue.speaker ? `${escapeCaptionText(cue.speaker)}: ` : ""}${escapeCaptionText(cue.text)}`).join("\n\n")}\n`;
+  // SRT is plain text, not HTML/XML. Keeping literal ampersands and comparison
+  // operators avoids the visible "&amp;" artefacts produced by many uploaders.
+  // JavaScript's UTF-8 writer emits no BOM, which YouTube accepts directly.
+  return `${cues.map((cue, index) => `${index + 1}\n${timestamp(cue.startTick, ",")} --> ${timestamp(cue.endTick, ",")}\n${cue.speaker ? `${plainCaptionText(cue.speaker)}: ` : ""}${plainCaptionText(cue.text)}`).join("\n\n")}\n`;
+}
+
+export interface CanonicalCaptionLedger {
+  readonly schemaVersion: 1;
+  readonly tickRate: 240_000;
+  readonly language: string;
+  readonly cues: readonly CaptionCue[];
+}
+
+/** Stable, lossless source-of-truth ledger used to derive VTT and SRT. */
+export function canonicalCaptionLedger(cues: readonly CaptionCue[], language: string): string {
+  validateCaptionCues(cues);
+  const normalized = cues.map((cue) => ({
+    id: cue.id,
+    startTick: cue.startTick,
+    endTick: cue.endTick,
+    text: plainCaptionText(cue.text),
+    ...(cue.speaker ? { speaker: plainCaptionText(cue.speaker) } : {}),
+    ...(cue.position ? { position: cue.position } : {}),
+  }));
+  const ledger: CanonicalCaptionLedger = {
+    schemaVersion: 1,
+    tickRate: TICKS_PER_SECOND,
+    language,
+    cues: normalized,
+  };
+  return `${JSON.stringify(ledger)}\n`;
 }
 
 function wrapCaption(value: string, maximumCharacters: number, maxLines: number): readonly string[] {

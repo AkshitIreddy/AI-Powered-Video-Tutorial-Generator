@@ -1,4 +1,5 @@
-import { defaultCaptionZone, defaultRegions, createLayoutMetrics, contains, normalizedToPixels } from "./layout.js";
+import { defaultCaptionZone, createLayoutMetrics, contains, normalizedToPixels } from "./layout.js";
+import { createSceneLayoutManifest, layoutSlot } from "./layout-manifest.js";
 import { stableHash } from "./random.js";
 import { builtinSceneRegistry } from "./registry.js";
 import { TIMEBASE_TICKS_PER_SECOND, type CaptionAvoidZone, type CompileTarget, type CompiledScene, type Diagnostic, type PreflightResult, type SceneRegistry, type SceneSpec, type SemanticRegion } from "./types.js";
@@ -19,8 +20,9 @@ export function compileScene(spec: SceneSpec, targetInput: CompileTarget, regist
   const diagnostics = validateInput(spec, target, registry);
   const metrics = createLayoutMetrics(target);
   const definition = registry.get(spec.content.kind);
-  const regions = createSemanticRegions(spec, metrics);
   const captionAvoidZones = compileCaptionZones(spec.captionAvoidZones, target, metrics);
+  const layout = createSceneLayoutManifest(spec, target, metrics, captionAvoidZones);
+  const regions = createSemanticRegions(spec, layout);
   const choreography = spec.choreography ?? definition?.defaultChoreography(spec) ?? [];
   const accessibilityDescription = spec.accessibilityDescription?.trim() || definition?.describe(spec.content) || `Scene titled ${spec.content.title}.`;
   diagnostics.push(...lintChoreography(choreography, spec.durationTicks));
@@ -29,12 +31,13 @@ export function compileScene(spec: SceneSpec, targetInput: CompileTarget, regist
     spec,
     target,
     metrics,
+    layout,
     regions,
     captionAvoidZones,
     choreography,
     accessibilityDescription,
     diagnostics,
-    contentHash: stableHash({ spec, target, implementation: "alystria-scenes-v2.0.0" }),
+    contentHash: stableHash({ spec, target, implementation: "alystria-scenes-v2.1.0-constraint-layout" }),
   };
 }
 
@@ -74,8 +77,35 @@ function duplicateIdDiagnostics(spec: SceneSpec): readonly Diagnostic[] {
   return duplicates.map((id) => ({ code: "scene.content.id.duplicate", severity: "error", message: `Content ID ${id} appears more than once.`, path: "content" }));
 }
 
-function createSemanticRegions(spec: SceneSpec, metrics: ReturnType<typeof createLayoutMetrics>): readonly SemanticRegion[] {
-  const base = [...defaultRegions(metrics, spec.content.title)];
+function createSemanticRegions(spec: SceneSpec, layout: ReturnType<typeof createSceneLayoutManifest>): readonly SemanticRegion[] {
+  const title = layoutSlot(layout, "header.title");
+  const bodySlot = layoutSlot(layout, "body");
+  const headerTop = Math.min(...layout.slots.filter((item) => item.id.startsWith("header.")).map((item) => item.y));
+  const headerBottom = Math.max(...layout.slots.filter((item) => item.id.startsWith("header.")).map((item) => item.y + item.height));
+  const base: SemanticRegion[] = [
+    {
+      id: "header",
+      role: "title",
+      label: spec.content.title,
+      readingOrder: 0,
+      essential: true,
+      x: title.x,
+      y: headerTop,
+      width: layout.graphicsSafe.width,
+      height: headerBottom - headerTop,
+    },
+    {
+      id: "body",
+      role: "content",
+      label: "Scene content",
+      readingOrder: 1,
+      essential: true,
+      x: bodySlot.x,
+      y: bodySlot.y,
+      width: bodySlot.width,
+      height: bodySlot.height,
+    },
+  ];
   const body = base.find((region) => region.id === "body");
   if (!body) return base;
   const role = spec.content.kind === "code" || spec.content.kind === "walkthrough" || spec.content.kind === "diff" || spec.content.kind === "file-tree" || spec.content.kind === "terminal" || spec.content.kind === "execution-trace" || spec.content.kind === "variable-state" ? "code"

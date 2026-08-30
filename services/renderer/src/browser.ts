@@ -13,6 +13,11 @@ export interface BrowserPage {
   setContent(html: string): Promise<void>;
   waitForRenderReady(): Promise<void>;
   screenshot(options: Readonly<{ path: string; type: "png"; animations: "disabled"; caret: "hide" }>): Promise<void>;
+  /**
+   * Restores the page to a sterile document after a frame capture. Pages that
+   * do not expose this hook are closed after every lease and are never pooled.
+   */
+  resetForReuse?(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -37,6 +42,18 @@ export interface CaptureResult {
   readonly contentHash: string;
   readonly outputSha256: string;
   readonly browserVersion: string;
+}
+
+export interface PinnedBrowserCaptureOptions {
+  /** Maximum number of persistent, concurrently leased browser pages. */
+  readonly maximumPages?: number;
+}
+
+const DEFAULT_MAXIMUM_PAGES = 8;
+
+interface PageWaiter {
+  readonly resolve: () => void;
+  readonly reject: (reason: Error) => void;
 }
 
 export async function sha256File(path: string): Promise<string> {
@@ -105,6 +122,7 @@ export async function createPlaywrightChromiumDriver(options: PlaywrightChromium
       });
       await context.route("**/*", async (route) => route.abort("blockedbyclient"));
       const page = await context.newPage();
+      let pageClosed = false;
       return {
         async setViewportSize(size) { await page.setViewportSize(size); },
         async setContent(html) { await page.setContent(html, { waitUntil: "domcontentloaded" }); },
@@ -131,7 +149,24 @@ export async function createPlaywrightChromiumDriver(options: PlaywrightChromium
         async screenshot(screenshotOptions) {
           await page.screenshot({ ...screenshotOptions, scale: "device", omitBackground: false });
         },
-        async close() { await context.close(); },
+        async resetForReuse() {
+          if (pageClosed) throw new Error("Chromium page is closed");
+          // Navigation replaces the Window and document, removing globals,
+          // event handlers, timers and DOM mutations left by the prior frame.
+          // Context-scoped state is cleared explicitly while the deny-all
+          // route and blocked-service-worker policy remain installed.
+          await page.goto("about:blank", { waitUntil: "load" });
+          await context.clearCookies();
+          await context.clearPermissions();
+          for (const sibling of context.pages()) {
+            if (sibling !== page) await sibling.close();
+          }
+        },
+        async close() {
+          if (pageClosed) return;
+          pageClosed = true;
+          await context.close();
+        },
       } satisfies BrowserPage;
     },
     async close() {
@@ -147,12 +182,30 @@ export class PinnedBrowserCapture {
   readonly #driver: ChromiumDriver;
   readonly #policy: PinnedBrowserPolicy;
   readonly #renderer: FrameRenderer;
+  readonly #maximumPages: number;
+  readonly #availablePages: BrowserPage[] = [];
+  readonly #allPages = new Set<BrowserPage>();
+  readonly #pageCreations = new Set<Promise<BrowserPage>>();
+  readonly #waiters: PageWaiter[] = [];
+  #creatingPages = 0;
+  #closed = false;
+  #closePromise: Promise<void> | undefined;
   #verified = false;
 
-  constructor(driver: ChromiumDriver, policy: PinnedBrowserPolicy, renderer = new FrameRenderer()) {
+  constructor(
+    driver: ChromiumDriver,
+    policy: PinnedBrowserPolicy,
+    renderer = new FrameRenderer(),
+    options: PinnedBrowserCaptureOptions = {},
+  ) {
     this.#driver = driver;
     this.#policy = policy;
     this.#renderer = renderer;
+    const maximumPages = options.maximumPages ?? DEFAULT_MAXIMUM_PAGES;
+    if (!Number.isSafeInteger(maximumPages) || maximumPages < 1 || maximumPages > DEFAULT_MAXIMUM_PAGES) {
+      throw new TypeError(`maximumPages must be an integer between 1 and ${DEFAULT_MAXIMUM_PAGES}`);
+    }
+    this.#maximumPages = maximumPages;
   }
 
   async verifyBrowser(): Promise<void> {
@@ -171,17 +224,18 @@ export class PinnedBrowserCapture {
   }
 
   async captureFrame(manifest: RenderManifest, frame: number, outputPath: string): Promise<CaptureResult> {
+    if (this.#closed) throw new Error("Browser capture is closed");
     await this.verifyBrowser();
     const rendered = this.#renderer.render(manifest, frame, "final");
     await mkdir(dirname(outputPath), { recursive: true });
-    const page = await this.#driver.newPage();
+    const page = await this.#acquirePage();
     try {
       await page.setViewportSize({ width: manifest.target.width, height: manifest.target.height });
       await page.setContent(rendered.html);
       await page.waitForRenderReady();
       await page.screenshot({ path: outputPath, type: "png", animations: "disabled", caret: "hide" });
     } finally {
-      await page.close();
+      await this.#releasePage(page);
     }
     return {
       frame,
@@ -202,7 +256,98 @@ export class PinnedBrowserCapture {
   }
 
   async close(): Promise<void> {
-    await this.#driver.close();
+    if (this.#closePromise) return this.#closePromise;
+    this.#closed = true;
+    const closedError = new Error("Browser capture is closed");
+    for (const waiter of this.#waiters.splice(0)) waiter.reject(closedError);
+    const pages = [...this.#allPages];
+    const pageCreations = [...this.#pageCreations];
+    this.#availablePages.length = 0;
+    this.#allPages.clear();
+    this.#closePromise = (async () => {
+      const pageResults = await Promise.allSettled(pages.map(async (page) => page.close()));
+      let driverError: unknown;
+      try {
+        await this.#driver.close();
+      } catch (error) {
+        driverError = error;
+      }
+      // A page creation already admitted by the bound may settle only after
+      // driver shutdown begins. Its acquire path observes #closed and closes
+      // the newly returned page before rejecting, so teardown waits for it.
+      await Promise.allSettled(pageCreations);
+      const failures = pageResults
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .map((result) => result.reason as unknown);
+      if (driverError !== undefined) failures.push(driverError);
+      if (failures.length > 0) throw new AggregateError(failures, "Failed to close browser capture resources");
+    })();
+    return this.#closePromise;
+  }
+
+  async #acquirePage(): Promise<BrowserPage> {
+    while (true) {
+      if (this.#closed) throw new Error("Browser capture is closed");
+      const available = this.#availablePages.pop();
+      if (available) return available;
+      if (this.#allPages.size + this.#creatingPages < this.#maximumPages) {
+        this.#creatingPages += 1;
+        const creation = this.#createPage();
+        this.#pageCreations.add(creation);
+        try {
+          return await creation;
+        } finally {
+          this.#pageCreations.delete(creation);
+          this.#creatingPages -= 1;
+          this.#wakeNextWaiter();
+        }
+      }
+      await new Promise<void>((resolve, reject) => {
+        this.#waiters.push({ resolve, reject });
+      });
+    }
+  }
+
+  async #createPage(): Promise<BrowserPage> {
+    const page = await this.#driver.newPage();
+    if (this.#closed) {
+      await page.close().catch(() => undefined);
+      throw new Error("Browser capture is closed");
+    }
+    this.#allPages.add(page);
+    return page;
+  }
+
+  async #releasePage(page: BrowserPage): Promise<void> {
+    if (!this.#allPages.has(page)) return;
+    if (this.#closed || page.resetForReuse === undefined) {
+      await this.#discardPage(page);
+      return;
+    }
+    try {
+      await page.resetForReuse();
+    } catch {
+      await this.#discardPage(page);
+      return;
+    }
+    if (this.#closed) {
+      await this.#discardPage(page);
+      return;
+    }
+    this.#availablePages.push(page);
+    this.#wakeNextWaiter();
+  }
+
+  async #discardPage(page: BrowserPage): Promise<void> {
+    if (!this.#allPages.delete(page)) return;
+    const availableIndex = this.#availablePages.indexOf(page);
+    if (availableIndex >= 0) this.#availablePages.splice(availableIndex, 1);
+    await page.close().catch(() => undefined);
+    this.#wakeNextWaiter();
+  }
+
+  #wakeNextWaiter(): void {
+    this.#waiters.shift()?.resolve();
   }
 }
 

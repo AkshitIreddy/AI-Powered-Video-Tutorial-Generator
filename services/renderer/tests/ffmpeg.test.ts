@@ -12,6 +12,7 @@ import {
   planAudioMaster,
   planDeliveryEncode,
   planFrameSequenceToFfv1,
+  planHardwareEncoderProbe,
   planPresenterComposite,
   planProbe,
   planSilentAudio,
@@ -58,11 +59,34 @@ test("GPL encoder stays visibly separated", () => {
   assert.match(plan.licensingWarnings.join(" "), /GPL runtime pack/);
 });
 
+test("hardware H.264 plans force the selected backend and QSV is available as NVENC fallback", () => {
+  const qsv = planDeliveryEncode("video.mkv", "audio.wav", "output.mp4", { codec: "h264_qsv", quality: 20 });
+  assert.deepEqual(qsv.args.slice(qsv.args.indexOf("-c:v"), qsv.args.indexOf("-c:v") + 4), ["-c:v", "h264_qsv", "-global_quality", "20"]);
+  const mediaFoundation = planDeliveryEncode("video.mkv", "audio.wav", "output.mp4", { codec: "h264_mf" });
+  assert.deepEqual(mediaFoundation.args.slice(mediaFoundation.args.indexOf("-c:v"), mediaFoundation.args.indexOf("-c:v") + 4), ["-c:v", "h264_mf", "-hw_encoding", "1"]);
+  const probe = planHardwareEncoderProbe("h264_qsv", fixtureTarget({ width: 1_280, height: 720 }));
+  assert.ok(probe.args.includes("color=c=black:s=1280x720:r=1"));
+  assert.deepEqual(probe.args.slice(probe.args.indexOf("-c:v"), probe.args.indexOf("-c:v") + 2), ["-c:v", "h264_qsv"]);
+  assert.deepEqual(probe.args.slice(-3), ["-f", "null", "-"]);
+});
+
 test("WebM delivery uses compatible Opus audio and WebVTT captions", () => {
-  const plan = planDeliveryEncode("video.mkv", "audio.wav", "output.webm", { codec: "vp9", captionPath: "captions.vtt" });
+  const plan = planDeliveryEncode("video.mkv", "audio.wav", "output.webm", { codec: "vp9", captionMode: "embedded", captionLanguage: "es-MX", captionPath: "captions.vtt" });
   assert.ok(plan.args.includes("libopus"));
   assert.ok(plan.args.includes("webvtt"));
   assert.ok(plan.args.includes("2:s:0"));
+  assert.ok(plan.args.includes("language=es-MX"));
+});
+
+test("clean sidecar delivery never adds a subtitle input or stream map", () => {
+  const plan = planDeliveryEncode("video.mkv", "audio.wav", "output.webm", { codec: "vp9", captionMode: "sidecar" });
+  assert.deepEqual(plan.args.filter((argument) => argument === "-i").length, 2);
+  assert.ok(!plan.args.some((argument) => /:s:0$/.test(argument)));
+  assert.ok(!plan.args.includes("webvtt"));
+  assert.throws(
+    () => planDeliveryEncode("video.mkv", "audio.wav", "output.webm", { codec: "vp9", captionMode: "sidecar", captionPath: "captions.vtt" }),
+    /forbidden for sidecar delivery/,
+  );
 });
 
 test("audio master uses 48 kHz and measurable loudness targets", () => {

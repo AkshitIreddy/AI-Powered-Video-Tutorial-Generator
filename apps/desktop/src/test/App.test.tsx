@@ -2,10 +2,41 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../App";
+import { canonicalFixtureIdFromTopic, hydrateDurableProject, projectTitleFromTopic } from "../project-utils";
+import { defaultSnapshot } from "../data";
 import { localModelSetupSave, providerSecretSet } from "../native";
 import type { AppSnapshot } from "../types";
 
 describe("Alystria desktop shell", () => {
+  it("opens legacy generation-stage snapshots without discarding the project document", () => {
+    const project = structuredClone(defaultSnapshot.projects[0]!);
+    const hydrated = hydrateDurableProject(project, {
+      projectId: "native-project",
+      generationId: "generation-1",
+      stage: "approval",
+      payload: { approval: { approved: false } },
+    }, {
+      nativeProjectId: "native-project",
+      nativeProjectDirectory: "C:/Alystria/native-project",
+      nativeHeadRevisionId: "rev-stage",
+      nativeRevisionNumber: 7,
+    });
+
+    expect(hydrated.title).toBe(project.title);
+    expect(hydrated.scenes).toEqual(project.scenes);
+    expect(hydrated.sources).toEqual(project.sources);
+    expect(hydrated.nativeHeadRevisionId).toBe("rev-stage");
+  });
+
+  it("keeps the full teaching brief separate from a native-safe project title", () => {
+    const brief = "Create the canonical 12-minute Karatsuba multiplication tutorial: derive the three-multiplication method rigorously, work through 1234 × 5678, compare O(n^log2 3) with grade-school O(n²), and include retrieval practice plus a recap.";
+    expect(projectTitleFromTopic(brief)).toBe("Create the canonical 12-minute Karatsuba multiplication tutorial");
+    expect(projectTitleFromTopic("A".repeat(240))).toHaveLength(158);
+    expect(canonicalFixtureIdFromTopic(brief)).toBe("fixture.karatsuba.undergraduate.en");
+    expect(canonicalFixtureIdFromTopic("Explain why Karatsuba uses three products")).toBeUndefined();
+    expect(canonicalFixtureIdFromTopic("Create a canonical binary-search tutorial")).toBeUndefined();
+  });
+
   it("opens a project and switches between its five workspaces", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -18,6 +49,117 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByRole("heading", { name: /review the whole argument/i })).toBeInTheDocument();
     await user.click(projectNav.getByRole("button", { name: /export/i }));
     expect(screen.getByRole("heading", { name: /package the finished lesson/i })).toBeInTheDocument();
+  });
+
+  it("fails Review closed until an authoritative generated media artifact exists", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    await user.click(within(screen.getByRole("navigation", { name: /project workspace/i })).getByRole("button", { name: /review/i }));
+
+    expect(screen.getByRole("heading", { name: /no authoritative media yet/i })).toBeInTheDocument();
+    expect(screen.getByText(/browser ui contract does not create video/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /prepare export/i })).toBeDisabled();
+    expect(screen.queryByLabelText(/authoritative generated tutorial media/i)).not.toBeInTheDocument();
+  });
+
+  it("plays the latest promoted media receipt instead of static review artwork", async () => {
+    const snapshot = structuredClone(defaultSnapshot);
+    snapshot.projects[0] = { ...snapshot.projects[0]!, nativeProjectId: "native-review-project", nativeProjectDirectory: "C:/Alystria/native-review-project" };
+    snapshot.jobs = [{
+      id: "rendered-scene",
+      title: "Promoted scene",
+      detail: "Native scene render",
+      status: "complete",
+      progress: 100,
+      projectId: "native-review-project",
+      projectDirectory: "C:/Alystria/native-review-project",
+      operation: "render_scene",
+      result: { receiptState: "SUCCEEDED", path: "data:video/mp4;base64,AAAA", mediaType: "video/mp4" },
+    }];
+    localStorage.setItem("alystria-studio-v2", JSON.stringify(snapshot));
+
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    await user.click(within(screen.getByRole("navigation", { name: /project workspace/i })).getByRole("button", { name: /review/i }));
+
+    const media = screen.getByLabelText(/authoritative generated tutorial media/i);
+    expect(media).toHaveAttribute("src", "data:video/mp4;base64,AAAA");
+    expect(screen.getByText(/promoted scene render/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /prepare export/i })).toBeEnabled();
+  });
+
+  it("defaults to a clean master with YouTube-ready caption sidecars", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    const projectNav = within(screen.getByRole("navigation", { name: /project workspace/i }));
+    await user.click(projectNav.getByRole("button", { name: /export/i }));
+
+    const sidecarOption = screen.getByRole("radio", { name: /sidecar files/i });
+    expect(sidecarOption).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(/clean picture · no caption pixels/i)).toBeInTheDocument();
+    expect(screen.getByText(/utf-8 youtube srt \+ webvtt/i)).toBeInTheDocument();
+    expect(screen.getByText(/\.en-us\.srt/i)).toBeInTheDocument();
+    expect(screen.getByText(/appearance stays with the viewer/i)).toBeInTheDocument();
+
+    await user.click(sidecarOption);
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("radio", { name: /soft captions selectable track/i })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(/clean picture · no caption pixels/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /always visible open captions/i }));
+    expect(screen.getByRole("radio", { name: /always visible open captions/i })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(/open captions in picture/i)).toBeInTheDocument();
+    expect(screen.getByText(/cannot be hidden after export/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /edit open-caption style/i })).toBeInTheDocument();
+  });
+
+  it("binds frame rate and codec intent to the submitted UI-contract export", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    await user.click(within(screen.getByRole("navigation", { name: /project workspace/i })).getByRole("button", { name: /export/i }));
+
+    await user.selectOptions(screen.getByLabelText("Frame rate"), "24");
+    await user.selectOptions(screen.getByLabelText("Codec preference"), "av1");
+    expect(screen.getByLabelText("Frame rate")).toHaveValue("24");
+    expect(screen.getByLabelText("Codec preference")).toHaveValue("av1");
+    expect(screen.getByText(/current command contract does not yet select an encoder/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /render 1440p master/i }));
+
+    expect((await screen.findAllByText(/ui contract only: 24 fps av1 export simulated/i)).length).toBeGreaterThan(0);
+    const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
+    expect(persisted.jobs.find((job) => job.operation === "export_master")?.result).toMatchObject({
+      requestedFps: 24,
+      requestedCodec: "av1",
+      codecForwarded: false,
+    });
+  });
+
+  it("shows retry and cancel actions only for eligible receipt states", async () => {
+    const snapshot = structuredClone(defaultSnapshot);
+    const link = { projectId: "fault-project", projectDirectory: "C:/Alystria/fault-project" };
+    snapshot.jobs = [
+      { id: "retryable", title: "Retryable failure", detail: "Retry", status: "attention", progress: 0, retryable: true, result: { receiptState: "FAILED" }, ...link },
+      { id: "cancelled", title: "Cancelled work", detail: "Done", status: "attention", progress: 0, retryable: false, result: { receiptState: "CANCELLED" }, ...link },
+      { id: "blocked", title: "Approval wait", detail: "Waiting", status: "attention", progress: 0, retryable: true, result: { receiptState: "BLOCKED" }, ...link },
+      { id: "running", title: "Active render", detail: "Rendering", status: "running", progress: 42, retryable: false, result: { receiptState: "RUNNING" }, ...link },
+    ];
+    localStorage.setItem("alystria-studio-v2", JSON.stringify(snapshot));
+
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /^jobs/i }));
+
+    expect(screen.getByRole("button", { name: /retry retryable failure/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /cancel retryable failure/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry cancelled work/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /cancel cancelled work/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry approval wait/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cancel approval wait/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cancel active render/i })).toBeInTheDocument();
   });
 
   it("creates and persists a tutorial with reviewed provider routing", async () => {
@@ -45,8 +187,18 @@ describe("Alystria desktop shell", () => {
     const created = persisted.projects.find((project) => project.title === "Teach recursion with a visual call tree");
     expect(created?.nativeProjectDirectory).toContain("/browser-demo/alystria/projects/");
     expect(created?.nativeProjectId).toBeTruthy();
+    expect(created?.providerRoutingPolicy).toMatchObject({ privacyMode: "cloud" });
     const creationJob = persisted.jobs.find((job) => job.projectId === created?.nativeProjectId);
     expect(creationJob?.projectDirectory).toBe(created?.nativeProjectDirectory);
+  });
+
+  it("offers the exact twelve-minute flagship duration", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /create a tutorial/i }));
+    await user.type(screen.getByPlaceholderText(/explain why karatsuba/i), "Karatsuba multiplication");
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    expect(screen.getByRole("option", { name: "About 12 minutes" })).toBeInTheDocument();
   });
 
   it("keeps accepted scenes safe when scoped regeneration starts", async () => {
@@ -117,6 +269,7 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("button", { name: /technical notebook/i }));
     await user.click(screen.getByRole("button", { name: /academic evidence paper/i }));
     await user.click(screen.getByRole("tab", { name: /captions/i }));
+    expect(screen.getByText(/controls affect only an explicit open-caption export/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /top/i }));
     await user.selectOptions(screen.getByLabelText(/maximum lines/i), "1");
     await user.click(screen.getByRole("tab", { name: /media/i }));
@@ -131,6 +284,7 @@ describe("Alystria desktop shell", () => {
 
     expect(screen.getByTestId("presenter-preview")).toBeInTheDocument();
     expect(screen.getByTestId("caption-preview")).toHaveClass("position-top");
+    expect(screen.getByTestId("caption-preview")).toHaveTextContent(/open-caption preview/i);
     const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
     const customization = persisted.projects.find((project) => project.id === "karatsuba")?.customization;
     expect(customization?.fontPairId).toBe("technical");

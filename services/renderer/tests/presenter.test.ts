@@ -46,6 +46,14 @@ test("presenter bindings require a local hashed clip and a presenter scene", () 
     ...manifest,
     presenterVideos: [manifest.presenterVideos[0]!, { ...manifest.presenterVideos[0]!, id: "duplicate" }],
   }), /more than one presenter video/);
+  assert.throws(() => assertRenderManifest({
+    ...manifest,
+    presenterVideos: [{ ...manifest.presenterVideos[0]!, activeDurationTicks: 0 }],
+  }), /activeDurationTicks must be a positive safe integer/);
+  assert.throws(() => assertRenderManifest({
+    ...manifest,
+    presenterVideos: [{ ...manifest.presenterVideos[0]!, activeDurationTicks: secondsToTicks(5) }],
+  }), /activeDurationTicks cannot exceed scene guide duration/);
 });
 
 test("presenter layers map selected timeline and source offsets exactly", () => {
@@ -67,6 +75,40 @@ test("presenter layers map selected timeline and source offsets exactly", () => 
     width: 672,
     height: 724,
   });
+});
+
+test("presenter active duration may end before its scene without extending lip-sync", () => {
+  const base = presenterManifest();
+  const sceneDuration = secondsToTicks(24);
+  const activeDuration = secondsToTicks(23.224);
+  const manifest = {
+    ...base,
+    scenes: [
+      base.scenes[0]!,
+      { ...base.scenes[1]!, durationTicks: sceneDuration },
+    ],
+    presenterVideos: [{
+      ...base.presenterVideos[0]!,
+      sourceStartTick: 0,
+      activeDurationTicks: activeDuration,
+    }],
+  };
+
+  assert.doesNotThrow(() => assertRenderManifest(manifest));
+  const sceneStartFrame = 60;
+  const sceneEndFrame = sceneStartFrame + 24 * 30;
+  const layers = resolvePresenterCompositeLayers(manifest, {
+    startFrame: sceneStartFrame,
+    endFrame: sceneEndFrame,
+  });
+  assert.equal(layers.length, 1);
+  assert.equal(layers[0]!.durationTicks, activeDuration);
+
+  const firstTailFrame = sceneStartFrame + Math.ceil(23.224 * 30);
+  assert.deepEqual(resolvePresenterCompositeLayers(manifest, {
+    startFrame: firstTailFrame,
+    endFrame: sceneEndFrame,
+  }), [], "the authored scene remains visible after the presenter clip ends");
 });
 
 test("responsive presenter regions stay even-sized and above caption space", () => {

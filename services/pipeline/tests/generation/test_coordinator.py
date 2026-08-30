@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -61,9 +62,17 @@ def test_presenter_direction_uses_only_explicit_semantic_placements() -> None:
     assert _presenter_direction({}).placement is PresenterPlacement.PICTURE_IN_PICTURE
     assert _presenter_direction({"presenterPlacement": "full_frame"}).placement is PresenterPlacement.FULL_FRAME
     assert _presenter_direction({"presenterPlacement": "picture-in-picture"}).placement is PresenterPlacement.PICTURE_IN_PICTURE
+    assert _presenter_direction({"presenterPlacement": "left"}).placement is PresenterPlacement.LEFT
+    assert _presenter_direction({"presenterPlacement": "split-left"}).placement is PresenterPlacement.LEFT
+    assert _presenter_direction({"presenterPlacement": "split_left"}).placement is PresenterPlacement.LEFT
+    assert _presenter_direction({"presenterPlacement": "right"}).placement is PresenterPlacement.RIGHT
+    assert _presenter_direction({"presenterPlacement": "split-right"}).placement is PresenterPlacement.RIGHT
+    assert _presenter_direction({"presenterPlacement": "split_right"}).placement is PresenterPlacement.RIGHT
     assert _presenter_fit({"presenterFit": "contain"}) == "contain"
     with pytest.raises(ValueError, match="Unsupported presenter placement"):
         _presenter_direction({"presenterPlacement": "arbitrary-filter-coordinate"})
+    with pytest.raises(ValueError, match="Unsupported presenter placement"):
+        _presenter_direction({"presenterPlacement": "split-center"})
     with pytest.raises(ValueError, match="Presenter fit"):
         _presenter_fit({"presenterFit": "unknown"})
 
@@ -118,6 +127,7 @@ def test_staged_workflow_pauses_for_approval_then_exports(tmp_path: Path) -> Non
             for revision in generation_revisions
             if revision.kind == "generation"
         )
+        assert all(revision.snapshot["name"] == "Tutorial Project" for revision in generation_revisions)
         dependency_count = store.connection.execute(
             "SELECT COUNT(*) FROM job_dependencies"
         ).fetchone()[0]
@@ -627,6 +637,40 @@ def test_renderer_client_receives_immutable_complete_request(tmp_path: Path) -> 
         assert sent["scenes"][0]["type"] == "presenter-slide"
         assert sent["presenters"]
         assert sent["presenters"][0]["sceneId"] == sent["scenes"][0]["id"]
+        assert sent["presenters"][0]["activeDurationTicks"] == min(
+            sent["scenes"][0]["durationTicks"],
+            sent["narration"][0]["durationMs"] * 240,
+        )
+    finally:
+        store.close()
+
+
+def test_split_presenter_placement_preserves_storyboard_and_provider_semantics(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
+    renderer = RecordingRenderer()
+    coordinator = GenerationCoordinator(store, renderer_client=renderer)
+    configured = replace(
+        request(),
+        metadata={
+            "visualCustomization": {
+                "presenter": {"placement": "split-left", "fit": "contain"}
+            }
+        },
+    )
+    try:
+        generation_id = coordinator.start(configured).generation_id
+        coordinator.run_pending()
+        coordinator.approve(generation_id)
+        completed = coordinator.run_pending()
+
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert len(renderer.requests) == 1
+        sent = renderer.requests[0]
+        assert sent["scenes"][0]["presenterPlacement"] == "split-left"
+        assert sent["presenters"][0]["direction"]["placement"] == "left"
+        assert sent["presenters"][0]["fit"] == "contain"
     finally:
         store.close()
 
@@ -676,5 +720,67 @@ def test_desktop_policy_request_uses_authoritative_project_snapshot(tmp_path: Pa
         assert converted.hard_budget_micros == 250_000
         assert converted.sources[0].source_id == "source.note"
         assert converted.metadata["preservationLocks"] == ["script"]
+    finally:
+        store.close()
+
+
+def test_desktop_flagship_identity_loads_the_bundled_karatsuba_contract(
+    tmp_path: Path,
+) -> None:
+    store, coordinator = open_coordinator(tmp_path)
+    try:
+        store.create_revision(
+            snapshot={
+                "brief": {
+                    "topic": "Create the canonical 12-minute Karatsuba tutorial",
+                    "audience": "Undergraduate algorithms students",
+                    "durationSeconds": 720,
+                    "locale": "en-US",
+                },
+                "canonicalFixtureId": "fixture.karatsuba.undergraduate.en",
+                "groundingMode": "strict",
+                "sources": [],
+            },
+            kind="edit",
+        )
+        converted = request_from_desktop(
+            store,
+            {
+                "quality": "studio",
+                "privacy": "hybrid",
+                "approvedProviderIds": ["nvidia-nim", "local-runtime"],
+                "budget": {
+                    "currency": "USD",
+                    "hardLimitMinorUnits": 100,
+                    "requireKnownPricing": True,
+                },
+            },
+        )
+
+        scenes = converted.metadata["canonicalFixtureScenes"]
+        assert converted.topic == "Karatsuba Multiplication: Three Products Instead of Four"
+        assert converted.duration_seconds == 720
+        assert len(scenes) == 13
+        assert sum(len(scene["narration"].split()) for scene in scenes) >= 1_600
+        assert converted.output_targets == (
+            {"name": "landscape", "width": 1920, "height": 1080, "fps": 30},
+            {"name": "portrait", "width": 1080, "height": 1920, "fps": 30},
+            {"name": "square", "width": 1080, "height": 1080, "fps": 30},
+        )
+        assert converted.presenter_mode == "auto"
+        assert converted.metadata["fixtureId"] == "fixture.karatsuba.undergraduate.en"
+        assert converted.metadata["quality"] == "studio"
+        generation_id = coordinator.start(converted).generation_id
+        waiting = coordinator.run_pending()
+        assert waiting is not None and waiting.state is GenerationState.WAITING_APPROVAL
+        storyboard_job = next(
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters["stage"] == GenerationStage.STORYBOARD.value
+        )
+        assert storyboard_job.result is not None
+        storyboard = storyboard_job.result["payload"]["storyboard"]
+        assert storyboard["scenes"][0]["type"] == "presenter-slide"
+        assert storyboard["scenes"][1]["type"] == "definition"
     finally:
         store.close()

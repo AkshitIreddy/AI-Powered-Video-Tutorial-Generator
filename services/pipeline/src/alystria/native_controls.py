@@ -23,7 +23,7 @@ from alystria.project import ProjectStore, Revision
 from alystria.project_assets import validate_approved_presenter_for_export
 
 TICKS_PER_SECOND = 240_000
-CONTROL_IMPLEMENTATION_VERSION = "native-controls-v1"
+CONTROL_IMPLEMENTATION_VERSION = "native-controls-v2-caption-delivery"
 SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 ALLOWED_LOCKS = frozenset(
     {"narration", "citations", "learningobjective", "timing", "assets", "presenter"}
@@ -35,6 +35,7 @@ RESOLUTIONS = {
 }
 ASPECTS = frozenset({"16:9", "9:16", "1:1"})
 FPS_VALUES = frozenset({24, 25, 30, 50, 60})
+CAPTION_DELIVERY_MODES = frozenset({"sidecar", "embedded", "burned", "both"})
 
 
 class NativeControlCoordinator:
@@ -112,12 +113,13 @@ class NativeControlCoordinator:
         if status.state is not GenerationState.SUCCEEDED:
             raise ValueError("Master export requires a completed, approved generation job")
         target = _target(params)
+        caption_delivery_mode = _caption_delivery_mode(params)
         parameters = {
             "expectedHeadRevisionId": head.revision_id,
             "baseRevisionId": _required_text(params, "baseRevisionId"),
             "baseGenerationId": base_generation_id,
             "target": target,
-            "captions": bool(params.get("captions", True)),
+            "captionDeliveryMode": caption_delivery_mode,
             "transcript": bool(params.get("transcript", True)),
             "bibliography": bool(params.get("bibliography", True)),
         }
@@ -368,6 +370,7 @@ class NativeControlCoordinator:
         if not isinstance(gate, dict) or gate.get("status") not in {"PASS", "WARNING"}:
             raise ValueError("Master export is blocked because the final QA gate does not permit export")
         context.set_progress(0.08, message="Rendering approved storyboard with selected master target")
+        caption_delivery_mode = _caption_delivery_mode(params)
         rendered = self.renderer.render(
             {
                 "schemaVersion": 1,
@@ -377,7 +380,8 @@ class NativeControlCoordinator:
                 "targets": [params["target"]],
                 "scenes": storyboard["scenes"],
                 "narration": narration_payload["narration"],
-                "captions": captions_payload if params["captions"] else {"captionsEnabled": False},
+                "captions": captions_payload,
+                "captionDeliveryMode": caption_delivery_mode,
                 "presenters": presenter_payload.get("presenters", []),
                 "locale": storyboard.get("locale", "en-US"),
             }
@@ -392,6 +396,10 @@ class NativeControlCoordinator:
                 "generationId": generation_id,
                 "qualityGate": gate,
                 "rightsStatus": "owned",
+                "captionDeliveryMode": caption_delivery_mode,
+                "captionsBurnedIntoPixels": caption_delivery_mode in {"burned", "both"},
+                "captionsEmbeddedInContainer": caption_delivery_mode in {"embedded", "both"},
+                "captionSidecars": ["vtt", "srt"],
             },
         )
         extension = ".webm" if rendered.media_type == "video/webm" else ".mp4"
@@ -401,7 +409,12 @@ class NativeControlCoordinator:
             f"{uuid.uuid4().hex[:10]}{extension}"
         )
         self.store.cas.copy_to(artifact.hash, destination)
-        sidecars = self._copy_export_sidecars(generation_id, params, destination.stem)
+        sidecars = self._copy_export_sidecars(
+            generation_id,
+            params,
+            destination.stem,
+            str(storyboard.get("locale", "und")),
+        )
         context.set_progress(1, message="Master and requested sidecars promoted to exports")
         return {
             "operation": "export_master",
@@ -409,6 +422,12 @@ class NativeControlCoordinator:
             "path": str(destination),
             "mediaType": rendered.media_type,
             "sidecarPaths": sidecars,
+            "captionDelivery": {
+                "mode": caption_delivery_mode,
+                "sidecars": ["vtt", "srt"],
+                "burnedIntoPixels": caption_delivery_mode in {"burned", "both"},
+                "embeddedInContainer": caption_delivery_mode in {"embedded", "both"},
+            },
             "qualityGate": gate,
             "renderManifest": rendered.manifest,
             "metrics": rendered.metrics,
@@ -524,19 +543,29 @@ class NativeControlCoordinator:
         return graph.invalidate_from(roots)
 
     def _copy_export_sidecars(
-        self, generation_id: str, params: dict[str, Any], stem: str
+        self,
+        generation_id: str,
+        params: dict[str, Any],
+        stem: str,
+        locale: str,
     ) -> list[str]:
         captions = self._stage_payload(generation_id, "captions")
+        safe_locale = (
+            locale
+            if re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", locale)
+            else "und"
+        )
         requested: list[tuple[str, str]] = []
-        if params["captions"]:
-            requested.extend(
-                [
-                    (str(captions["vttArtifactHash"]), ".vtt"),
-                    (str(captions["srtArtifactHash"]), ".srt"),
-                ]
-            )
+        requested.extend(
+            [
+                (str(captions["vttArtifactHash"]), f".{safe_locale}.vtt"),
+                (str(captions["srtArtifactHash"]), f".{safe_locale}.srt"),
+            ]
+        )
         if params["transcript"]:
-            requested.append((str(captions["transcriptArtifactHash"]), ".txt"))
+            requested.append(
+                (str(captions["transcriptArtifactHash"]), f".{safe_locale}.transcript.txt")
+            )
         paths = []
         for digest, extension in requested:
             destination = self.store.root / "exports" / f"{stem}{extension}"
@@ -621,6 +650,29 @@ def _target(params: dict[str, Any]) -> dict[str, Any]:
     if fps not in FPS_VALUES:
         raise ValueError("fps must be 24, 25, 30, 50, or 60")
     return {"name": aspect.replace(":", "x"), "width": width, "height": height, "fps": fps}
+
+
+def _caption_delivery_mode(params: dict[str, Any]) -> str:
+    """Normalize the 2.0 caption contract and safely migrate old booleans.
+
+    Caption authoring is part of every accessible tutorial. The mode controls
+    only whether captions are composited into pixels and/or embedded in the
+    media container; UTF-8 VTT and SRT sidecars are always promoted.
+    """
+
+    value = params.get("captionDeliveryMode")
+    if value is None and isinstance(params.get("captions"), bool):
+        # Both legacy boolean values migrate to a clean picture with sidecars.
+        # This intentionally avoids carrying the old implicit burn-in behavior
+        # into a 2.0 export while retaining the authored captions.
+        return "sidecar"
+    if value is None:
+        return "sidecar"
+    if not isinstance(value, str) or value not in CAPTION_DELIVERY_MODES:
+        raise ValueError(
+            "captionDeliveryMode must be sidecar, embedded, burned, or both"
+        )
+    return value
 
 
 def _locks(value: Any) -> set[str]:

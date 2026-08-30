@@ -22,6 +22,9 @@ from alystria.generation import (
 class ProbeRunner:
     nvenc: EncoderProbeResult
     media_foundation: EncoderProbeResult
+    quick_sync: EncoderProbeResult = field(
+        default_factory=lambda: EncoderProbeResult(1, "", "Unknown encoder 'h264_qsv'")
+    )
     x264: EncoderProbeResult = field(default_factory=lambda: EncoderProbeResult(1, "", "no"))
     buildconf: EncoderProbeResult = field(
         default_factory=lambda: EncoderProbeResult(
@@ -51,6 +54,7 @@ class ProbeRunner:
         encoder = call[call.index("-c:v") + 1]
         return {
             "h264_nvenc": self.nvenc,
+            "h264_qsv": self.quick_sync,
             "h264_mf": self.media_foundation,
             "libx264": self.x264,
         }[encoder]
@@ -105,10 +109,24 @@ def test_nvenc_driver_api_failure_is_actionable_and_mf_is_hardware_forced(
     assert selected.fallback_occurred is True
     assert selected.probes[0].diagnostic_code == "nvenc-driver-api-incompatible"
     assert "Update the NVIDIA driver" in selected.probes[0].message
-    mf_call = runner.calls[1]
+    mf_call = runner.calls[2]
     assert mf_call[mf_call.index("-c:v") + 1] == "h264_mf"
     assert mf_call[mf_call.index("-hw_encoding") + 1] == "1"
     assert selected.as_manifest()["fallbackOccurred"] is True
+
+
+def test_quick_sync_is_used_when_nvenc_is_driver_blocked(tmp_path: Path) -> None:
+    runner = ProbeRunner(
+        EncoderProbeResult(1, "", "Driver does not support the required nvenc API version"),
+        EncoderProbeResult(0),
+        quick_sync=EncoderProbeResult(0),
+    )
+
+    selected = _select(_policy(tmp_path), runner)
+
+    assert selected.encoder is PresenterVideoEncoder.H264_QUICK_SYNC
+    assert selected.codec_arguments == ("-c:v", "h264_qsv")
+    assert runner.calls[1][runner.calls[1].index("-c:v") + 1] == "h264_qsv"
 
 
 def test_no_hardware_and_no_gpl_consent_fails_without_software_substitution(
@@ -123,7 +141,7 @@ def test_no_hardware_and_no_gpl_consent_fails_without_software_substitution(
         _select(_policy(tmp_path), runner)
 
     assert "gpl-consent-required" not in str(error.value)
-    assert len(runner.calls) == 2
+    assert len(runner.calls) == 3
     assert all("libx264" not in call for call in runner.calls)
 
 
@@ -137,15 +155,15 @@ def test_gpl_x264_requires_pinned_pack_build_flags_and_durable_consent(
     runner = ProbeRunner(
         EncoderProbeResult(1, "", "Unknown encoder"),
         EncoderProbeResult(1, "", "Unknown encoder"),
-        EncoderProbeResult(0),
+        x264=EncoderProbeResult(0),
     )
     selected = _select(_policy(tmp_path, approval), runner)
 
     assert selected.encoder is PresenterVideoEncoder.LIBX264
     assert selected.gpl_runtime_pack_id == approval.runtime_pack_id
     assert selected.gpl_consent_id == approval.consent_id
-    assert "-buildconf" in runner.calls[2]
-    assert runner.calls[3][runner.calls[3].index("-c:v") + 1] == "libx264"
+    assert "-buildconf" in runner.calls[3]
+    assert runner.calls[4][runner.calls[4].index("-c:v") + 1] == "libx264"
     assert selected.as_manifest()["gplConsentId"] == approval.consent_id
 
 
@@ -163,7 +181,7 @@ def test_claimed_gpl_pack_without_x264_build_flags_is_rejected(tmp_path: Path) -
     with pytest.raises(PresenterEncoderPolicyError, match="does not report both"):
         _select(_policy(tmp_path, approval), runner)
 
-    assert len(runner.calls) == 3
+    assert len(runner.calls) == 4
 
 
 def test_mux_argv_uses_only_brokered_codec_arguments(tmp_path: Path) -> None:

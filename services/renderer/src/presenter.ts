@@ -137,7 +137,7 @@ export function presenterRect(
 interface TimedPresenterVideo {
   readonly input: PresenterVideoInput;
   readonly sceneStartTick: number;
-  readonly sceneEndTick: number;
+  readonly presenterEndTick: number;
 }
 
 function timedPresenterVideos(manifest: RenderManifest): readonly TimedPresenterVideo[] {
@@ -147,7 +147,13 @@ function timedPresenterVideos(manifest: RenderManifest): readonly TimedPresenter
   for (const scene of manifest.scenes) {
     const sceneEndTick = sceneStartTick + scene.durationTicks;
     const input = bindings.get(scene.id);
-    if (input) timed.push({ input, sceneStartTick, sceneEndTick });
+    if (input) {
+      timed.push({
+        input,
+        sceneStartTick,
+        presenterEndTick: sceneStartTick + (input.activeDurationTicks ?? scene.durationTicks),
+      });
+    }
     sceneStartTick = sceneEndTick;
   }
   return timed;
@@ -160,9 +166,9 @@ export function resolvePresenterCompositeLayers(
 ): readonly PresenterCompositeLayer[] {
   const selectionStartTick = frameToTick(range.startFrame, manifest.target.frameRate);
   const selectionEndTick = frameToTick(range.endFrame, manifest.target.frameRate);
-  return timedPresenterVideos(manifest).flatMap(({ input, sceneStartTick, sceneEndTick }) => {
+  return timedPresenterVideos(manifest).flatMap(({ input, sceneStartTick, presenterEndTick }) => {
     const overlapStartTick = Math.max(selectionStartTick, sceneStartTick);
-    const overlapEndTick = Math.min(selectionEndTick, sceneEndTick);
+    const overlapEndTick = Math.min(selectionEndTick, presenterEndTick);
     if (overlapEndTick <= overlapStartTick) return [];
     const rect = presenterRect(manifest.target, input.placement, manifest.captionStyle);
     return [{

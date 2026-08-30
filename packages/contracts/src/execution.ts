@@ -6,7 +6,7 @@ export interface Artifact {
   createdAt: IsoDateTime; state: "staged" | "verified" | "promoted" | "quarantined" | "missing" | "corrupt"; provenanceId?: EntityId; metadata?: JsonValue;
 }
 
-export type ProviderCapabilityKind = "llm" | "embedding" | "reranking" | "image" | "video" | "tts" | "asr" | "alignment" | "presenter" | "media-search" | "research" | "render" | "code-execution";
+export type ProviderCapabilityKind = "llm" | "embedding" | "reranking" | "image" | "video" | "tts" | "asr" | "alignment" | "presenter" | "portrait-animation" | "lip-sync" | "media-search" | "research" | "render" | "code-execution";
 export interface ProviderCapability {
   kind: ProviderCapabilityKind; models: EntityId[]; locality: "local" | "cloud" | "hybrid";
   dataClasses: ("public" | "project-metadata" | "source-text" | "media" | "biometric" | "private" | "secret")[];
@@ -18,9 +18,10 @@ export interface ProviderDescriptor {
   capabilities: ProviderCapability[]; credentialMode: "none" | "api-key" | "oauth" | "service-account" | "local-endpoint"; credentialRef?: EntityId;
   baseUri?: string; lastVerifiedAt: IsoDateTime; privacyPolicyUri?: string; termsUri?: string;
 }
+export type ModelLifecycleStatus = "available" | "not-installed" | "manifest-required" | "inspecting" | "license-required" | "downloading" | "cancelling" | "cancelled" | "verifying" | "downloaded-quarantined" | "installing" | "activating" | "ready" | "in-use" | "incompatible" | "corrupt" | "repairing" | "removing" | "removed" | "failed" | "disabled" | "deprecated";
 export interface ModelDescriptor {
-  id: EntityId; providerId: EntityId; name: string; revision: string; capability: "llm" | "embedding" | "reranking" | "image" | "video" | "tts" | "asr" | "alignment" | "presenter";
-  status: "available" | "not-installed" | "downloading" | "incompatible" | "disabled" | "deprecated"; locality: "local" | "cloud";
+  id: EntityId; providerId: EntityId; name: string; revision: string; capability: "llm" | "embedding" | "reranking" | "image" | "video" | "tts" | "asr" | "alignment" | "presenter" | "portrait-animation" | "lip-sync";
+  status: ModelLifecycleStatus; locality: "local" | "cloud";
   downloadUri?: string; contentHash?: Sha256; sizeBytes?: number; minimumVramMiB?: number; minimumRamMiB?: number; licenseExpression?: string;
   licenseStatus: "approved" | "review-required" | "restricted" | "unknown"; lastVerifiedAt: IsoDateTime;
 }
@@ -65,7 +66,7 @@ export interface QualityGate {
 export interface ExportSpec {
   id: EntityId; projectId: EntityId; revisionId: EntityId; target: "landscape" | "portrait" | "square" | "custom"; dimensions: Dimensions; frameRate: Rational;
   videoCodec: "h264" | "hevc" | "av1" | "prores" | "vp9" | "ffv1"; audioCodec: "aac" | "opus" | "flac" | "pcm"; quality: "draft" | "standard" | "high" | "maximum" | "lossless";
-  bitrateKbps?: number; hardwareEncoder?: "auto" | "none" | "nvenc" | "qsv" | "amf" | "videotoolbox" | "vaapi"; captions: "none" | "sidecar" | "burned-in" | "both";
+  bitrateKbps?: number; hardwareEncoder?: "auto" | "none" | "nvenc" | "qsv" | "amf" | "videotoolbox" | "vaapi"; captionDeliveryMode: "sidecar" | "embedded" | "burned" | "both";
   sidecars: ("vtt" | "srt" | "transcript" | "descriptive-transcript" | "bibliography" | "chapters" | "provenance" | "c2pa" | "thumbnail" | "metadata" | "audio-description")[];
   colorSpace: "rec709-sdr"; gplRuntimePackApproved?: boolean; outputPath?: RelativePath;
 }

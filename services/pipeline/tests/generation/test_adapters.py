@@ -24,6 +24,7 @@ from alystria.generation import (
     WindowsFallbackMediaClient,
     default_local_media_client,
 )
+from alystria.generation.adapters import _media_name
 from alystria.providers import ProviderRuntimeFactory, parse_routing_policy
 
 
@@ -268,3 +269,21 @@ def test_runtime_client_rejects_unavailable_approved_local_narration() -> None:
             runtime,
             windows_speech=FakeWindowsSpeech(available=False),
         )
+
+
+@pytest.mark.parametrize(
+    ("declared_name", "media_type", "expected"),
+    [
+        ("scene.png", "image/jpeg", "scene.jpg"),
+        ("scene.png", "image/webp", "scene.webp"),
+        ("scene", "image/png", "scene.png"),
+        ("clip.bin", "video/mp4", "clip.mp4"),
+        ("asset.bin", "application/octet-stream", "asset.bin"),
+    ],
+)
+def test_provider_media_filename_tracks_verified_media_type(
+    declared_name: str,
+    media_type: str,
+    expected: str,
+) -> None:
+    assert _media_name(declared_name, media_type) == expected

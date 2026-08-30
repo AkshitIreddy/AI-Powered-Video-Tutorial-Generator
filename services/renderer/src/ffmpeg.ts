@@ -1,4 +1,4 @@
-import type { AudioInput, FrameRate, RenderTarget } from "./contracts.js";
+import type { AudioInput, CaptionDeliveryMode, FrameRate, RenderTarget } from "./contracts.js";
 import type { PresenterCompositeLayer } from "./presenter.js";
 import { ticksToSeconds } from "./timebase.js";
 
@@ -10,7 +10,8 @@ export interface CommandPlan {
   readonly licensingWarnings: readonly string[];
 }
 
-export type DeliveryCodec = "h264_nvenc" | "h264_mf" | "libx264" | "hevc_nvenc" | "vp9" | "av1";
+export type DeliveryCodec = "h264_nvenc" | "h264_qsv" | "h264_mf" | "libx264" | "hevc_nvenc" | "vp9" | "av1";
+export type HardwareDeliveryCodec = Extract<DeliveryCodec, "h264_nvenc" | "h264_qsv" | "h264_mf" | "hevc_nvenc">;
 
 export interface DeliveryOptions {
   readonly codec: DeliveryCodec;
@@ -19,6 +20,11 @@ export interface DeliveryOptions {
   readonly pixelFormat?: "yuv420p" | "yuv420p10le";
   readonly audioBitrate?: string;
   readonly fastStart?: boolean;
+  /** Sidecar is the clean-master default. */
+  readonly captionMode?: CaptionDeliveryMode;
+  /** BCP-47 language used for sidecar naming and embedded track metadata. */
+  readonly captionLanguage?: string;
+  /** Executor-owned VTT input. Used only by embedded/both delivery modes. */
   readonly captionPath?: string;
 }
 
@@ -70,6 +76,27 @@ function bitrate(value: string | undefined, fallback: string): string {
   const selected = value ?? fallback;
   if (!BITRATE.test(selected)) throw new TypeError(`Invalid bitrate ${selected}`);
   return selected;
+}
+
+/**
+ * A real one-frame encode probe. Encoder-list presence is insufficient: the
+ * loaded driver/API can still be incompatible with the packaged FFmpeg build.
+ */
+export function planHardwareEncoderProbe(codec: HardwareDeliveryCodec, target: RenderTarget): CommandPlan {
+  const dimensions = `${target.width}x${target.height}`;
+  const backendArgs = codec === "h264_mf" ? ["-hw_encoding", "1"] : [];
+  return {
+    executable: "ffmpeg",
+    args: [
+      "-hide_banner", "-nostdin", "-v", "error",
+      "-f", "lavfi", "-i", `color=c=black:s=${dimensions}:r=1`,
+      "-frames:v", "1", "-an", "-c:v", codec, ...backendArgs,
+      "-pix_fmt", "yuv420p", "-f", "null", "-",
+    ],
+    expectedOutputs: [],
+    description: `Probe ${codec} with a real ${dimensions} hardware encode`,
+    licensingWarnings: [],
+  };
 }
 
 export function planFrameSequenceToFfv1(inputPattern: string, outputPath: string, target: RenderTarget, startFrame = 0): CommandPlan {
@@ -346,9 +373,11 @@ function videoCodecArguments(options: DeliveryOptions): { args: string[]; warnin
   const pixelFormat = options.pixelFormat ?? "yuv420p";
   switch (options.codec) {
     case "h264_nvenc":
-      return { args: ["-c:v", "h264_nvenc", "-preset", "p7", "-tune", "hq", "-rc", "vbr", "-cq", String(quality(options.quality, 19)), "-b:v", bitrate(options.bitrate, "12M"), "-pix_fmt", pixelFormat], warnings: ["Requires a compatible NVIDIA driver and GPU; probe h264_nvenc before rendering."] };
+      return { args: ["-c:v", "h264_nvenc", "-preset", "p5", "-tune", "hq", "-rc", "vbr", "-cq", String(quality(options.quality, 19)), "-b:v", bitrate(options.bitrate, "12M"), "-pix_fmt", pixelFormat], warnings: ["Requires a compatible NVIDIA driver and GPU; probe h264_nvenc before rendering."] };
+    case "h264_qsv":
+      return { args: ["-c:v", "h264_qsv", "-global_quality", String(quality(options.quality, 20)), "-look_ahead", "0", "-b:v", bitrate(options.bitrate, "12M"), "-pix_fmt", pixelFormat], warnings: ["Requires a working Intel Quick Sync runtime; probe h264_qsv before rendering."] };
     case "h264_mf":
-      return { args: ["-c:v", "h264_mf", "-rate_control", "quality", "-quality", String(mediaFoundationQuality(options.quality)), "-b:v", bitrate(options.bitrate, "12M"), "-pix_fmt", pixelFormat], warnings: ["Windows Media Foundation output is platform-specific; verify the encoder is present."] };
+      return { args: ["-c:v", "h264_mf", "-hw_encoding", "1", "-rate_control", "quality", "-quality", String(mediaFoundationQuality(options.quality)), "-b:v", bitrate(options.bitrate, "12M"), "-pix_fmt", pixelFormat], warnings: ["Windows Media Foundation hardware output is platform-specific; verify the encoder with -hw_encoding 1."] };
     case "libx264":
       return { args: ["-c:v", "libx264", "-preset", "slow", "-crf", String(quality(options.quality, 18)), "-pix_fmt", pixelFormat], warnings: ["libx264 is GPL. Use only through the separately installed signed GPL runtime pack; never bundle it in the MIT core."] };
     case "hevc_nvenc":
@@ -363,6 +392,13 @@ function videoCodecArguments(options: DeliveryOptions): { args: string[]; warnin
 export function planDeliveryEncode(videoPath: string, audioPath: string | undefined, outputPath: string, options: DeliveryOptions): CommandPlan {
   const codec = videoCodecArguments(options);
   const audioBitrate = bitrate(options.audioBitrate, "192k");
+  const captionMode = options.captionMode ?? "sidecar";
+  if (!(new Set<CaptionDeliveryMode>(["sidecar", "embedded", "burned", "both"])).has(captionMode)) {
+    throw new TypeError(`Unsupported caption delivery mode ${String(captionMode)}`);
+  }
+  if (options.captionPath && captionMode !== "embedded" && captionMode !== "both") {
+    throw new TypeError(`Caption input is forbidden for ${captionMode} delivery`);
+  }
   const args = ["-hide_banner", "-nostdin", "-y", "-i", pathArgument(videoPath, "video input")];
   if (audioPath) args.push("-i", pathArgument(audioPath, "audio input"));
   if (options.captionPath) args.push("-i", pathArgument(options.captionPath, "caption input"));
@@ -372,7 +408,9 @@ export function planDeliveryEncode(videoPath: string, audioPath: string | undefi
   else args.push("-an");
   if (options.captionPath) {
     const captionInput = audioPath ? 2 : 1;
-    args.push("-map", `${captionInput}:s:0`, "-c:s", webm ? "webvtt" : "mov_text", "-metadata:s:s:0", "language=eng");
+    const language = options.captionLanguage ?? "en";
+    if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(language)) throw new TypeError(`Invalid caption language ${language}`);
+    args.push("-map", `${captionInput}:s:0`, "-c:s", webm ? "webvtt" : "mov_text", "-metadata:s:s:0", `language=${language}`);
   }
   args.push(...codec.args, "-color_primaries", "bt709", "-color_trc", "iec61966-2-1", "-colorspace", "bt709");
   args.push("-map_metadata", "-1", "-fflags", "+bitexact", "-flags:v", "+bitexact");

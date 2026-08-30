@@ -15,6 +15,7 @@ import {
 } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
+import { performance } from "node:perf_hooks";
 import {
   createPlaywrightChromiumDriver,
   PinnedBrowserCapture,
@@ -24,19 +25,22 @@ import {
 } from "./browser.js";
 import { loadVisualAssetPayloads } from "./assets.js";
 import { loadFontAssetPayloads } from "./fonts.js";
-import { toSrt, toWebVtt } from "./captions.js";
-import { assertRenderManifest, type AudioInput, type CaptionCue, type RenderManifest } from "./contracts.js";
+import { canonicalCaptionLedger, toSrt, toWebVtt } from "./captions.js";
+import { assertRenderManifest, type AudioInput, type CaptionCue, type CaptionDeliveryMode, type CaptionRenderStyle, type RenderManifest } from "./contracts.js";
 import {
   planAudioMaster,
   planAudioAnalysis,
   planDecodeValidation,
   planDeliveryEncode,
   planFrameSequenceToFfv1,
+  planHardwareEncoderProbe,
   planPresenterComposite,
   planProbe,
   planSilentAudio,
   type CommandPlan,
+  type DeliveryCodec,
   type DeliveryOptions,
+  type HardwareDeliveryCodec,
 } from "./ffmpeg.js";
 import { resolvePresenterCompositeLayers, type PresenterCompositeLayer } from "./presenter.js";
 import { missingRanges, planRenderChunks, type FrameRange } from "./ranges.js";
@@ -78,9 +82,14 @@ export interface RenderProgressEvent {
   readonly schemaVersion: 1;
   readonly sequence: number;
   readonly manifestId: string;
-  readonly phase: "prepare" | "capture" | "mezzanine" | "audio" | "delivery" | "qa" | "complete" | "cancelled" | "failed";
+  readonly phase: "prepare" | "capture" | "mezzanine" | "audio" | "delivery" | "qa" | "finalize" | "complete" | "cancelled" | "failed";
   readonly status: "started" | "progress" | "completed" | "failed";
   readonly message: string;
+  readonly timestampUtc: string;
+  /** Monotonic duration since this executor invocation began. */
+  readonly elapsedMs: number;
+  /** Monotonic duration since the latest started event for this phase. */
+  readonly phaseElapsedMs?: number;
   readonly completed?: number;
   readonly total?: number;
   readonly frame?: number;
@@ -88,8 +97,39 @@ export interface RenderProgressEvent {
   readonly outputPath?: string;
 }
 
+export type TimedRenderPhase = "prepare" | "capture" | "mezzanine" | "audio" | "delivery" | "qa" | "finalize";
+
+export interface RenderStageTiming {
+  readonly phase: TimedRenderPhase;
+  readonly startedAtUtc: string;
+  readonly completedAtUtc: string;
+  readonly durationMs: number;
+}
+
+export interface HardwareEncoderProbeSummary {
+  readonly codec: HardwareDeliveryCodec;
+  readonly available: boolean;
+  readonly exitCode: number;
+  readonly durationMs: number;
+  readonly detail: string;
+}
+
+export interface RenderHardwareProvenance {
+  readonly chromiumGpu: Readonly<{
+    readonly status: "unknown";
+    readonly reason: "Chromium adapter telemetry is unavailable; GPU use is not inferred from launch flags";
+  }>;
+  readonly deliveryEncoder: Readonly<{
+    readonly requestedCodec: DeliveryCodec;
+    readonly selectedCodec: DeliveryCodec;
+    readonly acceleration: "hardware" | "software";
+    readonly backend: "nvidia-nvenc" | "intel-qsv" | "windows-media-foundation" | "none";
+    readonly probes: readonly HardwareEncoderProbeSummary[];
+  }>;
+}
+
 export interface RenderOutputFile {
-  readonly kind: "mezzanine" | "delivery" | "audio-master" | "captions-vtt" | "captions-srt";
+  readonly kind: "mezzanine" | "delivery" | "audio-master" | "captions-vtt" | "captions-srt" | "captions-ledger";
   readonly path: string;
   readonly bytes: number;
   readonly sha256: string;
@@ -112,6 +152,16 @@ export interface RenderProbeSummary {
   readonly colorTagStatus: "full" | "container-limited";
   readonly videoEndSeconds: number | null;
   readonly audioEndSeconds: number | null;
+}
+
+export interface CaptionDeliverySummary {
+  readonly mode: CaptionDeliveryMode;
+  readonly language: string;
+  readonly cueCount: number;
+  readonly canonicalCueLedgerSha256: string;
+  readonly burnedIntoVideo: boolean;
+  readonly embeddedSoftTrack: boolean;
+  readonly sidecars: Readonly<{ vtt: string; srt: string; ledger: string }>;
 }
 
 export interface RenderQaMetrics {
@@ -155,6 +205,9 @@ export interface RenderOutputManifest {
   readonly files: readonly RenderOutputFile[];
   readonly probe: RenderProbeSummary;
   readonly qaMetrics: RenderQaMetrics;
+  readonly captionDelivery: CaptionDeliverySummary;
+  readonly stageTimings: readonly RenderStageTiming[];
+  readonly hardwareProvenance: RenderHardwareProvenance;
   readonly progressPath: string;
   readonly outputManifestPath: string;
 }
@@ -191,10 +244,16 @@ export interface RenderExecutorOptions {
   readonly dependencies?: RenderExecutorDependencies;
 }
 
+interface CaptureCheckpointFrame {
+  readonly contentHash: string;
+  readonly outputSha256: string;
+  readonly browserVersion: string;
+}
+
 interface CaptureCheckpoint {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly renderKey: string;
-  readonly frames: Readonly<Record<string, Readonly<{ contentHash: string; outputSha256: string; browserVersion: string }>>>;
+  readonly frames: Record<string, CaptureCheckpointFrame>;
 }
 
 interface ProbeDocument {
@@ -312,6 +371,34 @@ function collectCaptions(manifest: RenderManifest, range: FrameRange): readonly 
     sceneStartTick += scene.durationTicks;
   }
   return cues;
+}
+
+function captionDeliveryMode(value: CaptionDeliveryMode | undefined): CaptionDeliveryMode {
+  const selected = value ?? "sidecar";
+  if (!(new Set<CaptionDeliveryMode>(["sidecar", "embedded", "burned", "both"])).has(selected)) {
+    throw new TypeError(`Unsupported caption delivery mode ${String(selected)}`);
+  }
+  return selected;
+}
+
+function captionLanguage(value: string | undefined): string {
+  const selected = value ?? "en";
+  if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(selected)) {
+    throw new TypeError(`Caption language must be a bounded BCP-47 tag, got ${selected}`);
+  }
+  return selected;
+}
+
+function captureManifestForCaptionMode(manifest: RenderManifest, mode: CaptionDeliveryMode): RenderManifest {
+  if (mode === "burned" || mode === "both") return { ...manifest, captionDeliveryMode: mode };
+  const clean = {
+    ...manifest,
+    captionDeliveryMode: mode,
+    scenes: manifest.scenes.map((scene) => ({ ...scene, captions: [] })),
+  } as RenderManifest & { captionStyle?: CaptionRenderStyle };
+  // Without this deletion, a top-caption style can still reserve an empty band.
+  delete clean.captionStyle;
+  return clean;
 }
 
 function deliveryExtension(codec: DeliveryOptions["codec"]): ".mp4" | ".webm" {
@@ -447,7 +534,7 @@ export function requireNonSilentAudio(
   }
 }
 
-function validateProbe(document: ProbeDocument, manifest: RenderManifest, expectedDurationSeconds: number): RenderProbeSummary {
+function validateProbe(document: ProbeDocument, manifest: RenderManifest, expectedDurationSeconds: number, expectEmbeddedCaptions: boolean): RenderProbeSummary {
   if (document.error) throw new Error(`ffprobe reported an error: ${JSON.stringify(document.error)}`);
   const streams = document.streams ?? [];
   const video = streams.find((stream) => stream.codec_type === "video");
@@ -455,7 +542,8 @@ function validateProbe(document: ProbeDocument, manifest: RenderManifest, expect
   const subtitle = streams.find((stream) => stream.codec_type === "subtitle");
   if (!video) throw new Error("Delivery QA failed: video stream is missing");
   if (!audio) throw new Error("Delivery QA failed: 48 kHz audio stream is missing");
-  if (!subtitle) throw new Error("Delivery QA failed: embedded caption stream is missing");
+  if (expectEmbeddedCaptions && !subtitle) throw new Error("Delivery QA failed: requested embedded caption stream is missing");
+  if (!expectEmbeddedCaptions && subtitle) throw new Error("Delivery QA failed: clean master unexpectedly contains a caption stream");
   const width = numberField(video.width);
   const height = numberField(video.height);
   if (width !== manifest.target.width || height !== manifest.target.height) {
@@ -499,7 +587,7 @@ function validateProbe(document: ProbeDocument, manifest: RenderManifest, expect
     audioCodec: stringField(audio.codec_name),
     audioSampleRate,
     audioChannels,
-    captionCodec: stringField(subtitle.codec_name),
+    captionCodec: subtitle ? stringField(subtitle.codec_name) : "none",
     colorSpace,
     colorTransfer,
     colorPrimaries,
@@ -594,6 +682,9 @@ class ProgressReporter {
   readonly #path: string;
   readonly #manifestId: string;
   readonly #listener: RenderExecutorOptions["onProgress"];
+  readonly #startedAt = performance.now();
+  readonly #phaseStarts = new Map<TimedRenderPhase, Readonly<{ monotonic: number; utc: string }>>();
+  readonly #timings: RenderStageTiming[] = [];
   #sequence = 0;
   #pending = Promise.resolve();
 
@@ -608,11 +699,31 @@ class ProgressReporter {
     await writeFile(this.#path, "", "utf8");
   }
 
-  async emit(event: Omit<RenderProgressEvent, "schemaVersion" | "sequence" | "manifestId">): Promise<void> {
+  async emit(event: Omit<RenderProgressEvent, "schemaVersion" | "sequence" | "manifestId" | "timestampUtc" | "elapsedMs" | "phaseElapsedMs">): Promise<void> {
+    const now = performance.now();
+    const timestampUtc = new Date().toISOString();
+    const timedPhase = isTimedRenderPhase(event.phase) ? event.phase : undefined;
+    if (timedPhase && event.status === "started") {
+      this.#phaseStarts.set(timedPhase, { monotonic: now, utc: timestampUtc });
+    }
+    const phaseStart = timedPhase ? this.#phaseStarts.get(timedPhase) : undefined;
+    const phaseElapsedMs = phaseStart ? Math.max(0, now - phaseStart.monotonic) : undefined;
+    if (timedPhase && event.status === "completed" && phaseStart) {
+      this.#timings.push(Object.freeze({
+        phase: timedPhase,
+        startedAtUtc: phaseStart.utc,
+        completedAtUtc: timestampUtc,
+        durationMs: phaseElapsedMs ?? 0,
+      }));
+      this.#phaseStarts.delete(timedPhase);
+    }
     const complete: RenderProgressEvent = {
       schemaVersion: 1,
       sequence: this.#sequence,
       manifestId: this.#manifestId,
+      timestampUtc,
+      elapsedMs: Math.max(0, now - this.#startedAt),
+      ...(phaseElapsedMs === undefined ? {} : { phaseElapsedMs }),
       ...event,
     };
     this.#sequence += 1;
@@ -622,6 +733,14 @@ class ProgressReporter {
     });
     await this.#pending;
   }
+
+  timings(): readonly RenderStageTiming[] {
+    return Object.freeze(this.#timings.map((timing) => Object.freeze({ ...timing })));
+  }
+}
+
+function isTimedRenderPhase(phase: RenderProgressEvent["phase"]): phase is TimedRenderPhase {
+  return phase === "prepare" || phase === "capture" || phase === "mezzanine" || phase === "audio" || phase === "delivery" || phase === "qa" || phase === "finalize";
 }
 
 async function runPlan(
@@ -644,14 +763,115 @@ async function runPlan(
   return result;
 }
 
+function hardwareBackend(codec: DeliveryCodec): RenderHardwareProvenance["deliveryEncoder"]["backend"] {
+  if (codec === "h264_nvenc" || codec === "hevc_nvenc") return "nvidia-nvenc";
+  if (codec === "h264_qsv") return "intel-qsv";
+  if (codec === "h264_mf") return "windows-media-foundation";
+  return "none";
+}
+
+async function resolveDeliveryEncoder(
+  requested: DeliveryOptions,
+  target: RenderManifest["target"],
+  executables: ExecutablePaths,
+  runner: CommandRunner,
+  signal: AbortSignal | undefined,
+  cwd: string,
+): Promise<Readonly<{ options: DeliveryOptions; provenance: RenderHardwareProvenance }>> {
+  const requestedCodec = requested.codec;
+  const requestedHardware = hardwareBackend(requestedCodec) !== "none";
+  const candidates: readonly HardwareDeliveryCodec[] = requestedCodec === "h264_nvenc"
+    ? ["h264_nvenc", "h264_qsv"]
+    : requestedHardware
+      ? [requestedCodec as HardwareDeliveryCodec]
+      : [];
+  const probes: HardwareEncoderProbeSummary[] = [];
+  let selectedCodec: DeliveryCodec = requestedCodec;
+  for (const codec of candidates) {
+    throwIfAborted(signal);
+    const plan = planHardwareEncoderProbe(codec, target);
+    const probeStarted = performance.now();
+    const result = await runner.run(executables.ffmpeg, plan.args, { ...(signal === undefined ? {} : { signal }), cwd });
+    const durationMs = Math.max(0, performance.now() - probeStarted);
+    const detail = (result.stderr || result.stdout).replace(/\s+/g, " ").trim().slice(-1_000);
+    probes.push(Object.freeze({ codec, available: result.exitCode === 0, exitCode: result.exitCode, durationMs, detail }));
+    if (result.exitCode === 0) {
+      selectedCodec = codec;
+      break;
+    }
+  }
+  if (requestedHardware && !probes.some((probe) => probe.available)) {
+    const summary = probes.map((probe) => `${probe.codec}: exit ${probe.exitCode}${probe.detail ? ` (${probe.detail})` : ""}`).join("; ");
+    throw new Error(`No requested hardware encoder passed a real ${target.width}x${target.height} encode probe: ${summary}`);
+  }
+  const backend = hardwareBackend(selectedCodec);
+  return Object.freeze({
+    options: Object.freeze({ ...requested, codec: selectedCodec }),
+    provenance: Object.freeze({
+      chromiumGpu: Object.freeze({
+        status: "unknown" as const,
+        reason: "Chromium adapter telemetry is unavailable; GPU use is not inferred from launch flags" as const,
+      }),
+      deliveryEncoder: Object.freeze({
+        requestedCodec,
+        selectedCodec,
+        acceleration: backend === "none" ? "software" as const : "hardware" as const,
+        backend,
+        probes: Object.freeze(probes),
+      }),
+    }),
+  });
+}
+
 async function loadCheckpoint(path: string, renderKey: string): Promise<CaptureCheckpoint> {
   try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as CaptureCheckpoint;
-    if (parsed.schemaVersion === 1 && parsed.renderKey === renderKey && parsed.frames && typeof parsed.frames === "object") return parsed;
+    const document = await readFile(path, "utf8");
+    const lines = document.split(/\r?\n/).filter((line) => line.trim().length > 0);
+    if (lines.length === 1) {
+      const legacy = JSON.parse(lines[0]!) as Readonly<{ schemaVersion?: number; renderKey?: string; frames?: Record<string, CaptureCheckpointFrame> }>;
+      if (legacy.schemaVersion === 1 && legacy.renderKey === renderKey && legacy.frames && typeof legacy.frames === "object") {
+        return { schemaVersion: 2, renderKey, frames: { ...legacy.frames } };
+      }
+    }
+    const header = JSON.parse(lines[0] ?? "null") as Readonly<{ schemaVersion?: number; renderKey?: string }> | null;
+    if (header?.schemaVersion !== 2 || header.renderKey !== renderKey) throw new TypeError("Stale checkpoint header");
+    const frames: Record<string, CaptureCheckpointFrame> = {};
+    for (const [index, line] of lines.slice(1).entries()) {
+      let record: Readonly<{ frame?: number; contentHash?: string; outputSha256?: string; browserVersion?: string }>;
+      try {
+        record = JSON.parse(line) as typeof record;
+      } catch {
+        // A process can stop midway through its final append. Preserve every
+        // prior complete record, but reject corruption in the journal middle.
+        if (index === lines.length - 2) break;
+        throw new TypeError("Checkpoint journal contains a corrupt record");
+      }
+      if (!Number.isSafeInteger(record.frame) || (record.frame ?? -1) < 0) continue;
+      if (![record.contentHash, record.outputSha256].every((value) => typeof value === "string" && /^[0-9a-f]{64}$/.test(value))) continue;
+      if (typeof record.browserVersion !== "string" || !record.browserVersion) continue;
+      frames[String(record.frame)] = {
+        contentHash: record.contentHash!,
+        outputSha256: record.outputSha256!,
+        browserVersion: record.browserVersion,
+      };
+    }
+    return { schemaVersion: 2, renderKey, frames };
   } catch {
     // A missing, truncated, or stale checkpoint is safely rebuilt from scratch.
   }
-  return { schemaVersion: 1, renderKey, frames: {} };
+  return { schemaVersion: 2, renderKey, frames: {} };
+}
+
+function checkpointJournal(checkpoint: CaptureCheckpoint): string {
+  const records = Object.entries(checkpoint.frames)
+    .map(([frame, record]) => ({ frame: Number(frame), ...record }))
+    .filter((record) => Number.isSafeInteger(record.frame) && record.frame >= 0)
+    .sort((left, right) => left.frame - right.frame);
+  return [stableJson({ schemaVersion: 2, renderKey: checkpoint.renderKey }), ...records.map(stableJson)].join("\n") + "\n";
+}
+
+function checkpointFrameLine(frame: number, record: CaptureCheckpointFrame): string {
+  return `${stableJson({ frame, ...record })}\n`;
 }
 
 async function completedFrameSet(checkpoint: CaptureCheckpoint, frameDirectory: string): Promise<Set<number>> {
@@ -745,13 +965,23 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
   if (!/^[0-9a-f]{64}$/.test(inputManifestSha256)) {
     throw new TypeError("inputManifestSha256 must be 64 lowercase hexadecimal characters");
   }
-  const renderKey = sha256Text(stableJson({ inputManifestSha256, selection, target: manifest.target, rendererVersion: manifest.rendererVersion }));
+  const requestedDeliveryOptions: DeliveryOptions = options.delivery ?? { codec: "vp9" };
+  const selectedCaptionMode = captionDeliveryMode(requestedDeliveryOptions.captionMode ?? manifest.captionDeliveryMode);
+  const selectedCaptionLanguage = captionLanguage(requestedDeliveryOptions.captionLanguage ?? manifest.metadata?.captionLanguage ?? manifest.metadata?.locale);
+  const captureManifest = captureManifestForCaptionMode(manifest, selectedCaptionMode);
+  assertRenderManifest(captureManifest);
+  const renderKey = sha256Text(stableJson({
+    inputManifestSha256,
+    selection,
+    target: manifest.target,
+    rendererVersion: manifest.rendererVersion,
+    captionDelivery: { mode: selectedCaptionMode, language: selectedCaptionLanguage },
+  }));
   const outputDirectory = resolve(options.outputDirectory ?? manifest.outputDirectory);
   const progressPath = resolve(options.progressPath ?? join(outputDirectory, "render-progress.jsonl"));
-  const deliveryOptions: DeliveryOptions = options.delivery ?? { codec: "vp9" };
-  const outputName = sanitizeOutputName(options.outputName ?? `delivery${deliveryExtension(deliveryOptions.codec)}`);
+  const outputName = sanitizeOutputName(options.outputName ?? `delivery${deliveryExtension(requestedDeliveryOptions.codec)}`);
   const deliveryPath = join(outputDirectory, outputName);
-  assertOutputExtension(deliveryPath, deliveryOptions.codec);
+  assertOutputExtension(deliveryPath, requestedDeliveryOptions.codec);
   const reporter = new ProgressReporter(progressPath, manifest.id, options.onProgress);
   const commandRunner = options.dependencies?.commandRunner ?? new SpawnCommandRunner();
   const browserFactory = options.dependencies?.browserFactory ?? (async (input) => createPlaywrightChromiumDriver({
@@ -766,8 +996,11 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
   const attemptDirectory = await mkdtemp(join(tmpdir(), `alystria-render-${manifest.id.replace(/[^a-zA-Z0-9_-]/g, "_")}-`));
   const mezzaninePath = join(outputDirectory, "mezzanine.mkv");
   const audioPath = join(outputDirectory, "audio-master.wav");
-  const captionsVttPath = join(outputDirectory, "captions.vtt");
-  const captionsSrtPath = join(outputDirectory, "captions.srt");
+  const outputExtension = extname(outputName);
+  const outputStem = outputName.slice(0, -outputExtension.length);
+  const captionsVttPath = join(outputDirectory, `${outputStem}.${selectedCaptionLanguage}.vtt`);
+  const captionsSrtPath = join(outputDirectory, `${outputStem}.${selectedCaptionLanguage}.srt`);
+  const captionsLedgerPath = join(outputDirectory, `${outputStem}.captions.json`);
   const outputManifestPath = join(outputDirectory, "render-output.json");
   let capture: PinnedBrowserCapture | undefined;
   let abortBrowser: (() => void) | undefined;
@@ -781,6 +1014,14 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     for (const path of [options.executables.ffmpeg, options.executables.ffprobe]) {
       if (path.includes("/") || path.includes("\\")) await access(path, constants.R_OK);
     }
+    const deliveryResolution = await resolveDeliveryEncoder(
+      requestedDeliveryOptions,
+      manifest.target,
+      options.executables,
+      commandRunner,
+      options.signal,
+      attemptDirectory,
+    );
     await validateAudioAssets(manifest);
     if (presenterLayers.length > 0) {
       await validatePresenterAssets(
@@ -814,11 +1055,14 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     options.signal?.addEventListener("abort", abortBrowser, { once: true });
     await capture.verifyBrowser();
 
-    let checkpoint = options.resume === false
-      ? { schemaVersion: 1 as const, renderKey, frames: {} }
+    const checkpoint = options.resume === false
+      ? { schemaVersion: 2 as const, renderKey, frames: {} }
       : await loadCheckpoint(checkpointPath, renderKey);
     if (options.resume === false) await rm(frameDirectory, { recursive: true, force: true });
     await mkdir(frameDirectory, { recursive: true });
+    // Migrate legacy snapshots and compact any prior journal exactly once.
+    // Every newly captured frame is appended as one bounded record below.
+    await atomicWrite(checkpointPath, checkpointJournal(checkpoint));
     const completed = options.resume === false ? new Set<number>() : await completedFrameSet(checkpoint, frameDirectory);
     const initiallyComplete = [...completed].filter((frame) => frame >= frameRange.startFrame && frame < frameRange.endFrame).length;
     await reporter.emit({ phase: "prepare", status: "completed", message: `Browser pinned at ${driver.version}; ${initiallyComplete} frames resumable`, completed: initiallyComplete, total: frameCount });
@@ -832,21 +1076,16 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
       const absentRanges = missingRanges(chunk, completed);
       const frames = absentRanges.flatMap((range) => Array.from({ length: range.endFrame - range.startFrame }, (_, index) => range.startFrame + index));
       if (frames.length === 0) continue;
-      await captureWithConcurrency(frames, concurrency, capture, manifest, frameDirectory, options.signal, async (result) => {
+      await captureWithConcurrency(frames, concurrency, capture, captureManifest, frameDirectory, options.signal, async (result) => {
         completed.add(result.frame);
         completedCount += 1;
-        checkpoint = {
-          ...checkpoint,
-          frames: {
-            ...checkpoint.frames,
-            [String(result.frame)]: {
-              contentHash: result.contentHash,
-              outputSha256: result.outputSha256,
-              browserVersion: result.browserVersion,
-            },
-          },
+        const checkpointRecord: CaptureCheckpointFrame = {
+          contentHash: result.contentHash,
+          outputSha256: result.outputSha256,
+          browserVersion: result.browserVersion,
         };
-        checkpointWrite = checkpointWrite.then(async () => atomicWrite(checkpointPath, `${stableJson(checkpoint)}\n`));
+        checkpoint.frames[String(result.frame)] = checkpointRecord;
+        checkpointWrite = checkpointWrite.then(async () => appendFile(checkpointPath, checkpointFrameLine(result.frame, checkpointRecord), "utf8"));
         await checkpointWrite;
         await reporter.emit({
           phase: "capture",
@@ -874,8 +1113,10 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     await reporter.emit({ phase: "mezzanine", status: "completed", message: presenterLayers.length > 0 ? "Lossless presenter composite encoded" : "Lossless FFV1 mezzanine encoded", outputPath: mezzaninePath });
 
     const cues = collectCaptions(manifest, frameRange);
+    const captionLedger = canonicalCaptionLedger(cues, selectedCaptionLanguage);
     await atomicWrite(captionsVttPath, toWebVtt(cues));
     await atomicWrite(captionsSrtPath, toSrt(cues));
+    await atomicWrite(captionsLedgerPath, captionLedger);
 
     await reporter.emit({ phase: "audio", status: "started", message: "Building exact-duration 48 kHz audio master" });
     const selectedAudio = audioInputsForRange(manifest, startTick, endTick);
@@ -885,8 +1126,20 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     await runPlan(audioPlan, options.executables, commandRunner, options.signal, attemptDirectory);
     await reporter.emit({ phase: "audio", status: "completed", message: selectedAudio.length === 0 ? "48 kHz silent master created" : "48 kHz program master created", outputPath: audioPath });
 
-    await reporter.emit({ phase: "delivery", status: "started", message: `Encoding ${deliveryOptions.codec} delivery with embedded captions` });
-    const deliveryPlan = planDeliveryEncode(mezzaninePath, audioPath, deliveryPath, { ...deliveryOptions, captionPath: captionsVttPath });
+    const embedCaptions = (selectedCaptionMode === "embedded" || selectedCaptionMode === "both") && cues.length > 0;
+    const burnedCaptions = selectedCaptionMode === "burned" || selectedCaptionMode === "both";
+    const deliveryDescription = embedCaptions
+      ? `${selectedCaptionMode} captions (soft track plus UTF-8 sidecars)`
+      : burnedCaptions
+        ? "open captions plus UTF-8 sidecars"
+        : "a clean master plus UTF-8 caption sidecars";
+    await reporter.emit({ phase: "delivery", status: "started", message: `Encoding ${deliveryResolution.options.codec} delivery with ${deliveryDescription}` });
+    const deliveryPlan = planDeliveryEncode(mezzaninePath, audioPath, deliveryPath, {
+      ...deliveryResolution.options,
+      captionMode: selectedCaptionMode,
+      captionLanguage: selectedCaptionLanguage,
+      ...(embedCaptions ? { captionPath: captionsVttPath } : {}),
+    });
     await runPlan(deliveryPlan, options.executables, commandRunner, options.signal, attemptDirectory);
     await reporter.emit({ phase: "delivery", status: "completed", message: "Delivery encode completed", outputPath: deliveryPath });
 
@@ -898,7 +1151,7 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     } catch (error) {
       throw new Error(`ffprobe returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const probe = validateProbe(probeDocument, manifest, ticksToSeconds(durationTicks));
+    const probe = validateProbe(probeDocument, manifest, ticksToSeconds(durationTicks), embedCaptions);
     await runPlan(planDecodeValidation(deliveryPath), options.executables, commandRunner, options.signal, attemptDirectory);
     const audioAnalysisResult = await runPlan(planAudioAnalysis(deliveryPath), options.executables, commandRunner, options.signal, attemptDirectory);
     const measuredAudio = parseAudioAnalysis(audioAnalysisResult.stderr);
@@ -918,6 +1171,7 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
     const driftSummary = qaMetrics.avDriftFrames === null ? "A/V drift unavailable" : `A/V drift ${qaMetrics.avDriftFrames.toFixed(3)} frames`;
     await reporter.emit({ phase: "qa", status: "completed", message: `QA measured: ${qaMetrics.integratedLufs.toFixed(1)} LUFS, ${qaMetrics.clippedSamples} clipped samples, ${driftSummary}` });
 
+    await reporter.emit({ phase: "finalize", status: "started", message: "Hashing output artifacts and finalizing provenance" });
     const frameRecords = Object.entries(checkpoint.frames)
       .map(([frame, record]) => ({ frame: Number(frame), contentSha256: record.contentHash, pngSha256: record.outputSha256 }))
       .filter((record) => record.frame >= frameRange.startFrame && record.frame < frameRange.endFrame)
@@ -929,7 +1183,9 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
       outputFile("audio-master", audioPath),
       outputFile("captions-vtt", captionsVttPath),
       outputFile("captions-srt", captionsSrtPath),
+      outputFile("captions-ledger", captionsLedgerPath),
     ]);
+    await reporter.emit({ phase: "finalize", status: "completed", message: `Hashed ${files.length} output artifacts` });
     const output: RenderOutputManifest = {
       schemaVersion: OUTPUT_SCHEMA_VERSION,
       manifestId: manifest.id,
@@ -952,6 +1208,21 @@ export async function executeRender(options: RenderExecutorOptions): Promise<Ren
       files,
       probe,
       qaMetrics,
+      captionDelivery: {
+        mode: selectedCaptionMode,
+        language: selectedCaptionLanguage,
+        cueCount: cues.length,
+        canonicalCueLedgerSha256: sha256Text(captionLedger),
+        burnedIntoVideo: burnedCaptions,
+        embeddedSoftTrack: embedCaptions,
+        sidecars: {
+          vtt: captionsVttPath,
+          srt: captionsSrtPath,
+          ledger: captionsLedgerPath,
+        },
+      },
+      stageTimings: reporter.timings(),
+      hardwareProvenance: deliveryResolution.provenance,
       progressPath,
       outputManifestPath,
     };

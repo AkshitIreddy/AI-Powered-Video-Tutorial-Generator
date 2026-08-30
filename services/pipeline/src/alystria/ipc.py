@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, TextIO
 
 from .project.errors import ProjectError
+from .providers import ProviderFailure
 from .security.secrets import SecretRedactor
 from .service import PipelineService
 
@@ -44,6 +45,20 @@ def handle_request(service: PipelineService, request: Any) -> dict[str, Any]:
     except ProjectError as error:
         message = _REDACTOR.redact_text(str(error))
         return {"id": request_id, "ok": False, "error": IPCError(error.code, message).to_dict()}
+    except ProviderFailure as error:
+        message = _REDACTOR.redact_text(error.message)
+        provider_details = error.to_dict()
+        provider_details.pop("code", None)
+        provider_details.pop("message", None)
+        return {
+            "id": request_id,
+            "ok": False,
+            "error": IPCError(
+                error.code.value,
+                message,
+                _REDACTOR.redact(provider_details),
+            ).to_dict(),
+        }
     except KeyError:
         return {"id": request_id, "ok": False, "error": IPCError("NOT_FOUND", "The requested record was not found.").to_dict()}
     except (TypeError, ValueError) as error:

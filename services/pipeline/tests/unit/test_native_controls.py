@@ -6,7 +6,7 @@ import pytest
 
 from alystria.generation import GenerationCoordinator, GenerationRequest, GenerationState
 from alystria.generation.adapters import RenderedTutorial
-from alystria.native_controls import NativeControlCoordinator
+from alystria.native_controls import NativeControlCoordinator, _caption_delivery_mode
 from alystria.project import ProjectHistory, ProjectStore
 
 
@@ -254,7 +254,7 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
                 "aspect": "1:1",
                 "resolution": "1080p",
                 "fps": 24,
-                "captions": True,
+                "captionDeliveryMode": "sidecar",
                 "transcript": True,
                 "bibliography": True,
             }
@@ -266,6 +266,34 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
         assert completed.state.value == "SUCCEEDED"
         assert len(renderer.requests) == calls_before + 1
         assert "presenters" in renderer.requests[-1]
+        assert renderer.requests[-1]["captionDeliveryMode"] == "sidecar"
+        assert renderer.requests[-1]["captions"]["captionsEnabled"] is True
         assert Path(completed.result["path"]).is_file()
         assert len(completed.result["sidecarPaths"]) == 4
         assert all(Path(path).is_file() for path in completed.result["sidecarPaths"])
+        sidecar_names = {Path(path).name for path in completed.result["sidecarPaths"]}
+        assert any(name.endswith(".en-US.srt") for name in sidecar_names)
+        assert any(name.endswith(".en-US.vtt") for name in sidecar_names)
+        assert completed.result["captionDelivery"] == {
+            "mode": "sidecar",
+            "sidecars": ["vtt", "srt"],
+            "burnedIntoPixels": False,
+            "embeddedInContainer": False,
+        }
+
+
+@pytest.mark.parametrize("value", ["sidecar", "embedded", "burned", "both"])
+def test_caption_delivery_mode_accepts_exact_contract(value: str) -> None:
+    assert _caption_delivery_mode({"captionDeliveryMode": value}) == value
+
+
+@pytest.mark.parametrize("legacy_value", [True, False])
+def test_caption_delivery_mode_migrates_legacy_boolean_to_clean_sidecars(
+    legacy_value: bool,
+) -> None:
+    assert _caption_delivery_mode({"captions": legacy_value}) == "sidecar"
+
+
+def test_caption_delivery_mode_rejects_unknown_values() -> None:
+    with pytest.raises(ValueError, match="captionDeliveryMode"):
+        _caption_delivery_mode({"captionDeliveryMode": "burned-in"})

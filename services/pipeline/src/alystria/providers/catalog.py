@@ -22,8 +22,8 @@ from .types import (
     RetentionMode,
 )
 
-CATALOG_VERSION = "2026.08.28.2"
-VERIFIED_AT = "2026-08-28"
+CATALOG_VERSION = "2026.08.29.1"
+VERIFIED_AT = "2026-08-29"
 CANONICAL_PROVIDER_ALIASES = {
     "azure": "azure-speech",
     "google": "gemini",
@@ -198,6 +198,8 @@ def default_catalog() -> ProviderCatalog:
                 Capability.TRANSCRIPTION,
                 Capability.ALIGNMENT,
                 Capability.PRESENTER,
+                Capability.PORTRAIT_ANIMATION,
+                Capability.LIP_SYNC,
             },
             "https://alystria.invalid/providers/local-runtime",
             policy=LOCAL_POLICY,
@@ -361,7 +363,11 @@ def default_catalog() -> ProviderCatalog:
         _entry(
             "presenter-local",
             "LivePortrait / MuseTalk local",
-            {Capability.PRESENTER},
+            {
+                Capability.PRESENTER,
+                Capability.PORTRAIT_ANIMATION,
+                Capability.LIP_SYNC,
+            },
             "https://github.com/TMElyralab/MuseTalk",
             policy=LOCAL_POLICY,
             cancellation=True,

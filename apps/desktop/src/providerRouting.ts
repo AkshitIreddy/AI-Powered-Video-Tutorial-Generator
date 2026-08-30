@@ -1,12 +1,13 @@
 import type {
   ModelProfile,
+  ProjectModelProfileSnapshot,
   ProviderApproval,
   ProviderCapability,
   ProviderSecretRef,
   TutorialRoutingPolicy,
 } from "./native";
 
-type RouteMedium = "writing" | "research" | "images" | "motion" | "voice" | "transcription" | "presenter";
+export type RouteMedium = "writing" | "research" | "images" | "motion" | "voice" | "transcription" | "presenter" | "portraitAnimation" | "lipSync";
 
 interface ProviderPolicyDescriptor {
   boundary: "local" | "cloud";
@@ -24,12 +25,14 @@ const mediumCapabilities: Record<RouteMedium, ProviderCapability> = {
   voice: "audio.tts",
   transcription: "audio.transcribe",
   presenter: "presenter.generate",
+  portraitAnimation: "portrait.animate",
+  lipSync: "lipsync.generate",
 };
 
 const baselineRequiredMedia: RouteMedium[] = ["writing", "images", "voice"];
 
 const providerPolicies: Record<string, ProviderPolicyDescriptor> = {
-  "local-runtime": local(["llm.text", "llm.structured", "image.generate", "image.edit", "audio.tts", "audio.transcribe", "audio.align", "presenter.generate"]),
+  "local-runtime": local(["llm.text", "llm.structured", "image.generate", "image.edit", "audio.tts", "audio.transcribe", "audio.align", "presenter.generate", "portrait.animate", "lipsync.generate"]),
   "openai-compatible-local": local(["llm.text", "llm.structured"]),
   openai: cloud("configurable", ["llm.text", "llm.structured", "research.web", "image.generate", "image.edit", "audio.tts", "audio.transcribe"]),
   anthropic: cloud("configurable", ["llm.text", "llm.structured", "research.web"]),
@@ -52,7 +55,8 @@ export interface ProviderRoutingReview {
   approvedProviderIds: string[];
   errors: string[];
   warnings: string[];
-  routeRows: Array<{ medium: string; providerId: string; modelId: string; boundary: "local" | "cloud" }>;
+  profileSnapshot: ProjectModelProfileSnapshot | null;
+  routeRows: Array<{ medium: string; capability: ProviderCapability; providerId: string; modelId: string; boundary: "local" | "cloud" }>;
 }
 
 export function buildProviderRoutingReview(input: {
@@ -64,11 +68,13 @@ export function buildProviderRoutingReview(input: {
   hasPrivateSources: boolean;
   groundingMode: "creative" | "grounded" | "strict";
   reviewedAt?: string;
+  setupUpdatedAt?: string;
 }): ProviderRoutingReview {
   const errors: string[] = [];
   const warnings: string[] = [];
   const routes: TutorialRoutingPolicy["routes"] = [];
   const routeRows: ProviderRoutingReview["routeRows"] = [];
+  const snapshotRoutes: ProjectModelProfileSnapshot["routes"] = [];
   const approvalCapabilities = new Map<string, Set<ProviderCapability>>();
   const routedCapabilities = new Set<ProviderCapability>();
   const requiredMedia = input.groundingMode === "creative" ? baselineRequiredMedia : [...baselineRequiredMedia, "research" as const];
@@ -88,13 +94,38 @@ export function buildProviderRoutingReview(input: {
       errors.push(`${selection.providerId} cannot provide ${labelForMedium(medium).toLowerCase()}.`);
       continue;
     }
+    const modelRevision = selection.modelRevision?.trim() || undefined;
+    const installFingerprint = selection.installFingerprint?.trim() || undefined;
+    if (descriptor.boundary === "local") {
+      if (!modelRevision) errors.push(`${labelForMedium(medium)} needs an exact local model revision before project selection.`);
+      if (!installFingerprint || !/^[a-f0-9]{64}$/.test(installFingerprint)) errors.push(`${labelForMedium(medium)} needs a verified local install fingerprint before project selection.`);
+    }
     if (routedCapabilities.has(capability)) {
       warnings.push(`${labelForMedium(medium)} shares an existing ${capability} route and remains a profile-only preference.`);
       continue;
     }
     routedCapabilities.add(capability);
-    routes.push({ capability, providerIds: [selection.providerId], model: selection.modelId, voice: medium === "voice" ? selection.modelId : null });
-    routeRows.push({ medium: labelForMedium(medium), providerId: selection.providerId, modelId: selection.modelId, boundary: descriptor.boundary });
+    routes.push({
+      capability,
+      providerIds: [selection.providerId],
+      model: selection.modelId,
+      voice: medium === "voice" ? selection.voiceId?.trim() || selection.modelId : null,
+    });
+    routeRows.push({ medium: labelForMedium(medium), capability, providerId: selection.providerId, modelId: selection.modelId, boundary: descriptor.boundary });
+    snapshotRoutes.push({
+      medium,
+      capability,
+      providerId: selection.providerId,
+      modelId: selection.modelId,
+      ...(modelRevision ? { modelRevision } : {}),
+      ...(installFingerprint ? { installFingerprint } : {}),
+      ...(selection.voiceId?.trim() ? { voiceId: selection.voiceId.trim() } : {}),
+      ...(selection.presenterProfileId?.trim() ? { presenterProfileId: selection.presenterProfileId.trim() } : {}),
+      boundary: descriptor.boundary,
+      retention: descriptor.retention,
+      regions: [...descriptor.regions],
+      fallbackConsent: false,
+    });
     const capabilities = approvalCapabilities.get(selection.providerId) ?? new Set<ProviderCapability>();
     capabilities.add(capability);
     approvalCapabilities.set(selection.providerId, capabilities);
@@ -155,6 +186,14 @@ export function buildProviderRoutingReview(input: {
     approvals,
     routes,
   };
+  const profileSnapshot: ProjectModelProfileSnapshot | null = policy ? {
+    schemaVersion: 1,
+    profileId: input.profile.id,
+    profileName: input.profile.name,
+    capturedAt: input.reviewedAt ?? new Date().toISOString(),
+    ...(input.setupUpdatedAt ? { sourceSetupUpdatedAt: input.setupUpdatedAt } : {}),
+    routes: snapshotRoutes,
+  } : null;
   return {
     profile: input.profile,
     policy,
@@ -162,6 +201,7 @@ export function buildProviderRoutingReview(input: {
     approvedProviderIds: policy ? approvals.map((approval) => approval.providerId) : [],
     errors: uniqueErrors,
     warnings: [...new Set(warnings)],
+    profileSnapshot,
     routeRows,
   };
 }
@@ -180,5 +220,5 @@ function isDisabledModel(value: string): boolean {
 }
 
 function labelForMedium(medium: RouteMedium): string {
-  return ({ writing: "Writing", research: "Research", images: "Images", motion: "Motion", voice: "Narration", transcription: "Transcription", presenter: "Presenter" } satisfies Record<RouteMedium, string>)[medium];
+  return ({ writing: "Writing", research: "Research", images: "Images", motion: "Motion", voice: "Narration", transcription: "Transcription", presenter: "Presenter", portraitAnimation: "Portrait animation", lipSync: "Lip-sync" } satisfies Record<RouteMedium, string>)[medium];
 }

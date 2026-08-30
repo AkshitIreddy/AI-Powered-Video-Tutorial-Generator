@@ -568,6 +568,47 @@ pub struct QaRepairRequest {
     pub finding_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CaptionDeliveryMode {
+    /// Clean video plus UTF-8 WebVTT and SRT files. This is the safe default.
+    #[default]
+    Sidecar,
+    /// Clean video with a selectable container track, plus both sidecar files.
+    Embedded,
+    /// Open captions composited into the pixels, plus both sidecar files.
+    Burned,
+    /// Open captions and a selectable container track, plus both sidecar files.
+    Both,
+}
+
+fn deserialize_caption_delivery_mode<'de, D>(
+    deserializer: D,
+) -> Result<CaptionDeliveryMode, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    match value {
+        Value::String(value) => match value.as_str() {
+            "sidecar" => Ok(CaptionDeliveryMode::Sidecar),
+            "embedded" => Ok(CaptionDeliveryMode::Embedded),
+            "burned" => Ok(CaptionDeliveryMode::Burned),
+            "both" => Ok(CaptionDeliveryMode::Both),
+            _ => Err(serde::de::Error::custom(
+                "captionDeliveryMode must be sidecar, embedded, burned, or both",
+            )),
+        },
+        // Pre-2.0 browser builds sent a boolean named `captions`. Migrate either
+        // value to the clean, accessible sidecar default; the new contract does
+        // not have a mode that discards authored caption files.
+        Value::Bool(_) => Ok(CaptionDeliveryMode::Sidecar),
+        _ => Err(serde::de::Error::custom(
+            "captionDeliveryMode must be a supported string",
+        )),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MasterExportRequest {
@@ -578,7 +619,12 @@ pub struct MasterExportRequest {
     pub aspect: String,
     pub resolution: String,
     pub fps: u16,
-    pub captions: bool,
+    #[serde(
+        default,
+        alias = "captions",
+        deserialize_with = "deserialize_caption_delivery_mode"
+    )]
+    pub caption_delivery_mode: CaptionDeliveryMode,
     pub transcript: bool,
     pub bibliography: bool,
 }
@@ -636,6 +682,14 @@ pub struct ProviderRoutingPolicyReceipt {
 pub struct ProfileRoute {
     pub provider_id: String,
     pub model_id: String,
+    #[serde(default)]
+    pub model_revision: Option<String>,
+    #[serde(default)]
+    pub install_fingerprint: Option<String>,
+    #[serde(default)]
+    pub voice_id: Option<String>,
+    #[serde(default)]
+    pub presenter_profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -655,6 +709,8 @@ pub struct LocalModelSetupSaveRequest {
     #[serde(default)]
     pub lip_sync_model_id: Option<String>,
     #[serde(default)]
+    pub portrait_animation_model_id: Option<String>,
+    #[serde(default)]
     pub existing_model_directory: Option<String>,
     pub profiles: Vec<ModelProfile>,
 }
@@ -667,6 +723,8 @@ pub struct LocalModelSetup {
     pub selected_model_ids: Vec<String>,
     #[serde(default)]
     pub lip_sync_model_id: Option<String>,
+    #[serde(default)]
+    pub portrait_animation_model_id: Option<String>,
     #[serde(default)]
     pub existing_model_directory: Option<String>,
     pub profiles: Vec<ModelProfile>,
@@ -692,6 +750,9 @@ pub struct ModelDownloadCatalogEntry {
     pub license_id: String,
     pub license_url: String,
     pub license_sha256: String,
+    pub license_scope: String,
+    pub code_revision: String,
+    pub weight_revision: String,
     pub available: bool,
     pub download_only_reason: String,
 }
@@ -700,9 +761,22 @@ pub struct ModelDownloadCatalogEntry {
 #[serde(rename_all = "camelCase")]
 pub enum ModelDownloadPhase {
     ManifestRequired,
+    Inspecting,
+    LicenseRequired,
     Downloading,
+    Cancelling,
+    Cancelled,
     Verifying,
     DownloadedQuarantined,
+    Installing,
+    Activating,
+    Ready,
+    InUse,
+    Incompatible,
+    Corrupt,
+    Repairing,
+    Removing,
+    Removed,
     Failed,
 }
 
@@ -731,6 +805,7 @@ impl From<LocalModelSetup> for LocalModelSetupSaveRequest {
             active_profile_id: value.active_profile_id,
             selected_model_ids: value.selected_model_ids,
             lip_sync_model_id: value.lip_sync_model_id,
+            portrait_animation_model_id: value.portrait_animation_model_id,
             existing_model_directory: value.existing_model_directory,
             profiles: value.profiles,
         }
@@ -847,4 +922,55 @@ pub struct UpdaterStatus {
     pub channel: String,
     pub current_version: String,
     pub reason: String,
+}
+
+#[cfg(test)]
+mod caption_delivery_tests {
+    use super::{CaptionDeliveryMode, MasterExportRequest};
+    use serde_json::{Value, json};
+
+    fn export_request() -> Value {
+        json!({
+            "projectId": "11111111-1111-4111-8111-111111111111",
+            "projectDirectory": "C:\\Alystria\\Project",
+            "baseRevisionId": "revision.one",
+            "baseJobId": "22222222-2222-4222-8222-222222222222",
+            "aspect": "16:9",
+            "resolution": "1080p",
+            "fps": 30,
+            "transcript": true,
+            "bibliography": true
+        })
+    }
+
+    #[test]
+    fn master_export_defaults_to_clean_sidecars() {
+        let request: MasterExportRequest = serde_json::from_value(export_request()).unwrap();
+        assert_eq!(request.caption_delivery_mode, CaptionDeliveryMode::Sidecar);
+    }
+
+    #[test]
+    fn master_export_accepts_the_exact_caption_delivery_modes() {
+        for (wire, expected) in [
+            ("sidecar", CaptionDeliveryMode::Sidecar),
+            ("embedded", CaptionDeliveryMode::Embedded),
+            ("burned", CaptionDeliveryMode::Burned),
+            ("both", CaptionDeliveryMode::Both),
+        ] {
+            let mut value = export_request();
+            value["captionDeliveryMode"] = Value::String(wire.to_owned());
+            let request: MasterExportRequest = serde_json::from_value(value).unwrap();
+            assert_eq!(request.caption_delivery_mode, expected);
+        }
+    }
+
+    #[test]
+    fn legacy_caption_boolean_migrates_to_clean_sidecars() {
+        for legacy in [true, false] {
+            let mut value = export_request();
+            value["captions"] = Value::Bool(legacy);
+            let request: MasterExportRequest = serde_json::from_value(value).unwrap();
+            assert_eq!(request.caption_delivery_mode, CaptionDeliveryMode::Sidecar);
+        }
+    }
 }

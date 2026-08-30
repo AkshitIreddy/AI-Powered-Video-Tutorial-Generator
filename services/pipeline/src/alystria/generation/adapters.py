@@ -422,20 +422,42 @@ class RouterMediaClient:
         asset = value.assets[0]
         if asset.data_base64 is None:
             raise ValueError("URI-only provider output requires the guarded media-fetch worker")
+        declared_license = asset.license.strip() if isinstance(asset.license, str) else ""
+        rights_verified = bool(
+            declared_license
+            and declared_license.casefold() not in {"unknown", "unverified"}
+        )
         return GeneratedMedia(
             base64.b64decode(asset.data_base64, validate=True),
             asset.media_type or "application/octet-stream",
-            name,
+            _media_name(name, asset.media_type),
             provider_id,
             model,
             {
-                "license": asset.license,
+                "origin": "generated",
+                "rightsStatus": "verified" if rights_verified else "unknown",
+                "licenseId": declared_license or "UNKNOWN",
                 "attribution": asset.attribution,
-                "sourceUrl": asset.source_url,
+                "sourceUri": asset.source_url,
             },
             actual_cost_micros,
             dict(usage_units),
         )
+
+
+def _media_name(name: str, media_type: str | None) -> str:
+    suffix = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp",
+        "video/mp4": ".mp4",
+        "audio/wav": ".wav",
+        "audio/mpeg": ".mp3",
+    }.get((media_type or "").casefold())
+    if suffix is None:
+        return name
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    return f"{stem}{suffix}"
 
 
 class RuntimeGenerationMediaClient:
@@ -503,10 +525,18 @@ class RuntimeGenerationMediaClient:
             self._local_narration = adapter
 
     def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
+        is_nvidia_flux_klein = (
+            self._image_model == "black-forest-labs/flux.2-klein-4b"
+        )
+        # This explicitly audited NVIDIA preview endpoint accepts only its
+        # documented square shape. The scene renderer places the returned asset
+        # within the authored landscape composition; no provider/model fallback.
         result = self.client.generate(
             ImageRequest(
                 prompt=str(scene.get("visualIntent") or scene["title"]),
                 model=self._image_model,
+                aspect_ratio="1:1" if is_nvidia_flux_klein else "16:9",
+                size="1024x1024" if is_nvidia_flux_klein else None,
                 seed=seed,
             ),
             idempotency_key=self._idempotency("image", scene, seed),

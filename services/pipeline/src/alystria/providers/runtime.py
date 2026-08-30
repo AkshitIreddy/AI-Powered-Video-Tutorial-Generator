@@ -46,6 +46,8 @@ from .types import (
     Usage,
 )
 
+CREDENTIAL_BROKER_TIMEOUT_SECONDS = 15.0
+
 
 # The explicit class body keeps dataclass repr from ever exposing a bearer token.
 @dataclass(frozen=True, slots=True, repr=False)
@@ -176,16 +178,30 @@ class DesktopCredentialBrokerResolver:
             (json.dumps(request, separators=(",", ":")) + "\n").encode("utf-8")
         )
         response_bytes = bytearray()
+        broker_phase = "connect"
         try:
-            with socket.create_connection(self._endpoint, timeout=3.0) as stream:
-                stream.settimeout(3.0)
+            with socket.create_connection(
+                self._endpoint, timeout=CREDENTIAL_BROKER_TIMEOUT_SECONDS
+            ) as stream:
+                stream.settimeout(CREDENTIAL_BROKER_TIMEOUT_SECONDS)
+                broker_phase = "send"
                 stream.sendall(encoded)
-                stream.shutdown(socket.SHUT_WR)
+                # The request is newline-framed, so the broker does not need a
+                # client half-close to know when it is complete. On Windows a
+                # fast broker response can race that shutdown and surface as
+                # WSAECONNABORTED even though the request was accepted.
+                broker_phase = "receive"
                 while len(response_bytes) <= 64 * 1024:
                     block = stream.recv(8192)
                     if not block:
                         break
                     response_bytes.extend(block)
+                    # The broker protocol is one newline-delimited response.
+                    # Do not wait for a peer close after the complete frame:
+                    # Windows may surface that close as WSAECONNABORTED even
+                    # though the authenticated JSON response arrived intact.
+                    if b"\n" in response_bytes:
+                        break
             if len(response_bytes) > 64 * 1024:
                 raise ProviderFailure(
                     FailureCode.AUTHENTICATION,
@@ -211,10 +227,33 @@ class DesktopCredentialBrokerResolver:
                 yield credential
             finally:
                 credential = ""
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        except json.JSONDecodeError as error:
+            diagnostic = (
+                "broker-empty-response"
+                if not response_bytes
+                else "broker-malformed-response"
+            )
             raise ProviderFailure(
                 FailureCode.AUTHENTICATION,
-                "The authenticated OS keyring broker is unavailable",
+                f"The authenticated OS keyring broker is unavailable ({diagnostic})",
+                provider_id=provider_id,
+            ) from error
+        except UnicodeDecodeError as error:
+            raise ProviderFailure(
+                FailureCode.AUTHENTICATION,
+                "The authenticated OS keyring broker is unavailable (broker-invalid-encoding)",
+                provider_id=provider_id,
+            ) from error
+        except OSError as error:
+            error_number = error.errno
+            diagnostic = (
+                f"broker-{broker_phase}-error"
+                if error_number is None
+                else f"broker-{broker_phase}-error-{error_number}"
+            )
+            raise ProviderFailure(
+                FailureCode.AUTHENTICATION,
+                f"The authenticated OS keyring broker is unavailable ({diagnostic})",
                 provider_id=provider_id,
             ) from error
         finally:

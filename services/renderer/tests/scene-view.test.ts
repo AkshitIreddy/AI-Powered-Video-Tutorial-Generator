@@ -100,7 +100,7 @@ test("FrameRenderer routes resolved SceneSpecs through the same preview/final Sc
   assert.equal(preview.svg, final.svg);
   assert.equal(preview.contentHash, final.contentHash);
   assert.match(final.svg, /data-scene-kind="comparison"/);
-  assert.match(final.svg, /data-caption-id="caption-1"/);
+  assert.doesNotMatch(final.svg, /data-caption-id=/, "sidecar delivery keeps preview/final frames clean");
   assert.match(final.html, /<html lang="es-ES">/);
   assert.doesNotMatch(final.svg, /foreignObject/);
 });

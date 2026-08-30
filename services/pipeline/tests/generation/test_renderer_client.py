@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -22,6 +23,7 @@ from alystria.generation.renderer_client import (
     RendererTimeoutError,
     SubprocessCommandRunner,
     SubprocessRendererClient,
+    _subprocess_command_path,
     create_production_renderer_client,
 )
 from alystria.project import ProjectStore
@@ -69,6 +71,16 @@ def runtime_pins(root: Path) -> RendererRuntimePins:
     )
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended paths are platform-specific")
+def test_renderer_command_path_normalizes_windows_extended_prefixes() -> None:
+    assert _subprocess_command_path(Path(r"\\?\C:\sandbox\renderer\cli.js")) == (
+        r"C:\sandbox\renderer\cli.js"
+    )
+    assert _subprocess_command_path(Path(r"\\?\UNC\server\share\renderer\cli.js")) == (
+        r"\\server\share\renderer\cli.js"
+    )
+
+
 @dataclass
 class FakeRendererRunner:
     pins: RendererRuntimePins
@@ -103,6 +115,8 @@ class FakeRendererRunner:
         assert "--browser-sha256" in argv
         assert "--ffmpeg" in argv
         assert "--ffprobe" in argv
+        assert "--captions" in argv
+        assert "--caption-language" in argv
         assert "--discard-frame-cache" in argv
         manifest_path = Path(argv[3])
         manifest_document = manifest_path.read_bytes()
@@ -132,8 +146,29 @@ class FakeRendererRunner:
             font_path.resolve().relative_to(cwd.resolve())
         output_root = Path(argv[argv.index("--output-dir") + 1])
         output_name = argv[argv.index("--output") + 1]
+        caption_mode = argv[argv.index("--captions") + 1]
+        caption_language = argv[argv.index("--caption-language") + 1]
         delivery_path = output_root / output_name
         delivery_path.write_bytes(b"deterministic-delivery")
+        output_stem = delivery_path.stem
+        vtt_path = output_root / f"{output_stem}.{caption_language}.vtt"
+        srt_path = output_root / f"{output_stem}.{caption_language}.srt"
+        ledger_path = output_root / f"{output_stem}.captions.json"
+        vtt_path.write_text("WEBVTT\n", encoding="utf-8")
+        srt_path.write_text("1\n00:00:00,000 --> 00:00:00,500\nFixture\n", encoding="utf-8")
+        cue_count = sum(len(scene.get("captions", [])) for scene in manifest["scenes"])
+        ledger_document = (
+            canonical(
+                {
+                    "schemaVersion": 1,
+                    "tickRate": 240_000,
+                    "language": caption_language,
+                    "cues": [],
+                }
+            )
+            + "\n"
+        )
+        ledger_path.write_text(ledger_document, encoding="utf-8")
         duration_ticks = sum(int(scene["durationTicks"]) for scene in manifest["scenes"])
         frame_rate = manifest["target"]["frameRate"]
         fps = frame_rate["numerator"] / frame_rate["denominator"]
@@ -146,6 +181,20 @@ class FakeRendererRunner:
             "bytes": output_file.stat().st_size,
             "sha256": digest(output_file),
         }
+        sidecar_records = [
+            {
+                "kind": kind,
+                "path": str(path),
+                "bytes": path.stat().st_size,
+                "sha256": digest(path),
+            }
+            for kind, path in (
+                ("captions-vtt", vtt_path),
+                ("captions-srt", srt_path),
+                ("captions-ledger", ledger_path),
+            )
+        ]
+        embedded = caption_mode in {"embedded", "both"} and cue_count > 0
         output = {
             "schemaVersion": 1,
             "manifestId": manifest["id"],
@@ -168,7 +217,7 @@ class FakeRendererRunner:
                 "ffprobe": str(self.pins.ffprobe.path),
             },
             "frames": [],
-            "files": [record],
+            "files": [record, *sidecar_records],
             "probe": {
                 "videoCodec": "vp9",
                 "width": manifest["target"]["width"],
@@ -178,7 +227,7 @@ class FakeRendererRunner:
                 "audioCodec": "opus",
                 "audioSampleRate": 48_000,
                 "audioChannels": 2,
-                "captionCodec": "webvtt",
+                "captionCodec": "webvtt" if embedded else "none",
                 "colorSpace": "bt709",
                 "colorTransfer": "iec61966-2-1",
                 "colorPrimaries": "bt709",
@@ -193,12 +242,25 @@ class FakeRendererRunner:
                 "avDriftFrames": 0.0,
                 "measurementSource": "delivery-full-decode:ffmpeg-ebur128+astats;timeline:ffprobe-streams",
             },
+            "captionDelivery": {
+                "mode": caption_mode,
+                "language": caption_language,
+                "cueCount": cue_count,
+                "canonicalCueLedgerSha256": hashlib.sha256(
+                    ledger_document.encode("utf-8")
+                ).hexdigest(),
+                "burnedIntoVideo": caption_mode in {"burned", "both"},
+                "embeddedSoftTrack": embedded,
+                "sidecars": {
+                    "vtt": str(vtt_path),
+                    "srt": str(srt_path),
+                    "ledger": str(ledger_path),
+                },
+            },
             "progressPath": str(output_root / "render-progress.jsonl"),
             "outputManifestPath": str(output_root / "render-output.json"),
         }
-        (output_root / "render-output.json").write_text(
-            canonical(output) + "\n", encoding="utf-8"
-        )
+        (output_root / "render-output.json").write_text(canonical(output) + "\n", encoding="utf-8")
         return CommandResult(0, canonical(output), "")
 
 
@@ -268,6 +330,48 @@ def render_request(first_hash: str, second_hash: str) -> dict[str, Any]:
     }
 
 
+def authored_visual_beat() -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "semanticIntent": "demonstrate",
+        "compositionFamily": "worked_example",
+        "focalAnchor": "active-interval",
+        "continuityKey": "binary-search.interval",
+        "informationUnits": [
+            {
+                "id": "values",
+                "role": "ordered-sequence",
+                "values": [3, 8, 12, 17, 23, 31, 44, 58, 72],
+            },
+            {"id": "target", "role": "target", "value": 44},
+            {
+                "id": "step-one",
+                "role": "state",
+                "low": 0,
+                "middle": 4,
+                "high": 8,
+                "value": 23,
+            },
+        ],
+        "visualMetaphor": "one retained interval transformed one justified step at a time",
+        "attentionCue": "move-markers-before-removing-region",
+        "motionIntent": ["trace-relationship", "transform-object", "emphasize-result"],
+        "textRoles": {"eyebrow": "FIND 44", "markers": "low · mid · high"},
+        "avoidRegions": [
+            "index-markers",
+            {
+                "id": "visual-focus",
+                "role": "essential-visual",
+                "x": 0.06,
+                "y": 0.25,
+                "width": 0.88,
+                "height": 0.66,
+                "priority": "required",
+            },
+        ],
+    }
+
+
 def test_subprocess_renderer_translates_materializes_invokes_and_cleans(tmp_path: Path) -> None:
     store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
     pins = runtime_pins(tmp_path)
@@ -289,13 +393,23 @@ def test_subprocess_renderer_translates_materializes_invokes_and_cleans(tmp_path
         assert rendered.original_name == "tutorial.webm"
         assert rendered.metrics["frameCount"] == 60
         assert rendered.metrics["audioSampleRateHz"] == 48_000
+        assert rendered.metrics["captionDeliveryMode"] == "sidecar"
+        assert rendered.metrics["captionCodec"] == "none"
+        assert rendered.metrics["captionsBurnedIntoVideo"] is False
+        assert rendered.metrics["captionsEmbeddedSoftTrack"] is False
         assert rendered.manifest["browser"]["networkPolicy"] == "deny"
         assert rendered.manifest["files"][0]["path"] == "tutorial.webm"
+        assert rendered.manifest["captionDelivery"]["sidecars"] == {
+            "vtt": "tutorial.en-US.vtt",
+            "srt": "tutorial.en-US.srt",
+            "ledger": "tutorial.captions.json",
+        }
         assert "/attempt-" not in canonical(rendered.manifest)
 
         assert runner.render_manifest is not None
         manifest = runner.render_manifest
         assert manifest["target"]["name"] == "landscape"
+        assert manifest["captionDeliveryMode"] == "sidecar"
         assert [scene["kind"] for scene in manifest["scenes"]] == [
             "worked-example",
             "bullets",
@@ -316,8 +430,169 @@ def test_subprocess_renderer_translates_materializes_invokes_and_cleans(tmp_path
         assert manifest["audioInputs"][1]["endTick"] == 480_000
         render_call = runner.calls[-1]
         assert render_call[0][2] == "render"
+        assert render_call[0][render_call[0].index("--captions") + 1] == "sidecar"
+        assert render_call[0][render_call[0].index("--caption-language") + 1] == "en-US"
         assert render_call[2] == 42
         assert runner.attempt_root is not None and not runner.attempt_root.exists()
+    finally:
+        store.close()
+
+
+def test_renderer_preserves_bounded_authored_visual_beat_and_prefers_on_screen_text(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Authored visual", name="Authored visual")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        request = render_request(first.hash, second.hash)
+        request["scenes"][0]["onScreenText"] = [
+            "FIND 44",
+            "low 0",
+            "mid 4",
+            "high 8",
+            "discard 0-4",
+            "found at 6",
+        ]
+        request["scenes"][0]["visualBeat"] = authored_visual_beat()
+
+        SubprocessRendererClient(store, pins, runner=runner).render(request)
+
+        assert runner.render_manifest is not None
+        scene = runner.render_manifest["scenes"][0]
+        assert scene["content"]["items"] == request["scenes"][0]["onScreenText"]
+        assert scene["content"]["onScreenText"] == request["scenes"][0]["onScreenText"]
+        assert scene["content"]["visualBeat"] == authored_visual_beat()
+        assert scene["content"]["eyebrow"] == "FIND 44"
+        assert scene["content"]["body"] == "Show a precise split diagram."
+        assert "Split each number into two halves" not in canonical(scene["content"])
+        assert scene["metadata"] == {
+            "sourceType": "worked_example",
+            "sceneIndex": 0,
+            "semanticIntent": "demonstrate",
+            "compositionFamily": "worked_example",
+            "focalAnchor": "active-interval",
+            "continuityKey": "binary-search.interval",
+            "attentionCue": "move-markers-before-removing-region",
+            "visualMetaphor": "one retained interval transformed one justified step at a time",
+        }
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    ("hostile_surface", "match"),
+    [
+        ("on-screen-url", "path, URL, URI, or HTML"),
+        ("visual-beat-path", "executable or locator fields: path"),
+        ("visual-beat-code", "executable or locator fields: code"),
+        ("information-unit-html", "executable or locator fields: html"),
+        ("information-unit-path-value", "path, URL, URI, or HTML"),
+        ("visual-intent-url", "path, URL, URI, or HTML"),
+    ],
+)
+def test_renderer_rejects_hostile_authored_visual_payloads(
+    tmp_path: Path,
+    hostile_surface: str,
+    match: str,
+) -> None:
+    store = ProjectStore.create(
+        tmp_path / f"Hostile visual {hostile_surface}",
+        name=f"Hostile visual {hostile_surface}",
+    )
+    pins = runtime_pins(tmp_path)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        request = render_request(first.hash, second.hash)
+        request["scenes"][0]["onScreenText"] = ["FIND 44", "mid = 23"]
+        request["scenes"][0]["visualBeat"] = authored_visual_beat()
+        if hostile_surface == "on-screen-url":
+            request["scenes"][0]["onScreenText"][1] = "https://tracker.invalid/frame"
+        elif hostile_surface == "visual-beat-path":
+            request["scenes"][0]["visualBeat"]["path"] = "C:\\Users\\viewer\\scene.json"
+        elif hostile_surface == "visual-beat-code":
+            request["scenes"][0]["visualBeat"]["code"] = "return fetch(secret)"
+        elif hostile_surface == "information-unit-html":
+            request["scenes"][0]["visualBeat"]["informationUnits"][0]["html"] = (
+                "<img src=https://tracker.invalid/pixel>"
+            )
+        elif hostile_surface == "information-unit-path-value":
+            request["scenes"][0]["visualBeat"]["informationUnits"][0]["label"] = (
+                "C:\\Users\\viewer\\secret.txt"
+            )
+        else:
+            request["scenes"][0]["visualIntent"] = (
+                "Load a remote visual from https://tracker.invalid/frame"
+            )
+
+        with pytest.raises(ValueError, match=match):
+            SubprocessRendererClient(store, pins, runner=FakeRendererRunner(pins)).render(request)
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    ("mode", "caption_codec", "burned", "embedded"),
+    [
+        ("embedded", "webvtt", False, True),
+        ("burned", "none", True, False),
+        ("both", "webvtt", True, True),
+    ],
+)
+def test_renderer_forwards_explicit_caption_delivery_modes(
+    tmp_path: Path,
+    mode: str,
+    caption_codec: str,
+    burned: bool,
+    embedded: bool,
+) -> None:
+    store = ProjectStore.create(tmp_path / f"Caption {mode}", name=f"Caption {mode}")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        request = render_request(first.hash, second.hash)
+        request["captionDeliveryMode"] = mode
+        rendered = SubprocessRendererClient(store, pins, runner=runner).render(request)
+        assert rendered.metrics["captionDeliveryMode"] == mode
+        assert rendered.metrics["captionCodec"] == caption_codec
+        assert rendered.metrics["captionsBurnedIntoVideo"] is burned
+        assert rendered.metrics["captionsEmbeddedSoftTrack"] is embedded
+    finally:
+        store.close()
+
+
+def test_renderer_rejects_unknown_caption_delivery_mode(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Bad captions", name="Bad captions")
+    pins = runtime_pins(tmp_path)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        request = render_request(first.hash, second.hash)
+        request["captionDeliveryMode"] = "silently-drop-them"
+        with pytest.raises(ValueError, match="sidecar, embedded, burned, or both"):
+            SubprocessRendererClient(store, pins, runner=FakeRendererRunner(pins)).render(request)
+    finally:
+        store.close()
+
+
+def test_renderer_lifts_harness_caption_mode_from_request_metadata(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Metadata captions", name="Metadata captions")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        request = render_request(first.hash, second.hash)
+        request["metadata"] = {"captionDeliveryMode": "sidecar"}
+        rendered = SubprocessRendererClient(store, pins, runner=runner).render(request)
+        assert rendered.manifest["captionDelivery"]["mode"] == "sidecar"
+        assert runner.render_manifest is not None
+        assert runner.render_manifest["captionDeliveryMode"] == "sidecar"
     finally:
         store.close()
 
@@ -394,9 +669,7 @@ def test_subprocess_renderer_materializes_inspected_selected_font_and_typography
     try:
         first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
         second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
-        font = store.add_artifact_bytes(
-            b"\x00\x01\x00\x00owned-render-font", media_type="font/ttf"
-        )
+        font = store.add_artifact_bytes(b"\x00\x01\x00\x00owned-render-font", media_type="font/ttf")
         family = f"AlystriaImported-{font.hash[:16]}"
         request = render_request(first.hash, second.hash)
         request["fontCustomization"] = {
@@ -575,10 +848,11 @@ def test_renderer_expands_custom_background_presenter_and_caption_style_without_
             "background",
             "presenter-portrait",
         ]
-        assert [item["role"] for item in manifest["scenes"][1]["visualAssets"]] == [
-            "background"
-        ]
-        assert not {"path", "url", "uri", "contentBase64"} & request["visualCustomization"]["assets"][0].keys()
+        assert [item["role"] for item in manifest["scenes"][1]["visualAssets"]] == ["background"]
+        assert (
+            not {"path", "url", "uri", "contentBase64"}
+            & request["visualCustomization"]["assets"][0].keys()
+        )
     finally:
         store.close()
 
@@ -637,10 +911,13 @@ def test_renderer_stages_real_presenter_video_only_for_presenter_scene(tmp_path:
         )
         request = render_request(first.hash, second.hash)
         request["scenes"][0]["type"] = "presenter-slide"
+        request["scenes"][0]["durationTicks"] = 24 * 240_000
+        request["narration"][0]["durationMs"] = 23_224
         request["presenters"] = [
             {
                 "sceneId": "scene_intro",
                 "artifactHash": presenter.hash,
+                "activeDurationTicks": 23_224 * 240,
                 "direction": {"placement": "picture_in_picture"},
             }
         ]
@@ -655,6 +932,7 @@ def test_renderer_stages_real_presenter_video_only_for_presenter_scene(tmp_path:
                 "path": videos[0]["path"],
                 "sha256": presenter.hash,
                 "sceneId": "scene_intro",
+                "activeDurationTicks": 23_224 * 240,
                 "placement": "picture-in-picture",
                 "fit": "cover",
             }
@@ -679,9 +957,7 @@ def test_renderer_skips_explicit_nonvideo_presenter_placeholder(tmp_path: Path) 
         )
         request = render_request(first.hash, second.hash)
         request["scenes"][0]["type"] = "presenter-slide"
-        request["presenters"] = [
-            {"sceneId": "scene_intro", "artifactHash": placeholder.hash}
-        ]
+        request["presenters"] = [{"sceneId": "scene_intro", "artifactHash": placeholder.hash}]
         SubprocessRendererClient(store, pins, runner=runner).render(request)
         assert runner.render_manifest is not None
         assert "presenterVideos" not in runner.render_manifest

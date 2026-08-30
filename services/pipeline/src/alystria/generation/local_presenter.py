@@ -14,10 +14,11 @@ import os
 import re
 import signal
 import subprocess
-import tempfile
 import threading
 import time
+import uuid
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -48,6 +49,7 @@ SAFE_ENVIRONMENT_KEYS = frozenset(
     {
         "CUDA_PATH",
         "CUDA_VISIBLE_DEVICES",
+        "HOME",
         "PATH",
         "PYTHONIOENCODING",
         "PYTHONPATH",
@@ -55,6 +57,7 @@ SAFE_ENVIRONMENT_KEYS = frozenset(
         "SYSTEMROOT",
         "TEMP",
         "TMP",
+        "USERPROFILE",
         "WINDIR",
     }
 )
@@ -67,6 +70,27 @@ AUDIO_SUFFIXES = {
     "audio/wav": ".wav",
     "audio/x-wav": ".wav",
 }
+MUSE_TALK_CONTRACT_ID = "alystria.musetalk.worker.v1"
+ALLOWED_MUSE_TALK_FILE_ROLES = frozenset(
+    {
+        "adapter-entrypoint",
+        "audio-feature-config",
+        "audio-feature-preprocessor",
+        "audio-feature-weights",
+        "face-detection-weights",
+        "face-landmark-weights",
+        "face-parse-weights",
+        "face-resnet-weights",
+        "musetalk-config",
+        "musetalk-inference-entrypoint",
+        "musetalk-weights",
+        "runtime-source-manifest",
+        "vae-config",
+        "vae-weights",
+    }
+)
+MAX_PROGRESS_BYTES = 1024 * 1024
+MAX_PROGRESS_EVENTS = 10_000
 
 
 class LocalPresenterError(RuntimeError):
@@ -165,29 +189,35 @@ class SubprocessPresenterCommandRunner:
             ) from error
 
         started = time.monotonic()
-        while True:
-            elapsed = time.monotonic() - started
-            if cancelled():
+        try:
+            while True:
+                elapsed = time.monotonic() - started
+                if cancelled():
+                    _stop_process(process)
+                    _drain_stopped_process(process)
+                    raise LocalPresenterCancelledError("Presenter generation cancelled")
+                if elapsed >= timeout_seconds:
+                    _stop_process(process)
+                    _drain_stopped_process(process)
+                    raise LocalPresenterTimeoutError(
+                        f"Presenter worker exceeded the {timeout_seconds:g}-second timeout"
+                    )
+                try:
+                    stdout, stderr = process.communicate(
+                        timeout=min(0.2, max(0.01, timeout_seconds - elapsed))
+                    )
+                    return PresenterProcessResult(
+                        process.returncode if process.returncode is not None else -1,
+                        _bounded_decode(stdout),
+                        _bounded_decode(stderr),
+                    )
+                except subprocess.TimeoutExpired:
+                    continue
+        except BaseException:
+            if process.poll() is None:
                 _stop_process(process)
-                process.communicate()
-                raise LocalPresenterCancelledError("Presenter generation cancelled")
-            if elapsed >= timeout_seconds:
-                _stop_process(process)
-                process.communicate()
-                raise LocalPresenterTimeoutError(
-                    f"Presenter worker exceeded the {timeout_seconds:g}-second timeout"
-                )
-            try:
-                stdout, stderr = process.communicate(
-                    timeout=min(0.2, max(0.01, timeout_seconds - elapsed))
-                )
-                return PresenterProcessResult(
-                    process.returncode if process.returncode is not None else -1,
-                    _bounded_decode(stdout),
-                    _bounded_decode(stderr),
-                )
-            except subprocess.TimeoutExpired:
-                continue
+                _drain_stopped_process(process)
+            raise
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +228,81 @@ class PinnedPresenterFile:
     def __post_init__(self) -> None:
         if not SHA256_PATTERN.fullmatch(self.sha256):
             raise ValueError("Pinned presenter file SHA-256 must be 64 lowercase hex characters")
+
+
+@dataclass(frozen=True, slots=True)
+class PresenterContractFile:
+    role: str
+    pin: PinnedPresenterFile
+
+    def __post_init__(self) -> None:
+        if self.role not in ALLOWED_MUSE_TALK_FILE_ROLES:
+            raise ValueError(f"Unsupported MuseTalk contract file role: {self.role}")
+
+
+@dataclass(frozen=True, slots=True)
+class PresenterWorkerContract:
+    contract_id: str
+    entrypoint: PinnedPresenterFile
+    files: tuple[PresenterContractFile, ...]
+
+    def __post_init__(self) -> None:
+        if self.contract_id != MUSE_TALK_CONTRACT_ID:
+            raise ValueError(f"Unsupported presenter worker contract: {self.contract_id}")
+        roles = [item.role for item in self.files]
+        if len(roles) != len(set(roles)):
+            raise ValueError("MuseTalk contract file roles must be unique")
+        required = {
+            "adapter-entrypoint",
+            "audio-feature-config",
+            "audio-feature-preprocessor",
+            "audio-feature-weights",
+            "face-detection-weights",
+            "face-landmark-weights",
+            "face-parse-weights",
+            "face-resnet-weights",
+            "musetalk-config",
+            "musetalk-inference-entrypoint",
+            "musetalk-weights",
+            "runtime-source-manifest",
+            "vae-config",
+            "vae-weights",
+        }
+        missing = required - set(roles)
+        if missing:
+            raise ValueError(
+                "MuseTalk worker contract is missing roles: " + ", ".join(sorted(missing))
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class PresenterGpuLeaseMetadata:
+    lease_id: str
+    owner: str
+    mutex_name: str
+    device_id: str
+    vram_bytes: int
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("lease ID", self.lease_id),
+            ("lease owner", self.owner),
+            ("mutex name", self.mutex_name),
+            ("device ID", self.device_id),
+        ):
+            if not value.strip() or "\x00" in value or len(value) > 256:
+                raise ValueError(f"Presenter GPU {label} is invalid")
+        if self.vram_bytes <= 0:
+            raise ValueError("Presenter GPU lease VRAM bytes must be positive")
+
+    def as_manifest(self) -> dict[str, object]:
+        return {
+            "leaseId": self.lease_id,
+            "owner": self.owner,
+            "mutexName": self.mutex_name,
+            "deviceId": self.device_id,
+            "vramBytes": self.vram_bytes,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +337,8 @@ class LocalPresenterRuntime:
     environment: Mapping[str, str] = field(default_factory=dict)
     additional_pins: tuple[PinnedPresenterFile, ...] = ()
     encoder_policy: PresenterEncoderPolicy | None = None
+    worker_contract: PresenterWorkerContract | None = None
+    gpu_lease: PresenterGpuLeaseMetadata | None = None
 
     def __post_init__(self) -> None:
         if not self.model_id.strip() or not self.model_revision.strip():
@@ -299,6 +406,12 @@ class LocalPresenterRuntime:
                         "Managed MuseTalk requires the brokered job manifest; direct upstream "
                         "libx264 muxing is not permitted"
                     )
+                if self.worker_contract is None:
+                    raise ValueError(
+                        "Managed MuseTalk requires an exact-hash worker contract"
+                    )
+                if self.gpu_lease is None:
+                    raise ValueError("Managed MuseTalk requires GPU lease metadata")
         elif not self.unsafe_test_only_acknowledged:
             raise ValueError("Unsafe test-only presenter mode requires explicit acknowledgement")
 
@@ -321,7 +434,7 @@ class LocalPresenterMediaClient:
         self.base = base
         self.runtime = runtime
         self.runner = runner or SubprocessPresenterCommandRunner()
-        self.cancel_check = cancel_check or (lambda: False)
+        self.cancel_check = cancel_check or self._running_presenter_job_cancelled
         self.profiles = {profile.profile_id: profile for profile in profiles}
         if not self.profiles:
             raise ValueError("At least one local presenter profile is required")
@@ -338,6 +451,9 @@ class LocalPresenterMediaClient:
 
     def cancel(self) -> None:
         self._cancelled.set()
+
+    def reset_cancellation(self) -> None:
+        self._cancelled.clear()
 
     def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
         return self.base.create_visual(scene, seed=seed)
@@ -405,8 +521,51 @@ class LocalPresenterMediaClient:
         )
         staging_parent = _guarded_child(self.store.root, self.store.root / "staging" / "presenter")
         staging_parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="attempt-", dir=staging_parent) as temporary:
-            attempt_root = _guarded_child(staging_parent, Path(temporary))
+        request_identity = {
+            "contractId": (
+                self.runtime.worker_contract.contract_id
+                if self.runtime.worker_contract is not None
+                else "unsafe-test-only"
+            ),
+            "modelRevision": self.runtime.model_revision,
+            "runtimeFingerprint": self._runtime_fingerprint(),
+            "encoderSelection": (
+                encoder_selection.as_manifest() if encoder_selection is not None else None
+            ),
+            "sceneId": scene_id,
+            "profileId": profile.profile_id,
+            "portraitSha256": profile.portrait_artifact_hash,
+            "audioSha256": narration_hash,
+            "seed": seed,
+        }
+        request_key = hashlib.sha256(
+            json.dumps(request_identity, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        recovered = self._recover_promoted(
+            staging_parent,
+            request_key=request_key,
+            request_identity=request_identity,
+            scene_id=scene_id,
+            profile=profile,
+            narration_hash=narration_hash,
+            seed=seed,
+            runtime_root=runtime_root,
+            encoder_selection=encoder_selection,
+        )
+        if recovered is not None:
+            return recovered
+
+        self._recover_interrupted_attempts(staging_parent)
+        attempt_root = _guarded_child(
+            staging_parent, staging_parent / f"attempt-{uuid.uuid4().hex}"
+        )
+        attempt_root.mkdir()
+        state_path = _guarded_child(attempt_root, attempt_root / "attempt-state.json")
+        _write_json_atomic(
+            state_path,
+            {"schemaVersion": 1, "state": "preparing", "requestKey": request_key},
+        )
+        try:
             inputs_root = _guarded_child(attempt_root, attempt_root / "inputs")
             workspace_root = _guarded_child(attempt_root, attempt_root / "workspace")
             output_root = _guarded_child(attempt_root, attempt_root / "output")
@@ -420,6 +579,7 @@ class LocalPresenterMediaClient:
                 inputs_root, inputs_root / f"narration{narration['suffix']}"
             )
             output_path = _guarded_child(output_root, output_root / "presenter.mp4")
+            progress_path = _guarded_child(attempt_root, attempt_root / "progress.ndjson")
             self.store.cas.copy_to(profile.portrait_artifact_hash, portrait_path)
             self.store.cas.copy_to(narration_hash, narration_path)
             _make_read_only(portrait_path)
@@ -430,7 +590,7 @@ class LocalPresenterMediaClient:
             self._validate_input_magic(narration_path, str(narration["mediaType"]), "narration")
 
             job_manifest = {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "sceneId": scene_id,
                 "profileId": profile.profile_id,
                 "model": self.runtime.model_id,
@@ -449,7 +609,24 @@ class LocalPresenterMediaClient:
                     },
                 },
                 "output": {"path": str(output_path), "mediaType": "video/mp4"},
+                "progress": {
+                    "path": str(progress_path),
+                    "mediaType": "application/x-ndjson",
+                    "schemaVersion": 1,
+                },
             }
+            if self.runtime.worker_contract is not None:
+                contract = self.runtime.worker_contract
+                job_manifest["workerContract"] = {
+                    "contractId": contract.contract_id,
+                    "entrypoint": _pin_manifest(contract.entrypoint),
+                    "files": [
+                        {"role": item.role, **_pin_manifest(item.pin)}
+                        for item in contract.files
+                    ],
+                }
+            if self.runtime.gpu_lease is not None:
+                job_manifest["gpuLease"] = self.runtime.gpu_lease.as_manifest()
             if encoder_selection is not None:
                 encoder_policy = self.runtime.encoder_policy
                 if encoder_policy is None:  # pragma: no cover - guarded by _select_encoder
@@ -457,6 +634,7 @@ class LocalPresenterMediaClient:
                 job_manifest["encoding"] = {
                     **encoder_selection.as_manifest(),
                     "ffmpegPath": str(encoder_policy.ffmpeg_path),
+                    "ffmpegSha256": encoder_policy.ffmpeg_sha256,
                 }
             manifest_path = _guarded_child(attempt_root, attempt_root / "presenter-job.json")
             manifest_path.write_text(
@@ -464,6 +642,10 @@ class LocalPresenterMediaClient:
                 + "\n",
                 encoding="utf-8",
                 newline="\n",
+            )
+            _write_json_atomic(
+                state_path,
+                {"schemaVersion": 1, "state": "running", "requestKey": request_key},
             )
             argv = self._worker_argv(
                 portrait=portrait_path,
@@ -485,6 +667,7 @@ class LocalPresenterMediaClient:
                 raise LocalPresenterRuntimeError(
                     f"Presenter worker exited with code {result.exit_code}: {detail[-4_096:]}"
                 )
+            progress = self._read_progress(progress_path)
             self._validate_staged_input(portrait_path, profile.portrait_artifact_hash, "portrait")
             self._validate_staged_input(narration_path, narration_hash, "narration")
             content_before_probe = self._read_output(output_root, output_path)
@@ -495,49 +678,246 @@ class LocalPresenterMediaClient:
                     "Presenter delivery changed while it was being probed"
                 )
             output_hash = hashlib.sha256(content).hexdigest()
-            return GeneratedMedia(
-                content=content,
-                media_type="video/mp4",
-                original_name=f"{_safe_name(scene_id)}.presenter.mp4",
-                provider_id="local-presenter",
-                model_revision=self.runtime.model_revision,
-                metadata={
-                    "rightsStatus": "owned",
-                    "licenseId": "USER-OWNED",
-                    "localOnly": True,
-                    "synthetic": True,
-                    "disclosureRequired": True,
-                    "provider": "local-presenter",
-                    "modelId": self.runtime.model_id,
-                    "modelRevision": self.runtime.model_revision,
-                    "presenterProfileId": profile.profile_id,
-                    "consentId": profile.consent_id,
-                    "consentIds": [profile.consent_id] if profile.consent_id else [],
-                    "subjectId": profile.subject_id,
-                    "portraitArtifactHash": profile.portrait_artifact_hash,
-                    "narrationArtifactHash": narration_hash,
+            completed_root = _guarded_child(staging_parent, staging_parent / "completed")
+            completed_root.mkdir(exist_ok=True)
+            promoted_root = _guarded_child(completed_root, completed_root / request_key)
+            promoted_root.mkdir(exist_ok=False)
+            promoted_path = _guarded_child(promoted_root, promoted_root / "presenter.mp4")
+            output_path.replace(promoted_path)
+            _write_json_atomic(
+                promoted_root / "receipt.json",
+                {
+                    "schemaVersion": 1,
+                    "requestIdentity": request_identity,
                     "outputSha256": output_hash,
-                    "executionPolicy": self.runtime.execution_policy.value,
-                    "networkPolicy": self.runtime.network_policy.value,
-                    "unsafeTestOnly": (
-                        self.runtime.execution_policy is PresenterExecutionPolicy.UNSAFE_TEST_ONLY
-                    ),
-                    "validationLevel": (
-                        "ffprobe"
-                        if self.runtime.ffprobe is not None
-                        else "container-signature-only"
-                    ),
-                    "probe": probe,
-                    "encoderSelection": (
-                        encoder_selection.as_manifest()
-                        if encoder_selection is not None
-                        else None
-                    ),
-                    "seed": seed,
                 },
-                actual_cost_micros=0,
-                usage_units={"seconds": float(probe.get("durationSeconds", 0.0))},
             )
+            _write_json_atomic(
+                state_path,
+                {
+                    "schemaVersion": 1,
+                    "state": "promoted",
+                    "requestKey": request_key,
+                    "outputSha256": output_hash,
+                },
+            )
+            return self._build_generated_media(
+                content=content,
+                scene_id=scene_id,
+                profile=profile,
+                narration_hash=narration_hash,
+                seed=seed,
+                output_hash=output_hash,
+                probe=probe,
+                encoder_selection=encoder_selection,
+                progress=progress,
+                recovered=False,
+            )
+        except BaseException as error:
+            _write_json_atomic(
+                state_path,
+                {
+                    "schemaVersion": 1,
+                    "state": "cancelled" if isinstance(error, LocalPresenterCancelledError) else "failed",
+                    "requestKey": request_key,
+                    "errorType": type(error).__name__,
+                },
+            )
+            raise
+
+    def _recover_promoted(
+        self,
+        staging_parent: Path,
+        *,
+        request_key: str,
+        request_identity: Mapping[str, object],
+        scene_id: str,
+        profile: LocalPresenterProfileBinding,
+        narration_hash: str,
+        seed: int,
+        runtime_root: Path,
+        encoder_selection: PresenterEncoderSelection | None,
+    ) -> GeneratedMedia | None:
+        promoted_root = staging_parent / "completed" / request_key
+        if not promoted_root.exists():
+            return None
+        receipt_path = promoted_root / "receipt.json"
+        output_path = promoted_root / "presenter.mp4"
+        try:
+            if promoted_root.is_symlink() or not promoted_root.resolve(strict=True).is_dir():
+                raise LocalPresenterOutputError("Recovered presenter delivery root is unsafe")
+            receipt = _read_small_json(receipt_path)
+            if receipt.get("schemaVersion") != 1 or receipt.get("requestIdentity") != dict(
+                request_identity
+            ):
+                raise LocalPresenterOutputError("Recovered presenter receipt identity changed")
+            content = _read_media_file(
+                output_path,
+                minimum_bytes=self.runtime.minimum_output_bytes,
+                maximum_bytes=self.runtime.maximum_output_bytes,
+            )
+            output_hash = hashlib.sha256(content).hexdigest()
+            if receipt.get("outputSha256") != output_hash:
+                raise LocalPresenterOutputError("Recovered presenter delivery SHA-256 changed")
+            probe = self._probe_output(output_path, runtime_root)
+        except LocalPresenterError:
+            raise
+        except (OSError, ValueError) as error:
+            raise LocalPresenterOutputError("Recovered presenter delivery is incomplete") from error
+        return self._build_generated_media(
+            content=content,
+            scene_id=scene_id,
+            profile=profile,
+            narration_hash=narration_hash,
+            seed=seed,
+            output_hash=output_hash,
+            probe=probe,
+            encoder_selection=encoder_selection,
+            progress=(),
+            recovered=True,
+        )
+
+    @staticmethod
+    def _recover_interrupted_attempts(staging_parent: Path) -> None:
+        for attempt_root in tuple(staging_parent.glob("attempt-*"))[:10_000]:
+            state_path = attempt_root / "attempt-state.json"
+            try:
+                if attempt_root.is_symlink() or not attempt_root.is_dir():
+                    continue
+                state = _read_small_json(state_path)
+                if state.get("state") not in {"preparing", "running"}:
+                    continue
+                _write_json_atomic(
+                    state_path,
+                    {
+                        **state,
+                        "state": "recovered-abandoned",
+                        "recoveredAtUnixNs": time.time_ns(),
+                    },
+                )
+            except (OSError, ValueError, LocalPresenterOutputError):
+                continue
+
+    def _read_progress(self, path: Path) -> tuple[dict[str, object], ...]:
+        if not path.exists():
+            if self.runtime.execution_policy is PresenterExecutionPolicy.MANAGED_VERIFIED:
+                raise LocalPresenterOutputError("Managed presenter worker emitted no progress ledger")
+            return ()
+        try:
+            info = path.lstat()
+            if path.is_symlink() or not path.is_file() or info.st_size > MAX_PROGRESS_BYTES:
+                raise LocalPresenterOutputError("Presenter progress ledger is unsafe or oversized")
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as error:
+            raise LocalPresenterOutputError("Presenter progress ledger could not be read") from error
+        if not 1 <= len(lines) <= MAX_PROGRESS_EVENTS:
+            raise LocalPresenterOutputError("Presenter progress ledger has an invalid event count")
+        events: list[dict[str, object]] = []
+        previous_progress = -1.0
+        allowed_stages = {
+            "accepted",
+            "verified",
+            "model-loading",
+            "inference",
+            "encoding",
+            "complete",
+        }
+        for index, line in enumerate(lines, start=1):
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise LocalPresenterOutputError("Presenter progress ledger contains invalid JSON") from error
+            if not isinstance(event, dict) or event.get("schemaVersion") != 1:
+                raise LocalPresenterOutputError("Presenter progress event has an invalid schema")
+            if event.get("sequence") != index or event.get("stage") not in allowed_stages:
+                raise LocalPresenterOutputError("Presenter progress sequence or stage is invalid")
+            raw_progress = event.get("progress")
+            if (
+                not isinstance(raw_progress, (int, float))
+                or isinstance(raw_progress, bool)
+                or not previous_progress <= float(raw_progress) <= 1
+            ):
+                raise LocalPresenterOutputError("Presenter progress must be monotonic from zero to one")
+            message = event.get("message")
+            if not isinstance(message, str) or not message or len(message) > 512 or "\x00" in message:
+                raise LocalPresenterOutputError("Presenter progress message is invalid")
+            previous_progress = float(raw_progress)
+            events.append(cast(dict[str, object], event))
+        if events[-1]["stage"] != "complete" or previous_progress != 1:
+            raise LocalPresenterOutputError("Presenter progress ledger has no completed terminal event")
+        return tuple(events)
+
+    def _build_generated_media(
+        self,
+        *,
+        content: bytes,
+        scene_id: str,
+        profile: LocalPresenterProfileBinding,
+        narration_hash: str,
+        seed: int,
+        output_hash: str,
+        probe: Mapping[str, object],
+        encoder_selection: PresenterEncoderSelection | None,
+        progress: Sequence[Mapping[str, object]],
+        recovered: bool,
+    ) -> GeneratedMedia:
+        duration_value = probe.get("durationSeconds", 0.0)
+        duration_seconds = (
+            float(duration_value)
+            if isinstance(duration_value, (int, float, str)) and not isinstance(duration_value, bool)
+            else 0.0
+        )
+        return GeneratedMedia(
+            content=content,
+            media_type="video/mp4",
+            original_name=f"{_safe_name(scene_id)}.presenter.mp4",
+            provider_id="local-presenter",
+            model_revision=self.runtime.model_revision,
+            metadata={
+                "rightsStatus": "owned",
+                "licenseId": "USER-OWNED",
+                "localOnly": True,
+                "synthetic": True,
+                "disclosureRequired": True,
+                "provider": "local-presenter",
+                "modelId": self.runtime.model_id,
+                "modelRevision": self.runtime.model_revision,
+                "presenterProfileId": profile.profile_id,
+                "consentId": profile.consent_id,
+                "consentIds": [profile.consent_id] if profile.consent_id else [],
+                "subjectId": profile.subject_id,
+                "portraitArtifactHash": profile.portrait_artifact_hash,
+                "narrationArtifactHash": narration_hash,
+                "outputSha256": output_hash,
+                "executionPolicy": self.runtime.execution_policy.value,
+                "networkPolicy": self.runtime.network_policy.value,
+                "unsafeTestOnly": (
+                    self.runtime.execution_policy is PresenterExecutionPolicy.UNSAFE_TEST_ONLY
+                ),
+                "validationLevel": (
+                    "ffprobe" if self.runtime.ffprobe is not None else "container-signature-only"
+                ),
+                "probe": dict(probe),
+                "encoderSelection": (
+                    encoder_selection.as_manifest() if encoder_selection is not None else None
+                ),
+                "workerContractId": (
+                    self.runtime.worker_contract.contract_id
+                    if self.runtime.worker_contract is not None
+                    else None
+                ),
+                "gpuLease": (
+                    self.runtime.gpu_lease.as_manifest()
+                    if self.runtime.gpu_lease is not None
+                    else None
+                ),
+                "progress": [dict(item) for item in progress],
+                "recoveredFromPromotion": recovered,
+                "seed": seed,
+            },
+            actual_cost_micros=0,
+            usage_units={"seconds": duration_seconds},
+        )
 
     def _artifact_record(
         self,
@@ -565,11 +945,40 @@ class LocalPresenterMediaClient:
             raise LocalPresenterPolicyError(f"Presenter {kind} input exceeds its size policy")
         return {"mediaType": media_type, "suffix": suffix, "byteSize": byte_size}
 
+    def _runtime_fingerprint(self) -> str:
+        ledger: list[dict[str, str]] = [
+            {"role": "worker-executable", "sha256": self.runtime.executable.sha256},
+            *(
+                {"role": f"runtime-file-{index}", "sha256": pin.sha256}
+                for index, pin in enumerate(self.runtime.additional_pins)
+            ),
+        ]
+        if self.runtime.ffprobe is not None:
+            ledger.append({"role": "ffprobe", "sha256": self.runtime.ffprobe.sha256})
+        if self.runtime.encoder_policy is not None:
+            ledger.append(
+                {"role": "presenter-ffmpeg", "sha256": self.runtime.encoder_policy.ffmpeg_sha256}
+            )
+        if self.runtime.worker_contract is not None:
+            ledger.append(
+                {
+                    "role": "worker-contract-entrypoint",
+                    "sha256": self.runtime.worker_contract.entrypoint.sha256,
+                }
+            )
+            ledger.extend(
+                {"role": item.role, "sha256": item.pin.sha256}
+                for item in self.runtime.worker_contract.files
+            )
+        return hashlib.sha256(
+            json.dumps(ledger, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
     def _verify_runtime(self) -> Path:
         root = self.runtime.runtime_root.resolve(strict=True)
         if not root.is_dir() or self.runtime.runtime_root.is_symlink():
             raise LocalPresenterRuntimeError("Presenter runtime root must be a safe directory")
-        for label, pin in (
+        pins: list[tuple[str, PinnedPresenterFile | None]] = [
             ("worker executable", self.runtime.executable),
             ("ffprobe", self.runtime.ffprobe),
             (
@@ -584,14 +993,34 @@ class LocalPresenterMediaClient:
                 ),
             ),
             *(("runtime file", pin) for pin in self.runtime.additional_pins),
-        ):
+        ]
+        if self.runtime.worker_contract is not None:
+            pins.append(("worker contract entrypoint", self.runtime.worker_contract.entrypoint))
+            pins.extend(
+                (f"worker contract {item.role}", item.pin)
+                for item in self.runtime.worker_contract.files
+            )
+        for label, pin in pins:
             if pin is None:
                 continue
             self._verify_pin(pin, root, label)
         if self.runtime.execution_policy is PresenterExecutionPolicy.MANAGED_VERIFIED:
             pin_paths = {
                 pin.path.resolve(strict=True)
-                for pin in (self.runtime.executable, *self.runtime.additional_pins)
+                for pin in (
+                    self.runtime.executable,
+                    *self.runtime.additional_pins,
+                    *(
+                        (self.runtime.worker_contract.entrypoint,)
+                        if self.runtime.worker_contract is not None
+                        else ()
+                    ),
+                    *(
+                        tuple(item.pin for item in self.runtime.worker_contract.files)
+                        if self.runtime.worker_contract is not None
+                        else ()
+                    ),
+                )
             }
             for argument in self.runtime.argument_template:
                 if PLACEHOLDER_PATTERN.search(argument):
@@ -703,9 +1132,20 @@ class LocalPresenterMediaClient:
         environment = {
             key.upper(): value
             for key, value in os.environ.items()
-            if key.upper() in SAFE_ENVIRONMENT_KEYS
+            if key.upper() in SAFE_ENVIRONMENT_KEYS - {"HOME", "USERPROFILE"}
         }
         environment.update(self.runtime.environment)
+        # Some Python dependencies call Path.home() even when every model and
+        # cache path is explicitly pinned.  Give the worker a contained home
+        # instead of exposing the host profile (and its credentials/config).
+        presenter_home = _guarded_child(
+            self.store.root,
+            self.store.root / "staging" / "presenter" / "runtime-home",
+        )
+        presenter_home.mkdir(parents=True, exist_ok=True)
+        environment_home = _subprocess_environment_path(presenter_home)
+        environment["HOME"] = environment_home
+        environment["USERPROFILE"] = environment_home
         environment["PYTHONUTF8"] = "1"
         environment["PYTHONIOENCODING"] = "utf-8"
         return environment
@@ -825,6 +1265,23 @@ class LocalPresenterMediaClient:
     def _is_cancelled(self) -> bool:
         return self._cancelled.is_set() or self.cancel_check()
 
+    def _running_presenter_job_cancelled(self) -> bool:
+        """Observe cancellation committed by another desktop RPC connection."""
+
+        rows = self.store.connection.execute(
+            """SELECT parameters_json FROM jobs
+            WHERE state='RUNNING' AND cancel_requested=1 AND project_id=?""",
+            (self.store.manifest.project_id,),
+        ).fetchall()
+        for row in rows:
+            try:
+                parameters = json.loads(row["parameters_json"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if isinstance(parameters, dict) and parameters.get("stage") == "presenter":
+                return True
+        return False
+
     def _raise_if_cancelled(self) -> None:
         if self._is_cancelled():
             raise LocalPresenterCancelledError("Presenter generation cancelled")
@@ -858,6 +1315,8 @@ def load_local_presenter_media_client(
     ffprobe_value = value.get("ffprobe")
     ffprobe = None if ffprobe_value is None else _config_pin(ffprobe_value, runtime_root, "ffprobe")
     encoder_policy = _config_encoder_policy(value.get("presenterEncoding"), runtime_root)
+    worker_contract = _config_worker_contract(value.get("workerContract"), runtime_root)
+    gpu_lease = _config_gpu_lease(value.get("gpuLease"))
     additional_value = value.get("pinnedFiles", [])
     if not isinstance(additional_value, list):
         raise LocalPresenterPolicyError("pinnedFiles must be a list")
@@ -909,6 +1368,8 @@ def load_local_presenter_media_client(
             environment=cast(dict[str, str], environment),
             additional_pins=additional,
             encoder_policy=encoder_policy,
+            worker_contract=worker_contract,
+            gpu_lease=gpu_lease,
         )
     except (TypeError, ValueError) as error:
         raise LocalPresenterPolicyError(f"Invalid local presenter runtime: {error}") from error
@@ -921,6 +1382,54 @@ def load_local_presenter_media_client(
         runner=runner,
         cancel_check=cancel_check,
     )
+
+
+def _config_worker_contract(value: object, root: Path) -> PresenterWorkerContract | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise LocalPresenterPolicyError("workerContract must be an object")
+    files_value = value.get("files")
+    if not isinstance(files_value, list) or not all(
+        isinstance(item, dict) for item in files_value
+    ):
+        raise LocalPresenterPolicyError("workerContract.files must be a list")
+    try:
+        return PresenterWorkerContract(
+            contract_id=_config_string(value, "contractId"),
+            entrypoint=_config_pin(value.get("entrypoint"), root, "workerContract.entrypoint"),
+            files=tuple(
+                PresenterContractFile(
+                    role=_config_string(cast(dict[str, Any], item), "role"),
+                    pin=_config_pin(
+                        item,
+                        root,
+                        f"workerContract.files[{index}]",
+                    ),
+                )
+                for index, item in enumerate(files_value)
+                if isinstance(item, dict)
+            ),
+        )
+    except ValueError as error:
+        raise LocalPresenterPolicyError(f"Invalid workerContract: {error}") from error
+
+
+def _config_gpu_lease(value: object) -> PresenterGpuLeaseMetadata | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise LocalPresenterPolicyError("gpuLease must be an object")
+    try:
+        return PresenterGpuLeaseMetadata(
+            lease_id=_config_string(value, "leaseId"),
+            owner=_config_string(value, "owner"),
+            mutex_name=_config_string(value, "mutexName"),
+            device_id=_config_string(value, "deviceId"),
+            vram_bytes=int(value.get("vramBytes", 0)),
+        )
+    except (TypeError, ValueError) as error:
+        raise LocalPresenterPolicyError(f"Invalid gpuLease: {error}") from error
 
 
 def _config_encoder_policy(value: object, root: Path) -> PresenterEncoderPolicy | None:
@@ -1029,6 +1538,24 @@ def _guarded_child(root: Path, candidate: Path) -> Path:
     return resolved_candidate
 
 
+def _subprocess_environment_path(path: Path) -> str:
+    r"""Spell a verified Windows path without the extended-length prefix.
+
+    Several ML dependencies append POSIX separators to HOME. Windows accepts
+    that for normal drive paths but rejects the mixed ``\\?\C:\.../.cache``
+    form. Removing the prefix changes only spelling, not the contained target.
+    """
+
+    value = str(path)
+    if os.name != "nt":
+        return value
+    if value.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + value[8:]
+    if value.startswith("\\\\?\\"):
+        return value[4:]
+    return value
+
+
 def _safe_name(value: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_-]+", "-", value).strip("-_")
     return (safe or hashlib.sha256(value.encode()).hexdigest()[:16])[:96]
@@ -1055,6 +1582,56 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _pin_manifest(pin: PinnedPresenterFile) -> dict[str, str]:
+    return {"path": str(pin.path.resolve(strict=True)), "sha256": pin.sha256}
+
+
+def _write_json_atomic(path: Path, value: Mapping[str, object]) -> None:
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        temporary.replace(path)
+    finally:
+        with suppress(OSError):
+            temporary.unlink(missing_ok=True)
+
+
+def _read_small_json(path: Path) -> dict[str, object]:
+    try:
+        info = path.lstat()
+        if path.is_symlink() or not path.is_file() or not 0 < info.st_size <= MAX_PROGRESS_BYTES:
+            raise LocalPresenterOutputError(f"Unsafe or oversized JSON record: {path.name}")
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except LocalPresenterError:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise LocalPresenterOutputError(f"Invalid JSON record: {path.name}") from error
+    if not isinstance(value, dict):
+        raise LocalPresenterOutputError(f"JSON record must be an object: {path.name}")
+    return cast(dict[str, object], value)
+
+
+def _read_media_file(path: Path, *, minimum_bytes: int, maximum_bytes: int) -> bytes:
+    try:
+        info = path.lstat()
+        if path.is_symlink() or not path.is_file():
+            raise LocalPresenterOutputError("Presenter delivery must be a regular non-symlink file")
+        if not minimum_bytes <= info.st_size <= maximum_bytes:
+            raise LocalPresenterOutputError("Presenter delivery violates configured size limits")
+        content = path.read_bytes()
+    except LocalPresenterError:
+        raise
+    except OSError as error:
+        raise LocalPresenterOutputError("Presenter delivery could not be read") from error
+    if len(content) != info.st_size or detect_mime(content) != "video/mp4":
+        raise LocalPresenterOutputError("Presenter delivery is not a stable MP4 container")
+    return content
+
+
 def _bounded_decode(value: bytes) -> str:
     return value[-MAX_PROCESS_OUTPUT_BYTES:].decode("utf-8", errors="replace")
 
@@ -1063,8 +1640,19 @@ def _stop_process(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
     try:
-        if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
-            process.send_signal(signal.CTRL_BREAK_EVENT)
+        if os.name == "nt":
+            # taskkill /T is the stdlib-compatible way to terminate the full
+            # descendant tree. CREATE_NEW_PROCESS_GROUP above prevents the
+            # presenter from sharing the desktop worker's console group.
+            subprocess.run(
+                ("taskkill.exe", "/PID", str(process.pid), "/T", "/F"),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                shell=False,
+                timeout=5,
+                check=False,
+            )
         elif os.name != "nt" and callable(kill_group := getattr(os, "killpg", None)):
             kill_group(process.pid, signal.SIGTERM)
         else:
@@ -1079,3 +1667,13 @@ def _stop_process(process: subprocess.Popen[bytes]) -> None:
                 process.kill()
         except (OSError, ProcessLookupError):
             pass
+
+
+def _drain_stopped_process(process: subprocess.Popen[bytes]) -> None:
+    try:
+        process.communicate(timeout=2)
+    except subprocess.TimeoutExpired:
+        with suppress(OSError, ProcessLookupError):
+            process.kill()
+        with suppress(subprocess.TimeoutExpired):
+            process.communicate(timeout=2)

@@ -1,7 +1,7 @@
 {
   "generatorVersion": 1,
   "draft": "https://json-schema.org/draft/2020-12/schema",
-  "contractSetSha256": "1974fd6b54d020db8cb0352d628aec245b78703e407906d9c187418539f863db",
+  "contractSetSha256": "0b5d33e2729e9508e0d35398c7c6c0edf562c0e8135944603acb51a069d54add",
   "schemas": [
     {
       "key": "common",
@@ -267,7 +267,7 @@
       "file": "execution.schema.json",
       "id": "https://schemas.alystria.studio/v2/execution.schema.json",
       "title": "Alystria artifacts, providers, jobs, QA, export, and plugins",
-      "sha256": "4731ec09a9c81108c8c2260ea1c5211975b37a0de9a26980b6d3ea19fb4df66e",
+      "sha256": "fb26302c1e92dfddb9c20f48f6409f1106c186917f734f40c97a67a3be4d54d6",
       "root": {
         "name": "$root",
         "types": [
@@ -360,7 +360,7 @@
           ],
           "required": [
             "audioCodec",
-            "captions",
+            "captionDeliveryMode",
             "colorSpace",
             "dimensions",
             "frameRate",
@@ -375,7 +375,7 @@
           "properties": [
             "audioCodec",
             "bitrateKbps",
-            "captions",
+            "captionDeliveryMode",
             "colorSpace",
             "dimensions",
             "frameRate",
@@ -1246,7 +1246,7 @@
       "file": "project.schema.json",
       "id": "https://schemas.alystria.studio/v2/project.schema.json",
       "title": "Alystria project and course hierarchy",
-      "sha256": "e3e09fb8db5758c3cde4f69f9aa77e6208e8f39f05a2620cbf2f01a68e85a9ae",
+      "sha256": "cc02ece826d899ca182518889cec90c7793bcb39820bfa63b6bdc345e7668438",
       "root": {
         "name": "$root",
         "types": [
@@ -1261,6 +1261,8 @@
           "#/$defs/Project",
           "#/$defs/ProjectBundle",
           "#/$defs/ProjectManifest",
+          "#/$defs/ProjectModelProfileSnapshot",
+          "#/$defs/ProjectModelRouteSnapshot",
           "#/$defs/ProjectRevision",
           "#/$defs/ProjectSettings",
           "#/$defs/RevisionChange",
@@ -1539,6 +1541,68 @@
           ]
         },
         {
+          "name": "ProjectModelProfileSnapshot",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "capturedAt",
+            "profileId",
+            "profileName",
+            "routes",
+            "schemaVersion"
+          ],
+          "properties": [
+            "capturedAt",
+            "profileId",
+            "profileName",
+            "routes",
+            "schemaVersion",
+            "sourceSetupUpdatedAt"
+          ],
+          "refs": [
+            "#/$defs/ProjectModelRouteSnapshot",
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/IsoDateTime",
+            "common.schema.json#/$defs/ShortText"
+          ]
+        },
+        {
+          "name": "ProjectModelRouteSnapshot",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "boundary",
+            "capability",
+            "fallbackConsent",
+            "medium",
+            "modelId",
+            "providerId",
+            "regions",
+            "retention"
+          ],
+          "properties": [
+            "boundary",
+            "capability",
+            "estimatedCostMicros",
+            "fallbackConsent",
+            "installFingerprint",
+            "medium",
+            "modelId",
+            "modelRevision",
+            "presenterProfileId",
+            "providerId",
+            "regions",
+            "retention",
+            "voiceId"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/Id",
+            "common.schema.json#/$defs/Sha256"
+          ]
+        },
+        {
           "name": "ProjectRevision",
           "types": [
             "object"
@@ -1600,13 +1664,16 @@
             "crossProviderCritique",
             "executionMode",
             "groundingMode",
+            "modelProfileSnapshot",
             "musicEnabled",
             "presenterMode",
             "privacyClassification",
             "quality",
             "repairLimit"
           ],
-          "refs": []
+          "refs": [
+            "#/$defs/ProjectModelProfileSnapshot"
+          ]
         },
         {
           "name": "RevisionChange",

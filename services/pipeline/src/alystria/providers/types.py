@@ -23,6 +23,8 @@ class Capability(StrEnum):
     TRANSCRIPTION = "audio.transcribe"
     ALIGNMENT = "audio.align"
     PRESENTER = "presenter.generate"
+    PORTRAIT_ANIMATION = "portrait.animate"
+    LIP_SYNC = "lipsync.generate"
     VISION_LANGUAGE = "vlm.chat"
     EMBEDDING = "retrieval.embed"
     RERANKING = "retrieval.rerank"

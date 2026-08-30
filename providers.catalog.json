@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "schemaVersion": 1,
-  "catalogVersion": "2026.08.28.2",
-  "lastVerifiedAt": "2026-08-28",
+  "catalogVersion": "2026.08.29.1",
+  "lastVerifiedAt": "2026-08-29",
   "aliases": {
     "azure": "azure-speech",
     "google": "gemini"
@@ -24,7 +24,7 @@
       "execution": "local",
       "credentialKind": "none",
       "approvedByDefault": false,
-      "capabilities": ["llm", "embedding", "reranking", "image", "tts", "asr", "alignment", "presenter"],
+      "capabilities": ["llm", "embedding", "reranking", "image", "tts", "asr", "alignment", "presenter", "portrait-animation", "lip-sync"],
       "dataBoundary": "local-only",
       "pricing": { "status": "free", "hardBudgetEligible": true }
     },
@@ -234,7 +234,7 @@
       "execution": "local",
       "credentialKind": "none",
       "approvedByDefault": false,
-      "capabilities": ["presenter"],
+      "capabilities": ["presenter", "portrait-animation", "lip-sync"],
       "dataBoundary": "local-only",
       "pricing": { "status": "free", "hardBudgetEligible": true }
     }

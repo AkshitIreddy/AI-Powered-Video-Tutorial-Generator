@@ -1,57 +1,278 @@
 {
-  "id": "storyboard_bd5baa6bba9c746142725d38",
+  "id": "storyboard_60f22f5d11dde07421994625",
   "locale": "en-US",
   "scenes": [
     {
-      "accessibilityDescription": "A precise explanatory composition presents start with a question why does this",
-      "claimIds": [
-        "claim.karatsuba.identity"
-      ],
-      "durationTicks": 57600000,
-      "id": "scene_5fffecc1fc7e8cc1bc9c8dc0",
+      "accessibilityDescription": "The presenter stands beside two split integers. Four product links reduce to three, and the missing cross term is marked as the lesson question.",
+      "claimIds": [],
+      "durationTicks": 13292308,
+      "id": "scene.karatsuba.hook",
       "locks": [],
-      "narration": "Start with a question: why does this idea matter? Derive the three-product identity from place-value expansion. We will use activate prior knowledge, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+      "narration": "Suppose we split each long integer into a high half and a low half. Ordinary expansion appears to demand four smaller multiplications: high by high, high by low, low by high, and low by low. Karatsuba's surprise is that one of those expensive recursive products is unnecessary. We can recover both cross terms from a single carefully chosen product, so every level of the recursion branches three ways instead of four. In this lesson we will derive that identity rather than memorize it, use it to calculate 1234 times 5678 without skipping an intermediate value, and then connect the saved multiplication to the running-time improvement. Keep one question in mind: what information lets us reconstruct the missing cross term?",
       "objectiveIds": [
         "obj.karatsuba.derive"
       ],
-      "sectionId": "section_f344bf36ce6094c3262edc52",
-      "title": "Start with a question why does this",
-      "type": "question",
-      "visualIntent": "Use a precise visual progression for derive the three-product identity from place-value expansion."
+      "onScreenText": [
+        "How can four half-size products become three?"
+      ],
+      "sectionId": "fixture:scene.karatsuba.hook",
+      "title": "Can four products become three?",
+      "type": "title",
+      "visualIntent": "A presenter guides attention toward two split integer blocks. Four multiplication links appear, then the two cross links merge into one emphasized question mark while three durable product links remain."
     },
     {
-      "accessibilityDescription": "A precise explanatory composition presents now connect this to what you just",
+      "accessibilityDescription": "Two integers are split into high and low base-B blocks, first symbolically and then as 12 and 34, 56 and 78.",
+      "claimIds": [],
+      "durationTicks": 13292308,
+      "id": "scene.karatsuba.place-value",
+      "locks": [],
+      "narration": "Begin with place value. Choose a base B that represents the size of one low block. For an even number of decimal digits, B can be ten raised to half the digit count. Write x as a times B plus b, and y as c times B plus d. The letters a and c are the high blocks; b and d are the low blocks. This is not an approximation. It is an exact rewriting of the integers. For four-digit inputs we will use B equals 100, so 1234 becomes 12 times 100 plus 34, and 5678 becomes 56 times 100 plus 78. The algorithm applies recursively to the block multiplications, but the algebra we are about to use is valid before any recursion begins.",
+      "objectiveIds": [
+        "obj.karatsuba.derive"
+      ],
+      "onScreenText": [
+        "x = aB + b    y = cB + d"
+      ],
+      "sectionId": "fixture:scene.karatsuba.place-value",
+      "title": "Name the place-value split",
+      "type": "definition",
+      "visualIntent": "A place-value diagram aligns x=aB+b and y=cB+d above two base-B block rulers. High and low blocks share a measurement axis, and the concrete 12|34 and 56|78 splits appear beneath the symbolic form."
+    },
+    {
+      "accessibilityDescription": "The product expands into four block multiplications and then groups into high, middle, and low coefficients.",
+      "claimIds": [],
+      "durationTicks": 13292308,
+      "id": "scene.karatsuba.four-products",
+      "locks": [],
+      "narration": "Multiply the two place-value forms directly. The product of aB plus b and cB plus d expands to ac times B squared, plus ad times B, plus bc times B, plus bd. Group the two middle terms and the structure becomes ac B squared, plus the quantity ad plus bc times B, plus bd. The outer coefficients are easy to name: ac belongs to the high place and bd belongs to the low place. The apparent problem is the middle coefficient. Computing ad and bc separately would require two more block multiplications, bringing the total to four. Addition, subtraction, and shifting by powers of B are comparatively cheap. The design goal is therefore precise: recover ad plus bc while spending only one more multiplication.",
+      "objectiveIds": [
+        "obj.karatsuba.derive"
+      ],
+      "onScreenText": [
+        "xy = acB² + (ad + bc)B + bd"
+      ],
+      "sectionId": "fixture:scene.karatsuba.four-products",
+      "title": "See where four products arise",
+      "type": "formula",
+      "visualIntent": "A measured equation row expands into four color-independent product tiles, then regroups into high, middle, and low place-value columns. Brackets and labels stay aligned with the coefficients they explain."
+    },
+    {
+      "accessibilityDescription": "The combined product expands to four terms. Removing ac and bd leaves ad plus bc, which is named z one.",
+      "claimIds": [
+        "claim.karatsuba.identity"
+      ],
+      "durationTicks": 13292308,
+      "id": "scene.karatsuba.identity",
+      "locks": [],
+      "narration": "Now compute one combined product: p equals a plus b times c plus d. Expanding p gives ac plus ad plus bc plus bd. We already planned to compute ac and bd, so subtract those known outer products from p. What remains is exactly ad plus bc. Define z two as ac, z zero as bd, and z one as p minus z two minus z zero. Then z one equals the middle coefficient ad plus bc. The final reconstruction is x times y equals z two B squared plus z one B plus z zero. Notice what was traded: the two separate cross multiplications ad and bc became additions, one combined multiplication, and two subtractions. That is the entire Karatsuba identity, derived from ordinary expansion with no missing algebraic step.",
+      "objectiveIds": [
+        "obj.karatsuba.derive"
+      ],
+      "onScreenText": [
+        "z1 = (a+b)(c+d) − z2 − z0 = ad + bc"
+      ],
+      "sectionId": "fixture:scene.karatsuba.identity",
+      "sourceLocator": "src.karatsuba.note#Direct expansion",
+      "title": "Recover the middle with one product",
+      "type": "formula",
+      "visualIntent": "Semantic equation segments transform through p=(a+b)(c+d), its four-term expansion, subtraction of z2 and z0, and the final identity. Each subtraction connects visibly to the matching outer term."
+    },
+    {
+      "accessibilityDescription": "A multiple-choice question asks how to isolate the middle coefficient. The correct expression is revealed with a cancellation proof.",
+      "claimIds": [
+        "claim.karatsuba.identity"
+      ],
+      "durationTicks": 13292308,
+      "id": "scene.karatsuba.retrieval",
+      "locks": [],
+      "narration": "Pause before the answer is revealed. You know z two equals ac, z zero equals bd, and p equals a plus b times c plus d. Which expression isolates the middle coefficient ad plus bc? It is not p by itself, because p still contains both outer products. It is not p minus only z two, because bd would remain. The correct expression is p minus z two minus z zero. Expanding that expression gives ac plus ad plus bc plus bd, minus ac, minus bd, so only ad plus bc survives. This retrieval step matters because the algorithm is easier to reconstruct from the algebra than to recall as a list of variable names. If you can explain why both subtractions are necessary, you understand the three-product trick.",
+      "objectiveIds": [
+        "obj.karatsuba.derive"
+      ],
+      "onScreenText": [
+        "Which expression isolates ad + bc?  p − z2 − z0"
+      ],
+      "sectionId": "fixture:scene.karatsuba.retrieval",
+      "sourceLocator": "src.karatsuba.note#Direct expansion",
+      "title": "Retrieve the missing step",
+      "type": "quiz",
+      "visualIntent": "A four-option retrieval card delays the correctness state. After the pause, p−z2−z0 receives a check and its cancellation proof appears directly beside it without covering the options."
+    },
+    {
+      "accessibilityDescription": "A base-100 table splits 1234 into 12 and 34, and 5678 into 56 and 78, then lists the three products to compute.",
       "claimIds": [
         "claim.karatsuba.answer"
       ],
-      "durationTicks": 57600000,
-      "id": "scene_08a9c69a585f75fa1ccf670a",
+      "durationTicks": 13292308,
+      "id": "scene.karatsuba.example-split",
       "locks": [],
-      "narration": "Now connect this to what you just learned. Apply the method to 1234 × 5678 and recombine exactly. We will use worked explanation, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+      "narration": "Apply the identity to 1234 times 5678. Because each number has four decimal digits, split after two digits and choose B equals 100. The first number is 12 times 100 plus 34, so a is 12 and b is 34. The second is 56 times 100 plus 78, so c is 56 and d is 78. Before multiplying, check the reconstruction: 12 hundreds plus 34 is 1234, and 56 hundreds plus 78 is 5678. Keeping this split visible prevents a common error: treating the low blocks as decimal digits rather than base-100 coefficients. Our three required products will be z two equals a times c, z zero equals b times d, and p equals a plus b times c plus d.",
       "objectiveIds": [
         "obj.karatsuba.apply"
       ],
-      "sectionId": "section_e506a1b0b82b097875aaf01c",
-      "title": "Now connect this to what you just",
-      "type": "definition",
-      "visualIntent": "Use a precise visual progression for apply the method to 1234 × 5678 and recombine exactly."
+      "onScreenText": [
+        "B=100    a=12, b=34, c=56, d=78"
+      ],
+      "sectionId": "fixture:scene.karatsuba.example-split",
+      "sourceLocator": "src.karatsuba.note#Worked example",
+      "title": "Split 1234 × 5678",
+      "type": "worked-example",
+      "visualIntent": "A base-100 place-value table aligns a=12, b=34, c=56, d=78. A three-row work queue names z2, z0, and p without calculating them yet."
     },
     {
-      "accessibilityDescription": "A precise explanatory composition presents now connect this to what you just",
+      "accessibilityDescription": "Two arithmetic cards show the high product 672 and low product 2652, with their future place-value shifts labeled.",
+      "claimIds": [
+        "claim.karatsuba.answer"
+      ],
+      "durationTicks": 13292308,
+      "id": "scene.karatsuba.outer-products",
+      "locks": [],
+      "narration": "First compute the high product. z two equals a times c, so it is 12 times 56, which equals 672. Next compute the low product. z zero equals b times d, so it is 34 times 78, which equals 2652. The low product is larger than the base 100, and that is allowed. The coefficients in this algebraic reconstruction do not need to be normalized digits at every intermediate step; the final addition will carry place value correctly. Record the numbers exactly and keep their roles attached: 672 is the coefficient shifted by B squared, while 2652 is the unshifted low contribution. We have used two of the three block multiplications and have not yet computed either cross product separately.",
+      "objectiveIds": [
+        "obj.karatsuba.apply"
+      ],
+      "onScreenText": [
+        "z2 = 12×56 = 672    z0 = 34×78 = 2652"
+      ],
+      "sectionId": "fixture:scene.karatsuba.outer-products",
+      "sourceLocator": "src.karatsuba.note#Worked example",
+      "title": "Compute the two outer products",
+      "type": "worked-example",
+      "visualIntent": "Two aligned arithmetic cards calculate 12×56=672 and 34×78=2652. Place-value badges mark B² and B⁰, while an explicit note explains that z0 may exceed B."
+    },
+    {
+      "accessibilityDescription": "The sum product is 6164. Subtracting the two outer products yields the middle coefficient 2840, confirmed by a separate check.",
+      "claimIds": [
+        "claim.karatsuba.answer",
+        "claim.karatsuba.identity"
+      ],
+      "durationTicks": 13292308,
+      "id": "scene.karatsuba.middle-product",
+      "locks": [],
+      "narration": "For the third multiplication, add within each split. a plus b is 12 plus 34, which equals 46. c plus d is 56 plus 78, which equals 134. Multiply those sums: p equals 46 times 134, which is 6164. Now isolate the middle coefficient using the identity we derived. z one equals p minus z two minus z zero. Substitute the known values: 6164 minus 672 minus 2652. Subtracting 672 gives 5492, and subtracting 2652 gives 2840. You can verify the result directly without using it in the algorithm: ad plus bc is 12 times 78 plus 34 times 56, or 936 plus 1904, also 2840. That check confirms the recovered cross term while the algorithm itself still used only three multiplications.",
+      "objectiveIds": [
+        "obj.karatsuba.apply"
+      ],
+      "onScreenText": [
+        "p=46×134=6164    z1=6164−672−2652=2840"
+      ],
+      "sectionId": "fixture:scene.karatsuba.middle-product",
+      "sourceLocator": "src.karatsuba.note#Worked example",
+      "title": "Calculate p, then isolate z1",
+      "type": "formula",
+      "visualIntent": "A continuous equation path computes 46, 134, p=6164, and z1=2840. A smaller verification branch shows 936+1904=2840 but is visually labeled as a check, not an algorithm step."
+    },
+    {
+      "accessibilityDescription": "Three aligned place-value rows add 6,720,000, 284,000, and 2,652 to produce 7,006,652.",
+      "claimIds": [
+        "claim.karatsuba.answer"
+      ],
+      "durationTicks": 13292308,
+      "id": "scene.karatsuba.recombine",
+      "locks": [],
+      "narration": "Recombine the three coefficients with B equal to 100. The formula is z two times B squared, plus z one times B, plus z zero. Substitute the values: 672 times 10,000, plus 2840 times 100, plus 2652. These contributions are 6,720,000; 284,000; and 2,652. Align them by place value and add. The first two total 7,004,000, and adding 2,652 gives 7,006,652. Therefore 1234 times 5678 equals 7,006,652. A conventional multiplication check gives the same product. The important causal chain is visible: the high product moved four decimal places, the recovered middle moved two, and the low product stayed unshifted. No value was rounded, hidden, or silently carried between stages.",
+      "objectiveIds": [
+        "obj.karatsuba.apply"
+      ],
+      "onScreenText": [
+        "672×10000 + 2840×100 + 2652 = 7,006,652"
+      ],
+      "sectionId": "fixture:scene.karatsuba.recombine",
+      "sourceLocator": "src.karatsuba.note#Worked example",
+      "title": "Recombine by place value",
+      "type": "worked-example",
+      "visualIntent": "A place-value addition aligns 6,720,000, 284,000, and 2,652 on one digit grid. Connector lines originate from z2, z1, and z0 and terminate at the exact shifted rows."
+    },
+    {
+      "accessibilityDescription": "A call frame branches to three smaller multiplications and then recombines their results, with the current variables read beside the active frame.",
+      "claimIds": [
+        "claim.karatsuba.identity"
+      ],
+      "durationTicks": 13292307,
+      "id": "scene.karatsuba.recursion",
+      "locks": [],
+      "narration": "To make this an algorithm, apply the same procedure recursively to each of the three products: ac, bd, and a plus b times c plus d. Stop at a base case small enough for direct multiplication, such as one-digit values or an implementation-specific machine-word threshold. Then return z two times B squared plus z one times B plus z zero. Production big-integer libraries usually switch to Karatsuba only above a measured crossover size, because splitting, allocation, additions, and subtractions have overhead. They may also use uneven splits and signed values carefully. Those engineering details do not change the identity. The invariant at every recursive frame is that the returned value exactly equals the product of that frame's two inputs. Three child products plus linear-time combination preserve that invariant on the way back up the call tree.",
+      "objectiveIds": [
+        "obj.karatsuba.derive",
+        "obj.karatsuba.apply"
+      ],
+      "onScreenText": [
+        "Three recursive calls; direct multiplication at the base case"
+      ],
+      "sectionId": "fixture:scene.karatsuba.recursion",
+      "title": "Turn the identity into recursion",
+      "type": "execution-trace",
+      "visualIntent": "An execution trace shows one frame splitting into exactly three labeled child frames, then returning z2, z0, and z1 into the recombination formula. The active frame and variable table share aligned row keys."
+    },
+    {
+      "accessibilityDescription": "Two same-scale recurrence trees compare four branches with three, followed by quadratic and n-to-1.585 growth labels and a crossover caveat.",
       "claimIds": [
         "claim.karatsuba.complexity"
       ],
-      "durationTicks": 57600000,
-      "id": "scene_81838b64a0d70f20a719bfa2",
+      "durationTicks": 13292307,
+      "id": "scene.karatsuba.complexity",
       "locks": [],
-      "narration": "Now connect this to what you just learned. Compare Karatsuba and grade-school asymptotic multiplication costs. We will use guided practice, then test the idea with a concrete example. Pause and predict the result before the explanation continues. Work through one case, compare it with a non-example, and state the takeaway.",
+      "narration": "For n-digit inputs, each recursive product is roughly half the size. Karatsuba therefore follows the recurrence T of n equals three T of n over two plus order n work for splitting, additions, subtractions, and recombination. The Master Theorem gives order n raised to log base two of three. That exponent is approximately 1.585. Grade-school multiplication forms about n squared digit products, so its asymptotic cost is quadratic. Saving one branch at a single level sounds modest, but across many recursive levels the branch counts are three to the depth instead of four to the depth. Karatsuba does not guarantee a faster result for tiny inputs: constants and memory traffic create a crossover threshold. The accurate conclusion is asymptotic improvement with implementation-dependent practical crossover, not universal speed at every size.",
       "objectiveIds": [
         "obj.karatsuba.compare"
       ],
-      "sectionId": "section_4ab12b3cf02fa5c137b332ae",
-      "title": "Now connect this to what you just",
-      "type": "worked_example",
-      "visualIntent": "Use a precise visual progression for compare karatsuba and grade-school asymptotic multiplication costs."
+      "onScreenText": [
+        "T(n)=3T(n/2)+O(n)=O(n^log2 3)≈O(n^1.585)"
+      ],
+      "sectionId": "fixture:scene.karatsuba.complexity",
+      "sourceLocator": "src.karatsuba.note#Final complexity paragraph",
+      "title": "Why three matters asymptotically",
+      "type": "comparison",
+      "visualIntent": "Comparable recurrence trees share the same depth and scale: four-way grade school versus three-way Karatsuba. A labeled exponent comparison and crossover caveat sit on a common axis using line patterns as well as color."
+    },
+    {
+      "accessibilityDescription": "Four review questions reveal the three products, middle-term subtraction, worked values, and complexity reason, then link them to a five-step method.",
+      "claimIds": [
+        "claim.karatsuba.identity",
+        "claim.karatsuba.answer",
+        "claim.karatsuba.complexity"
+      ],
+      "durationTicks": 13292307,
+      "id": "scene.karatsuba.final-check",
+      "locks": [],
+      "narration": "Final check. First: which three products are recursive? They are ac, bd, and a plus b times c plus d. Second: how is the middle coefficient recovered? Subtract ac and bd from the sum product. Third: for 1234 times 5678, what are the essential values? z two is 672, z zero is 2652, p is 6164, z one is 2840, and the final product is 7,006,652. Finally: why is the algorithm asymptotically faster than grade school? It makes three half-size recursive calls rather than four, producing the exponent log base two of three instead of two. If any answer felt uncertain, return to the corresponding visual thread: split, three products, subtract the outers, shift by place value, and add. That sequence is both the derivation and a reliable way to reconstruct the algorithm.",
+      "objectiveIds": [
+        "obj.karatsuba.derive",
+        "obj.karatsuba.apply",
+        "obj.karatsuba.compare"
+      ],
+      "onScreenText": [
+        "Split → 3 products → subtract outers → shift → add"
+      ],
+      "sectionId": "fixture:scene.karatsuba.final-check",
+      "title": "Check the whole method",
+      "type": "quiz",
+      "visualIntent": "Four retrieval prompts reveal one at a time. Correctness states point back to a persistent five-step concept thread, and the numeric answer set remains aligned in a compact ledger."
+    },
+    {
+      "accessibilityDescription": "A five-step recap sits beside the local teaching note citation and historical Karatsuba and Ofman reference.",
+      "claimIds": [
+        "claim.karatsuba.identity",
+        "claim.karatsuba.answer",
+        "claim.karatsuba.complexity"
+      ],
+      "durationTicks": 13292307,
+      "id": "scene.karatsuba.recap",
+      "locks": [],
+      "narration": "Here is the durable thread. Write each input as a high block times B plus a low block. Compute z two equals ac, z zero equals bd, and p equals a plus b times c plus d. Recover z one as p minus z two minus z zero. Recombine z two B squared plus z one B plus z zero. In our example those values were 672, 2652, 6164, and 2840, producing 7,006,652. Recursing on only the three products leads to T of n equals three T of n over two plus order n, or order n to approximately 1.585. The derivation and worked arithmetic in this tutorial are tied to the included, hash-verified teaching note; the original Karatsuba and Ofman publication is listed as external historical context. The video, transcript, and caption sidecars all preserve the same claims and terminology.",
+      "objectiveIds": [
+        "obj.karatsuba.derive",
+        "obj.karatsuba.apply",
+        "obj.karatsuba.compare"
+      ],
+      "onScreenText": [
+        "z2=ac; z0=bd; z1=(a+b)(c+d)−z2−z0"
+      ],
+      "sectionId": "fixture:scene.karatsuba.recap",
+      "sourceLocator": "src.karatsuba.note",
+      "title": "One identity, one durable thread",
+      "type": "sources",
+      "visualIntent": "A five-step recap thread occupies the main canvas while a compact sources panel binds the identity, worked example, and recurrence claims to the local teaching note and historical publication."
     }
   ],
   "targets": [

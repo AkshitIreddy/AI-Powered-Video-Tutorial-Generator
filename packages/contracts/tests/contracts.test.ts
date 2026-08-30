@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BUILT_IN_SCENE_KINDS, ContractValidationError, assertValidProjectBundle, inspectProjectBundle, validatePluginManifest, validateProjectBundle, validateResearchBundle, validateScene } from "../src/index.js";
-import { HASH_A, sceneFor, validProjectBundle } from "./fixtures.js";
+import { BUILT_IN_SCENE_KINDS, ContractValidationError, assertValidProjectBundle, inspectProjectBundle, validateExportSpec, validatePluginManifest, validateProjectBundle, validateResearchBundle, validateScene } from "../src/index.js";
+import { HASH_A, HASH_B, sceneFor, validProjectBundle } from "./fixtures.js";
 
 describe("canonical schema registry", () => {
   it("accepts a complete, cross-domain project bundle", () => {
@@ -25,6 +25,30 @@ describe("canonical schema registry", () => {
     expect(result.valid).toBe(false);
     if (!result.valid) expect(result.issues.map((issue) => issue.instancePath)).toEqual(expect.arrayContaining(["/sources/0/contentHash", "/sources/0/locator"]));
   });
+
+  it("persists exact local portrait/lip-sync profile identities", () => {
+    const fixture = validProjectBundle();
+    const snapshot = fixture.project.settings.modelProfileSnapshot!;
+    expect(snapshot.routes[0]).toEqual(expect.objectContaining({
+      capability: "lipsync.generate",
+      modelRevision: "musetalk-hf-3ef28bc5+code-0a89dec4",
+      installFingerprint: HASH_B,
+      boundary: "local",
+      fallbackConsent: false,
+    }));
+    expect(validateProjectBundle(fixture).valid).toBe(true);
+
+    const invalid = structuredClone(fixture);
+    delete invalid.project.settings.modelProfileSnapshot!.routes[0]!.installFingerprint;
+    expect(validateProjectBundle(invalid).valid).toBe(false);
+  });
+
+  it.each(["cancelling", "cancelled", "corrupt", "repairing", "removing", "removed"] as const)("accepts explicit model lifecycle state %s", (status) => {
+    const fixture = validProjectBundle();
+    fixture.models[0] = { ...fixture.models[0]!, capability: "lip-sync", status };
+    fixture.providers[0]!.capabilities[0] = { ...fixture.providers[0]!.capabilities[0]!, kind: "lip-sync" };
+    expect(validateProjectBundle(fixture).valid).toBe(true);
+  });
 });
 
 describe("scene discriminants", () => {
@@ -35,6 +59,31 @@ describe("scene discriminants", () => {
   it("rejects executable or unknown visual payloads", () => {
     const scene = { ...sceneFor(), visual: { kind: "react-component", source: "process.exit()" } };
     expect(validateScene(scene).valid).toBe(false);
+  });
+});
+
+describe("caption delivery export contract", () => {
+  const exportSpec = {
+    id: "export.master", projectId: "project.karatsuba", revisionId: "revision.one", target: "landscape",
+    dimensions: { width: 1920, height: 1080 }, frameRate: { numerator: 30, denominator: 1 },
+    videoCodec: "vp9", audioCodec: "opus", quality: "standard", captionDeliveryMode: "sidecar",
+    sidecars: ["vtt", "srt", "transcript", "provenance"], colorSpace: "rec709-sdr",
+  };
+
+  it.each(["sidecar", "embedded", "burned", "both"] as const)("accepts %s delivery", (captionDeliveryMode) => {
+    expect(validateExportSpec({ ...exportSpec, captionDeliveryMode }).valid).toBe(true);
+  });
+
+  it("rejects legacy and ambiguous caption values in persisted 2.0 records", () => {
+    const legacy = structuredClone(exportSpec) as Record<string, unknown>;
+    delete legacy.captionDeliveryMode;
+    legacy.captions = "burned-in";
+    expect(validateExportSpec(legacy).valid).toBe(false);
+  });
+
+  it("requires both YouTube-ready caption sidecars for every delivery mode", () => {
+    expect(validateExportSpec({ ...exportSpec, sidecars: ["vtt", "transcript"] }).valid).toBe(false);
+    expect(validateExportSpec({ ...exportSpec, sidecars: ["srt", "transcript"] }).valid).toBe(false);
   });
 });
 

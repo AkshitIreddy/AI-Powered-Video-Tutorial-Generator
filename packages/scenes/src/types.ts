@@ -440,6 +440,82 @@ export interface LayoutMetrics {
   readonly columns: 1 | 2;
 }
 
+export type LayoutConstraintStrength = "required" | "strong" | "medium" | "weak";
+export type LayoutConstraintRelation =
+  | "inside"
+  | "above"
+  | "below"
+  | "left-of"
+  | "right-of"
+  | "align-start"
+  | "align-end"
+  | "align-center"
+  | "align-baseline"
+  | "avoid";
+
+/**
+ * A serializable relationship retained with the compiled scene so preview,
+ * final rendering, and QA all reason about the same authored geometry.
+ */
+export interface LayoutConstraint {
+  readonly id: string;
+  readonly relation: LayoutConstraintRelation;
+  readonly first: string;
+  readonly second: string;
+  readonly strength: LayoutConstraintStrength;
+  readonly minimumGap?: number;
+  readonly tolerance?: number;
+}
+
+export type LayoutSlotRole =
+  | "eyebrow"
+  | "title"
+  | "subtitle"
+  | "content"
+  | "presenter"
+  | "caption"
+  | "citation"
+  | "platform-overlay"
+  | "decorative";
+
+export interface LayoutSlot extends Rect {
+  readonly id: string;
+  readonly role: LayoutSlotRole;
+  readonly essential: boolean;
+  readonly readingOrder: number;
+  /** Other slot ids this slot may intentionally overlap. Empty means none. */
+  readonly allowedOverlapWith: readonly string[];
+  readonly baselineGroup?: string;
+}
+
+export interface LayoutGrid {
+  readonly columns: 12;
+  readonly columnGap: number;
+  readonly baselineStep: number;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Planned layout geometry. Browser-measured ink and line fragments are added
+ * by the authoritative renderer audit; they never replace this design-space
+ * contract.
+ */
+export interface SceneLayoutManifest {
+  readonly schemaVersion: 1;
+  readonly compilerVersion: string;
+  readonly targetProfile: TargetProfile;
+  readonly locale: string;
+  readonly graphicsSafe: Rect;
+  readonly actionSafe: Rect;
+  readonly grid: LayoutGrid;
+  readonly slots: readonly LayoutSlot[];
+  readonly constraints: readonly LayoutConstraint[];
+  readonly avoidRegions: readonly CaptionAvoidZone[];
+}
+
 export interface Diagnostic {
   readonly code: string;
   readonly severity: "info" | "warning" | "error";
@@ -452,6 +528,7 @@ export interface CompiledScene<TContent extends SceneContent = SceneContent> {
   readonly spec: SceneSpec<TContent>;
   readonly target: Required<CompileTarget>;
   readonly metrics: LayoutMetrics;
+  readonly layout: SceneLayoutManifest;
   readonly regions: readonly SemanticRegion[];
   readonly captionAvoidZones: readonly CaptionAvoidZone[];
   readonly choreography: readonly ChoreographyTrack[];

@@ -5,6 +5,7 @@ export * from "./contracts.js";
 export * from "./executor.js";
 export * from "./ffmpeg.js";
 export * from "./fixture.js";
+export * from "./geometry.js";
 export * from "./layout.js";
 export * from "./presenter.js";
 export * from "./random.js";

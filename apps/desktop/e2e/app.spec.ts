@@ -60,7 +60,14 @@ test("selected sources remain visible through review and portable export is wire
   await expect(page.getByText(/recursion-notes.md/i)).toBeVisible();
 
   await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /export/i }).click();
+  await expect(page.getByRole("radio", { name: /sidecar files/i })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByText(/clean picture · no caption pixels/i)).toBeVisible();
   await page.locator(".jobs-drawer > header .icon-button").click();
+  await page.getByRole("radio", { name: /always visible open captions/i }).click();
+  await expect(page.getByText(/open captions in picture/i)).toBeVisible();
+  await expect(page.getByText(/cannot be hidden after export/i)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("open-caption-export-warning.png"), fullPage: true });
+  await page.getByRole("radio", { name: /sidecar files/i }).click();
   await page.getByRole("button", { name: /export portable/i }).click();
   await expect(page.getByText(/portable project archived/i)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("project-archive-export.png"), fullPage: true });
@@ -117,12 +124,15 @@ test("visual bible customizes typography, captions, backgrounds, presenter, and 
   await page.getByRole("button", { name: /licensed/i }).click();
   await page.getByLabel("License", { exact: true }).fill("CC BY 4.0");
   await page.getByLabel(/required attribution/i).fill("Alystria QA fixture · CC BY 4.0");
+  await page.locator('.license-fields label:has-text("Commercial use") select').selectOption("allowed");
+  await page.locator('.license-fields label:has-text("Redistribution in exported video") select').selectOption("allowed");
+  await page.locator('.license-fields label:has-text("AI / model input") select').selectOption("allowed");
   await page.getByRole("button", { name: /fictional \/ generated/i }).click();
   await page.getByText(/i attest this identity is fictional or generated/i).click();
   await page.locator('.asset-upload:has-text("Upload your presenter picture") input').setInputFiles({
     name: "presenter-owned.png",
     mimeType: "image/png",
-    buffer: Buffer.from("89504e470d0a1a0a", "hex"),
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
   });
   await expect(page.getByText(/asset added to visual bible/i)).toBeVisible();
   const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}"));

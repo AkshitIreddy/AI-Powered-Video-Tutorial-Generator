@@ -47,6 +47,7 @@ const LIP_SYNC_MODELS: &[&str] = &[
     "local/latentsync-1.5",
     "local/nvidia-lipsync-private",
 ];
+const PORTRAIT_ANIMATION_MODELS: &[&str] = &["local/liveportrait"];
 const ROUTE_MEDIA: &[&str] = &[
     "writing",
     "research",
@@ -55,6 +56,7 @@ const ROUTE_MEDIA: &[&str] = &[
     "voice",
     "transcription",
     "presenter",
+    "portraitAnimation",
     "lipSync",
 ];
 const PROVIDERS: &[&str] = &[
@@ -127,6 +129,7 @@ fn default_setup() -> LocalModelSetup {
         active_profile_id: "balanced-cloud".into(),
         selected_model_ids: vec![],
         lip_sync_model_id: None,
+        portrait_animation_model_id: None,
         existing_model_directory: None,
         profiles: vec![ModelProfile {
             id: "balanced-cloud".into(),
@@ -143,6 +146,10 @@ fn default_setup() -> LocalModelSetup {
                     route("openai", "choose at generation"),
                 ),
                 ("presenter".into(), route("local-runtime", "off by default")),
+                (
+                    "portraitAnimation".into(),
+                    route("local-runtime", "off by default"),
+                ),
                 ("lipSync".into(), route("local-runtime", "off by default")),
             ]),
         }],
@@ -154,6 +161,10 @@ fn route(provider_id: &str, model_id: &str) -> ProfileRoute {
     ProfileRoute {
         provider_id: provider_id.into(),
         model_id: model_id.into(),
+        model_revision: None,
+        install_fingerprint: None,
+        voice_id: None,
+        presenter_profile_id: None,
     }
 }
 
@@ -188,6 +199,18 @@ fn validated_setup(input: LocalModelSetupSaveRequest) -> Result<LocalModelSetup,
         return Err(CommandError::invalid(
             "lipSyncModelId",
             "must be a selectable lip-sync model",
+        ));
+    }
+    let portrait_animation_model_id = input
+        .portrait_animation_model_id
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty());
+    if let Some(value) = &portrait_animation_model_id
+        && !PORTRAIT_ANIMATION_MODELS.contains(&value.as_str())
+    {
+        return Err(CommandError::invalid(
+            "portraitAnimationModelId",
+            "must be a selectable portrait-animation model",
         ));
     }
     let existing_model_directory = input
@@ -241,6 +264,7 @@ fn validated_setup(input: LocalModelSetupSaveRequest) -> Result<LocalModelSetup,
         active_profile_id: input.active_profile_id.trim().to_owned(),
         selected_model_ids: selected.into_iter().collect(),
         lip_sync_model_id,
+        portrait_animation_model_id,
         existing_model_directory,
         profiles: input.profiles,
         updated_at: Utc::now(),
@@ -281,6 +305,32 @@ fn validate_profile(profile: &ModelProfile) -> Result<(), CommandError> {
                 "contains an unsupported provider or model label",
             ));
         }
+        for (field, value, limit) in [
+            ("modelRevision", selection.model_revision.as_deref(), 200),
+            ("voiceId", selection.voice_id.as_deref(), 160),
+            (
+                "presenterProfileId",
+                selection.presenter_profile_id.as_deref(),
+                160,
+            ),
+        ] {
+            if value.is_some_and(|item| invalid_text(item, limit)) {
+                return Err(CommandError::invalid(
+                    "profiles.routes",
+                    format!("contains an invalid {field}"),
+                ));
+            }
+        }
+        if selection
+            .install_fingerprint
+            .as_deref()
+            .is_some_and(|value| !is_sha256(value))
+        {
+            return Err(CommandError::invalid(
+                "profiles.routes",
+                "contains an invalid install fingerprint",
+            ));
+        }
     }
     Ok(())
 }
@@ -297,6 +347,13 @@ fn valid_id(value: &str) -> bool {
 
 fn invalid_text(value: &str, max: usize) -> bool {
     value.trim().is_empty() || value.chars().count() > max || value.chars().any(char::is_control)
+}
+
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), CommandError> {
@@ -358,6 +415,62 @@ mod tests {
         setup.existing_model_directory = Some(temp.path().join("not-there").display().to_string());
         assert_eq!(
             store.save(setup.into()).expect_err("missing").code,
+            "INVALID_INPUT"
+        );
+    }
+
+    #[test]
+    fn persists_distinct_portrait_animation_and_lipsync_routes_with_exact_identities() {
+        let temp = tempdir().expect("tempdir");
+        let store = ModelSetupStore::at(temp.path().to_path_buf());
+        let mut setup = default_setup();
+        setup.portrait_animation_model_id = Some("local/liveportrait".into());
+        setup.lip_sync_model_id = Some("local/musetalk-1.5".into());
+        let portrait = setup.profiles[0]
+            .routes
+            .get_mut("portraitAnimation")
+            .expect("portrait route");
+        portrait.model_id = "local/liveportrait".into();
+        portrait.model_revision = Some("liveportrait-hf-82a4fa67".into());
+        portrait.install_fingerprint = Some("a".repeat(64));
+        let lipsync = setup.profiles[0]
+            .routes
+            .get_mut("lipSync")
+            .expect("lip-sync route");
+        lipsync.model_id = "local/musetalk-1.5".into();
+        lipsync.model_revision = Some("musetalk-hf-3ef28bc5+code-0a89dec4".into());
+        lipsync.install_fingerprint = Some("b".repeat(64));
+
+        let saved = store.save(setup.into()).expect("save exact local routes");
+        assert_eq!(
+            saved.portrait_animation_model_id.as_deref(),
+            Some("local/liveportrait")
+        );
+        assert_eq!(
+            saved.lip_sync_model_id.as_deref(),
+            Some("local/musetalk-1.5")
+        );
+        assert_ne!(
+            saved.profiles[0].routes["portraitAnimation"].model_id,
+            saved.profiles[0].routes["lipSync"].model_id
+        );
+    }
+
+    #[test]
+    fn rejects_a_non_sha_install_fingerprint() {
+        let temp = tempdir().expect("tempdir");
+        let store = ModelSetupStore::at(temp.path().to_path_buf());
+        let mut setup = default_setup();
+        setup.profiles[0]
+            .routes
+            .get_mut("lipSync")
+            .expect("route")
+            .install_fingerprint = Some("not-a-sha".into());
+        assert_eq!(
+            store
+                .save(setup.into())
+                .expect_err("invalid fingerprint")
+                .code,
             "INVALID_INPUT"
         );
     }

@@ -44,7 +44,11 @@ describe("built-in scene catalog", () => {
       }));
       expect(markup).toContain("<svg");
       expect(markup).toContain(`data-scene-kind="${spec.content.kind}"`);
+      expect(markup).toContain('data-visual-language="editorial-v2"');
+      expect(markup).toContain("data-composition-family=");
       expect(markup).not.toMatch(/<(?:image|use)[^>]+href="https?:\/\//);
+      expect(markup).not.toContain("data-card-tone=");
+      expect(markup).not.toContain("ALYSTRIA / ");
       expect(markup).not.toContain("NaN");
       expect(markup).not.toContain("undefined");
     }
@@ -90,6 +94,94 @@ describe("built-in scene catalog", () => {
     }));
     expect(markup).not.toContain("example.com");
     expect(markup).toContain("local educational diagram");
+  });
+
+  it("honors the visual-director composition and motion tags", () => {
+    const spec = specimenFor("worked-example");
+    const scene = compileScene({
+      ...spec,
+      tags: [
+        ...(spec.tags ?? []),
+        "visual:intent=demonstrate",
+        "visual:composition=worked_example",
+        "visual:motion=trace-relationship",
+        "visual:density=balanced",
+        "visual:narration-on-screen=false",
+      ],
+    }, landscape);
+    const markup = renderToStaticMarkup(createElement(SceneView, {
+      scene,
+      frame: { tick: 0, reducedMotion: true },
+    }));
+    expect(markup).toContain('data-composition-family="worked-example"');
+    expect(markup).toContain('data-visual-intent="demonstrate"');
+    expect(markup).toContain('data-visual-motion="trace-relationship"');
+    expect(markup).toContain('data-visual-density="balanced"');
+  });
+
+  it("composes owned background and presenter assets without a full-frame veil or truncated identity", () => {
+    const spec = specimenFor("presenter-slide");
+    if (spec.content.kind !== "presenter-slide") throw new Error("Expected presenter-slide specimen");
+    const background = { id: "background.modern-tech-signal-v1", sha256: "b".repeat(64), alt: "Owned modern signal background", fit: "cover" as const };
+    const portrait = { id: "presenter.synthetic.replay", sha256: "c".repeat(64), alt: "Owned fictional synthetic presenter", fit: "cover" as const };
+    const presenterName = "Pinned synthetic replay guide for end-to-end validation";
+    const scene = compileScene({
+      ...spec,
+      content: { ...spec.content, background, portrait, presenterName, disclosure: "Previously generated synthetic presenter replay", placement: "picture-in-picture" },
+    }, landscape);
+    const markup = renderToStaticMarkup(createElement(SceneView, {
+      scene,
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 3, reducedMotion: true },
+      resolveAsset: (asset) => `alystria-asset:sha256/${asset.sha256}`,
+    }));
+
+    expect(markup).toContain('data-background-treatment="artwork-aperture"');
+    expect(markup).toContain('data-readability-surface="header"');
+    expect(markup).toContain('data-readability-surface="presenter-insight"');
+    expect(markup).toContain('data-presenter-disclosure="true"');
+    expect(markup).toContain('data-presenter-placement="picture-in-picture"');
+    expect(markup).toContain("Pinned synthetic replay guide for end-to-end");
+    expect(markup).toContain(">validation</tspan>");
+    expect(markup).toContain("Previously generated synthetic presenter replay");
+    expect(markup).not.toContain("Pinned synthetic replay gui…");
+    expect(markup).not.toContain('fill="#F7F8FC" opacity="0.31"');
+    expect(markup.match(/alystria-asset:sha256\//g)?.length).toBe(2);
+    const insight = markup.match(/data-insight-x="(\d+)" data-insight-width="(\d+)"/);
+    const stage = markup.match(/data-stage-x="(\d+)" data-stage-width="(\d+)"/);
+    expect(insight).not.toBeNull();
+    expect(stage).not.toBeNull();
+    expect(Number(insight?.[1]) + Number(insight?.[2])).toBeLessThanOrEqual(Number(stage?.[1]));
+  });
+
+  it("keeps the teaching relationship visible in the premium scene families", () => {
+    const render = (kind: Parameters<typeof specimenFor>[0]) => renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(specimenFor(kind), landscape),
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 3, reducedMotion: true },
+    }));
+
+    const definition = render("definition");
+    expect(definition).toContain("HOW THE RELATIONSHIP WORKS");
+    expect(definition).toContain("Solve similar parts");
+
+    const comparison = render("comparison");
+    expect(comparison).toContain('data-comparison-side="primary"');
+    expect(comparison).toContain('data-comparison-side="secondary"');
+    expect(comparison).toContain("One recursive multiplication saved");
+
+    const diagram = render("diagram");
+    expect(diagram).toContain('data-signal-stage="1"');
+    expect(diagram).toContain('data-signal-stage="4"');
+    expect(diagram.match(/data-contrast-surface="diagram-stage-number"/g)).toHaveLength(4);
+
+    const worked = render("worked-example");
+    expect(worked).toContain('data-transformation-state="1"');
+    expect(worked).toContain('data-transformation-state="3"');
+    expect(worked.match(/data-contrast-surface="worked-step-number"/g)).toHaveLength(3);
+    expect(worked).toContain("RESOLVED STATE");
+
+    expect(render("code")).toContain('data-code-lens="execution"');
+    expect(render("presenter-slide")).toContain('data-presenter-stage="portrait"');
+    expect(render("summary")).toContain("THE DURABLE THREAD");
   });
 });
 

@@ -20,6 +20,7 @@ export function fixtureManifest(target = fixtureTarget()): RenderManifest {
     rendererVersion: "2.0.0-rc.0",
     target,
     outputDirectory: "./render-output",
+    captionDeliveryMode: "sidecar",
     metadata: { fixture: "true", locale: "en" },
     scenes: [
       {

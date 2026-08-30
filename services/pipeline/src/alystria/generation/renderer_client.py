@@ -67,9 +67,103 @@ SUPPORTED_SCENE_KINDS = frozenset(
         "outro",
     }
 )
-SUPPORTED_CODECS = frozenset(
-    {"vp9", "av1", "h264_nvenc", "h264_mf", "libx264", "hevc_nvenc"}
+SUPPORTED_CODECS = frozenset({"vp9", "av1", "h264_nvenc", "h264_mf", "libx264", "hevc_nvenc"})
+SUPPORTED_CAPTION_DELIVERY_MODES = frozenset({"sidecar", "embedded", "burned", "both"})
+VISUAL_SEMANTIC_INTENTS = frozenset(
+    {
+        "establish",
+        "define",
+        "compare",
+        "transform",
+        "demonstrate",
+        "prove",
+        "emphasize",
+        "question",
+        "resolve",
+        "recap",
+    }
 )
+VISUAL_COMPOSITION_FAMILIES = frozenset(
+    {
+        "full_bleed",
+        "editorial_type",
+        "object_stage",
+        "diagram",
+        "split_evidence",
+        "document_focus",
+        "data_canvas",
+        "worked_example",
+        "presenter",
+        "cinematic_scale",
+    }
+)
+VISUAL_MOTION_INTENTS = frozenset(
+    {
+        "reveal-primary",
+        "trace-relationship",
+        "transform-object",
+        "compare-shift",
+        "evidence-focus",
+        "resolve-hold",
+        "quiet-hold",
+        "match-transition",
+        "emphasize-result",
+        "resolve-answer",
+        "question-hold",
+    }
+)
+VISUAL_TEXT_ROLE_KEYS = frozenset(
+    {
+        "eyebrow",
+        "hero",
+        "support",
+        "label",
+        "markers",
+        "principle",
+        "focus",
+        "proof",
+        "result",
+        "counterpoint",
+        "formula",
+        "answer",
+        "title",
+        "subtitle",
+        "kicker",
+        "value",
+    }
+)
+VISUAL_INFORMATION_UNIT_KEYS = frozenset(
+    {"id", "role", "text", "label", "value", "values", "low", "middle", "high", "relation"}
+)
+VISUAL_AVOID_REGION_KEYS = frozenset({"id", "role", "x", "y", "width", "height", "priority"})
+VISUAL_AVOID_REGION_ROLES = frozenset({"title", "essential-visual", "presenter", "source"})
+VISUAL_FORBIDDEN_PAYLOAD_KEYS = frozenset(
+    {
+        "argv",
+        "code",
+        "command",
+        "component",
+        "css",
+        "executable",
+        "href",
+        "html",
+        "javascript",
+        "path",
+        "render",
+        "script",
+        "src",
+        "style",
+        "template",
+        "url",
+    }
+)
+VISUAL_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+VISUAL_UNSAFE_TEXT_PATTERN = re.compile(
+    r"(?:https?://|file:|data:|javascript:|[A-Za-z]:[\\/]|"
+    r"(?:^|\s)\.\.?[\\/]|(?:^|\s)[\\/](?:Users|home|etc|tmp|mnt|var|Windows|Program\s+Files)[\\/])",
+    re.IGNORECASE,
+)
+VISUAL_HTML_PATTERN = re.compile(r"<\s*/?\s*[A-Za-z][^>]{0,200}>")
 MEDIA_EXTENSIONS = {
     "audio/wav": ".wav",
     "audio/x-wav": ".wav",
@@ -207,7 +301,9 @@ class SubprocessCommandRunner:
         except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
             try:
                 if os.name != "nt":
-                    _kill_process_group(process.pid, int(getattr(signal, "SIGKILL", signal.SIGTERM)))
+                    _kill_process_group(
+                        process.pid, int(getattr(signal, "SIGKILL", signal.SIGTERM))
+                    )
                 else:
                     process.kill()
             except (OSError, ProcessLookupError):
@@ -257,10 +353,13 @@ class RendererOptions:
     concurrency: int = 2
     chunk_frames: int = 120
     timeout_seconds: float = 3_600
+    caption_delivery_mode: str = "sidecar"
 
     def __post_init__(self) -> None:
         if self.codec not in SUPPORTED_CODECS:
             raise ValueError(f"Unsupported renderer codec {self.codec!r}")
+        if self.caption_delivery_mode not in SUPPORTED_CAPTION_DELIVERY_MODES:
+            raise ValueError(f"Unsupported caption delivery mode {self.caption_delivery_mode!r}")
         if self.quality is not None and self.quality < 0:
             raise ValueError("Renderer quality cannot be negative")
         if not 1 <= self.concurrency <= 8:
@@ -325,7 +424,15 @@ class SubprocessRendererClient:
             manifest_path.write_bytes(manifest_bytes)
             input_manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
             output_name = _delivery_name(self.options.codec)
-            argv = self._render_argv(manifest_path, output_root, output_name)
+            caption_delivery_mode = _caption_delivery_mode(manifest["captionDeliveryMode"])
+            caption_language = _caption_language(manifest["metadata"]["locale"])
+            argv = self._render_argv(
+                manifest_path,
+                output_root,
+                output_name,
+                caption_delivery_mode,
+                caption_language,
+            )
             result = self.runner.run(
                 argv,
                 cwd=attempt_root,
@@ -343,6 +450,8 @@ class SubprocessRendererClient:
                 output_root,
                 manifest,
                 input_manifest_sha256,
+                caption_delivery_mode,
+                caption_language,
             )
             delivery = _delivery_record(output)
             delivery_path = _validated_output_file(output_root, delivery)
@@ -353,7 +462,9 @@ class SubprocessRendererClient:
             return RenderedTutorial(
                 content=content,
                 media_type=(
-                    "video/webm" if delivery_path.suffix.casefold() in {".webm", ".mkv"} else "video/mp4"
+                    "video/webm"
+                    if delivery_path.suffix.casefold() in {".webm", ".mkv"}
+                    else "video/mp4"
                 ),
                 original_name=delivery_path.name,
                 manifest=safe_manifest,
@@ -423,17 +534,40 @@ class SubprocessRendererClient:
                 "sourceType": str(scene.get("type", scene.get("kind", kind))),
                 "sceneIndex": index,
             }
-            for metadata_key in ("presenterName", "presenterDisclosure", "presenterPlacement", "presenterFit"):
+            for metadata_key in (
+                "presenterName",
+                "presenterDisclosure",
+                "presenterPlacement",
+                "presenterFit",
+            ):
                 metadata_value = scene.get(metadata_key)
                 if isinstance(metadata_value, str) and metadata_value.strip():
                     scene_metadata[metadata_key] = metadata_value.strip()[:200]
+            scene_content = _scene_content(scene, kind)
+            authored_visual_beat = scene_content.get("visualBeat")
+            if isinstance(authored_visual_beat, Mapping):
+                # The current frame compiler consumes focal/continuity metadata
+                # directly. Keep the complete inert contract in scene content,
+                # while lifting the bounded scalar directions for backwards-
+                # compatible renderer versions.
+                for metadata_key in (
+                    "semanticIntent",
+                    "compositionFamily",
+                    "focalAnchor",
+                    "continuityKey",
+                    "attentionCue",
+                    "visualMetaphor",
+                ):
+                    metadata_value = authored_visual_beat.get(metadata_key)
+                    if isinstance(metadata_value, str):
+                        scene_metadata[metadata_key] = metadata_value
             resolved_scenes.append(
                 {
                     "id": scene_id,
                     "kind": kind,
                     "durationTicks": duration_ticks,
                     "seed": f"{deterministic_seed}:{scene_id}:{index}",
-                    "content": _scene_content(scene, kind),
+                    "content": scene_content,
                     "captions": _scene_captions(cues_value, scene_id, duration_ticks),
                     "accessibilityDescription": str(
                         scene.get("accessibilityDescription")
@@ -466,7 +600,7 @@ class SubprocessRendererClient:
                     {
                         "id": f"narration-{index:04d}-{_safe_name(scene_id)}",
                         "assetId": f"scene-narration:{scene_id}",
-                        "path": str(destination),
+                        "path": _subprocess_command_path(destination),
                         "sha256": digest,
                         "mediaType": media_type,
                         "role": "narration",
@@ -522,14 +656,26 @@ class SubprocessRendererClient:
             resolved_scenes,
             presenter_root,
         )
+        request_metadata = request.get("metadata")
+        metadata_caption_mode = (
+            request_metadata.get("captionDeliveryMode")
+            if isinstance(request_metadata, Mapping)
+            else None
+        )
         return {
             "id": f"{_safe_name(generation_id)}-{target['name']}",
             "schemaVersion": 1,
             "rendererVersion": self.renderer_version,
             "target": target,
             "scenes": resolved_scenes,
-            "outputDirectory": str(output_root),
+            "outputDirectory": _subprocess_command_path(output_root),
             "audioInputs": audio_inputs,
+            "captionDeliveryMode": _caption_delivery_mode(
+                request.get(
+                    "captionDeliveryMode",
+                    metadata_caption_mode or self.options.caption_delivery_mode,
+                )
+            ),
             "captionStyle": caption_style,
             **({"visualAssets": visual_inputs} if visual_inputs else {}),
             **({"fontAssets": font_inputs} if font_inputs else {}),
@@ -579,23 +725,21 @@ class SubprocessRendererClient:
         for index, raw in enumerate(assets_value):
             item = _required_mapping(raw, f"font asset {index}")
             if any(key in item for key in ("path", "url", "uri", "contentBase64")):
-                raise ValueError("Font customization must not contain paths, URLs, or embedded bytes")
+                raise ValueError(
+                    "Font customization must not contain paths, URLs, or embedded bytes"
+                )
             asset_id = _required_string(item, "id")
             if asset_id in seen_ids:
                 raise ValueError(f"Renderer font asset {asset_id!r} is duplicated")
             seen_ids.add(asset_id)
             digest = _required_string(item, "artifactHash").lower()
             if not SHA256_PATTERN.fullmatch(digest) or not self.store.cas.verify(digest):
-                raise RendererOutputError(
-                    f"Font artifact {asset_id!r} is missing or corrupt"
-                )
+                raise RendererOutputError(f"Font artifact {asset_id!r} is missing or corrupt")
             row = self.store.connection.execute(
                 "SELECT media_type FROM artifacts WHERE hash=?", (digest,)
             ).fetchone()
             if row is None:
-                raise RendererOutputError(
-                    f"Font artifact {asset_id!r} is not registered"
-                )
+                raise RendererOutputError(f"Font artifact {asset_id!r} is not registered")
             registered_media_type = str(row["media_type"]).casefold()
             declared_media_type = _required_string(item, "mediaType").casefold()
             suffix = FONT_MEDIA_EXTENSIONS.get(registered_media_type)
@@ -606,9 +750,7 @@ class SubprocessRendererClient:
             family = _required_string(item, "family")
             expected_family = f"AlystriaImported-{digest[:16]}"
             if family != expected_family:
-                raise ValueError(
-                    f"Font artifact {asset_id!r} family alias does not match its hash"
-                )
+                raise ValueError(f"Font artifact {asset_id!r} family alias does not match its hash")
             roles_value = item.get("roles")
             if not isinstance(roles_value, list) or not 1 <= len(roles_value) <= 4:
                 raise ValueError(f"Font artifact {asset_id!r} has invalid roles")
@@ -635,9 +777,7 @@ class SubprocessRendererClient:
             )
             if item.get("exportEligible") is not True:
                 raise ValueError(f"Font artifact {asset_id!r} is not export-cleared")
-            style = _enum_value(
-                item.get("style"), {"normal", "italic"}, "font style"
-            )
+            style = _enum_value(item.get("style"), {"normal", "italic"}, "font style")
             weight_value = item.get("weight")
             weight: int | list[int]
             if isinstance(weight_value, int) and not isinstance(weight_value, bool):
@@ -648,9 +788,7 @@ class SubprocessRendererClient:
                 isinstance(weight_value, list)
                 and len(weight_value) == 2
                 and all(
-                    isinstance(part, int)
-                    and not isinstance(part, bool)
-                    and 1 <= part <= 1_000
+                    isinstance(part, int) and not isinstance(part, bool) and 1 <= part <= 1_000
                     for part in weight_value
                 )
                 and weight_value[0] <= weight_value[1]
@@ -673,7 +811,7 @@ class SubprocessRendererClient:
             result.append(
                 {
                     "id": asset_id,
-                    "path": str(resolved),
+                    "path": _subprocess_command_path(resolved),
                     "sha256": digest,
                     "mediaType": registered_media_type,
                     "family": family,
@@ -695,9 +833,7 @@ class SubprocessRendererClient:
             if family.startswith("AlystriaImported-") and not any(
                 family == item["family"] and role in item["roles"] for item in result
             ):
-                raise ValueError(
-                    f"Typography role {role!r} references an unbound imported font"
-                )
+                raise ValueError(f"Typography role {role!r} references an unbound imported font")
         return result, typography
 
     def _materialize_program_audio(
@@ -755,9 +891,7 @@ class SubprocessRendererClient:
                 "SELECT media_type FROM artifacts WHERE hash=?", (digest,)
             ).fetchone()
             if row is None:
-                raise RendererOutputError(
-                    f"Program audio artifact {asset_id!r} is not registered"
-                )
+                raise RendererOutputError(f"Program audio artifact {asset_id!r} is not registered")
             registered_media_type = str(row["media_type"]).casefold()
             declared_media_type = _required_string(item, "mediaType").casefold()
             if registered_media_type != declared_media_type:
@@ -778,7 +912,7 @@ class SubprocessRendererClient:
             gain_db = _required_number(item, "gainDb", minimum=-96, maximum=24)
             base = {
                 "assetId": asset_id,
-                "path": str(resolved),
+                "path": _subprocess_command_path(resolved),
                 "sha256": digest,
                 "mediaType": registered_media_type,
                 "role": role,
@@ -843,13 +977,9 @@ class SubprocessRendererClient:
                 "SELECT media_type FROM artifacts WHERE hash=?", (artifact_hash,)
             ).fetchone()
             if row is None:
-                raise RendererOutputError(
-                    f"Visual artifact for scene {scene_id} is not registered"
-                )
+                raise RendererOutputError(f"Visual artifact for scene {scene_id} is not registered")
             registered_media_type = str(row["media_type"]).casefold()
-            declared_media_type = str(
-                asset.get("mediaType", registered_media_type)
-            ).casefold()
+            declared_media_type = str(asset.get("mediaType", registered_media_type)).casefold()
             if declared_media_type != registered_media_type:
                 raise RendererOutputError(
                     f"Visual artifact for scene {scene_id} media type does not match its CAS registration"
@@ -918,7 +1048,7 @@ class SubprocessRendererClient:
             inputs.append(
                 {
                     "id": asset_id,
-                    "path": str(resolved),
+                    "path": _subprocess_command_path(resolved),
                     "sha256": artifact_hash,
                     "mediaType": registered_media_type,
                 }
@@ -958,7 +1088,9 @@ class SubprocessRendererClient:
             if presenter is None:
                 continue
             artifact_hash = _required_string(presenter, "artifactHash").lower()
-            if not SHA256_PATTERN.fullmatch(artifact_hash) or not self.store.cas.verify(artifact_hash):
+            if not SHA256_PATTERN.fullmatch(artifact_hash) or not self.store.cas.verify(
+                artifact_hash
+            ):
                 raise RendererOutputError(
                     f"Presenter artifact for scene {scene_id} is missing or corrupt"
                 )
@@ -1003,7 +1135,7 @@ class SubprocessRendererClient:
                 )
             binding: dict[str, Any] = {
                 "id": f"presenter-{index:04d}-{_safe_name(scene_id)}",
-                "path": str(resolved),
+                "path": _subprocess_command_path(resolved),
                 "sha256": artifact_hash,
                 "sceneId": scene_id,
                 "placement": _presenter_placement(presenter),
@@ -1011,44 +1143,60 @@ class SubprocessRendererClient:
             }
             source_start = presenter.get("sourceStartTick")
             if source_start is not None:
-                binding["sourceStartTick"] = _required_int(
-                    presenter, "sourceStartTick", minimum=0
+                binding["sourceStartTick"] = _required_int(presenter, "sourceStartTick", minimum=0)
+            active_duration = presenter.get("activeDurationTicks")
+            if active_duration is not None:
+                duration_ticks = _required_int(scene, "durationTicks", minimum=1)
+                binding["activeDurationTicks"] = _required_int(
+                    presenter,
+                    "activeDurationTicks",
+                    minimum=1,
+                    maximum=duration_ticks,
                 )
             bindings.append(binding)
         return bindings
 
     def _render_argv(
-        self, manifest_path: Path, output_root: Path, output_name: str
+        self,
+        manifest_path: Path,
+        output_root: Path,
+        output_name: str,
+        caption_delivery_mode: str,
+        caption_language: str,
     ) -> list[str]:
         argv = [
-            str(self.runtime.node.path),
-            str(self.runtime.renderer_cli_path),
+            _subprocess_command_path(self.runtime.node.path),
+            _subprocess_command_path(self.runtime.renderer_cli_path),
             "render",
-            str(manifest_path),
+            _subprocess_command_path(manifest_path),
             "--mode",
             "full",
             "--output-dir",
-            str(output_root),
+            _subprocess_command_path(output_root),
             "--output",
             output_name,
             "--browser",
-            str(self.runtime.chromium.path),
+            _subprocess_command_path(self.runtime.chromium.path),
             "--browser-version",
             self.runtime.chromium.version,
             "--browser-sha256",
             self.runtime.chromium.sha256,
             "--ffmpeg",
-            str(self.runtime.ffmpeg.path),
+            _subprocess_command_path(self.runtime.ffmpeg.path),
             "--ffprobe",
-            str(self.runtime.ffprobe.path),
+            _subprocess_command_path(self.runtime.ffprobe.path),
             "--codec",
             self.options.codec,
+            "--captions",
+            caption_delivery_mode,
+            "--caption-language",
+            caption_language,
             "--concurrency",
             str(self.options.concurrency),
             "--chunk-frames",
             str(self.options.chunk_frames),
             "--progress",
-            str(output_root / "render-progress.jsonl"),
+            _subprocess_command_path(output_root / "render-progress.jsonl"),
             "--discard-frame-cache",
         ]
         if self.options.quality is not None:
@@ -1093,6 +1241,8 @@ class SubprocessRendererClient:
         output_root: Path,
         input_manifest: Mapping[str, Any],
         input_manifest_sha256: str,
+        expected_caption_delivery_mode: str,
+        expected_caption_language: str,
     ) -> dict[str, Any]:
         try:
             info = path.lstat()
@@ -1119,12 +1269,21 @@ class SubprocessRendererClient:
             or browser.get("networkPolicy") != "deny"
         ):
             raise RendererOutputError("Renderer browser pin or network policy does not match")
-        if Path(_required_string(browser, "executablePath")).resolve() != self.runtime.chromium.path.resolve():
+        if (
+            Path(_required_string(browser, "executablePath")).resolve()
+            != self.runtime.chromium.path.resolve()
+        ):
             raise RendererOutputError("Renderer used a different Chromium executable")
         executables = _required_mapping(value.get("executables"), "renderer executables")
-        if Path(_required_string(executables, "ffmpeg")).resolve() != self.runtime.ffmpeg.path.resolve():
+        if (
+            Path(_required_string(executables, "ffmpeg")).resolve()
+            != self.runtime.ffmpeg.path.resolve()
+        ):
             raise RendererOutputError("Renderer used a different FFmpeg executable")
-        if Path(_required_string(executables, "ffprobe")).resolve() != self.runtime.ffprobe.path.resolve():
+        if (
+            Path(_required_string(executables, "ffprobe")).resolve()
+            != self.runtime.ffprobe.path.resolve()
+        ):
             raise RendererOutputError("Renderer used a different ffprobe executable")
         target = _required_mapping(value.get("target"), "renderer target")
         if target != input_manifest["target"]:
@@ -1142,6 +1301,29 @@ class SubprocessRendererClient:
             _validated_output_file(output_root, record)
         if "delivery" not in kinds:
             raise RendererOutputError("Renderer output has no delivery file")
+        for required_kind in ("captions-vtt", "captions-srt", "captions-ledger"):
+            if required_kind not in kinds:
+                raise RendererOutputError(
+                    f"Renderer output has no required {required_kind} sidecar"
+                )
+        caption_delivery = _required_mapping(
+            value.get("captionDelivery"), "renderer caption delivery"
+        )
+        if caption_delivery.get("mode") != expected_caption_delivery_mode:
+            raise RendererOutputError("Renderer caption delivery mode does not match its request")
+        if caption_delivery.get("language") != expected_caption_language:
+            raise RendererOutputError("Renderer caption language does not match its request")
+        expected_burned = expected_caption_delivery_mode in {"burned", "both"}
+        if caption_delivery.get("burnedIntoVideo") is not expected_burned:
+            raise RendererOutputError("Renderer open-caption state does not match its request")
+        expected_embedded = expected_caption_delivery_mode in {"embedded", "both"}
+        cue_count = _required_int(caption_delivery, "cueCount", minimum=0)
+        actual_embedded = bool(caption_delivery.get("embeddedSoftTrack"))
+        if actual_embedded is not (expected_embedded and cue_count > 0):
+            raise RendererOutputError("Renderer soft-caption state does not match its request")
+        ledger_digest = _required_string(caption_delivery, "canonicalCueLedgerSha256")
+        if not SHA256_PATTERN.fullmatch(ledger_digest):
+            raise RendererOutputError("Renderer caption ledger digest is invalid")
         _validate_probe(value, input_manifest)
         return cast(dict[str, Any], value)
 
@@ -1190,7 +1372,9 @@ def create_production_renderer_client(
     try:
         manifest_path.relative_to(root)
     except ValueError as error:
-        raise RendererRuntimeError("The runtime manifest must be inside its verified pack") from error
+        raise RendererRuntimeError(
+            "The runtime manifest must be inside its verified pack"
+        ) from error
     manifest = _read_json_object(manifest_path, "runtime manifest")
     components_value = manifest.get("components")
     if isinstance(components_value, list):
@@ -1395,6 +1579,26 @@ def _guarded_child(root: Path, candidate: Path) -> Path:
     return candidate
 
 
+def _subprocess_command_path(path: Path) -> str:
+    r"""Spell a verified Windows path for third-party command-line tools.
+
+    Runtime discovery keeps canonical ``\\?\`` paths for containment and hash
+    checks. Node 24's Windows module loader cannot use that spelling for its
+    JavaScript entry point and resolves it to the bare drive (``C:``). Removing
+    only the extended prefix preserves the verified target while every argv
+    element remains separate and shell-free.
+    """
+
+    value = str(path)
+    if os.name != "nt":
+        return value
+    if value.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + value[8:]
+    if value.startswith("\\\\?\\"):
+        return value[4:]
+    return value
+
+
 def _required_mapping(value: object, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{label} must be an object")
@@ -1490,9 +1694,7 @@ def _validate_staged_font(
         else prefix == b"wOFF"
     )
     if not valid:
-        raise RendererOutputError(
-            f"Staged font {label!r} bytes do not match {media_type}"
-        )
+        raise RendererOutputError(f"Staged font {label!r} bytes do not match {media_type}")
     return resolved
 
 
@@ -1557,9 +1759,7 @@ def _render_visual_customization(
     assets_value = customization.get("assets", [])
     if not isinstance(assets_value, list):
         raise ValueError("Renderer visual customization assets must be a list")
-    presenter = _required_mapping(
-        customization.get("presenter", {}), "visual presenter policy"
-    )
+    presenter = _required_mapping(customization.get("presenter", {}), "visual presenter policy")
     presenter_enabled = presenter.get("enabled") is True
     expanded: list[dict[str, Any]] = []
     for index, item in enumerate(assets_value):
@@ -1572,9 +1772,16 @@ def _render_visual_customization(
         if any(key in asset for key in ("path", "url", "uri", "contentBase64")):
             raise ValueError("Visual customization must not contain paths, URLs, or embedded bytes")
         target_scenes = (
-            [scene for scene in scenes if str(scene.get("kind")) in {"presenter", "presenter-slide", "presenter-with-slide"}]
+            [
+                scene
+                for scene in scenes
+                if str(scene.get("kind"))
+                in {"presenter", "presenter-slide", "presenter-with-slide"}
+            ]
             if role == "presenter-portrait" and presenter_enabled
-            else list(scenes) if role == "background" else []
+            else list(scenes)
+            if role == "background"
+            else []
         )
         for scene in target_scenes:
             expanded.append(
@@ -1591,10 +1798,16 @@ def _render_visual_customization(
     caption_value = customization.get("captionStyle", default_caption)
     caption = _required_mapping(caption_value, "caption render style")
     result = {
-        "position": _enum_value(caption.get("position"), {"auto", "top", "lower-third"}, "caption position"),
-        "style": _enum_value(caption.get("style"), {"soft-panel", "solid-panel", "outline"}, "caption style"),
+        "position": _enum_value(
+            caption.get("position"), {"auto", "top", "lower-third"}, "caption position"
+        ),
+        "style": _enum_value(
+            caption.get("style"), {"soft-panel", "solid-panel", "outline"}, "caption style"
+        ),
         "sizePercent": _bounded_number(caption.get("sizePercent"), 60, 160, "caption sizePercent"),
-        "safeInsetPercent": _bounded_number(caption.get("safeInsetPercent"), 2, 24, "caption safeInsetPercent"),
+        "safeInsetPercent": _bounded_number(
+            caption.get("safeInsetPercent"), 2, 24, "caption safeInsetPercent"
+        ),
         "maxLines": _bounded_int(caption.get("maxLines"), 1, 3, "caption maxLines"),
         "textColor": _hex_color(caption.get("textColor"), "caption textColor"),
         "panelColor": _hex_color(caption.get("panelColor"), "caption panelColor"),
@@ -1670,9 +1883,7 @@ def _visual_asset_fit(value: object, role: str) -> str:
     return normalized
 
 
-def _visual_asset_alt(
-    asset: Mapping[str, Any], scene: Mapping[str, Any]
-) -> str:
+def _visual_asset_alt(asset: Mapping[str, Any], scene: Mapping[str, Any]) -> str:
     value = asset.get("alt", scene.get("accessibilityDescription", scene.get("content", {})))
     if isinstance(value, Mapping):
         value = scene.get("id", "Tutorial visual")
@@ -1734,6 +1945,247 @@ def _scene_kind(value: object) -> str:
     return normalized if normalized in SUPPORTED_SCENE_KINDS else "bullets"
 
 
+def _bounded_visual_text(value: object, label: str, maximum: int) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be text")
+    if "\x00" in value or any(
+        ord(character) < 32 and character not in "\t\n\r" for character in value
+    ):
+        raise ValueError(f"{label} contains control characters")
+    normalized = " ".join(value.split())
+    if not normalized or len(normalized) > maximum:
+        raise ValueError(f"{label} must contain 1 to {maximum} characters")
+    if VISUAL_UNSAFE_TEXT_PATTERN.search(normalized) or VISUAL_HTML_PATTERN.search(normalized):
+        raise ValueError(f"{label} cannot contain a path, URL, URI, or HTML")
+    return normalized
+
+
+def _visual_identifier(value: object, label: str) -> str:
+    normalized = _bounded_visual_text(value, label, 80)
+    if not VISUAL_IDENTIFIER_PATTERN.fullmatch(normalized):
+        raise ValueError(f"{label} must be a bounded identifier")
+    return normalized
+
+
+def _visual_number(value: object, label: str) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{label} must be a finite number")
+    if abs(value) > 1_000_000_000:
+        raise ValueError(f"{label} is outside the supported visual-data range")
+    return value
+
+
+def _visual_information_unit(value: object, index: int) -> dict[str, Any]:
+    unit = _required_mapping(value, f"visualBeat information unit {index}")
+    keys = set(unit)
+    forbidden = keys & VISUAL_FORBIDDEN_PAYLOAD_KEYS
+    if forbidden:
+        raise ValueError(
+            "visualBeat information units cannot contain executable or locator fields: "
+            + ", ".join(sorted(forbidden))
+        )
+    unknown = keys - VISUAL_INFORMATION_UNIT_KEYS
+    if unknown:
+        raise ValueError(
+            "visualBeat information unit contains unsupported fields: "
+            + ", ".join(sorted(str(key) for key in unknown))
+        )
+    normalized: dict[str, Any] = {
+        "id": _visual_identifier(unit.get("id"), f"visualBeat information unit {index} id"),
+        "role": _visual_identifier(unit.get("role"), f"visualBeat information unit {index} role"),
+    }
+    for key in ("text", "label", "relation"):
+        if key in unit:
+            normalized[key] = _bounded_visual_text(
+                unit[key], f"visualBeat information unit {index} {key}", 180
+            )
+    for key in ("value", "low", "middle", "high"):
+        if key not in unit:
+            continue
+        raw_value = unit[key]
+        normalized[key] = (
+            _bounded_visual_text(raw_value, f"visualBeat information unit {index} {key}", 120)
+            if isinstance(raw_value, str)
+            else _visual_number(raw_value, f"visualBeat information unit {index} {key}")
+        )
+    if "values" in unit:
+        raw_values = unit["values"]
+        if not isinstance(raw_values, list) or not 1 <= len(raw_values) <= 32:
+            raise ValueError("visualBeat information-unit values must contain 1 to 32 entries")
+        normalized_values: list[str | int | float] = []
+        for value_index, raw_value in enumerate(raw_values):
+            normalized_values.append(
+                _bounded_visual_text(
+                    raw_value,
+                    f"visualBeat information unit {index} value {value_index}",
+                    120,
+                )
+                if isinstance(raw_value, str)
+                else _visual_number(
+                    raw_value, f"visualBeat information unit {index} value {value_index}"
+                )
+            )
+        normalized["values"] = normalized_values
+    if len(normalized) == 2:
+        raise ValueError(f"visualBeat information unit {index} has no display data")
+    return normalized
+
+
+def _visual_text_roles(value: object) -> dict[str, str]:
+    roles = _required_mapping(value, "visualBeat textRoles")
+    if not 1 <= len(roles) <= 8:
+        raise ValueError("visualBeat textRoles must contain 1 to 8 entries")
+    forbidden = set(roles) & VISUAL_FORBIDDEN_PAYLOAD_KEYS
+    if forbidden:
+        raise ValueError(
+            "visualBeat textRoles cannot contain executable or locator fields: "
+            + ", ".join(sorted(forbidden))
+        )
+    unknown = set(roles) - VISUAL_TEXT_ROLE_KEYS
+    if unknown:
+        raise ValueError(
+            "visualBeat textRoles contains unsupported roles: "
+            + ", ".join(sorted(str(key) for key in unknown))
+        )
+    return {
+        str(key): _bounded_visual_text(value, f"visualBeat text role {key}", 120)
+        for key, value in roles.items()
+    }
+
+
+def _visual_avoid_region(value: object, index: int) -> str | dict[str, Any]:
+    if isinstance(value, str):
+        return _visual_identifier(value, f"visualBeat avoid region {index}")
+    region = _required_mapping(value, f"visualBeat avoid region {index}")
+    unknown = set(region) - VISUAL_AVOID_REGION_KEYS
+    if unknown:
+        raise ValueError(
+            "visualBeat avoid region contains unsupported fields: "
+            + ", ".join(sorted(str(key) for key in unknown))
+        )
+    role = str(region.get("role", ""))
+    if role not in VISUAL_AVOID_REGION_ROLES:
+        raise ValueError(f"visualBeat avoid region {index} has unsupported role {role!r}")
+    priority = str(region.get("priority", ""))
+    if priority not in {"required", "preferred"}:
+        raise ValueError(f"visualBeat avoid region {index} has unsupported priority")
+    normalized: dict[str, Any] = {
+        "id": _visual_identifier(region.get("id"), f"visualBeat avoid region {index} id"),
+        "role": role,
+        "priority": priority,
+    }
+    for key in ("x", "y", "width", "height"):
+        coordinate = _visual_number(region.get(key), f"visualBeat avoid region {index} {key}")
+        if not 0 <= coordinate <= 1:
+            raise ValueError(f"visualBeat avoid region {index} {key} must be normalized")
+        normalized[key] = coordinate
+    if normalized["width"] <= 0 or normalized["height"] <= 0:
+        raise ValueError(f"visualBeat avoid region {index} must have positive dimensions")
+    if normalized["x"] + normalized["width"] > 1 or normalized["y"] + normalized["height"] > 1:
+        raise ValueError(f"visualBeat avoid region {index} exceeds the target frame")
+    return normalized
+
+
+def _authored_visual_beat(value: object) -> dict[str, Any]:
+    beat = _required_mapping(value, "visualBeat")
+    allowed_keys = {
+        "schemaVersion",
+        "semanticIntent",
+        "compositionFamily",
+        "focalAnchor",
+        "continuityKey",
+        "informationUnits",
+        "visualMetaphor",
+        "attentionCue",
+        "motionIntent",
+        "textRoles",
+        "avoidRegions",
+    }
+    forbidden = set(beat) & VISUAL_FORBIDDEN_PAYLOAD_KEYS
+    if forbidden:
+        raise ValueError(
+            "visualBeat cannot contain executable or locator fields: "
+            + ", ".join(sorted(forbidden))
+        )
+    unknown = set(beat) - allowed_keys
+    if unknown:
+        raise ValueError(
+            "visualBeat contains unsupported fields: "
+            + ", ".join(sorted(str(key) for key in unknown))
+        )
+    schema_version = beat.get("schemaVersion")
+    if isinstance(schema_version, bool) or schema_version != 1:
+        raise ValueError("visualBeat requires schemaVersion 1")
+    semantic_intent = str(beat.get("semanticIntent", ""))
+    if semantic_intent not in VISUAL_SEMANTIC_INTENTS:
+        raise ValueError(f"Unsupported visualBeat semanticIntent {semantic_intent!r}")
+    composition_family = str(beat.get("compositionFamily", ""))
+    if composition_family not in VISUAL_COMPOSITION_FAMILIES:
+        raise ValueError(f"Unsupported visualBeat compositionFamily {composition_family!r}")
+    information_units = beat.get("informationUnits")
+    if not isinstance(information_units, list) or not 1 <= len(information_units) <= 8:
+        raise ValueError("visualBeat informationUnits must contain 1 to 8 entries")
+    motion_intent = beat.get("motionIntent")
+    if isinstance(motion_intent, str):
+        raw_motion_intents = [motion_intent]
+    elif isinstance(motion_intent, list) and 1 <= len(motion_intent) <= 4:
+        raw_motion_intents = motion_intent
+    else:
+        raise ValueError("visualBeat motionIntent must contain 1 to 4 intents")
+    normalized_motion: list[str] = []
+    for raw_intent in raw_motion_intents:
+        intent = str(raw_intent)
+        if intent not in VISUAL_MOTION_INTENTS:
+            raise ValueError(f"Unsupported visualBeat motion intent {intent!r}")
+        if intent not in normalized_motion:
+            normalized_motion.append(intent)
+    avoid_regions = beat.get("avoidRegions", [])
+    if not isinstance(avoid_regions, list) or len(avoid_regions) > 8:
+        raise ValueError("visualBeat avoidRegions must contain at most 8 entries")
+    result: dict[str, Any] = {
+        "schemaVersion": 1,
+        "semanticIntent": semantic_intent,
+        "compositionFamily": composition_family,
+        "focalAnchor": _visual_identifier(beat.get("focalAnchor"), "visualBeat focalAnchor"),
+        "continuityKey": _visual_identifier(beat.get("continuityKey"), "visualBeat continuityKey"),
+        "informationUnits": [
+            _visual_information_unit(unit, index) for index, unit in enumerate(information_units)
+        ],
+        "attentionCue": _visual_identifier(beat.get("attentionCue"), "visualBeat attentionCue"),
+        "motionIntent": normalized_motion,
+        "textRoles": _visual_text_roles(beat.get("textRoles")),
+        "avoidRegions": [
+            _visual_avoid_region(region, index) for index, region in enumerate(avoid_regions)
+        ],
+    }
+    if "visualMetaphor" in beat:
+        result["visualMetaphor"] = _bounded_visual_text(
+            beat["visualMetaphor"], "visualBeat visualMetaphor", 240
+        )
+    return result
+
+
+def _on_screen_text(value: object) -> list[str]:
+    if not isinstance(value, list) or not 1 <= len(value) <= 8:
+        raise ValueError("onScreenText must contain 1 to 8 concise labels")
+    result: list[str] = []
+    seen: set[str] = set()
+    total_characters = 0
+    for index, raw_text in enumerate(value):
+        label = _bounded_visual_text(raw_text, f"onScreenText item {index}", 120)
+        total_characters += len(label)
+        if total_characters > 640:
+            raise ValueError("onScreenText exceeds the 640-character scene budget")
+        identity = label.casefold()
+        if identity in seen:
+            continue
+        seen.add(identity)
+        result.append(label)
+    if not result:
+        raise ValueError("onScreenText must contain at least one unique label")
+    return result
+
+
 def _scene_content(scene: Mapping[str, Any], kind: str) -> dict[str, Any]:
     title = _required_string(scene, "title")
     narration = str(scene.get("narration", "")).strip()
@@ -1743,18 +2195,37 @@ def _scene_content(scene: Mapping[str, Any], kind: str) -> dict[str, Any]:
         for part in re.split(r"(?<=[.!?])\s+", narration)
         if part.strip() and part.strip() != title
     ][:5]
-    return {
-        "eyebrow": kind.replace("-", " ").upper(),
+    authored_on_screen_text = (
+        _on_screen_text(scene["onScreenText"]) if "onScreenText" in scene else None
+    )
+    authored_visual_beat = (
+        _authored_visual_beat(scene["visualBeat"]) if "visualBeat" in scene else None
+    )
+    if authored_on_screen_text is not None or authored_visual_beat is not None:
+        title = _bounded_visual_text(title, "authored scene title", 240)
+        if visual_intent:
+            visual_intent = _bounded_visual_text(visual_intent, "authored scene visualIntent", 500)
+    text_roles = (
+        authored_visual_beat.get("textRoles", {}) if authored_visual_beat is not None else {}
+    )
+    content: dict[str, Any] = {
+        "eyebrow": text_roles.get("eyebrow", kind.replace("-", " ").upper()),
         "title": title,
-        "body": visual_intent or narration or None,
+        # Authored display labels supersede narration as frame copy. Narration
+        # remains in the audio/caption ledger and visualIntent remains a
+        # bounded non-executable direction for scene compilation.
+        "body": visual_intent or (None if authored_on_screen_text else narration or None),
         "accent": "#5658E8",
-        "items": sentence_items,
+        "items": authored_on_screen_text or sentence_items,
     }
+    if authored_on_screen_text is not None:
+        content["onScreenText"] = authored_on_screen_text
+    if authored_visual_beat is not None:
+        content["visualBeat"] = authored_visual_beat
+    return content
 
 
-def _scene_captions(
-    cues: list[object], scene_id: str, duration_ticks: int
-) -> list[dict[str, Any]]:
+def _scene_captions(cues: list[object], scene_id: str, duration_ticks: int) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for index, raw_cue in enumerate(cues):
         cue = _required_mapping(raw_cue, f"caption {index} for {scene_id}")
@@ -1814,6 +2285,22 @@ def _delivery_name(codec: str) -> str:
     return "tutorial.webm" if codec in {"vp9", "av1"} else "tutorial.mp4"
 
 
+def _caption_delivery_mode(value: object) -> str:
+    if not isinstance(value, str) or value not in SUPPORTED_CAPTION_DELIVERY_MODES:
+        raise ValueError("captionDeliveryMode must be sidecar, embedded, burned, or both")
+    return value
+
+
+def _caption_language(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Caption locale must be a BCP-47 language tag")
+    aliases = {"English": "en", "Spanish": "es", "Hindi": "hi"}
+    selected = aliases.get(value, value).replace("_", "-")
+    if not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", selected):
+        raise ValueError(f"Caption locale is not a bounded BCP-47 tag: {value!r}")
+    return selected
+
+
 def _validated_output_file(root: Path, record: Mapping[str, Any]) -> Path:
     raw_path = Path(_required_string(record, "path"))
     path = raw_path if raw_path.is_absolute() else root / raw_path
@@ -1848,10 +2335,18 @@ def _validate_probe(output: Mapping[str, Any], input_manifest: Mapping[str, Any]
         raise RendererOutputError("Renderer probe dimensions do not match the target")
     if probe.get("audioSampleRate") != 48_000:
         raise RendererOutputError("Renderer delivery is not 48 kHz")
-    if not isinstance(probe.get("durationSeconds"), (int, float)) or float(
-        probe["durationSeconds"]
-    ) <= 0:
+    if (
+        not isinstance(probe.get("durationSeconds"), (int, float))
+        or float(probe["durationSeconds"]) <= 0
+    ):
         raise RendererOutputError("Renderer probe duration is invalid")
+    caption_delivery = _required_mapping(output.get("captionDelivery"), "renderer caption delivery")
+    has_soft_track = bool(caption_delivery.get("embeddedSoftTrack"))
+    caption_codec = probe.get("captionCodec")
+    if has_soft_track and caption_codec in {None, "", "none", "unknown"}:
+        raise RendererOutputError("Renderer probe is missing the requested soft caption track")
+    if not has_soft_track and caption_codec != "none":
+        raise RendererOutputError("Renderer clean master unexpectedly contains captions")
 
 
 def _portable_output_manifest(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -1869,12 +2364,20 @@ def _portable_output_manifest(value: Mapping[str, Any]) -> dict[str, Any]:
     for key in ("progressPath", "outputManifestPath"):
         if isinstance(result.get(key), str):
             result[key] = Path(result[key]).name
+    caption_delivery = result.get("captionDelivery")
+    if isinstance(caption_delivery, dict):
+        sidecars = caption_delivery.get("sidecars")
+        if isinstance(sidecars, dict):
+            for name in ("vtt", "srt", "ledger"):
+                if isinstance(sidecars.get(name), str):
+                    sidecars[name] = Path(sidecars[name]).name
     return cast(dict[str, Any], result)
 
 
 def _render_metrics(output: Mapping[str, Any]) -> dict[str, Any]:
     probe = _required_mapping(output.get("probe"), "renderer probe")
     qa = _required_mapping(output.get("qaMetrics"), "renderer QA metrics")
+    caption_delivery = _required_mapping(output.get("captionDelivery"), "renderer caption delivery")
 
     def finite(name: str) -> float:
         value = qa.get(name)
@@ -1899,6 +2402,11 @@ def _render_metrics(output: Mapping[str, Any]) -> dict[str, Any]:
         "audioSampleRateHz": _required_int(probe, "audioSampleRate", minimum=1),
         "audioChannels": _required_int(probe, "audioChannels", minimum=1),
         "captionCodec": str(probe.get("captionCodec", "unknown")),
+        "captionDeliveryMode": _required_string(caption_delivery, "mode"),
+        "captionLanguage": _required_string(caption_delivery, "language"),
+        "captionCueCount": _required_int(caption_delivery, "cueCount", minimum=0),
+        "captionsBurnedIntoVideo": bool(caption_delivery.get("burnedIntoVideo")),
+        "captionsEmbeddedSoftTrack": bool(caption_delivery.get("embeddedSoftTrack")),
         "colorTagStatus": str(probe.get("colorTagStatus", "unknown")),
         "width": _required_int(probe, "width", minimum=1),
         "height": _required_int(probe, "height", minimum=1),

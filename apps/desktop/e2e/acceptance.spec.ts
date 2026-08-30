@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
   await page.reload();
 });
 
-test("@acceptance drives create, approve, review, and export through the app", async ({ page }, testInfo) => {
+test("@ui-contract drives create, approve, review boundary, and export through the browser adapter", async ({ page }, testInfo) => {
   test.setTimeout(90_000);
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
@@ -15,24 +15,34 @@ test("@acceptance drives create, approve, review, and export through the app", a
     if (message.type() === "error") consoleErrors.push(message.text());
   });
 
+  await expect(page.locator(".runtime-badge")).toContainText("UI contract");
+  await expect(page.locator(".runtime-badge")).toHaveAttribute("title", /browser adapter only; no native artifact/i);
+
   await page.getByRole("button", { name: /models & providers/i }).click();
   await expect(page.getByRole("heading", { name: /provider & model profiles/i })).toBeVisible();
+  for (const [provider, key] of [["OpenAI", "ui-contract-openai"], ["ElevenLabs", "ui-contract-elevenlabs"]] as const) {
+    await page.getByRole("button", { name: new RegExp(`add ${provider} credential`, "i") }).click();
+    await page.getByLabel("API key").fill(key);
+    await page.getByRole("button", { name: /store securely/i }).click();
+    await expect(page.getByText(/browser demo connection updated/i)).toBeVisible();
+    await page.locator(".toast button").click();
+  }
   await page.getByRole("button", { name: /add profile/i }).click();
-  await page.getByLabel("Name", { exact: true }).fill("Acceptance local");
-  const localRoutes: Record<string, string> = {
-    "Writing & review": "local/qwen3.5-9b-gguf",
-    Research: "off for deterministic acceptance",
-    Images: "local/flux2-klein-4b",
-    Motion: "off for deterministic acceptance",
-    Narration: "local/kokoro",
-    Transcription: "off for deterministic acceptance",
-    Presenter: "off for deterministic acceptance",
-    "Lip-sync": "off for deterministic acceptance",
+  await page.getByLabel("Name", { exact: true }).fill("UI contract cloud");
+  const routes: Record<string, { provider: string; model: string }> = {
+    "Writing & review": { provider: "openai", model: "gpt-5.4" },
+    Research: { provider: "openai", model: "off for deterministic acceptance" },
+    Images: { provider: "openai", model: "gpt-image-2" },
+    Motion: { provider: "runway", model: "off for deterministic acceptance" },
+    Narration: { provider: "elevenlabs", model: "eleven_multilingual_v2" },
+    Transcription: { provider: "openai", model: "off for deterministic acceptance" },
+    Presenter: { provider: "local-runtime", model: "off for deterministic acceptance" },
+    "Lip-sync": { provider: "local-runtime", model: "off for deterministic acceptance" },
   };
-  for (const [medium, model] of Object.entries(localRoutes)) {
+  for (const [medium, routeSettings] of Object.entries(routes)) {
     const route = page.locator(".profile-route-grid label").filter({ hasText: medium });
-    await route.locator("select").selectOption("local-runtime");
-    await route.getByLabel(`${medium} model`).fill(model);
+    await route.locator("select").selectOption(routeSettings.provider);
+    await route.getByLabel(`${medium} model`).fill(routeSettings.model);
   }
   await page.getByRole("button", { name: /save setup & active profile/i }).click();
   await expect(page.getByText(/setup saved locally/i)).toBeVisible();
@@ -43,17 +53,6 @@ test("@acceptance drives create, approve, review, and export through the app", a
   await page.getByPlaceholder(/explain why karatsuba/i).fill(
     "Explain why Karatsuba multiplication needs only three recursive products",
   );
-  await page.locator(".source-drop input[type=file]").setInputFiles({
-    name: "karatsuba-acceptance-notes.md",
-    mimeType: "text/markdown",
-    buffer: Buffer.from(
-      "# Acceptance source\nKaratsuba replaces four half-size products with three exact products.\n",
-    ),
-  });
-  await expect(page.getByLabel(/selected source files/i)).toContainText(
-    "karatsuba-acceptance-notes.md",
-  );
-
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await wizard.getByLabel("Audience").fill("Undergraduate computer science students");
   await wizard.getByLabel("Target duration").selectOption("5");
@@ -64,7 +63,8 @@ test("@acceptance drives create, approve, review, and export through the app", a
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "Maximum", exact: true }).click();
   await expect(page.getByText(/hard creation budget/i)).toBeVisible();
-  await expect(page.getByText(/1 private file/i)).toBeVisible();
+  await page.getByLabel("Content class", { exact: true }).selectOption("public");
+  await expect(page.getByText(/none yet/i)).toBeVisible();
   await page.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
   await expect(page.locator(".routing-readiness")).toContainText("Ready");
   await page.getByRole("button", { name: /create learning plan/i }).click();
@@ -74,25 +74,31 @@ test("@acceptance drives create, approve, review, and export through the app", a
   await expect(page.locator(".jobs-list")).toContainText("Creating learning plan");
   await page.locator(".jobs-drawer > header .icon-button").click();
 
-  await page.getByRole("button", { name: /^sources$/i }).click();
-  await expect(page.getByText("karatsuba-acceptance-notes.md", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /approve learning plan/i }).click();
 
   await expect(page.getByRole("heading", { name: /review the whole argument/i })).toBeVisible();
   await expect(page.getByText(/tutorial generation completed/i)).toBeVisible();
-  await page.locator(".review-player .large-play").click();
-  await expect(page.locator(".review-player .large-play")).toBeVisible();
-  await page.getByRole("button", { name: /prepare export/i }).click();
+  await expect(page.getByRole("heading", { name: /no authoritative media yet/i })).toBeVisible();
+  await expect(page.getByText(/browser ui contract does not create video/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /prepare export/i })).toBeDisabled();
+  await page.locator(".review-player").screenshot({ path: testInfo.outputPath("ui-contract-review-boundary-v2.png") });
+  await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /export/i }).click();
 
   await expect(page.getByRole("heading", { name: /package the finished lesson/i })).toBeVisible();
   await page.getByLabel("Resolution").selectOption("1080p");
   await page.getByRole("button", { name: "1:1 Square", exact: true }).click();
   await page.locator(".format-options button").first().click();
-  await expect(page.getByRole("button", { name: /captions/i })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("radio", { name: /sidecar files/i })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByText(/clean picture · no caption pixels/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /accessible transcript/i })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
+  await page.getByLabel("Frame rate").selectOption("24");
+  await page.getByLabel("Codec preference").selectOption("av1");
+  await expect(page.getByLabel("Frame rate")).toHaveValue("24");
+  await expect(page.getByLabel("Codec preference")).toHaveValue("av1");
+  await expect(page.getByText(/codec preference is recorded with this request/i)).toBeVisible();
 
   await page.getByRole("button", { name: /export portable/i }).click();
   await expect(page.getByText(/portable project archived/i)).toBeVisible();
@@ -102,7 +108,7 @@ test("@acceptance drives create, approve, review, and export through the app", a
   await page.getByRole("button", { name: /render 1080p master/i }).click();
   await expect(page.getByText(/export queued/i)).toBeVisible();
   await expect(page.getByRole("complementary", { name: /background jobs/i })).toHaveClass(/open/);
-  await expect(page.locator(".jobs-list")).toContainText("Browser demo only: master export simulated");
+  await expect(page.locator(".jobs-list")).toContainText("UI contract only: 24 fps AV1 export simulated");
   await expect(page.locator(".jobs-list")).toContainText("1080p");
   await expect(page.locator(".jobs-list .job-card.complete").first()).toBeVisible();
 
@@ -110,8 +116,9 @@ test("@acceptance drives create, approve, review, and export through the app", a
   expect(persisted.projects[0].title).toBe(
     "Explain why Karatsuba multiplication needs only three recursive products",
   );
-  expect(persisted.projects[0].sources[0].filename).toBe("karatsuba-acceptance-notes.md");
-  expect(persisted.jobs.some((job: { operation?: string }) => job.operation === "export_master")).toBe(true);
+  const exportJob = persisted.jobs.find((job: { operation?: string }) => job.operation === "export_master");
+  expect(exportJob).toBeTruthy();
+  expect(exportJob.result).toMatchObject({ requestedFps: 24, requestedCodec: "av1", codecForwarded: false, path: null });
 
   await page.locator(".jobs-drawer > header .icon-button").click();
   const toastClose = page.locator(".toast button");
@@ -123,4 +130,41 @@ test("@acceptance drives create, approve, review, and export through the app", a
 
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+test("@ui-contract exposes retry and cancel only for eligible durable job states", async ({ page }) => {
+  await expect(page.getByRole("heading", { name: /turn a difficult idea/i })).toBeVisible();
+  await page.evaluate(() => {
+    const snapshot = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+    const link = { projectId: "fault-project", projectDirectory: "C:/Alystria/fault-project" };
+    snapshot.jobs = [
+      { id: "fault-failed-retry", title: "Retryable failure", detail: "Renderer unavailable", status: "attention", progress: 0, retryable: true, result: { receiptState: "FAILED" }, ...link },
+      { id: "fault-failed-final", title: "Final failure", detail: "Invalid request", status: "attention", progress: 0, retryable: false, result: { receiptState: "FAILED" }, ...link },
+      { id: "fault-cancelled", title: "Cancelled work", detail: "Cancelled by user", status: "attention", progress: 0, retryable: false, result: { receiptState: "CANCELLED" }, ...link },
+      { id: "fault-stale", title: "Stale work", detail: "Revision changed", status: "attention", progress: 0, retryable: false, result: { receiptState: "STALE" }, ...link },
+      { id: "fault-blocked", title: "Approval wait", detail: "Approval required", status: "attention", progress: 0, retryable: true, result: { receiptState: "BLOCKED" }, ...link },
+      { id: "fault-running", title: "Active render", detail: "Rendering", status: "running", progress: 42, retryable: false, result: { receiptState: "RUNNING" }, ...link },
+    ];
+    localStorage.setItem("alystria-studio-v2", JSON.stringify(snapshot));
+  });
+  await page.reload();
+  await page.locator(".jobs-button").click();
+
+  const retryable = page.locator(".job-card").filter({ hasText: "Retryable failure" });
+  await expect(retryable.getByRole("button", { name: /retry retryable failure/i })).toBeVisible();
+  await expect(retryable.getByRole("button", { name: /cancel retryable failure/i })).toHaveCount(0);
+
+  for (const title of ["Final failure", "Cancelled work", "Stale work"]) {
+    const terminal = page.locator(".job-card").filter({ hasText: title });
+    await expect(terminal.getByRole("button", { name: /retry/i })).toHaveCount(0);
+    await expect(terminal.getByRole("button", { name: /cancel/i })).toHaveCount(0);
+  }
+
+  const blocked = page.locator(".job-card").filter({ hasText: "Approval wait" });
+  await expect(blocked.getByRole("button", { name: /retry approval wait/i })).toHaveCount(0);
+  await expect(blocked.getByRole("button", { name: /cancel approval wait/i })).toBeVisible();
+
+  const running = page.locator(".job-card").filter({ hasText: "Active render" });
+  await expect(running.getByRole("button", { name: /retry active render/i })).toHaveCount(0);
+  await expect(running.getByRole("button", { name: /cancel active render/i })).toBeVisible();
 });

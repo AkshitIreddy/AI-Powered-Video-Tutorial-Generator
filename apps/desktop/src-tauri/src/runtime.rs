@@ -257,19 +257,20 @@ impl InstalledRuntimePack {
 }
 
 /// Loads the complete unsigned runtime pack emitted by the portable-debug
-/// packaging script. This path exists only to make a locally built debug app
+/// packaging script. This path exists only to make a locally built test app
 /// exercise the same component ledger and worker environment as an installed
-/// signed pack. Release builds always reject it.
+/// signed pack. Release builds reject it unless they were compiled with the
+/// explicit `portable-debug-runtime` test feature.
 ///
 /// The root is derived from the explicitly selected debug worker by
 /// `state.rs`; no request, project, or renderer payload can choose it. Every
 /// selected component is still path-contained, size-bound, and SHA-256
 /// verified before the worker is started.
 pub fn load_portable_debug_pack(root: &Path) -> Result<InstalledRuntimePack, CommandError> {
-    if !cfg!(debug_assertions) {
+    if !cfg!(any(debug_assertions, feature = "portable-debug-runtime")) {
         return Err(runtime_error(
             "PORTABLE_DEBUG_RUNTIME_DISABLED",
-            "Unsigned portable runtime packs are disabled in release builds.",
+            "Unsigned portable runtime packs are disabled in production builds.",
         ));
     }
     let metadata = root.symlink_metadata().map_err(|_| {
@@ -775,7 +776,11 @@ fn verify_component_file(path: &Path, component: &RuntimeComponent) -> Result<()
 fn sha256_file(path: &Path) -> Result<String, CommandError> {
     let mut file = File::open(path).map_err(|_| runtime_io("open runtime component"))?;
     let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 1024 * 1024];
+    // Keep the large streaming buffer off Windows' comparatively small main
+    // GUI-thread stack. Portable startup verifies hundreds of files before
+    // Tauri yields its event loop, so a 1 MiB stack array can overflow even
+    // though hashing itself is fully iterative.
+    let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
         let count = file
             .read(&mut buffer)

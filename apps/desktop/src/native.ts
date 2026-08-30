@@ -307,13 +307,15 @@ export interface QaRepairRequest extends ProjectIdentityRequest {
   findingIds: string[];
 }
 
+export type CaptionDeliveryMode = "sidecar" | "embedded" | "burned" | "both";
+
 export interface MasterExportRequest extends ProjectIdentityRequest {
   baseRevisionId: string;
   baseJobId: string;
   aspect: "16:9" | "9:16" | "1:1";
   resolution: "1080p" | "1440p" | "4K";
   fps: 24 | 25 | 30 | 50 | 60;
-  captions: boolean;
+  captionDeliveryMode: CaptionDeliveryMode;
   transcript: boolean;
   bibliography: boolean;
 }
@@ -346,6 +348,8 @@ export type ProviderCapability =
   | "audio.transcribe"
   | "audio.align"
   | "presenter.generate"
+  | "portrait.animate"
+  | "lipsync.generate"
   | "vlm.chat"
   | "retrieval.embed"
   | "retrieval.rerank";
@@ -405,6 +409,11 @@ export interface SaveProviderRoutingPolicyRequest extends ProjectIdentityRequest
 export interface ProfileRoute {
   providerId: string;
   modelId: string;
+  /** Exact runtime identities are optional in reusable presets but mandatory in project snapshots. */
+  modelRevision?: string | null;
+  installFingerprint?: string | null;
+  voiceId?: string | null;
+  presenterProfileId?: string | null;
 }
 
 export interface ModelProfile {
@@ -414,22 +423,74 @@ export interface ModelProfile {
   routes: Record<string, ProfileRoute>;
 }
 
+export interface ProjectModelRouteSnapshot {
+  medium: "writing" | "research" | "images" | "motion" | "voice" | "transcription" | "presenter" | "portraitAnimation" | "lipSync";
+  capability: ProviderCapability;
+  providerId: string;
+  modelId: string;
+  modelRevision?: string;
+  installFingerprint?: string;
+  voiceId?: string;
+  presenterProfileId?: string;
+  boundary: "local" | "cloud";
+  retention: ProviderApproval["retention"];
+  regions: string[];
+  estimatedCostMicros?: number;
+  fallbackConsent: boolean;
+}
+
+export interface ProjectModelProfileSnapshot {
+  schemaVersion: 1;
+  profileId: string;
+  profileName: string;
+  capturedAt: string;
+  sourceSetupUpdatedAt?: string;
+  routes: ProjectModelRouteSnapshot[];
+}
+
 export interface LocalModelSetupSaveRequest {
   activeProfileId: string;
   selectedModelIds: string[];
   lipSyncModelId?: string | null;
+  portraitAnimationModelId?: string | null;
   existingModelDirectory?: string | null;
   profiles: ModelProfile[];
 }
 
-export interface LocalModelSetup extends Omit<LocalModelSetupSaveRequest, "lipSyncModelId" | "existingModelDirectory"> {
+export interface LocalModelSetup extends Omit<LocalModelSetupSaveRequest, "lipSyncModelId" | "portraitAnimationModelId" | "existingModelDirectory"> {
   schemaVersion: number;
   lipSyncModelId: string | null;
+  portraitAnimationModelId?: string | null;
   existingModelDirectory: string | null;
   updatedAt: string;
 }
 
-export type ModelDownloadPhase = "manifestRequired" | "downloading" | "verifying" | "downloadedQuarantined" | "failed";
+/**
+ * One closed lifecycle vocabulary shared by download, install, activation, repair,
+ * inference leases, and removal. Current native implementations may expose only a
+ * subset, but must never translate an unknown state into a success-looking one.
+ */
+export type LocalModelLifecyclePhase =
+  | "manifestRequired"
+  | "inspecting"
+  | "licenseRequired"
+  | "downloading"
+  | "cancelling"
+  | "cancelled"
+  | "verifying"
+  | "downloadedQuarantined"
+  | "installing"
+  | "activating"
+  | "ready"
+  | "inUse"
+  | "incompatible"
+  | "corrupt"
+  | "repairing"
+  | "removing"
+  | "removed"
+  | "failed";
+
+export type ModelDownloadPhase = LocalModelLifecyclePhase;
 
 export interface ModelDownloadCatalogEntry {
   modelId: string;
@@ -440,6 +501,9 @@ export interface ModelDownloadCatalogEntry {
   licenseId: string;
   licenseUrl: string;
   licenseSha256: string;
+  licenseScope: string;
+  codeRevision: string;
+  weightRevision: string;
   available: boolean;
   downloadOnlyReason: string;
 }
@@ -458,6 +522,12 @@ export interface ModelDownloadStatus {
   licenseAcceptedAt: string | null;
   detail: string;
   activationBlocked: boolean;
+  installFingerprint?: string | null;
+  runtimeRevision?: string | null;
+  canCancel?: boolean;
+  canRepair?: boolean;
+  canRemove?: boolean;
+  inUseBy?: string[];
   updatedAt: string;
 }
 
@@ -465,6 +535,15 @@ export interface ModelDownloadStartRequest {
   modelId: string;
   licenseSha256: string;
   licenseAccepted: boolean;
+}
+
+export interface LocalModelLifecycleRequest {
+  modelId: string;
+  immutableRevision: string;
+}
+
+export interface LocalModelRepairRequest extends LocalModelLifecycleRequest {
+  deepVerify: boolean;
 }
 
 export interface DiagnosticCheck {
@@ -866,6 +945,12 @@ export function masterExport(input: MasterExportRequest): Promise<JobReceipt> {
     demoOnly: true,
     path: null,
     target: { aspect: input.aspect, resolution: input.resolution, fps: input.fps },
+    captionDelivery: {
+      mode: input.captionDeliveryMode,
+      sidecars: ["vtt", "srt"],
+      burnedIntoPixels: input.captionDeliveryMode === "burned" || input.captionDeliveryMode === "both",
+      embeddedInContainer: input.captionDeliveryMode === "embedded" || input.captionDeliveryMode === "both",
+    },
   }));
 }
 
@@ -938,8 +1023,9 @@ export function localModelSetupGet(): Promise<LocalModelSetup> {
 export function localModelSetupSave(input: LocalModelSetupSaveRequest): Promise<LocalModelSetup> {
   return command("local_model_setup_save", input, () => {
     browserModelSetup = {
-      ...structuredClone(input),
+      ...withBrowserContractRuntimeIdentity(structuredClone(input)),
       lipSyncModelId: input.lipSyncModelId ?? null,
+      portraitAnimationModelId: input.portraitAnimationModelId ?? null,
       existingModelDirectory: input.existingModelDirectory ?? null,
       schemaVersion: 1,
       updatedAt: new Date().toISOString(),
@@ -948,15 +1034,38 @@ export function localModelSetupSave(input: LocalModelSetupSaveRequest): Promise<
   });
 }
 
+function withBrowserContractRuntimeIdentity(input: LocalModelSetupSaveRequest): LocalModelSetupSaveRequest {
+  const profiles = input.profiles.map((profile) => ({
+    ...profile,
+    routes: Object.fromEntries(Object.entries(profile.routes).map(([medium, route]) => {
+      if (!route || route.providerId !== "local-runtime" || !route.modelId.trim() || route.modelId.trim().toLowerCase().startsWith("off")) {
+        return [medium, route];
+      }
+      const identity = new TextEncoder().encode(`alystria-browser-contract:${route.modelId}`);
+      let fingerprint = "";
+      for (let index = 0; index < 64; index += 1) fingerprint += identity[index % identity.length]!.toString(16).padStart(2, "0").slice(-1);
+      return [medium, {
+        ...route,
+        modelRevision: route.modelRevision?.trim() || `browser-contract-${route.modelId.replaceAll("/", "-")}-v1`,
+        installFingerprint: route.installFingerprint?.trim() || fingerprint,
+      }];
+    })) as ModelProfile["routes"],
+  }));
+  return { ...input, profiles };
+}
+
 const browserDownloadCatalog: ModelDownloadCatalogEntry[] = [{
   modelId: "local/musetalk-1.5",
   displayName: "MuseTalk 1.5",
-  immutableRevision: "musetalk-3ef28bc5+audited-dependencies-2026-08-29",
+  immutableRevision: "musetalk-hf-3ef28bc5+code-0a89dec4+dependencies-2026-08-29",
   totalBytes: 4_392_963_609,
   artifactCount: 10,
-  licenseId: "MIT-main-repository",
-  licenseUrl: "https://github.com/TMElyralab/MuseTalk/blob/3ef28bc5cff08c90ad8178a25f1b570cd800170f/LICENSE",
+  licenseId: "MIT-code-repository",
+  licenseUrl: "https://github.com/TMElyralab/MuseTalk/blob/0a89dec45a0192b824e3cf4daf96c239440c5ed8/LICENSE",
   licenseSha256: "992ec5fd1dd4964cfa003665196cd0c0c10a7a5aa10109991e964eebd2c7f116",
+  licenseScope: "MuseTalk source code only; model-card and dependency terms remain separate activation gates.",
+  codeRevision: "0a89dec45a0192b824e3cf4daf96c239440c5ed8",
+  weightRevision: "3ef28bc5cff08c90ad8178a25f1b570cd800170f",
   available: false,
   downloadOnlyReason: "Native app required. Browser demo mode never downloads model bytes.",
 }];
@@ -994,6 +1103,7 @@ function defaultLocalModelSetup(): LocalModelSetup {
     activeProfileId: "balanced-cloud",
     selectedModelIds: [],
     lipSyncModelId: null,
+    portraitAnimationModelId: null,
     existingModelDirectory: null,
     updatedAt: new Date().toISOString(),
     profiles: [{
@@ -1007,6 +1117,7 @@ function defaultLocalModelSetup(): LocalModelSetup {
         voice: { providerId: "elevenlabs", modelId: "choose a voice" },
         transcription: { providerId: "openai", modelId: "choose at generation" },
         presenter: { providerId: "local-runtime", modelId: "off by default" },
+        portraitAnimation: { providerId: "local-runtime", modelId: "off by default" },
         lipSync: { providerId: "local-runtime", modelId: "off by default" },
       },
     }],

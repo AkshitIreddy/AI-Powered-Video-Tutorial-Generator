@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
 import tempfile
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +56,9 @@ class ApprovalNotReadyError(RuntimeError):
 
 MAX_DESKTOP_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_DESKTOP_SOURCE_CHARS = 2_000_000
+CANONICAL_FIXTURE_PATHS = {
+    "fixture.karatsuba.undergraduate.en": Path("karatsuba") / "fixture.json",
+}
 _TEXT_SOURCE_SUFFIXES = frozenset(
     {
         ".c",
@@ -145,6 +150,10 @@ class GenerationCoordinator:
             self.runtime,
             media_client=media_client,
             renderer_client=renderer_client,
+        )
+        self._media_cancel = getattr(self.workflow.media_client, "cancel", None)
+        self._media_reset_cancellation = getattr(
+            self.workflow.media_client, "reset_cancellation", None
         )
 
     def start(
@@ -293,13 +302,18 @@ class GenerationCoordinator:
                     **dict(approval_payload.get("approval", {})),
                     "approved": True,
                 }
-                revision = self.store.create_revision(
-                    snapshot={
+                head = self.store.head_revision()
+                snapshot = copy.deepcopy(head.snapshot) if head is not None else {}
+                snapshot.update(
+                    {
                         "projectId": self.store.manifest.project_id,
                         "generationId": generation_id,
                         "stage": GenerationStage.APPROVAL.value,
                         "payload": approval_payload,
-                    },
+                    }
+                )
+                revision = self.store.create_revision(
+                    snapshot=snapshot,
                     kind="approval",
                     name=name,
                     message=message,
@@ -331,12 +345,16 @@ class GenerationCoordinator:
             }:
                 self.runtime.cancel(job.job_id)
         self._set_control_state(generation_id, "CANCELLED")
+        if callable(self._media_cancel):
+            self._media_cancel()
         return self.status(generation_id)
 
     def retry(self, generation_id: str) -> GenerationStatus:
         jobs = self._jobs(generation_id)
         if not jobs:
             raise GenerationNotFoundError(generation_id)
+        if callable(self._media_reset_cancellation):
+            self._media_reset_cancellation()
         with transaction(self.store.connection):
             cancelled_control = self._control_state(generation_id) == "CANCELLED"
             retried = False
@@ -625,11 +643,46 @@ def request_from_fixture(path: Path) -> GenerationRequest:
             str(item) for item in learner.get("accessibilityNeeds", ["captions"])
         ),
         output_targets=tuple(dict(item) for item in value.get("outputTargets", [])),
-        presenter_mode="auto",
+        # Canonical fixtures author every scene explicitly.  Keep the
+        # presenter off so the storyboard compiler does not replace the
+        # fixture's opening scene family with a presenter scene.
+        presenter_mode="off",
         captions_enabled=True,
         deterministic_seed=int(value.get("deterministicSeed", 0)),
         hard_budget_micros=0,
-        metadata={"fixtureId": value.get("id"), "networkRequired": False},
+        metadata={
+            "fixtureId": value.get("id"),
+            "networkRequired": False,
+            # Preserve the executable teaching contract.  Previously the
+            # fixture loader retained objectives and claims but discarded the
+            # authored scenes and release-blocking content assertions, so an
+            # unrelated generic script could reach the renderer instead.
+            "canonicalFixtureScenes": [dict(item) for item in value.get("scenes", [])],
+            "canonicalQualityAssertions": [
+                dict(item) for item in value.get("qualityAssertions", [])
+            ],
+        },
+    )
+
+
+def request_from_canonical_fixture(fixture_id: str) -> GenerationRequest:
+    """Load one closed, bundled flagship fixture by durable product identity."""
+
+    relative = CANONICAL_FIXTURE_PATHS.get(fixture_id)
+    if relative is None:
+        raise ValueError(f"Unsupported canonical fixture ID: {fixture_id}")
+    configured_root = os.environ.get("ALYSTRIA_CANONICAL_FIXTURE_ROOT")
+    candidates = [
+        Path(__file__).resolve().parent / "canonical" / relative,
+        Path(__file__).resolve().parents[5] / "fixtures" / "canonical" / relative,
+    ]
+    if configured_root:
+        candidates.insert(0, Path(configured_root).resolve() / relative)
+    for candidate in candidates:
+        if candidate.is_file():
+            return request_from_fixture(candidate)
+    raise FileNotFoundError(
+        f"The bundled canonical fixture is unavailable: {fixture_id}"
     )
 
 
@@ -736,6 +789,38 @@ def request_from_desktop(
         starter_visual_root=starter_visual_root,
     )
     font_customization = resolve_font_customization(store, snapshot)
+    metadata = {
+        "snapshotId": params.get("snapshotId"),
+        "scope": params.get("scope", {"kind": "project"}),
+        "quality": params.get("quality", "standard"),
+        "privacy": params.get("privacy", "local"),
+        "approvedProviderIds": list(params.get("approvedProviderIds", [])),
+        "preservationLocks": list(params.get("preservationLocks", [])),
+        "budgetCurrency": budget_value.get("currency", "USD"),
+        "requireKnownPricing": bool(budget_value.get("requireKnownPricing", True)),
+        "providerRoutingPolicy": routing_policy,
+        "audioCustomization": audio_customization,
+        "visualCustomization": visual_customization,
+        "fontCustomization": font_customization,
+        "customization": customization,
+    }
+    presenter_mode = (
+        "auto"
+        if customization is None
+        or bool(visual_customization.get("presenter", {}).get("enabled"))
+        else "off"
+    )
+    canonical_fixture_id = snapshot.get("canonicalFixtureId")
+    if canonical_fixture_id is not None:
+        if not isinstance(canonical_fixture_id, str):
+            raise ValueError("canonicalFixtureId must be a string")
+        fixture = request_from_canonical_fixture(canonical_fixture_id)
+        return replace(
+            fixture,
+            presenter_mode=presenter_mode,
+            hard_budget_micros=minor_units * 10_000,
+            metadata={**fixture.metadata, **metadata},
+        )
     return GenerationRequest(
         topic=topic,
         audience=audience,
@@ -744,29 +829,10 @@ def request_from_desktop(
         experience=ExperienceLevel(experience_value),
         grounding_mode=GroundingMode(grounding),
         sources=tuple(sources),
-        presenter_mode=(
-            "auto"
-            if customization is None
-            or bool(visual_customization.get("presenter", {}).get("enabled"))
-            else "off"
-        ),
+        presenter_mode=presenter_mode,
         deterministic_seed=int(snapshot.get("deterministicSeed", 0)),
         hard_budget_micros=minor_units * 10_000,
-        metadata={
-            "snapshotId": params.get("snapshotId"),
-            "scope": params.get("scope", {"kind": "project"}),
-            "quality": params.get("quality", "standard"),
-            "privacy": params.get("privacy", "local"),
-            "approvedProviderIds": list(params.get("approvedProviderIds", [])),
-            "preservationLocks": list(params.get("preservationLocks", [])),
-            "budgetCurrency": budget_value.get("currency", "USD"),
-            "requireKnownPricing": bool(budget_value.get("requireKnownPricing", True)),
-            "providerRoutingPolicy": routing_policy,
-            "audioCustomization": audio_customization,
-            "visualCustomization": visual_customization,
-            "fontCustomization": font_customization,
-            "customization": customization,
-        },
+        metadata=metadata,
     )
 
 

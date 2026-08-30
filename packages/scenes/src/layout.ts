@@ -12,12 +12,16 @@ export function createLayoutMetrics(target: Required<CompileTarget>): LayoutMetr
   const profile = targetProfile(target);
   const minDimension = Math.min(target.width, target.height);
   const scale = minDimension / 1080;
-  const safeInset = Math.max(32 * scale, minDimension * target.safeAreaPercent);
+  // Graphics-safe percentages are axis-relative: 5% of frame width at the
+  // left/right and 5% of frame height at the top/bottom. A single inset based
+  // on the shorter side silently reduced 16:9 horizontal safety to 2.8%.
+  const safeInsetX = Math.max(32 * scale, target.width * target.safeAreaPercent);
+  const safeInsetY = Math.max(32 * scale, target.height * target.safeAreaPercent);
   const safe: Rect = {
-    x: safeInset,
-    y: safeInset,
-    width: target.width - safeInset * 2,
-    height: target.height - safeInset * 2,
+    x: safeInsetX,
+    y: safeInsetY,
+    width: target.width - safeInsetX * 2,
+    height: target.height - safeInsetY * 2,
   };
   const portraitFactor = profile === "portrait" ? 1.08 : 1;
   return {

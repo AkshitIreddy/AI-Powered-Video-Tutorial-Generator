@@ -83,6 +83,13 @@ NVIDIA_VISUAL_ENDPOINTS: dict[str, NvidiaVisualEndpoint] = {
     ),
 }
 
+# Model-license facts are exact allowlisted metadata, not inferred from the
+# provider. FLUX.2 Klein 4B is published by Black Forest Labs under Apache-2.0;
+# NVIDIA's API terms still apply to the hosted preview service itself.
+NVIDIA_VISUAL_LICENSES = {
+    "black-forest-labs/flux.2-klein-4b": "Apache-2.0",
+}
+
 
 class NvidiaNimAdapter(GuardedAdapter):
     """Typed adapter for one NVIDIA Developer API key and approved model routes."""
@@ -512,13 +519,32 @@ class NvidiaNimAdapter(GuardedAdapter):
         self, request: ImageRequest | MotionRequest, payload: dict[str, Any]
     ) -> ProviderResult[MediaOutput]:
         assets: list[MediaAsset] = []
+        license_id = NVIDIA_VISUAL_LICENSES.get(request.model)
         for row in _records(payload.get("artifacts") or payload.get("data")):
             encoded = row.get("base64") or row.get("b64_json")
             uri = row.get("url")
             if isinstance(encoded, str):
-                assets.append(MediaAsset(data_base64=encoded, media_type=_media_type(request)))
+                try:
+                    decoded = base64.b64decode(encoded, validate=True)
+                except (ValueError, TypeError) as error:
+                    raise _malformed(
+                        "NVIDIA NIM visual response contained invalid base64"
+                    ) from error
+                assets.append(
+                    MediaAsset(
+                        data_base64=encoded,
+                        media_type=_visual_media_type_from_bytes(request, decoded),
+                        license=license_id,
+                    )
+                )
             elif isinstance(uri, str) and uri.startswith("https://"):
-                assets.append(MediaAsset(uri=uri, media_type=_media_type(request)))
+                assets.append(
+                    MediaAsset(
+                        uri=uri,
+                        media_type=_media_type(request),
+                        license=license_id,
+                    )
+                )
         if not assets:
             raise _malformed("NVIDIA NIM visual response contained no usable asset")
         usage = Usage(
@@ -565,6 +591,24 @@ def _media_type(request: ImageRequest | MotionRequest) -> str:
     if isinstance(request, MotionRequest):
         return "video/mp4"
     return "image/png" if request.output_format == "png" else "image/jpeg"
+
+
+def _visual_media_type_from_bytes(
+    request: ImageRequest | MotionRequest, content: bytes
+) -> str:
+    """Bind provider media metadata to the returned bytes, not requested intent."""
+
+    if isinstance(request, MotionRequest):
+        if len(content) >= 12 and content[4:8] == b"ftyp":
+            return "video/mp4"
+        raise _malformed("NVIDIA NIM motion response was not an MP4 file")
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(content) >= 12 and content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        return "image/webp"
+    raise _malformed("NVIDIA NIM visual response was not a supported image file")
 
 
 def _record(value: Any) -> dict[str, Any]:

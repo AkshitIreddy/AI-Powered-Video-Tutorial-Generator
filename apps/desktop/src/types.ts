@@ -127,6 +127,8 @@ export interface ProjectRecord {
   privacy: "Local only" | "Approved cloud";
   scenes: Scene[];
   sources: SourceRecord[];
+  /** Closed product fixture selected from an explicit flagship tutorial brief. */
+  canonicalFixtureId?: "fixture.karatsuba.undergraduate.en";
   /** Portable, export-safe visual/audio choices. Asset bytes are stored separately. */
   customization?: CanvasCustomization;
   /** Desktop project identity; safe to persist because it contains no credentials. */
@@ -135,6 +137,8 @@ export interface ProjectRecord {
   nativeHeadRevisionId?: string;
   nativeRevisionNumber?: number;
   nativeArchivePath?: string;
+  /** Approved no-secret provider boundary; retained across ordinary snapshot saves. */
+  providerRoutingPolicy?: unknown;
   /** IDs selected from a durable QA gate; decorative review rows never populate this. */
   nativeRepairableFindingIds?: string[];
 }

@@ -34,13 +34,40 @@
         "learnerProfileId": { "$ref": "common.schema.json#/$defs/Id" }, "tags": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 100 }, "uniqueItems": true }
       }
     },
+    "ProjectModelRouteSnapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["medium", "capability", "providerId", "modelId", "boundary", "retention", "regions", "fallbackConsent"],
+      "properties": {
+        "medium": { "enum": ["writing", "research", "images", "motion", "voice", "transcription", "presenter", "portraitAnimation", "lipSync"] },
+        "capability": { "enum": ["llm.structured", "research.web", "image.generate", "motion.generate", "audio.tts", "audio.transcribe", "presenter.generate", "portrait.animate", "lipsync.generate"] },
+        "providerId": { "$ref": "common.schema.json#/$defs/Id" }, "modelId": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "modelRevision": { "type": "string", "minLength": 1, "maxLength": 500 }, "installFingerprint": { "$ref": "common.schema.json#/$defs/Sha256" },
+        "voiceId": { "type": "string", "minLength": 1, "maxLength": 200 }, "presenterProfileId": { "$ref": "common.schema.json#/$defs/Id" },
+        "boundary": { "enum": ["local", "cloud"] }, "retention": { "enum": ["local_only", "zero_data_retention", "configurable", "provider_default", "unknown"] },
+        "regions": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 100 }, "uniqueItems": true },
+        "estimatedCostMicros": { "type": "integer", "minimum": 0 }, "fallbackConsent": { "type": "boolean" }
+      },
+      "allOf": [
+        { "if": { "properties": { "boundary": { "const": "local" } }, "required": ["boundary"] }, "then": { "required": ["modelRevision", "installFingerprint"] } }
+      ]
+    },
+    "ProjectModelProfileSnapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "profileId", "profileName", "capturedAt", "routes"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "profileId": { "$ref": "common.schema.json#/$defs/Id" }, "profileName": { "$ref": "common.schema.json#/$defs/ShortText" },
+        "capturedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }, "sourceSetupUpdatedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" },
+        "routes": { "type": "array", "items": { "$ref": "#/$defs/ProjectModelRouteSnapshot" }, "minItems": 1, "uniqueItems": true }
+      }
+    },
     "ProjectSettings": {
       "type": "object", "additionalProperties": false,
       "required": ["groundingMode", "quality", "budgetProfile", "executionMode", "captionsEnabled", "musicEnabled", "presenterMode", "repairLimit", "privacyClassification"],
       "properties": {
         "groundingMode": { "enum": ["creative", "grounded", "strict"] }, "quality": { "enum": ["draft", "standard", "high", "maximum"] }, "budgetProfile": { "enum": ["economy", "balanced", "quality", "custom"] },
         "executionMode": { "enum": ["cloud", "local", "hybrid"] }, "captionsEnabled": { "type": "boolean" }, "musicEnabled": { "type": "boolean" }, "presenterMode": { "enum": ["none", "auto", "always"] },
-        "repairLimit": { "type": "integer", "minimum": 0, "maximum": 2 }, "privacyClassification": { "enum": ["public", "internal", "private", "restricted"] }, "crossProviderCritique": { "type": "boolean" }
+        "repairLimit": { "type": "integer", "minimum": 0, "maximum": 2 }, "privacyClassification": { "enum": ["public", "internal", "private", "restricted"] }, "crossProviderCritique": { "type": "boolean" },
+        "modelProfileSnapshot": { "$ref": "#/$defs/ProjectModelProfileSnapshot" }
       }
     },
     "Project": {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 
@@ -223,6 +224,72 @@ def test_visual_models_require_exact_active_allowlisted_configuration() -> None:
     assert request.json_body["cfg_scale"] == 1.0
     assert request.json_body["steps"] == 1
     assert "mode" not in request.json_body
+
+
+def test_flux_klein_visual_response_preserves_its_exact_model_license() -> None:
+    jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\xff\xd9"
+    transport = FakeTransport(
+        {"artifacts": [{"base64": base64.b64encode(jpeg).decode("ascii")}]}
+    )
+    adapter = NvidiaNimAdapter(
+        transport,
+        configured_visual_models=frozenset({"black-forest-labs/flux.2-klein-4b"}),
+    )
+
+    result = adapter.invoke(
+        ImageRequest(
+            "A precise educational diagram",
+            "black-forest-labs/flux.2-klein-4b",
+            aspect_ratio="1:1",
+            seed=42,
+        ),
+        preview_context(),
+    )
+
+    assert result.value.assets[0].license == "Apache-2.0"
+    assert result.value.assets[0].media_type == "image/jpeg"
+
+
+def test_flux_klein_binds_media_type_to_returned_bytes_not_requested_format() -> None:
+    jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\xff\xd9"
+    adapter = NvidiaNimAdapter(
+        FakeTransport(
+            {"artifacts": [{"base64": base64.b64encode(jpeg).decode("ascii")}]}
+        ),
+        configured_visual_models=frozenset(
+            {"black-forest-labs/flux.2-klein-4b"}
+        ),
+    )
+    result = adapter.invoke(
+            ImageRequest(
+                "A precise educational diagram",
+                "black-forest-labs/flux.2-klein-4b",
+                aspect_ratio="1:1",
+                output_format="png",
+            ),
+        preview_context(),
+    )
+    assert result.value.assets[0].media_type == "image/jpeg"
+
+
+@pytest.mark.parametrize("encoded", ["not-base64!", base64.b64encode(b"not an image").decode()])
+def test_flux_klein_rejects_unverifiable_visual_bytes(encoded: str) -> None:
+    adapter = NvidiaNimAdapter(
+        FakeTransport({"artifacts": [{"base64": encoded}]}),
+        configured_visual_models=frozenset(
+            {"black-forest-labs/flux.2-klein-4b"}
+        ),
+    )
+    with pytest.raises(ProviderFailure) as caught:
+        adapter.invoke(
+            ImageRequest(
+                "A precise educational diagram",
+                "black-forest-labs/flux.2-klein-4b",
+                aspect_ratio="1:1",
+            ),
+            preview_context(),
+        )
+    assert caught.value.code is FailureCode.MALFORMED_RESPONSE
 
 
 @pytest.mark.parametrize(

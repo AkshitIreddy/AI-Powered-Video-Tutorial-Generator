@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { CaptionCue } from "../src/contracts.js";
-import { activeCaptionCues, escapeMarkup, renderCaptionSvg, toSrt, toWebVtt } from "../src/captions.js";
+import { activeCaptionCues, canonicalCaptionLedger, escapeMarkup, renderCaptionSvg, toSrt, toWebVtt } from "../src/captions.js";
 import { fixtureTarget } from "../src/fixture.js";
 import { secondsToTicks } from "../src/timebase.js";
 
@@ -16,7 +16,21 @@ test("VTT and SRT share exact cue timing", () => {
   assert.match(vtt, /00:00:00\.000 --> 00:00:01\.234 line:90%/);
   assert.match(srt, /00:00:00,000 --> 00:00:01,234/);
   assert.match(vtt, /<v Tutor>A &lt; B &amp; B &gt; C/);
-  assert.match(srt, /Tutor: A &lt; B &amp; B &gt; C/);
+  assert.match(srt, /Tutor: A < B & B > C/);
+  assert.doesNotMatch(srt, /&(?:amp|lt|gt);/);
+});
+
+test("UTF-8 YouTube sidecars preserve multilingual text without a BOM", () => {
+  const multilingual: readonly CaptionCue[] = [
+    { id: "utf8", startTick: 0, endTick: secondsToTicks(2), text: "Árbol — नमस्ते — búsqueda & comparación" },
+  ];
+  const srt = toSrt(multilingual);
+  assert.equal(srt.charCodeAt(0), "1".charCodeAt(0));
+  assert.match(srt, /Árbol — नमस्ते — búsqueda & comparación/);
+  const ledger = JSON.parse(canonicalCaptionLedger(multilingual, "es-IN")) as { tickRate: number; language: string; cues: CaptionCue[] };
+  assert.equal(ledger.tickRate, 240_000);
+  assert.equal(ledger.language, "es-IN");
+  assert.equal(ledger.cues[0]?.text, multilingual[0]?.text);
 });
 
 test("caption overlay escapes untrusted markup", () => {

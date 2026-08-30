@@ -27,12 +27,14 @@ class PresenterEncoderPolicyError(RuntimeError):
 
 class PresenterVideoEncoder(StrEnum):
     H264_NVENC = "h264_nvenc"
+    H264_QUICK_SYNC = "h264_qsv"
     H264_MEDIA_FOUNDATION = "h264_mf"
     LIBX264 = "libx264"
 
 
 ENCODER_PRIORITY = (
     PresenterVideoEncoder.H264_NVENC,
+    PresenterVideoEncoder.H264_QUICK_SYNC,
     PresenterVideoEncoder.H264_MEDIA_FOUNDATION,
     PresenterVideoEncoder.LIBX264,
 )
@@ -113,6 +115,8 @@ class PresenterEncoderSelection:
     def codec_arguments(self) -> tuple[str, ...]:
         if self.encoder is PresenterVideoEncoder.H264_NVENC:
             return ("-c:v", "h264_nvenc")
+        if self.encoder is PresenterVideoEncoder.H264_QUICK_SYNC:
+            return ("-c:v", "h264_qsv")
         if self.encoder is PresenterVideoEncoder.H264_MEDIA_FOUNDATION:
             # h264_mf can otherwise select its software implementation.  The
             # managed policy permits Media Foundation only when hardware is

@@ -17,6 +17,7 @@ from .coordinator import (
     ApprovalNotReadyError,
     GenerationCoordinator,
     GenerationNotFoundError,
+    request_from_canonical_fixture,
     request_from_desktop,
     request_from_fixture,
 )
@@ -140,6 +141,7 @@ __all__ = [
     "create_production_renderer_client",
     "default_local_media_client",
     "load_local_presenter_media_client",
+    "request_from_canonical_fixture",
     "request_from_desktop",
     "request_from_fixture",
 ]

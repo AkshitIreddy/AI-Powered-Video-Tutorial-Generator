@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ import pytest
 
 from alystria.project import ProjectStore
 from alystria.providers import (
+    Capability,
     CredentialGrant,
     DesktopCredentialBrokerResolver,
     EphemeralCredentialBroker,
@@ -126,6 +128,44 @@ def _mock_generation_policy() -> dict[str, Any]:
     }
 
 
+def _local_presenter_component_policy() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "privacyMode": "local",
+        "dataClassification": "project",
+        "budget": _budget(),
+        "approvals": [
+            {
+                "providerId": "local-runtime",
+                "capabilities": ["portrait.animate", "lipsync.generate"],
+                "credentialRef": None,
+                "boundary": "local",
+                "retention": "local_only",
+                "regions": ["local"],
+                "dataClasses": ["project"],
+                "privacyApproved": True,
+                "retentionApproved": True,
+                "regionApproved": True,
+                "budgetApproved": True,
+            }
+        ],
+        "routes": [
+            {
+                "capability": "portrait.animate",
+                "providerIds": ["local-runtime"],
+                "model": "local/liveportrait",
+                "voice": None,
+            },
+            {
+                "capability": "lipsync.generate",
+                "providerIds": ["local-runtime"],
+                "model": "local/musetalk-1.5",
+                "voice": None,
+            },
+        ],
+    }
+
+
 def _create_desktop_project(
     project_path: Path,
     project_id: str,
@@ -173,6 +213,24 @@ def test_root_python_provider_ids_and_aliases_are_drift_checked() -> None:
     repository = Path(__file__).parents[4]
     catalog = load_and_validate_root_catalog(repository / "providers.catalog.json")
     assert catalog["aliases"] == {"azure": "azure-speech", "google": "gemini"}
+    providers = {entry["id"]: entry for entry in catalog["providers"]}
+    expected = {"portrait-animation", "lip-sync"}
+    assert expected <= set(providers["local-runtime"]["capabilities"])
+    assert expected <= set(providers["presenter-local"]["capabilities"])
+
+
+def test_local_portrait_and_lipsync_routes_are_distinct_and_round_trip_exactly() -> None:
+    submitted = _local_presenter_component_policy()
+    policy = parse_routing_policy(submitted)
+
+    assert policy.route_for(Capability.PORTRAIT_ANIMATION).model == "local/liveportrait"
+    assert policy.route_for(Capability.LIP_SYNC).model == "local/musetalk-1.5"
+    encoded = policy.to_dict()
+    assert encoded["routes"] == submitted["routes"]
+    assert encoded["approvals"][0]["capabilities"] == [
+        "portrait.animate",
+        "lipsync.generate",
+    ]
 
 
 def test_approved_credential_reference_selects_adapter_without_persisting_value() -> None:
@@ -237,6 +295,78 @@ def test_desktop_keyring_callback_uses_fresh_one_call_nonces() -> None:
     assert len({request["nonce"] for request in observed}) == 2
     assert all(request["authenticationToken"] == token for request in observed)
     assert all(request["credentialRef"] == reference for request in observed)
+
+
+def test_desktop_keyring_callback_allows_a_slow_os_vault_lookup() -> None:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    endpoint = f"127.0.0.1:{listener.getsockname()[1]}"
+    token = "fixture-broker-authentication-token-0002"
+
+    def serve() -> None:
+        connection, _address = listener.accept()
+        with connection:
+            request = json.loads(connection.makefile("rb").readline())
+            time.sleep(3.25)
+            response = {
+                "protocolVersion": 1,
+                "requestId": request["requestId"],
+                "ok": True,
+                "credential": "fixture-delayed-lease",
+                "error": None,
+            }
+            connection.sendall((json.dumps(response) + "\n").encode())
+        listener.close()
+
+    server = threading.Thread(target=serve, daemon=True)
+    server.start()
+    resolver = DesktopCredentialBrokerResolver(endpoint, token)
+    with resolver.lease(
+        CredentialGrant("opaque-delayed-grant"),
+        provider_id="openai",
+        credential_ref="keyring://alystria/openai/api_key",
+    ) as value:
+        assert value == "fixture-delayed-lease"
+    server.join(timeout=1)
+    assert not server.is_alive()
+
+
+def test_desktop_keyring_callback_finishes_at_the_newline_frame() -> None:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    endpoint = f"127.0.0.1:{listener.getsockname()[1]}"
+    token = "fixture-broker-authentication-token-0003"
+
+    def serve() -> None:
+        connection, _address = listener.accept()
+        with connection:
+            request = json.loads(connection.makefile("rb").readline())
+            response = {
+                "protocolVersion": 1,
+                "requestId": request["requestId"],
+                "ok": True,
+                "credential": "fixture-framed-lease",
+                "error": None,
+            }
+            connection.sendall((json.dumps(response) + "\n").encode())
+            time.sleep(1.0)
+        listener.close()
+
+    server = threading.Thread(target=serve, daemon=True)
+    server.start()
+    resolver = DesktopCredentialBrokerResolver(endpoint, token)
+    started = time.monotonic()
+    with resolver.lease(
+        CredentialGrant("opaque-framed-grant"),
+        provider_id="openai",
+        credential_ref="keyring://alystria/openai/api_key",
+    ) as value:
+        assert value == "fixture-framed-lease"
+    assert time.monotonic() - started < 0.75
+    server.join(timeout=2)
+    assert not server.is_alive()
 
 
 def test_local_mode_rejects_cloud_before_adapter_or_transport() -> None:

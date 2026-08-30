@@ -10,7 +10,12 @@ export function standardChoreography<T extends SceneSpec>(spec: T, targets: read
     property: "opacity" as const,
     reducedMotionBehavior: "freeze-end" as const,
     keyframes: [
-      { tick: Math.min(spec.durationTicks - 1, index * Math.round(TIMEBASE_TICKS_PER_SECOND * 0.1)), value: 0 },
+      // A hard cut must still arrive on a legible, intentionally composed
+      // frame.  Starting from fully transparent made scene boundaries look
+      // like accidental blank frames in the encoded tutorial.  The remaining
+      // 2% is enough to make the entrance perceptible without hiding the
+      // teaching object at the cut.
+      { tick: Math.min(spec.durationTicks - 1, index * Math.round(TIMEBASE_TICKS_PER_SECOND * 0.1)), value: 0.98 },
       { tick: Math.min(spec.durationTicks, entrance + index * Math.round(TIMEBASE_TICKS_PER_SECOND * 0.1)), value: 1, easing: "ease-out" as const },
     ],
   }));
@@ -68,7 +73,10 @@ export function animationStyle(tracks: readonly ChoreographyTrack[], target: str
       case "translate-x": style.transform = `translate(${value}px 0)`; break;
       case "translate-y": style.transform = `translate(0 ${value}px)`; break;
       case "scale": style.transform = `scale(${value})`; break;
-      case "reveal": style.opacity = value; style.transform = `translate(0 ${(1 - value) * 16}px)`; break;
+      // Reveal order is communicated through motion, not by withholding the
+      // teaching content.  Keeping the object legible at the first frame also
+      // prevents a cut from landing on an accidentally empty composition.
+      case "reveal": style.opacity = 0.96 + value * 0.04; style.transform = `translate(0 ${(1 - value) * 16}px)`; break;
       case "highlight": style.opacity = 0.45 + value * 0.55; break;
       case "draw": style.strokeDashoffset = 1 - value; break;
     }

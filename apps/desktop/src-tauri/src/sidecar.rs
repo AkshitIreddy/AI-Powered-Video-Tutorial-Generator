@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::ffi::OsString;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,6 +24,7 @@ use zeroize::{Zeroize, Zeroizing};
 const PROTOCOL_VERSION: u32 = 1;
 const START_TIMEOUT: Duration = Duration::from_secs(12);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const CREDENTIAL_BROKER_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_RESPONSE_BYTES: u64 = 2 * 1024 * 1024;
 
 pub trait WorkerTransport: Send + Sync {
@@ -430,14 +431,21 @@ fn handle_credential_lease(
     authentication_token: &str,
     nonces: &mut HashSet<String>,
 ) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
-    let clone = match stream.try_clone() {
-        Ok(value) => value,
-        Err(_) => return,
-    };
+    // The supervising listener is nonblocking. Accepted sockets can inherit
+    // that mode on Windows, which makes an immediate request read race the
+    // client's first send and close the connection with WSAECONNABORTED.
+    // Each short-lived lease connection must instead block within its bounded
+    // read/write timeouts.
+    if stream.set_nonblocking(false).is_err() {
+        return;
+    }
+    let _ = stream.set_read_timeout(Some(CREDENTIAL_BROKER_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(CREDENTIAL_BROKER_TIMEOUT));
     let mut line = Zeroizing::new(String::new());
-    if BufReader::new(clone)
+    // Read and write through the same Winsock handle. A cloned handle can be
+    // dropped after the request read while the original writes the response;
+    // on Windows that cross-handle lifetime can abort the peer with 10053.
+    if BufReader::new(&mut stream)
         .take(16 * 1024 + 1)
         .read_line(&mut line)
         .is_err()
@@ -503,9 +511,14 @@ fn handle_credential_lease(
 
 fn write_credential_response(stream: &mut TcpStream, response: CredentialLeaseResponse<'_>) {
     if let Ok(encoded) = serde_json::to_vec(&response).map(Zeroizing::new) {
-        let _ = stream
+        if stream
             .write_all(&encoded)
-            .and_then(|_| stream.write_all(b"\n"));
+            .and_then(|_| stream.write_all(b"\n"))
+            .and_then(|_| stream.flush())
+            .is_ok()
+        {
+            let _ = stream.shutdown(Shutdown::Write);
+        }
     }
 }
 
@@ -682,7 +695,10 @@ fn verify_worker_executable(
         )
     })?;
     let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 1024 * 1024];
+    // Worker launch can be initiated by a Tauri command on Windows' main GUI
+    // thread. Keep this streaming buffer on the heap so integrity checking
+    // cannot exhaust that thread's small native stack.
+    let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
         let count = file.read(&mut buffer).map_err(|_| {
             CommandError::worker(

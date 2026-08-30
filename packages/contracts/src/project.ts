@@ -8,10 +8,21 @@ export interface Section { id: EntityId; lessonId: EntityId; title: string; posi
 export interface Lesson { id: EntityId; moduleId: EntityId; title: string; position: number; locale: string; sectionIds: EntityId[]; objectiveIds: EntityId[]; estimatedDurationSeconds?: number }
 export interface CourseModule { id: EntityId; courseId: EntityId; title: string; position: number; lessonIds: EntityId[]; description?: string }
 export interface Course { id: EntityId; projectId: EntityId; title: string; description: string; locale: string; moduleIds: EntityId[]; learnerProfileId: EntityId; tags?: string[] }
+export type ProjectModelMedium = "writing" | "research" | "images" | "motion" | "voice" | "transcription" | "presenter" | "portraitAnimation" | "lipSync";
+export type ProjectModelCapability = "llm.structured" | "research.web" | "image.generate" | "motion.generate" | "audio.tts" | "audio.transcribe" | "presenter.generate" | "portrait.animate" | "lipsync.generate";
+export interface ProjectModelRouteSnapshot {
+  medium: ProjectModelMedium; capability: ProjectModelCapability; providerId: EntityId; modelId: string; modelRevision?: string; installFingerprint?: Sha256;
+  voiceId?: string; presenterProfileId?: EntityId; boundary: "local" | "cloud";
+  retention: "local_only" | "zero_data_retention" | "configurable" | "provider_default" | "unknown"; regions: string[];
+  estimatedCostMicros?: number; fallbackConsent: boolean;
+}
+export interface ProjectModelProfileSnapshot {
+  schemaVersion: 1; profileId: EntityId; profileName: string; capturedAt: IsoDateTime; sourceSetupUpdatedAt?: IsoDateTime; routes: ProjectModelRouteSnapshot[];
+}
 export interface ProjectSettings {
   groundingMode: "creative" | "grounded" | "strict"; quality: "draft" | "standard" | "high" | "maximum"; budgetProfile: "economy" | "balanced" | "quality" | "custom";
   executionMode: "cloud" | "local" | "hybrid"; captionsEnabled: boolean; musicEnabled: boolean; presenterMode: "none" | "auto" | "always";
-  repairLimit: number; privacyClassification: "public" | "internal" | "private" | "restricted"; crossProviderCritique?: boolean;
+  repairLimit: number; privacyClassification: "public" | "internal" | "private" | "restricted"; crossProviderCritique?: boolean; modelProfileSnapshot?: ProjectModelProfileSnapshot;
 }
 export interface Project {
   id: EntityId; schemaVersion: "2.0.0"; name: string; description?: string; status: "draft" | "active" | "archived" | "read-only" | "migration-required" | "corrupt";

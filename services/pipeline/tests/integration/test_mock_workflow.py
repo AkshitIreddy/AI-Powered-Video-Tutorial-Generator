@@ -7,6 +7,7 @@ from pathlib import Path
 from alystria.ipc import handle_request, serve
 from alystria.jobs import DependencyGraph, JobState, MockGenerationWorkflow, SQLiteWorkflowRuntime
 from alystria.project import ProjectStore
+from alystria.providers import FailureCode, ProviderFailure
 from alystria.service import PipelineService
 
 
@@ -72,5 +73,36 @@ def test_internal_ipc_errors_never_expose_exception_details() -> None:
         "error": {
             "code": "INTERNAL",
             "message": "The pipeline could not complete the request. Review local redacted diagnostics.",
+        },
+    }
+
+
+def test_typed_provider_failures_keep_safe_actionable_diagnostics() -> None:
+    class ProviderFailureService(PipelineService):
+        def dispatch(self, method: str, params: dict[str, object]) -> dict[str, object]:
+            raise ProviderFailure(
+                FailureCode.AUTHENTICATION,
+                "Approved credential is unavailable from the OS keyring broker",
+                provider_id="nvidia-nim",
+                retryable=False,
+            )
+
+    response = handle_request(
+        ProviderFailureService(),
+        {"id": "provider-error", "method": "system.ping", "params": {}},
+    )
+    assert response == {
+        "id": "provider-error",
+        "ok": False,
+        "error": {
+            "code": "AUTHENTICATION",
+            "message": "Approved credential is unavailable from the OS keyring broker",
+            "details": {
+                "providerId": "nvidia-nim",
+                "retryable": False,
+                "httpStatus": None,
+                "requestId": None,
+                "details": {},
+            },
         },
     }

@@ -8,6 +8,13 @@ rust-version = "1.88"
 license = "MIT"
 publish = false
 
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+# Explicitly opt a locally built, self-contained test executable into the
+# unsigned-but-hash-pinned portable runtime path. Production builds omit it.
+portable-debug-runtime = []
+
 [lib]
 name = "alystria_desktop"
 crate-type = ["lib", "cdylib", "staticlib"]

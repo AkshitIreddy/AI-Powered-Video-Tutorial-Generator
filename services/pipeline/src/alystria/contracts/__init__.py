@@ -26,10 +26,10 @@ __all__ = [
     "SCHEMA_IDS",
     "DefinitionBinding",
     "SchemaBinding",
-    "definition",
-    "schema_by_id",
     "StarterAssetRecord",
     "StarterKitCatalog",
     "StarterKitDiagnostic",
     "StarterThemePackRecord",
+    "definition",
+    "schema_by_id",
 ]

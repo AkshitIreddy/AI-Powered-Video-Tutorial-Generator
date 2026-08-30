@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { RenderManifest } from "./contracts.js";
+import type { CaptionDeliveryMode, RenderManifest } from "./contracts.js";
 import { assertRenderManifest } from "./contracts.js";
 import { toSrt, toWebVtt } from "./captions.js";
 import { planDeliveryEncode, planFrameSequenceToFfv1, planProbe } from "./ffmpeg.js";
@@ -41,6 +41,8 @@ Render options:
   --codec <name>                   vp9, av1, h264_nvenc, h264_mf, libx264, hevc_nvenc
   --quality <n>                    Codec quality value
   --bitrate <rate>                 Video bitrate such as 12M
+  --captions <mode>                sidecar (default), embedded, burned, or both
+  --caption-language <tag>         BCP-47 language for sidecars/soft track (default: manifest locale)
   --concurrency <n>                Browser page concurrency, 1-8 (default: 2)
   --chunk-frames <n>               Resume-checkpoint chunk size (default: 120)
   --progress <path>                Progress JSONL destination
@@ -208,12 +210,15 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         "--mode", "--scene", "--start-frame", "--end-frame", "--draft-max",
         "--output-dir", "--output", "--browser", "--browser-version", "--browser-sha256",
         "--ffmpeg", "--ffprobe", "--codec", "--quality", "--bitrate", "--concurrency",
-        "--chunk-frames", "--progress",
+        "--chunk-frames", "--progress", "--captions", "--caption-language",
       ]), new Set(["--no-resume", "--discard-frame-cache"]));
       const codec = flags.values.get("--codec") ?? "vp9";
       const supported = new Set(["h264_nvenc", "h264_mf", "libx264", "hevc_nvenc", "vp9", "av1"]);
       if (!supported.has(codec)) throw new TypeError(`Unsupported codec ${codec}`);
       const quality = optionalInteger(flags.values.get("--quality"), "quality");
+      const captionMode = flags.values.get("--captions") ?? "sidecar";
+      const supportedCaptionModes = new Set(["sidecar", "embedded", "burned", "both"]);
+      if (!supportedCaptionModes.has(captionMode)) throw new TypeError(`Unsupported caption delivery mode ${captionMode}`);
       const browserPath = flags.values.get("--browser") ?? process.env.ALYSTRIA_CHROMIUM_PATH;
       const concurrency = optionalInteger(flags.values.get("--concurrency"), "concurrency");
       const maximumFramesPerChunk = optionalInteger(flags.values.get("--chunk-frames"), "chunk-frames");
@@ -233,8 +238,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           },
           delivery: {
             codec: codec as "vp9",
+            captionMode: captionMode as CaptionDeliveryMode,
             ...(quality === undefined ? {} : { quality }),
             ...(flags.values.get("--bitrate") === undefined ? {} : { bitrate: flags.values.get("--bitrate") as string }),
+            ...(flags.values.get("--caption-language") === undefined ? {} : { captionLanguage: flags.values.get("--caption-language") as string }),
           },
           ...(flags.values.get("--output-dir") === undefined ? {} : { outputDirectory: flags.values.get("--output-dir") as string }),
           ...(flags.values.get("--output") === undefined ? {} : { outputName: flags.values.get("--output") as string }),

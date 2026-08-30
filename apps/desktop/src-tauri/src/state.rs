@@ -9,7 +9,7 @@ use crate::types::AppPaths;
 use directories::ProjectDirs;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
@@ -24,26 +24,220 @@ pub struct AppState {
     pub runtimes: RuntimeManager,
 }
 
+#[derive(Debug, Clone)]
+struct PortableLayout {
+    root: PathBuf,
+    app_data: PathBuf,
+    runtimes: PathBuf,
+    models: PathBuf,
+    projects: PathBuf,
+    exports: PathBuf,
+    logs: PathBuf,
+    cache: PathBuf,
+    temp: PathBuf,
+}
+
+impl PortableLayout {
+    fn from_root(candidate: &Path) -> Result<Self, CommandError> {
+        if !candidate.is_absolute() {
+            return Err(CommandError::new(
+                "INVALID_PORTABLE_ROOT",
+                "The portable root must be an absolute path.",
+                false,
+            ));
+        }
+        reject_reparse_path(candidate)?;
+        let root = candidate
+            .canonicalize()
+            .map_err(|_| CommandError::io("portable root validation"))?;
+        let layout = Self {
+            app_data: root.join("App Data"),
+            runtimes: root.join("Runtime"),
+            models: root.join("Models"),
+            projects: root.join("Projects"),
+            exports: root.join("Exports"),
+            logs: root.join("Logs"),
+            cache: root.join("Cache"),
+            temp: root.join("Temp"),
+            root,
+        };
+        for directory in layout.required_directories() {
+            validate_existing_portable_directory(&layout.root, directory)?;
+        }
+        for directory in ["App", "Test Harness", "Evidence"] {
+            validate_existing_portable_directory(&layout.root, &layout.root.join(directory))?;
+        }
+        Ok(layout)
+    }
+
+    fn required_directories(&self) -> [&Path; 8] {
+        [
+            &self.app_data,
+            &self.runtimes,
+            &self.models,
+            &self.projects,
+            &self.exports,
+            &self.logs,
+            &self.cache,
+            &self.temp,
+        ]
+    }
+
+    fn worker_environment(&self) -> BTreeMap<std::ffi::OsString, std::ffi::OsString> {
+        let profile = self.app_data.join("User Profile");
+        let values = [
+            ("ALYSTRIA_PORTABLE_ROOT", self.root.clone()),
+            ("ALYSTRIA_APP_DATA_DIR", self.app_data.clone()),
+            ("ALYSTRIA_RUNTIME_DIR", self.runtimes.clone()),
+            ("ALYSTRIA_MODELS_DIR", self.models.clone()),
+            ("ALYSTRIA_PROJECTS_DIR", self.projects.clone()),
+            ("ALYSTRIA_EXPORTS_DIR", self.exports.clone()),
+            ("ALYSTRIA_LOGS_DIR", self.logs.clone()),
+            ("ALYSTRIA_CACHE_DIR", self.cache.clone()),
+            ("ALYSTRIA_TEMP_DIR", self.temp.clone()),
+            ("WEBVIEW2_USER_DATA_FOLDER", self.app_data.join("WebView2")),
+            ("TEMP", self.temp.clone()),
+            ("TMP", self.temp.clone()),
+            ("TMPDIR", self.temp.clone()),
+            ("APPDATA", self.app_data.join("Roaming")),
+            ("LOCALAPPDATA", self.app_data.join("Local")),
+            ("USERPROFILE", profile.clone()),
+            ("HOME", profile),
+            ("XDG_CACHE_HOME", self.cache.join("XDG")),
+            ("XDG_CONFIG_HOME", self.app_data.join("XDG/Config")),
+            ("XDG_DATA_HOME", self.app_data.join("XDG/Data")),
+            ("XDG_STATE_HOME", self.app_data.join("XDG/State")),
+            ("HF_HOME", self.cache.join("HuggingFace")),
+            ("HUGGINGFACE_HUB_CACHE", self.cache.join("HuggingFace/Hub")),
+            (
+                "TRANSFORMERS_CACHE",
+                self.cache.join("HuggingFace/Transformers"),
+            ),
+            ("HF_DATASETS_CACHE", self.cache.join("HuggingFace/Datasets")),
+            ("TORCH_HOME", self.cache.join("Torch")),
+            ("TORCHINDUCTOR_CACHE_DIR", self.cache.join("TorchInductor")),
+            ("TRITON_CACHE_DIR", self.cache.join("Triton")),
+            ("NUMBA_CACHE_DIR", self.cache.join("Numba")),
+            ("CUDA_CACHE_PATH", self.cache.join("CUDA")),
+            ("MPLCONFIGDIR", self.cache.join("Matplotlib")),
+            ("DOCLING_ARTIFACTS_PATH", self.cache.join("Docling")),
+            ("PYTHONPYCACHEPREFIX", self.cache.join("PythonBytecode")),
+            ("PIP_CACHE_DIR", self.cache.join("pip")),
+            ("UV_CACHE_DIR", self.cache.join("uv")),
+            ("NPM_CONFIG_CACHE", self.cache.join("npm")),
+        ];
+        let mut environment = values
+            .into_iter()
+            .map(|(key, value)| (key.into(), value.into_os_string()))
+            .collect::<BTreeMap<_, _>>();
+        environment.insert("PLAYWRIGHT_BROWSERS_PATH".into(), "0".into());
+        environment.insert("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD".into(), "1".into());
+        environment
+    }
+}
+
+fn portable_layout_override() -> Result<Option<PortableLayout>, CommandError> {
+    std::env::var_os("ALYSTRIA_PORTABLE_ROOT")
+        .map(PathBuf::from)
+        .map(|root| PortableLayout::from_root(&root))
+        .transpose()
+}
+
+fn validate_existing_portable_directory(root: &Path, path: &Path) -> Result<(), CommandError> {
+    reject_reparse_path(path)?;
+    let metadata = path
+        .symlink_metadata()
+        .map_err(|_| CommandError::io("portable directory validation"))?;
+    if !metadata.is_dir() || metadata_is_reparse_point(&metadata) {
+        return Err(CommandError::new(
+            "INVALID_PORTABLE_ROOT",
+            "The portable layout contains a link, junction, or non-directory entry.",
+            false,
+        ));
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| CommandError::io("portable directory validation"))?;
+    if !canonical.starts_with(root) {
+        return Err(CommandError::new(
+            "INVALID_PORTABLE_ROOT",
+            "A portable directory escapes the selected portable root.",
+            false,
+        ));
+    }
+    Ok(())
+}
+
+fn reject_reparse_path(path: &Path) -> Result<(), CommandError> {
+    let mut cursor = Some(path);
+    while let Some(candidate) = cursor {
+        let metadata = candidate
+            .symlink_metadata()
+            .map_err(|_| CommandError::io("portable path validation"))?;
+        if metadata_is_reparse_point(&metadata) {
+            return Err(CommandError::new(
+                "INVALID_PORTABLE_ROOT",
+                "The portable root may not traverse a link or junction.",
+                false,
+            ));
+        }
+        cursor = candidate.parent();
+    }
+    Ok(())
+}
+
+fn metadata_is_reparse_point(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    }
+    #[cfg(not(windows))]
+    false
+}
+
 impl AppState {
     pub fn initialize(app: &AppHandle) -> Result<Self, CommandError> {
-        let fallback = ProjectDirs::from("studio", "alystria", "Alystria Studio")
-            .ok_or_else(|| CommandError::unavailable("Platform application directories"))?;
-        let system_app_data = app
-            .path()
-            .app_data_dir()
-            .unwrap_or_else(|_| fallback.data_local_dir().to_path_buf());
-        let system_cache = app
-            .path()
-            .app_cache_dir()
-            .unwrap_or_else(|_| fallback.cache_dir().to_path_buf());
-        let app_data = debug_app_data_override().unwrap_or_else(|| system_app_data.clone());
-        let using_debug_data_root = app_data != system_app_data;
-        let cache = if using_debug_data_root {
+        let portable = portable_layout_override()?;
+        // A portable launch intentionally redirects USERPROFILE, APPDATA, and
+        // LOCALAPPDATA into an unregistered disposable directory. Windows'
+        // known-folder lookup can therefore be unavailable even though the
+        // already-validated portable layout is complete. Do not ask the host
+        // for fallback application directories in that mode.
+        let (system_app_data, system_cache) = if let Some(layout) = &portable {
+            (layout.app_data.clone(), layout.cache.clone())
+        } else {
+            let fallback = ProjectDirs::from("studio", "alystria", "Alystria Studio")
+                .ok_or_else(|| CommandError::unavailable("Platform application directories"))?;
+            (
+                app.path()
+                    .app_data_dir()
+                    .unwrap_or_else(|_| fallback.data_local_dir().to_path_buf()),
+                app.path()
+                    .app_cache_dir()
+                    .unwrap_or_else(|_| fallback.cache_dir().to_path_buf()),
+            )
+        };
+        let app_data = portable
+            .as_ref()
+            .map(|layout| layout.app_data.clone())
+            .or_else(debug_app_data_override)
+            .unwrap_or_else(|| system_app_data.clone());
+        let using_data_override = portable.is_some() || app_data != system_app_data;
+        let cache = if let Some(layout) = &portable {
+            layout.cache.clone()
+        } else if using_data_override {
             app_data.join("cache")
         } else {
             system_cache
         };
-        let logs = if using_debug_data_root {
+        let logs = if let Some(layout) = &portable {
+            layout.logs.clone()
+        } else if using_data_override {
             app_data.join("logs")
         } else {
             app.path()
@@ -51,41 +245,67 @@ impl AppState {
                 .unwrap_or_else(|_| app_data.join("logs"))
         };
         let paths = AppPaths {
-            runtimes: app_data.join("runtimes"),
-            models: app_data.join("models"),
-            projects: app_data.join("projects"),
-            temp: cache.join("temp"),
+            runtimes: portable
+                .as_ref()
+                .map(|layout| layout.runtimes.clone())
+                .unwrap_or_else(|| app_data.join("runtimes")),
+            models: portable
+                .as_ref()
+                .map(|layout| layout.models.clone())
+                .unwrap_or_else(|| app_data.join("models")),
+            projects: portable
+                .as_ref()
+                .map(|layout| layout.projects.clone())
+                .unwrap_or_else(|| app_data.join("projects")),
+            temp: portable
+                .as_ref()
+                .map(|layout| layout.temp.clone())
+                .unwrap_or_else(|| cache.join("temp")),
             app_data,
             cache,
             logs,
         };
-        for directory in [
-            &paths.app_data,
-            &paths.cache,
-            &paths.logs,
-            &paths.runtimes,
-            &paths.models,
-            &paths.projects,
-            &paths.temp,
-        ] {
-            fs::create_dir_all(directory)
-                .map_err(|_| CommandError::io("application directory initialization"))?;
+        if portable.is_none() {
+            for directory in [
+                &paths.app_data,
+                &paths.cache,
+                &paths.logs,
+                &paths.runtimes,
+                &paths.models,
+                &paths.projects,
+                &paths.temp,
+            ] {
+                fs::create_dir_all(directory)
+                    .map_err(|_| CommandError::io("application directory initialization"))?;
+            }
         }
 
         let runtimes = RuntimeManager::load_at(paths.runtimes.clone())?;
+        // Provider values deliberately remain in the operating-system
+        // Credential Manager. Alystria files contain opaque keyring references
+        // only; this is the portable sandbox's documented external exception.
         let credentials = Arc::new(CredentialManager::os_keyring());
-        let worker = if let Some(config) = debug_worker_override(&paths.runtimes)? {
-            WorkerSupervisor::from_launch_config(config)
-        } else if let Some(pack) = runtimes.active_pack() {
-            let config = pack
-                .worker_launch_config(paths.runtimes.join("work").join("pipeline"))
-                .ok_or_else(|| {
-                    CommandError::new(
-                        "INCOMPLETE_RUNTIME_PACK",
-                        "The active runtime pack does not provide every worker dependency.",
-                        false,
-                    )
-                })?;
+        let worker_config =
+            if let Some(config) = debug_worker_override(&paths.runtimes, portable.as_ref())? {
+                Some(config)
+            } else if let Some(pack) = runtimes.active_pack() {
+                Some(
+                    pack.worker_launch_config(paths.runtimes.join("work").join("pipeline"))
+                        .ok_or_else(|| {
+                            CommandError::new(
+                                "INCOMPLETE_RUNTIME_PACK",
+                                "The active runtime pack does not provide every worker dependency.",
+                                false,
+                            )
+                        })?,
+                )
+            } else {
+                None
+            };
+        let worker = if let Some(mut config) = worker_config {
+            if let Some(layout) = &portable {
+                config.environment.extend(layout.worker_environment());
+            }
             WorkerSupervisor::from_launch_config(config)
         } else {
             WorkerSupervisor::new(
@@ -94,11 +314,12 @@ impl AppState {
             )
         }
         .with_credential_manager(credentials.clone());
+        let model_downloads = ModelDownloadManager::at(paths.models.clone())?;
         Ok(Self {
             projects: ProjectStore,
             credentials,
             model_setup: ModelSetupStore::at(paths.app_data.clone()),
-            model_downloads: ModelDownloadManager::at(paths.models.clone())?,
+            model_downloads,
             worker,
             runtimes,
             paths,
@@ -108,12 +329,27 @@ impl AppState {
 
 fn debug_worker_override(
     runtime_root: &std::path::Path,
+    portable: Option<&PortableLayout>,
 ) -> Result<Option<WorkerLaunchConfig>, CommandError> {
     let candidate = std::env::var_os("ALYSTRIA_PIPELINE_WORKER").map(PathBuf::from);
-    if cfg!(debug_assertions)
-        && let Some(candidate) = candidate
-        && candidate.is_file()
-    {
+    let Some(candidate) = candidate else {
+        return Ok(None);
+    };
+    if let Some(layout) = portable {
+        validate_portable_worker_path(layout, &candidate)?;
+        if !candidate
+            .parent()
+            .is_some_and(|parent| parent.join("runtime-manifest.json").is_file())
+        {
+            return Err(CommandError::new(
+                "INVALID_RUNTIME_PACK",
+                "The portable worker must be verified by its sibling runtime manifest.",
+                false,
+            ));
+        }
+        return portable_debug_worker_launch(&candidate, runtime_root).map(Some);
+    }
+    if cfg!(debug_assertions) && candidate.is_file() {
         if candidate
             .parent()
             .is_some_and(|parent| parent.join("runtime-manifest.json").is_file())
@@ -141,6 +377,31 @@ fn debug_worker_override(
         }));
     }
     Ok(None)
+}
+
+fn validate_portable_worker_path(
+    layout: &PortableLayout,
+    candidate: &Path,
+) -> Result<(), CommandError> {
+    if !candidate.is_absolute() || !candidate.is_file() {
+        return Err(CommandError::new(
+            "INVALID_PORTABLE_WORKER",
+            "The portable worker must be an existing absolute regular file.",
+            false,
+        ));
+    }
+    reject_reparse_path(candidate)?;
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|_| CommandError::io("portable worker validation"))?;
+    if !canonical.starts_with(&layout.runtimes) {
+        return Err(CommandError::new(
+            "INVALID_PORTABLE_WORKER",
+            "The portable worker must be contained by the portable Runtime directory.",
+            false,
+        ));
+    }
+    Ok(())
 }
 
 fn portable_debug_worker_launch(
@@ -263,9 +524,9 @@ fn starter_visual_catalog_is_regular(root: &std::path::Path) -> bool {
         && catalog_metadata.len() <= 8 * 1024 * 1024
 }
 
-/// A test-only data root lets the portable debug handoff leave production
-/// projects, caches, and runtime records untouched.  Release binaries ignore
-/// the variable so packaging cannot be redirected by an inherited shell.
+/// Legacy debug-only compatibility override. Portable builds use the
+/// canonical `ALYSTRIA_PORTABLE_ROOT` layout above in both debug and release.
+/// Release binaries continue to ignore this independently redirectable path.
 fn debug_app_data_override() -> Option<PathBuf> {
     if !cfg!(debug_assertions) {
         return None;
@@ -287,6 +548,89 @@ fn missing_worker_path(runtime_root: &std::path::Path) -> PathBuf {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    fn create_portable_layout(root: &Path) {
+        for directory in [
+            "App",
+            "Runtime",
+            "Models",
+            "App Data",
+            "Projects",
+            "Exports",
+            "Logs",
+            "Cache",
+            "Temp",
+            "Test Harness",
+            "Evidence",
+        ] {
+            fs::create_dir_all(root.join(directory)).unwrap();
+        }
+    }
+
+    #[test]
+    fn portable_layout_uses_only_fixed_contained_directories() {
+        let temporary = TempDir::new().unwrap();
+        create_portable_layout(temporary.path());
+
+        let layout = PortableLayout::from_root(temporary.path()).unwrap();
+        assert_eq!(layout.app_data, layout.root.join("App Data"));
+        assert_eq!(layout.runtimes, layout.root.join("Runtime"));
+        assert_eq!(layout.models, layout.root.join("Models"));
+        assert_eq!(layout.projects, layout.root.join("Projects"));
+        assert_eq!(layout.exports, layout.root.join("Exports"));
+        assert_eq!(layout.logs, layout.root.join("Logs"));
+        assert_eq!(layout.cache, layout.root.join("Cache"));
+        assert_eq!(layout.temp, layout.root.join("Temp"));
+
+        for (key, value) in layout.worker_environment() {
+            if key == "PLAYWRIGHT_BROWSERS_PATH" || key == "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" {
+                continue;
+            }
+            assert!(
+                PathBuf::from(value).starts_with(&layout.root),
+                "{key:?} escaped the portable root"
+            );
+        }
+    }
+
+    #[test]
+    fn portable_layout_requires_every_owned_directory_before_app_writes() {
+        let temporary = TempDir::new().unwrap();
+        create_portable_layout(temporary.path());
+        fs::remove_dir(temporary.path().join("Temp")).unwrap();
+
+        let error = PortableLayout::from_root(temporary.path()).unwrap_err();
+        assert_eq!(error.code, "LOCAL_IO_FAILED");
+    }
+
+    #[test]
+    fn portable_worker_must_be_inside_the_fixed_runtime_directory() {
+        let temporary = TempDir::new().unwrap();
+        create_portable_layout(temporary.path());
+        let layout = PortableLayout::from_root(temporary.path()).unwrap();
+        let contained = layout.runtimes.join("alystria-pipeline.exe");
+        fs::write(&contained, b"worker").unwrap();
+        validate_portable_worker_path(&layout, &contained).unwrap();
+
+        let external = temporary.path().join("external-worker.exe");
+        fs::write(&external, b"worker").unwrap();
+        let error = validate_portable_worker_path(&layout, &external).unwrap_err();
+        assert_eq!(error.code, "INVALID_PORTABLE_WORKER");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn portable_layout_rejects_symlinked_owned_directories() {
+        let temporary = TempDir::new().unwrap();
+        create_portable_layout(temporary.path());
+        let external = temporary.path().join("outside");
+        fs::create_dir_all(&external).unwrap();
+        fs::remove_dir(temporary.path().join("Cache")).unwrap();
+        std::os::unix::fs::symlink(&external, temporary.path().join("Cache")).unwrap();
+
+        let error = PortableLayout::from_root(temporary.path()).unwrap_err();
+        assert_eq!(error.code, "INVALID_PORTABLE_ROOT");
+    }
 
     #[test]
     fn debug_asset_roots_are_derived_from_the_worker_sibling() {

@@ -75,6 +75,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import alystriaMark from "./assets/alystria-mark.svg";
 import academicEvidenceBackground from "./assets/backgrounds/academic-evidence-paper-v1.png";
 import modernSignalBackground from "./assets/backgrounds/modern-tech-signal-v1.png";
@@ -135,6 +136,11 @@ import {
   type SourceImportReceipt,
 } from "./native";
 import { buildProviderRoutingReview } from "./providerRouting";
+import {
+  canonicalFixtureIdFromTopic,
+  hydrateDurableProject,
+  projectTitleFromTopic,
+} from "./project-utils";
 import { SharedScenePreview } from "./ScenePreview";
 import type {
   AppSnapshot,
@@ -174,6 +180,12 @@ interface TutorialCreationSettings {
   hardLimitMinorUnits: number;
 }
 
+type CaptionDeliveryMode = MasterExportRequest["captionDeliveryMode"];
+type CodecPreference = "h264-hardware" | "hevc-hardware" | "av1";
+type ExportRequestSettings = Pick<MasterExportRequest, "aspect" | "resolution" | "fps" | "captionDeliveryMode" | "transcript" | "bibliography"> & {
+  codecPreference: CodecPreference;
+};
+
 const globalNav: Array<{ id: GlobalArea; label: string; icon: LucideIcon }> = [
   { id: "home", label: "Home", icon: Home },
   { id: "projects", label: "Projects", icon: FolderClock },
@@ -189,6 +201,19 @@ const projectNav: Array<{ id: Workspace; label: string; icon: LucideIcon }> = [
   { id: "studio", label: "Studio", icon: MonitorPlay },
   { id: "review", label: "Review", icon: BadgeCheck },
   { id: "export", label: "Export", icon: Download },
+];
+
+const CAPTION_DELIVERY_OPTIONS: Array<{
+  id: CaptionDeliveryMode;
+  label: string;
+  eyebrow: string;
+  detail: string;
+  icon: LucideIcon;
+}> = [
+  { id: "sidecar", label: "Sidecar files", eyebrow: "Recommended", detail: "Clean video + UTF-8 YouTube SRT + WebVTT", icon: FileText },
+  { id: "embedded", label: "Selectable track", eyebrow: "Soft captions", detail: "Clean video + player-controlled track + sidecars", icon: MonitorPlay },
+  { id: "burned", label: "Open captions", eyebrow: "Always visible", detail: "Captions in the picture + sidecars", icon: TextCursorInput },
+  { id: "both", label: "Open + selectable", eyebrow: "Maximum compatibility", detail: "Burned and soft tracks + sidecars", icon: Layers3 },
 ];
 
 const providerConfigs = [
@@ -208,7 +233,7 @@ const providerConfigs = [
 ] satisfies Array<{ id: string; name: string; icon: LucideIcon; detail: string; tone: string; local?: boolean }>;
 
 const localModelOptions = [
-  { id: "local/qwen3.5-9b-gguf", name: "Qwen3.5 9B", medium: "Writing & vision", detail: "GGUF profile · benchmark before enable" },
+  { id: "local/qwen3.5-9b-gguf", name: "Qwen3.5 9B", medium: "Writing & vision", detail: "CUDA 12 llama.cpp · headless endpoint · benchmark before enable" },
   { id: "local/gemma-3-4b-it", name: "Gemma 3 4B IT", medium: "Writing & vision", detail: "Compact fallback · license review required" },
   { id: "local/phi-4-mini-instruct", name: "Phi-4 mini", medium: "Writing & code", detail: "Small MIT candidate · pin before enable" },
   { id: "local/qwen2.5-coder-7b", name: "Qwen2.5 Coder 7B", medium: "Code tutorials", detail: "Specialist candidate · load instead of main LLM" },
@@ -261,7 +286,7 @@ const profileProviderOptions = [
   ["recraft", "Recraft"],
   ["openverse", "Openverse licensed media"],
   ["pexels", "Pexels licensed media"],
-  ["openai-compatible-local", "OpenAI-compatible local endpoint"],
+  ["openai-compatible-local", "LM Studio / llama.cpp local endpoint"],
 ] as const;
 
 const SOURCE_FILE_ACCEPT = ".pdf,.docx,.pptx,.epub,.md,.markdown,.txt,.csv,.json";
@@ -615,7 +640,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!jobsOpen || Object.keys(nativeJobs).length === 0) return;
+    if (runtime.environment !== "native" || !jobsOpen || Object.keys(nativeJobs).length === 0) return;
     let active = true;
     const refresh = async () => {
       const entries = await Promise.all(Object.entries(nativeJobs).map(async ([id, input]) => {
@@ -637,7 +662,7 @@ function App() {
     void refresh();
     const interval = window.setInterval(() => { void refresh(); }, 5_000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [jobsOpen, nativeJobs, setSnapshot]);
+  }, [jobsOpen, nativeJobs, runtime.environment, setSnapshot]);
 
   useEffect(() => {
     if (snapshot.version === 0) return;
@@ -752,6 +777,10 @@ function App() {
       nativeHeadRevisionId: routingReceipt.headRevisionId,
       ...(routingReceipt.revisionNumber !== undefined ? { nativeRevisionNumber: routingReceipt.revisionNumber } : {}),
       privacy: settings.privacy === "local" ? "Local only" : "Approved cloud",
+      // The policy contains only explicit route identities and opaque keyring
+      // references. Keep it in later snapshots so normal scene/design saves
+      // cannot silently erase the approved provider boundary.
+      providerRoutingPolicy: settings.routingPolicy,
     };
     const receipt = await generationStart({
       projectId: handle.manifest.projectId,
@@ -1007,23 +1036,29 @@ function App() {
     }
   };
 
-  const exportNativeMaster = async (settings: Pick<MasterExportRequest, "aspect" | "resolution" | "fps" | "captions" | "transcript" | "bibliography">) => {
+  const exportNativeMaster = async (settings: ExportRequestSettings) => {
     const project = snapshot.projects.find((item) => item.id === activeProjectId)!;
     const link = nativeProjectLink(project);
     const baseJobId = baseGenerationJobId(project.id);
+    const { codecPreference, ...nativeSettings } = settings;
+    const codecLabel = codecPreferenceLabel(codecPreference);
     if (!link || !project.nativeHeadRevisionId || !baseJobId) {
       if (runtime.environment === "browser-demo") {
-        const demo: JobReceipt = { jobId: `demo-${Date.now()}`, state: "SUCCEEDED", acceptedAt: new Date().toISOString(), message: "Browser demo only: master export simulated; no media file was created.", retryable: false, operation: "export_master", result: { demoOnly: true } };
-        addJob(receiptJob(demo, `${project.title} · ${settings.resolution}`, `${settings.aspect} demo-only master`));
+        const demo: JobReceipt = { jobId: `demo-${Date.now()}`, state: "SUCCEEDED", acceptedAt: new Date().toISOString(), message: `UI contract only: ${settings.fps} fps ${codecLabel} export simulated; no media file was created.`, retryable: false, operation: "export_master", result: { demoOnly: true, path: null, requestedFps: settings.fps, requestedCodec: codecPreference, codecForwarded: false } };
+        addJob(receiptJob(demo, `${project.title} · ${settings.resolution}`, `${settings.aspect} · ${settings.fps} fps · ${codecLabel} requested`));
         setJobsOpen(true);
-        notify("Browser demo only", demo.message, "info");
+        notify("UI contract only", demo.message, "info");
         return demo;
       }
       throw new Error("A completed durable generation and current project revision are required for master export.");
     }
-    const receipt = await masterExport({ ...link, baseRevisionId: project.nativeHeadRevisionId, baseJobId, ...settings });
-    addNativeControlJob(project, receipt, `${project.title} · ${settings.resolution}`, `${settings.aspect} master`);
-    return receipt;
+    const receipt = await masterExport({ ...link, baseRevisionId: project.nativeHeadRevisionId, baseJobId, ...nativeSettings });
+    const annotatedReceipt: JobReceipt = {
+      ...receipt,
+      result: { ...(receipt.result ?? {}), requestedFps: settings.fps, requestedCodec: codecPreference, codecForwarded: false },
+    };
+    addNativeControlJob(project, annotatedReceipt, `${project.title} · ${settings.resolution}`, `${settings.aspect} · ${settings.fps} fps · ${codecLabel} requested`);
+    return annotatedReceipt;
   };
 
   return (
@@ -1060,6 +1095,8 @@ function App() {
               activeScene={activeScene}
               mode={snapshot.studioMode}
               version={snapshot.version}
+              jobs={snapshot.jobs}
+              environment={runtime.environment}
               onWorkspace={setWorkspace}
               onScene={(scene) => { setActiveSceneId(scene.id); if (workspace !== "studio") setWorkspace("studio"); }}
               onSelectScene={setActiveSceneId}
@@ -1147,7 +1184,7 @@ function Sidebar({ area, workspace, project, mobileNavOpen, onGlobal, onWorkspac
   return (
     <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`} aria-label="Primary navigation">
       <div className="brand-lockup"><LogoMark /><span><strong>Alystria</strong><small>Studio 2.0</small></span></div>
-      <button className="new-project-button" onClick={onNew}><Plus size={17} /> <span>New tutorial</span></button>
+      <button className="new-project-button" aria-label="New tutorial" onClick={onNew}><Plus size={17} /> <span>New tutorial</span></button>
       {workspace ? (
         <>
           <button className="project-switcher" onClick={() => onGlobal("projects")}>
@@ -1514,6 +1551,8 @@ function ProjectWorkspace(props: {
   activeScene: Scene;
   mode: StudioMode;
   version: number;
+  jobs: JobRecord[];
+  environment: RuntimeState["environment"];
   onWorkspace: (workspace: Workspace) => void;
   onScene: (scene: Scene) => void;
   onSelectScene: (sceneId: string) => void;
@@ -1529,7 +1568,7 @@ function ProjectWorkspace(props: {
   onRedo: () => void;
   onRenderScene: (scene: Scene) => void;
   onRepairQa: () => void;
-  onExportMaster: (settings: Pick<MasterExportRequest, "aspect" | "resolution" | "fps" | "captions" | "transcript" | "bibliography">) => Promise<JobReceipt>;
+  onExportMaster: (settings: ExportRequestSettings) => Promise<JobReceipt>;
 }) {
   if (props.workspace === "plan") return <PlanWorkspace {...props} />;
   if (props.workspace === "storyboard") return <StoryboardWorkspace {...props} />;
@@ -1698,48 +1737,61 @@ function DesignInspector({ project, customization, onChange, onNotify, onPreview
     const nativeKind = kind === "presenter" ? "presenterPortrait" : kind === "background" ? "backgroundImage" : kind === "sfx" ? "soundEffect" : kind;
     let receipt: ProjectAssetImportReceipt | undefined;
     if (project.nativeProjectId && project.nativeProjectDirectory && project.nativeHeadRevisionId) {
-      try {
-        receipt = await projectAssetImport({
-          projectId: project.nativeProjectId,
-          projectDirectory: project.nativeProjectDirectory,
-          expectedHeadRevisionId: project.nativeHeadRevisionId,
-          kind: nativeKind,
-          filename: file.name,
-          mimeType: studioAssetMimeType(file),
-          privacy: "project_local",
-          rights: {
-            status: uploadRights === "owned" ? "owned" : uploadRights === "licensed" ? "licensed" : "unknown",
-            creator: uploadRights === "owned" ? "Project owner" : "User supplied",
-            license: uploadRights === "owned" ? "User owned" : uploadRights === "licensed" ? uploadLicense.trim() : "Rights review required",
-            attribution: uploadRights === "owned" ? "No attribution required" : uploadRights === "licensed" ? uploadAttribution.trim() : "Attribution pending",
-            commercialUse: uploadRights === "owned" ? "allowed" : uploadRights === "licensed" ? licensedCommercialUse : "unknown",
-            redistribution: uploadRights === "owned" ? "allowed" : uploadRights === "licensed" ? licensedRedistribution : "unknown",
-            modelInput: uploadRights === "owned" ? "allowed" : uploadRights === "licensed" ? licensedModelInput : "unknown",
+      const importAtHead = (expectedHeadRevisionId: string) => projectAssetImport({
+        projectId: project.nativeProjectId!,
+        projectDirectory: project.nativeProjectDirectory!,
+        expectedHeadRevisionId,
+        kind: nativeKind,
+        filename: file.name,
+        mimeType: studioAssetMimeType(file),
+        privacy: "project_local",
+        rights: {
+          status: uploadRights === "owned" ? "owned" : uploadRights === "licensed" ? "licensed" : "unknown",
+          creator: uploadRights === "owned" ? "Project owner" : "User supplied",
+          license: uploadRights === "owned" ? "User owned" : uploadRights === "licensed" ? uploadLicense.trim() : "Rights review required",
+          attribution: uploadRights === "owned" ? "No attribution required" : uploadRights === "licensed" ? uploadAttribution.trim() : "Attribution pending",
+          commercialUse: uploadRights === "owned" ? "allowed" : uploadRights === "licensed" ? licensedCommercialUse : "unknown",
+          redistribution: uploadRights === "owned" ? "allowed" : uploadRights === "licensed" ? licensedRedistribution : "unknown",
+          modelInput: uploadRights === "owned" ? "allowed" : uploadRights === "licensed" ? licensedModelInput : "unknown",
+        },
+        ...(kind === "presenter" ? {
+          presenter: {
+            identityType: presenterIdentity,
+            displayName: presenterName.trim() || file.name.replace(/\.[^.]+$/u, ""),
+            syntheticOriginAttested: presenterIdentity === "synthetic",
+            ...(presenterIdentity === "realPerson" ? {
+              consent: {
+                subjectDisplayName: consentSubject.trim(),
+                attestorDisplayName: consentAttestor.trim(),
+                authority: consentAuthority,
+                grants: ["portraitAnimation" as const, "videoReenactment" as const, ...(presenterDistributionScope === "privatePreview" ? [] : ["publicDistribution" as const]), ...(presenterDistributionScope === "publicCommercial" ? ["commercialDistribution" as const] : [])],
+                distributionScope: presenterDistributionScope,
+                accepted: consentAccepted,
+                disclosureRequired: true,
+              },
+            } : {}),
+            selectAfterImport: true,
           },
-          ...(kind === "presenter" ? {
-            presenter: {
-              identityType: presenterIdentity,
-              displayName: presenterName.trim() || file.name.replace(/\.[^.]+$/u, ""),
-              syntheticOriginAttested: presenterIdentity === "synthetic",
-              ...(presenterIdentity === "realPerson" ? {
-                consent: {
-                  subjectDisplayName: consentSubject.trim(),
-                  attestorDisplayName: consentAttestor.trim(),
-                  authority: consentAuthority,
-                  grants: ["portraitAnimation" as const, "videoReenactment" as const, ...(presenterDistributionScope === "privatePreview" ? [] : ["publicDistribution" as const]), ...(presenterDistributionScope === "publicCommercial" ? ["commercialDistribution" as const] : [])],
-                  distributionScope: presenterDistributionScope,
-                  accepted: consentAccepted,
-                  disclosureRequired: true,
-                },
-              } : {}),
-              selectAfterImport: true,
-            },
-          } : {}),
-          contentBase64: bytesToBase64(bytes),
-        });
+        } : {}),
+        contentBase64: bytesToBase64(bytes),
+      });
+      try {
+        receipt = await importAtHead(project.nativeHeadRevisionId);
       } catch (error) {
-        onNotify("Asset import did not complete", errorMessage(error), "warning");
-        return;
+        if (!errorMessage(error).includes("REVISION_CONFLICT")) {
+          onNotify("Asset import did not complete", errorMessage(error), "warning");
+          return;
+        }
+        try {
+          const current = await projectSnapshotGet({
+            projectId: project.nativeProjectId,
+            projectDirectory: project.nativeProjectDirectory,
+          });
+          receipt = await importAtHead(current.headRevisionId);
+        } catch (retryError) {
+          onNotify("Asset import did not complete", errorMessage(retryError), "warning");
+          return;
+        }
       }
     }
     const id = receipt?.artifact.id ?? `upload-${kind}-${Date.now()}`;
@@ -1803,17 +1855,21 @@ function DesignInspector({ project, customization, onChange, onNotify, onPreview
       </InspectorSection>
     </>}
     {section === "captions" && <>
-      <InspectorSection title="Safe placement">
+      <div className="caption-authoring-scope" role="note">
+        <Film size={15} />
+        <span><strong>Burned-caption style</strong><small>These controls affect only an explicit open-caption export. Sidecar and embedded captions stay clean and use the viewer's font, color, size, and position controls.</small></span>
+      </div>
+      <InspectorSection title="Burned-caption placement">
         <div className="caption-position-grid">{(["auto", "top", "lower-third"] as const).map((position) => <button key={position} className={customization.captions.position === position ? "active" : ""} onClick={() => updateCaption({ position })}><span className={`caption-position-icon ${position}`}><i /></span>{position.replace("-", " ")}</button>)}</div>
         <p className="inspector-note">Auto avoids faces, formulas, UI callouts, and presenter regions on each target.</p>
         <div className="range-field"><label><span>Safe inset</span><output>{customization.captions.safeInset}%</output></label><input aria-label="Caption safe inset" type="range" min="5" max="18" value={customization.captions.safeInset} onChange={(event) => updateCaption({ safeInset: Number(event.target.value) })} /></div>
       </InspectorSection>
-      <InspectorSection title="Caption typography">
+      <InspectorSection title="Burned-caption typography">
         <div className="segmented-control three">{(["soft-panel", "solid-panel", "outline"] as const).map((style) => <button key={style} className={customization.captions.style === style ? "active" : ""} onClick={() => updateCaption({ style })}>{style.replace("-", " ")}</button>)}</div>
         <div className="range-field"><label><span>Caption size</span><output>{customization.captions.size}%</output></label><input aria-label="Caption size" type="range" min="80" max="140" value={customization.captions.size} onChange={(event) => updateCaption({ size: Number(event.target.value) })} /></div>
         <label>Maximum lines<select value={customization.captions.maxLines} onChange={(event) => updateCaption({ maxLines: Number(event.target.value) as 1 | 2 | 3 })}><option value="1">1 line · short-form</option><option value="2">2 lines · recommended</option><option value="3">3 lines · accessibility override</option></select></label>
         <div className="color-field-grid two"><label><span>Text</span><input aria-label="Caption text color" type="color" value={customization.captions.textColor} onChange={(event) => updateCaption({ textColor: event.target.value })} /></label><label><span>Panel</span><input aria-label="Caption panel color" type="color" value={customization.captions.panelColor} onChange={(event) => updateCaption({ panelColor: event.target.value })} /></label></div>
-        <div className="caption-quality-note"><ShieldCheck size={15} /><span><strong>Export guard active</strong><small>Line breaks, reading speed, contrast, and scene collisions are rechecked before export.</small></span></div>
+        <div className="caption-quality-note"><ShieldCheck size={15} /><span><strong>Cue guard active for every delivery</strong><small>Timing, semantic line breaks, reading speed, and two-line limits are rechecked for SRT, WebVTT, selectable tracks, and open captions.</small></span></div>
       </InspectorSection>
     </>}
     {section === "media" && <>
@@ -1859,13 +1915,14 @@ function PresenterPortrait({ assetId }: { assetId: string | null }) {
 }
 
 function CaptionPreview({ settings, fontFamily }: { settings: CanvasCustomization["captions"]; fontFamily: string }) {
-  return <div className={`caption-preview position-${settings.position} style-${settings.style}`} style={{ color: settings.textColor, backgroundColor: settings.style === "outline" ? "transparent" : `${settings.panelColor}e8`, fontFamily: `"${fontFamily}", sans-serif`, fontSize: `${Math.round(12 * settings.size / 100)}px`, maxWidth: `calc(100% - ${settings.safeInset * 2}%)` }} data-testid="caption-preview"><span>Four products become <em>three</em>.</span><small>{settings.maxLines} line{settings.maxLines === 1 ? "" : "s"} max · collision safe</small></div>;
+  return <div className={`caption-preview position-${settings.position} style-${settings.style}`} style={{ color: settings.textColor, backgroundColor: settings.style === "outline" ? "transparent" : `${settings.panelColor}e8`, fontFamily: `"${fontFamily}", sans-serif`, fontSize: `${Math.round(12 * settings.size / 100)}px`, maxWidth: `calc(100% - ${settings.safeInset * 2}%)` }} data-testid="caption-preview"><span>Four products become <em>three</em>.</span><small>Open-caption preview · {settings.maxLines} line{settings.maxLines === 1 ? "" : "s"} max</small></div>;
 }
 
 function MotionInspector({ studioMode }: { studioMode: boolean }) { return <div className="inspector-body"><InspectorSection title="Choreography"><div className="motion-row"><span><small>Entrance</small><strong>Thread draw</strong></span><span>0.8s</span></div><div className="motion-row"><span><small>Emphasis</small><strong>Term isolate</strong></span><span>2 beats</span></div><div className="motion-row"><span><small>Exit</small><strong>Carry forward</strong></span><span>0.5s</span></div></InspectorSection>{studioMode ? <InspectorSection title="Frame controls"><label>Start tick<input value="240000" readOnly /></label><label>Duration ticks<input value="22560000" readOnly /></label><label>Seed<input value="alya-scene-004" readOnly /></label></InspectorSection> : <div className="guided-callout"><Sparkles size={18} /><strong>Timing is guided by narration.</strong><p>Switch to Studio mode for exact ticks, easing curves, and responsive overrides.</p></div>}</div>; }
 
-function ReviewWorkspace({ project, onWorkspace, onScene, onRepairQa }: ProjectWorkspaceProps) {
-  const [playing, setPlaying] = useState(false);
+function ReviewWorkspace({ project, jobs, environment, onWorkspace, onScene, onRepairQa }: ProjectWorkspaceProps) {
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  const media = authoritativeReviewMedia(project, jobs, environment);
   const checks = [
     { title: "Claim support", result: "18 / 18 supported", tone: "pass", icon: ShieldCheck },
     { title: "Caption safety", result: "8 / 8 scenes pass", tone: "pass", icon: AlignLeft },
@@ -1874,8 +1931,12 @@ function ReviewWorkspace({ project, onWorkspace, onScene, onRepairQa }: ProjectW
     { title: "Asset rights", result: "1 link-only source", tone: "warn", icon: FileCheck2 },
     { title: "Frame continuity", result: "No blank frames", tone: "pass", icon: Film },
   ];
-  return <div className="page project-page review-workspace"><ProjectHeader project={project} step="4 · Review" title="Review the whole argument" description="Watch continuously, inspect the evidence behind each moment, and resolve the checks that can block export." action={<div className="header-action-group"><button className="secondary-button" onClick={() => onWorkspace("studio")}>Back to studio</button><button className="primary-button" onClick={() => onWorkspace("export")}>Prepare export <ArrowRight size={16} /></button></div>} />
-    <div className="review-layout"><section className="review-player"><div className="review-canvas"><SceneArtwork scene={project.scenes[3]!} /><button className="large-play" onClick={() => setPlaying((value) => !value)}>{playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</button><div className="review-caption">Four products become <em>three</em>.</div></div><div className="review-controls"><button onClick={() => setPlaying((value) => !value)}>{playing ? <Pause size={17} /> : <Play size={17} />}</button><span>03:14</span><div><i style={{ width: "34%" }} /><b style={{ left: "34%" }} /></div><span>12:00</span><button><Volume2 size={16} /></button><button>CC</button></div><div className="review-scene-strip">{project.scenes.map((scene) => <button key={scene.id} className={scene.index === 4 ? "active" : ""} onClick={() => onScene(scene)}><span>{scene.index}</span><SceneArtwork scene={scene} compact /></button>)}</div></section>
+  const reviewReady = Boolean(media && !mediaError);
+  const ReviewBoundaryIcon = mediaError ? CircleAlert : Film;
+  const reviewBoundaryTitle = mediaError ? "Generated media could not be loaded" : "No authoritative media yet";
+  const reviewBoundaryDetail = mediaError ?? (environment === "native" ? "Render a scene or complete a master export. Review only plays a promoted native artifact." : "The browser UI contract does not create video. Packaged-native acceptance must supply a promoted scene or master render.");
+  return <div className="page project-page review-workspace"><ProjectHeader project={project} step="4 · Review" title="Review the whole argument" description="Play the latest promoted render, inspect the evidence behind it, and resolve the checks that can block export." action={<div className="header-action-group"><button className="secondary-button" onClick={() => onWorkspace("studio")}>Back to studio</button><button className="primary-button" disabled={!reviewReady} onClick={() => onWorkspace("export")}>Prepare export <ArrowRight size={16} /></button></div>} />
+    <div className="review-layout"><section className="review-player">{reviewReady ? <><div className="review-canvas"><video aria-label="Authoritative generated tutorial media" controls preload="metadata" src={media!.src} onError={() => setMediaError("The promoted media could not be loaded. Re-render it before export.")} style={{ width: "100%", height: "100%", objectFit: "contain", background: "#090b11" }} /></div><div className="review-controls" role="status"><FileCheck2 size={16} /><span style={{ flex: 1 }}>{media!.label}</span><span>{media!.mediaType}</span></div></> : <div className="review-canvas"><div className="empty-state"><span><ReviewBoundaryIcon size={25} /></span><h3 style={{ color: "#f7f8fc" }}>{reviewBoundaryTitle}</h3><p>{reviewBoundaryDetail}</p><button className="secondary-button" onClick={() => onWorkspace("studio")}>Return to Studio</button></div></div>}<div className="review-scene-strip">{project.scenes.map((scene) => <button key={scene.id} onClick={() => onScene(scene)}><span>{scene.index}</span><SceneArtwork scene={scene} compact /></button>)}</div></section>
       <aside className="review-inspector"><div className="review-score"><div className="score-ring"><strong>91</strong><span>quality</span></div><div><span className="section-kicker">Review summary</span><h3>Nearly ready to export</h3><p>Resolve two review items. All blocking factual checks pass.</p></div></div><div className="check-list">{checks.map(({ title, result, tone, icon: Icon }) => <button key={title}><span className={`check-icon ${tone}`}><Icon size={17} /></span><span><strong>{title}</strong><small>{result}</small></span><ChevronRight size={16} /></button>)}</div><button className="secondary-button full" onClick={onRepairQa}><WandSparkles size={16} /> Repair selected review item</button></aside>
     </div>
     <section className="claims-panel"><div className="panel-heading"><div><span className="section-kicker">Evidence at this moment</span><h3>Three-product identity</h3></div><span className="source-state verified"><CheckCircle2 size={14} /> Supported</span></div><div className="claim-grid"><article><span>Claim 12</span><p>Subtracting <code>ac</code> and <code>bd</code> from <code>(a+b)(c+d)</code> yields <code>ad+bc</code>.</p><small><Link2 size={13} /> 3 exact source spans</small></article><blockquote>“The middle coefficient can be computed using one additional multiplication…”<cite>Karatsuba & Ofman · 1962 · translated abstract</cite></blockquote><div className="annotation-box"><MessageSquareText size={16} /><textarea aria-label="Review annotation" placeholder="Leave a local review note…" /><button>Save note</button></div></div></section>
@@ -1885,15 +1946,27 @@ function ReviewWorkspace({ project, onWorkspace, onScene, onRepairQa }: ProjectW
 function ExportWorkspace({ project, onWorkspace, onNotify, onExportArchive, onExportMaster }: ProjectWorkspaceProps) {
   const [aspect, setAspect] = useState("16:9");
   const [quality, setQuality] = useState("1440p");
-  const [captions, setCaptions] = useState(true);
+  const [fps, setFps] = useState<MasterExportRequest["fps"]>(30);
+  const [codecPreference, setCodecPreference] = useState<CodecPreference>("h264-hardware");
+  const [captionDeliveryMode, setCaptionDeliveryMode] = useState<CaptionDeliveryMode>("sidecar");
   const [bibliography, setBibliography] = useState(true);
   const [transcript, setTranscript] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const captionLocale = project.locale === "Spanish" ? "es-ES" : project.locale === "Hindi" ? "hi-IN" : "en-US";
+  const moveCaptionDelivery = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const keyOffset = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
+    if (!keyOffset && event.key !== "Home" && event.key !== "End") return;
+    event.preventDefault();
+    const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? CAPTION_DELIVERY_OPTIONS.length - 1 : (index + keyOffset + CAPTION_DELIVERY_OPTIONS.length) % CAPTION_DELIVERY_OPTIONS.length;
+    setCaptionDeliveryMode(CAPTION_DELIVERY_OPTIONS[nextIndex]!.id);
+    const radios = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role='radio']");
+    radios?.[nextIndex]?.focus();
+  };
   const exportProject = async () => {
     setExporting(true);
     try {
-      const receipt = await onExportMaster({ aspect: aspect as "16:9" | "9:16" | "1:1", resolution: quality as "1080p" | "1440p" | "4K", fps: 30, captions, transcript, bibliography });
+      const receipt = await onExportMaster({ aspect: aspect as "16:9" | "9:16" | "1:1", resolution: quality as "1080p" | "1440p" | "4K", fps, codecPreference, captionDeliveryMode, transcript, bibliography });
       onNotify(receipt.state === "FAILED" || receipt.state === "BLOCKED" ? "Export blocked" : "Export queued", receipt.message, receipt.state === "FAILED" || receipt.state === "BLOCKED" ? "warning" : "info");
     } catch (error) {
       onNotify("Export blocked", errorMessage(error), "warning");
@@ -1912,11 +1985,13 @@ function ExportWorkspace({ project, onWorkspace, onNotify, onExportArchive, onEx
       setArchiving(false);
     }
   };
-  return <div className="page project-page export-workspace"><ProjectHeader project={project} step="5 · Export" title="Package the finished lesson" description="One master, responsive targets, captions, transcript, sources, and provenance—assembled locally." action={<button className="secondary-button" onClick={() => onWorkspace("review")}><ArrowLeft size={16} /> Review</button>} />
-    <div className="export-layout"><section className="export-preview-panel"><div className="export-preview"><SceneArtwork scene={project.scenes[0]!} /><span className="export-resolution">2560 × 1440</span></div><div className="export-summary"><span><Film size={17} /><b>{project.duration}:00</b><small>estimated duration</small></span><span><HardDrive size={17} /><b>~1.8 GB</b><small>estimated master</small></span><span><TimerReset size={17} /><b>8–14 min</b><small>silent profile estimate</small></span></div><div className="export-ready"><PackageCheck size={21} /><div><strong>Ready to render</strong><p>All blocking export gates pass. Two non-blocking review notes will be included in the manifest.</p></div></div></section>
-      <section className="export-settings"><div className="settings-section"><span className="section-kicker">Frame</span><h3>Format and resolution</h3><label>Aspect ratio<div className="format-options">{([['16:9', 'Landscape'], ['9:16', 'Portrait'], ['1:1', 'Square']] as const).map(([ratio, label]) => <button key={ratio} className={aspect === ratio ? "active" : ""} onClick={() => setAspect(ratio)}><i className={`aspect-shape ratio-${ratio.replace(":", "-")}`} /><span><strong>{ratio}</strong><small>{label}</small></span></button>)}</div></label><label>Resolution<select value={quality} onChange={(event) => setQuality(event.target.value)}><option>1080p</option><option>1440p</option><option>4K</option></select></label><div className="setting-row"><label>Frame rate<select><option>30 fps</option><option>60 fps</option><option>24 fps</option></select></label><label>Codec<select><option>H.264 hardware</option><option>HEVC hardware</option><option>AV1</option></select></label></div></div>
-        <div className="settings-section"><span className="section-kicker">Accessibility & evidence</span><h3>Export companions</h3><ToggleRow checked={captions} onChange={setCaptions} title="Captions" detail="WebVTT + styled burn-in" /><ToggleRow checked={transcript} onChange={setTranscript} title="Accessible transcript" detail="Scene headings and descriptions" /><ToggleRow checked={bibliography} onChange={setBibliography} title="Sources & bibliography" detail="Human-readable + JSON manifest" /><ToggleRow checked={true} onChange={() => {}} title="Provenance manifest" detail="Required · cannot be disabled" locked /></div>
-        <div className="export-cost"><ShieldCheck size={18} /><div><strong>Local export · no provider cost</strong><small>Project content stays on this device.</small></div></div><button className="secondary-button full" onClick={() => { void archiveProject(); }} disabled={archiving}>{archiving ? <RefreshCw className="spin" size={17} /> : <Archive size={17} />}{archiving ? "Archiving project…" : "Export portable .alytutorial"}</button>{project.nativeArchivePath && <small className="archive-path"><CheckCircle2 size={13} /> Last archive: {project.nativeArchivePath}</small>}<button className="export-button" onClick={() => { void exportProject(); }} disabled={exporting}>{exporting ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}{exporting ? "Submitting render…" : `Render ${quality} master`}<span>{aspect}</span></button>
+  const openCaptions = captionDeliveryMode === "burned" || captionDeliveryMode === "both";
+  return <div className="page project-page export-workspace"><ProjectHeader project={project} step="5 · Export" title="Package the finished lesson" description="A clean master with accessible caption files, transcript, sources, and provenance—assembled locally." action={<button className="secondary-button" onClick={() => onWorkspace("review")}><ArrowLeft size={16} /> Review</button>} />
+    <div className="export-layout"><section className="export-preview-panel"><div className="export-preview"><SceneArtwork scene={project.scenes[0]!} /><span className={`export-caption-status ${openCaptions ? "open" : "clean"}`}>{openCaptions ? "Open captions in picture" : "Clean picture · no caption pixels"}</span><span className="export-resolution">2560 × 1440</span></div><div className="export-summary"><span><Film size={17} /><b>{project.duration}:00</b><small>estimated duration</small></span><span><HardDrive size={17} /><b>~1.8 GB</b><small>estimated master</small></span><span><TimerReset size={17} /><b>8–14 min</b><small>silent profile estimate</small></span></div><div className="export-ready"><PackageCheck size={21} /><div><strong>Ready to render</strong><p>All blocking export gates pass. Caption timing and sidecar files will be validated with the master.</p></div></div></section>
+      <section className="export-settings"><div className="settings-section"><span className="section-kicker">Frame</span><h3>Format and resolution</h3><label>Aspect ratio<div className="format-options">{([['16:9', 'Landscape'], ['9:16', 'Portrait'], ['1:1', 'Square']] as const).map(([ratio, label]) => <button key={ratio} className={aspect === ratio ? "active" : ""} onClick={() => setAspect(ratio)}><i className={`aspect-shape ratio-${ratio.replace(":", "-")}`} /><span><strong>{ratio}</strong><small>{label}</small></span></button>)}</div></label><label>Resolution<select value={quality} onChange={(event) => setQuality(event.target.value)}><option>1080p</option><option>1440p</option><option>4K</option></select></label><div className="setting-row"><label>Frame rate<select aria-label="Frame rate" value={fps} onChange={(event) => setFps(Number(event.target.value) as MasterExportRequest["fps"])}><option value="30">30 fps</option><option value="60">60 fps</option><option value="24">24 fps</option></select></label><label>Codec preference<select aria-label="Codec preference" value={codecPreference} onChange={(event) => setCodecPreference(event.target.value as CodecPreference)}><option value="h264-hardware">H.264 hardware</option><option value="hevc-hardware">HEVC hardware</option><option value="av1">AV1</option></select></label></div><p className="settings-intro" role="note"><strong>Encoder boundary:</strong> frame rate is sent to the native export command. Codec preference is recorded with this request, but the current command contract does not yet select an encoder.</p></div>
+        <div className="settings-section caption-delivery-section"><span className="section-kicker">Captions</span><h3>Choose how viewers receive captions</h3><p className="settings-intro">Every option includes named UTF-8 <strong>.srt</strong> and <strong>.vtt</strong> files. The recommended clean master is ready for YouTube upload without text baked into the picture.</p><div className="caption-delivery-options" role="radiogroup" aria-label="Caption delivery"><>{CAPTION_DELIVERY_OPTIONS.map(({ id, label, eyebrow, detail, icon: Icon }, index) => <button type="button" role="radio" aria-checked={captionDeliveryMode === id} tabIndex={captionDeliveryMode === id ? 0 : -1} key={id} className={captionDeliveryMode === id ? "active" : ""} onClick={() => setCaptionDeliveryMode(id)} onKeyDown={(event) => moveCaptionDelivery(event, index)}><span className="caption-delivery-icon"><Icon size={17} /></span><span><small>{eyebrow}</small><strong>{label}</strong><em>{detail}</em></span>{captionDeliveryMode === id && <CheckCircle2 size={16} />}</button>)}</></div><div className="caption-file-receipt"><FileCheck2 size={17} /><span><strong>Caption files included</strong><small>{project.title}.{captionLocale}.srt · {project.title}.{captionLocale}.vtt</small></span></div>{openCaptions ? <div className="burned-caption-warning" role="note"><TextCursorInput size={17} /><span><strong>Open captions will become picture pixels.</strong><small>Font, color, size, and placement come from the Studio caption style. They cannot be hidden after export.</small></span><button type="button" onClick={() => onWorkspace("studio")}>Edit open-caption style</button></div> : <p className="caption-player-note"><MonitorPlay size={15} /><span><strong>Appearance stays with the viewer.</strong> Sidecar and selectable captions use YouTube or the video player's font, color, size, and position controls.</span></p>}</div>
+        <div className="settings-section"><span className="section-kicker">Accessibility & evidence</span><h3>Export companions</h3><ToggleRow checked={transcript} onChange={setTranscript} title="Accessible transcript" detail="Scene headings and descriptions" /><ToggleRow checked={bibliography} onChange={setBibliography} title="Sources & bibliography" detail="Human-readable + JSON manifest" /><ToggleRow checked={true} onChange={() => {}} title="Provenance manifest" detail="Required · cannot be disabled" locked /></div>
+        <div className="export-cost"><ShieldCheck size={18} /><div><strong>Local export · no provider cost</strong><small>Project content stays on this device.</small></div></div><button className="secondary-button full" onClick={() => { void archiveProject(); }} disabled={archiving}>{archiving ? <RefreshCw className="spin" size={17} /> : <Archive size={17} />}{archiving ? "Archiving project…" : "Export portable .alytutorial"}</button>{project.nativeArchivePath && <small className="archive-path"><CheckCircle2 size={13} /> Last archive: {project.nativeArchivePath}</small>}<button className="export-button" onClick={() => { void exportProject(); }} disabled={exporting}>{exporting ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}{exporting ? "Submitting render…" : `Render ${quality} master`}<span>{aspect} · {fps} fps · {codecPreferenceLabel(codecPreference)}</span></button>
       </section></div>
   </div>;
 }
@@ -2011,11 +2086,14 @@ function NewTutorialWizard({ environment, onClose, onCreate }: { environment: Ru
       return;
     }
     const id = `project-${Date.now()}`;
+    const normalizedTopic = topic.trim() || "A new idea";
+    const projectTitle = projectTitleFromTopic(normalizedTopic);
+    const canonicalFixtureId = canonicalFixtureIdFromTopic(normalizedTopic);
     setCreating(true);
     setCreateError(null);
     try {
       await onCreate(
-        { ...defaultSnapshot.projects[0]!, id, title: topic || "Untitled tutorial", topic: topic || "A new idea", description: `A ${grounding.toLowerCase()} tutorial for ${audience.toLowerCase()}.`, audience, locale, duration: Number(duration), progress: 8, status: "Planning", updatedAt: "just now", scenes: defaultSnapshot.projects[0]!.scenes.slice(0, 4).map((scene, index) => ({ ...scene, id: `${id}-scene-${index + 1}`, status: "draft" })), sources: [] },
+        { ...defaultSnapshot.projects[0]!, id, title: projectTitle, topic: normalizedTopic, description: `A ${grounding.toLowerCase()} tutorial for ${audience.toLowerCase()}.`, audience, locale, duration: Number(duration), progress: 8, status: "Planning", updatedAt: "just now", scenes: defaultSnapshot.projects[0]!.scenes.slice(0, 4).map((scene, index) => ({ ...scene, id: `${id}-scene-${index + 1}`, status: "draft" })), sources: [], ...(canonicalFixtureId ? { canonicalFixtureId } : {}) },
         {
           grounding: grounding.toLowerCase() as GroundingMode,
           quality: quality.toLowerCase() as QualityPreset,
@@ -2036,7 +2114,7 @@ function NewTutorialWizard({ environment, onClose, onCreate }: { environment: Ru
     <div className="wizard-steps">{["Idea", "Learner", "Grounding", "Review"].map((label, index) => <span key={label} className={step === index + 1 ? "active" : step > index + 1 ? "complete" : ""}><i>{step > index + 1 ? <Check size={12} /> : index + 1}</i>{label}</span>)}</div>
     <div className="wizard-body">
       {step === 1 && <div className="wizard-step"><span className="section-kicker">Start with the hard part</span><h2 id="wizard-title">What should become clear?</h2><p>Describe the idea, skill, or question in plain language. You can add documents and URLs after this step.</p><label className="large-input"><WandSparkles size={21} /><textarea autoFocus rows={4} placeholder="e.g. Explain why Karatsuba multiplication needs only three recursive products…" value={topic} onChange={(event) => setTopic(event.target.value)} /></label><div className="prompt-suggestions"><button onClick={() => setTopic("Explain why Karatsuba multiplication needs only three recursive products")}>Karatsuba multiplication</button><button onClick={() => setTopic("Teach binary search through loop invariants and an execution trace")}>Binary search invariants</button><button onClick={() => setTopic("Derive the central limit theorem visually")}>Visual derivation</button></div><div className="source-drop"><Upload size={20} /><span><strong>Add source material</strong><small>{sourceFiles.length ? `${sourceFiles.length} selected · imported privately before generation` : "PDF, DOCX, EPUB, Markdown, or text · 8 MiB each · optional"}</small></span><input ref={sourceInputRef} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => setSourceFiles(Array.from(event.target.files ?? []))} /><button onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? "Change files" : "Choose files"}</button></div>{sourceFiles.length > 0 && <div className="selected-source-list" aria-label="Selected source files">{sourceFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><FileCheck2 size={14} /> {file.name} <small>{formatBytes(file.size)}</small></span>)}</div>}</div>}
-      {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>Alystria changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option></select></label><label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Format</span><select><option>Visual explanation</option><option>Code walkthrough</option><option>Presenter with slides</option><option>Worked derivation</option></select></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>Alystria will assume basic algebra, introduce divide and conquer before asymptotic analysis, and surface common misconceptions.</p></div></div></div>}
+      {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>Alystria changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="12">About 12 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option></select></label><label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Format</span><select><option>Visual explanation</option><option>Code walkthrough</option><option>Presenter with slides</option><option>Worked derivation</option></select></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>Alystria will assume basic algebra, introduce divide and conquer before asymptotic analysis, and surface common misconceptions.</p></div></div></div>}
       {step === 3 && <div className="wizard-step"><span className="section-kicker">Lock the trust boundary</span><h2>How should Alystria research?</h2><p>No cloud call happens until its provider, data class, retention policy, and cost are approved.</p><div className="choice-cards">{([
         { name: "Creative", detail: "Use the prompt as the source of truth", icon: Sparkles }, { name: "Grounded", detail: "Connect verifiable claims to reliable evidence", icon: ShieldCheck }, { name: "Strict", detail: "Block every unsupported external claim", icon: Lock },
       ] satisfies Array<{ name: string; detail: string; icon: LucideIcon }>).map(({ name, detail, icon: Icon }) => <button key={name} className={grounding === name ? "active" : ""} onClick={() => setGrounding(name)}><span><Icon size={20} /></span><strong>{name}</strong><small>{detail}</small>{grounding === name && <CheckCircle2 size={17} />}</button>)}</div><div className="privacy-selection"><Lock size={18} /><div><strong>Private sources remain local</strong><p>Imported documents start as Local only. Reclassifying them always requires an explicit decision.</p></div><span className="toggle-on"><i /></span></div></div>}
@@ -2062,7 +2140,7 @@ function RegenerationSheet({ scene, onClose, onRun }: { scene: Scene; onClose: (
 }
 
 function JobsDrawer({ open, jobs, nativeJobIds, onClose, onCancel, onRetry }: { open: boolean; jobs: JobRecord[]; nativeJobIds: ReadonlySet<string>; onClose: () => void; onCancel: (id: string) => void; onRetry: (id: string) => void }) {
-  return <aside className={`jobs-drawer ${open ? "open" : ""}`} aria-hidden={!open} aria-label="Background jobs"><header><div><span className="section-kicker">Durable work queue</span><h2>Jobs</h2></div><button className="icon-button" onClick={onClose}><PanelRightClose size={18} /></button></header><div className="jobs-summary"><div><Activity size={17} /><span><strong>{jobs.filter((job) => job.status === "running").length} active</strong><small>Editing remains available</small></span></div><div className="local-job-badge"><HardDrive size={14} /> Local worker</div></div><div className="jobs-list">{jobs.length ? jobs.map((job) => <article className={`job-card ${job.status}`} key={job.id}><div className="job-icon">{job.status === "complete" ? <Check size={16} /> : job.status === "attention" ? <CircleAlert size={16} /> : <RefreshCw className={job.status === "running" ? "spin" : ""} size={16} />}</div><div className="job-copy"><div><strong>{job.title}</strong><span>{job.status}</span></div><p>{job.detail}</p>{job.status !== "complete" && <ProgressBar value={job.progress} />}<small>{job.eta}{job.cost && <> · {job.cost}</>}</small></div><div className="job-actions">{job.status === "attention" && nativeJobIds.has(job.id) && <button className="icon-button" onClick={() => onRetry(job.id)} aria-label={`Retry ${job.title}`}><RotateCcw size={14} /></button>}{job.status !== "complete" && <button className="icon-button" onClick={() => onCancel(job.id)} aria-label={`Cancel ${job.title}`}><X size={15} /></button>}</div></article>) : <EmptyState icon={CheckCircle2} title="No queued work" detail="New render and generation jobs appear here." />}</div><footer><ShieldCheck size={15} /> Native jobs recover after an app restart.</footer></aside>;
+  return <aside className={`jobs-drawer ${open ? "open" : ""}`} aria-hidden={!open} aria-label="Background jobs"><header><div><span className="section-kicker">Durable work queue</span><h2>Jobs</h2></div><button className="icon-button" onClick={onClose}><PanelRightClose size={18} /></button></header><div className="jobs-summary"><div><Activity size={17} /><span><strong>{jobs.filter((job) => job.status === "running").length} active</strong><small>Editing remains available</small></span></div><div className="local-job-badge"><HardDrive size={14} /> Local worker</div></div><div className="jobs-list">{jobs.length ? jobs.map((job) => { const receiptState = jobReceiptState(job); return <article className={`job-card ${job.status}`} key={job.id}><div className="job-icon">{job.status === "complete" ? <Check size={16} /> : job.status === "attention" ? <CircleAlert size={16} /> : <RefreshCw className={job.status === "running" ? "spin" : ""} size={16} />}</div><div className="job-copy"><div><strong>{job.title}</strong><span>{receiptState ? receiptState.toLowerCase().replaceAll("_", " ") : job.status}</span></div><p>{job.detail}</p>{job.status !== "complete" && <ProgressBar value={job.progress} />}<small>{job.eta}{job.cost && <> · {job.cost}</>}</small></div><div className="job-actions">{canRetryJob(job, nativeJobIds) && <button className="icon-button" onClick={() => onRetry(job.id)} aria-label={`Retry ${job.title}`}><RotateCcw size={14} /></button>}{canCancelJob(job) && <button className="icon-button" onClick={() => onCancel(job.id)} aria-label={`Cancel ${job.title}`}><X size={15} /></button>}</div></article>; }) : <EmptyState icon={CheckCircle2} title="No queued work" detail="New render and generation jobs appear here." />}</div><footer><ShieldCheck size={15} /> Native jobs recover after an app restart.</footer></aside>;
 }
 
 function CommandPalette({ projects, onClose, onNavigate, onOpen }: { projects: ProjectRecord[]; onClose: () => void; onNavigate: (area: GlobalArea) => void; onOpen: (id: string) => void }) {
@@ -2075,7 +2153,8 @@ function Toast({ toast, onClose }: { toast: ToastMessage; onClose: () => void })
 
 function RuntimeBadge({ runtime }: { runtime: RuntimeState }) {
   const ready = runtime.bootstrap?.worker.state === "ready";
-  return <span className={`runtime-badge ${ready ? "ready" : "attention"}`} title={runtime.error ?? workerLabel(runtime.bootstrap?.worker)}><span className="runtime-dot" />{runtime.environment === "native" ? "Native" : "Browser demo"}<i />{runtime.loading ? "Connecting" : ready ? "Worker ready" : workerLabel(runtime.bootstrap?.worker)}</span>;
+  const boundary = runtime.environment === "native" ? "Packaged native runtime" : "Browser adapter only; no native artifact";
+  return <span className={`runtime-badge ${ready ? "ready" : "attention"}`} title={runtime.error ? `${boundary}: ${runtime.error}` : `${boundary}: ${workerLabel(runtime.bootstrap?.worker)}`}><span className="runtime-dot" />{runtime.environment === "native" ? "Native" : "UI contract"}<i />{runtime.loading ? "Connecting" : ready ? "Worker ready" : workerLabel(runtime.bootstrap?.worker)}</span>;
 }
 
 function PageTitle({ kicker, title, description, action }: { kicker: string; title: string; description: string; action?: React.ReactNode }) { return <div className="page-title"><div><span className="section-kicker">{kicker}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>; }
@@ -2120,18 +2199,6 @@ function projectSnapshotDocument(project: ProjectRecord, additions: Record<strin
   delete portable.nativeArchivePath;
   delete portable.nativeRepairableFindingIds;
   return { ...portable, ...additions };
-}
-
-function hydrateDurableProject(project: ProjectRecord, snapshot: Record<string, unknown>, links: Pick<ProjectRecord, "nativeProjectId" | "nativeProjectDirectory" | "nativeHeadRevisionId" | "nativeRevisionNumber">): ProjectRecord {
-  if (typeof snapshot.title !== "string" || !Array.isArray(snapshot.scenes) || !Array.isArray(snapshot.sources)) {
-    throw new Error("The durable project snapshot has an unsupported shape.");
-  }
-  return {
-    ...project,
-    ...(snapshot as unknown as ProjectRecord),
-    id: links.nativeProjectId ?? project.id,
-    ...links,
-  };
 }
 
 async function importSelectedFile(project: ProjectRecord, file: File): Promise<SourceImportReceipt> {
@@ -2252,7 +2319,51 @@ function receiptJob(receipt: JobReceipt, title: string, detail: string, project?
     ...(project ? { projectId: project.projectId, projectDirectory: project.projectDirectory } : {}),
     retryable: receipt.retryable,
     ...(receipt.operation ? { operation: receipt.operation } : {}),
-    ...(receipt.result !== undefined ? { result: receipt.result } : {}),
+    result: { ...(receipt.result ?? {}), receiptState: receipt.state },
+  };
+}
+
+function jobReceiptState(job: JobRecord): JobReceipt["state"] | null {
+  const state = job.result?.receiptState;
+  return typeof state === "string" && ["BLOCKED", "READY", "QUEUED", "RUNNING", "SUCCEEDED", "RETRY_WAIT", "FAILED", "CANCELLED", "STALE"].includes(state)
+    ? state as JobReceipt["state"]
+    : null;
+}
+
+function canRetryJob(job: JobRecord, nativeJobIds: ReadonlySet<string>): boolean {
+  return job.status === "attention" && job.retryable === true && nativeJobIds.has(job.id) && jobReceiptState(job) !== "BLOCKED";
+}
+
+function canCancelJob(job: JobRecord): boolean {
+  const state = jobReceiptState(job);
+  if (state) return state === "READY" || state === "QUEUED" || state === "RUNNING" || state === "RETRY_WAIT" || state === "BLOCKED";
+  return job.status === "running" || job.status === "queued";
+}
+
+function codecPreferenceLabel(codec: CodecPreference): string {
+  if (codec === "hevc-hardware") return "HEVC hardware";
+  if (codec === "av1") return "AV1";
+  return "H.264 hardware";
+}
+
+function authoritativeReviewMedia(project: ProjectRecord, jobs: readonly JobRecord[], environment: RuntimeState["environment"]): { src: string; label: string; mediaType: string } | null {
+  const candidate = jobs.find((job) => {
+    const path = job.result?.path;
+    const mediaType = job.result?.mediaType;
+    return job.projectId === project.nativeProjectId
+      && job.status === "complete"
+      && (job.operation === "export_master" || job.operation === "render_scene")
+      && typeof path === "string"
+      && path.length > 0
+      && (typeof mediaType !== "string" || mediaType.startsWith("video/"));
+  });
+  const path = candidate?.result?.path;
+  if (!candidate || typeof path !== "string") return null;
+  const direct = /^(blob:|data:|https?:)/u.test(path);
+  return {
+    src: environment === "native" && !direct ? convertFileSrc(path) : path,
+    label: candidate.operation === "export_master" ? "Promoted master export" : "Promoted scene render",
+    mediaType: typeof candidate.result?.mediaType === "string" ? candidate.result.mediaType : "video",
   };
 }
 

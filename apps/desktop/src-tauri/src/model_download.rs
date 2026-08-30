@@ -39,9 +39,12 @@ struct PackageSpec {
     model_id: &'static str,
     display_name: &'static str,
     immutable_revision: &'static str,
+    code_revision: &'static str,
+    weight_revision: &'static str,
     license_id: &'static str,
     license_url: &'static str,
     license_sha256: &'static str,
+    license_scope: &'static str,
     download_only_reason: &'static str,
     artifacts: &'static [ArtifactSpec],
 }
@@ -153,11 +156,14 @@ const fn artifact(
 const MUSETALK: PackageSpec = PackageSpec {
     model_id: "local/musetalk-1.5",
     display_name: "MuseTalk 1.5",
-    immutable_revision: "musetalk-3ef28bc5+audited-dependencies-2026-08-29",
-    license_id: "MIT-main-repository",
-    license_url: "https://github.com/TMElyralab/MuseTalk/blob/3ef28bc5cff08c90ad8178a25f1b570cd800170f/LICENSE",
+    immutable_revision: "musetalk-hf-3ef28bc5+code-0a89dec4+dependencies-2026-08-29",
+    code_revision: "0a89dec45a0192b824e3cf4daf96c239440c5ed8",
+    weight_revision: "3ef28bc5cff08c90ad8178a25f1b570cd800170f",
+    license_id: "MIT-code-repository",
+    license_url: "https://github.com/TMElyralab/MuseTalk/blob/0a89dec45a0192b824e3cf4daf96c239440c5ed8/LICENSE",
     license_sha256: "992ec5fd1dd4964cfa003665196cd0c0c10a7a5aa10109991e964eebd2c7f116",
-    download_only_reason: "Hash-verified quarantine download only. The main repository is MIT; every dependency keeps its own terms. Upstream .pth files are not activated or executed until the dependency-license, runtime-trust, and hardware reviews pass.",
+    license_scope: "MuseTalk source code only; model-card and dependency terms remain separate activation gates.",
+    download_only_reason: "Hash-verified quarantine download only. This acknowledgement covers the pinned MuseTalk code license, not a combined pack license. Model-card and dependency terms remain separate, and upstream .pth files are not activated or executed until dependency-license, runtime-trust, and hardware reviews pass.",
     artifacts: MUSETALK_ARTIFACTS,
 };
 
@@ -474,7 +480,7 @@ fn fetch_artifact(
         .truncate(offset == 0)
         .open(part)
         .map_err(|_| CommandError::io("model partial write"))?;
-    let mut buffer = [0u8; 1024 * 1024];
+    let mut buffer = vec![0u8; 1024 * 1024];
     let mut written = offset;
     loop {
         let count = response.read(&mut buffer).map_err(|_| {
@@ -556,7 +562,7 @@ fn verify_file(path: &Path, spec: &ArtifactSpec) -> Result<(), CommandError> {
     let mut file =
         File::open(path).map_err(|_| CommandError::io("model artifact verification read"))?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 1024 * 1024];
+    let mut buffer = vec![0u8; 1024 * 1024];
     loop {
         let count = file
             .read(&mut buffer)
@@ -578,6 +584,9 @@ fn validate_spec(spec: &PackageSpec) -> Result<(), CommandError> {
     if spec.artifacts.is_empty()
         || !spec.license_url.starts_with("https://")
         || !is_sha256(spec.license_sha256)
+        || !is_git_revision(spec.code_revision)
+        || !is_git_revision(spec.weight_revision)
+        || spec.license_scope.trim().is_empty()
     {
         return Err(download_error(
             "The curated model declaration is incomplete.",
@@ -598,6 +607,13 @@ fn validate_spec(spec: &PackageSpec) -> Result<(), CommandError> {
     Ok(())
 }
 
+fn is_git_revision(value: &str) -> bool {
+    value.len() == 40
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn catalog_entry(spec: &PackageSpec) -> ModelDownloadCatalogEntry {
     ModelDownloadCatalogEntry {
         model_id: spec.model_id.into(),
@@ -608,6 +624,9 @@ fn catalog_entry(spec: &PackageSpec) -> ModelDownloadCatalogEntry {
         license_id: spec.license_id.into(),
         license_url: spec.license_url.into(),
         license_sha256: spec.license_sha256.into(),
+        license_scope: spec.license_scope.into(),
+        code_revision: spec.code_revision.into(),
+        weight_revision: spec.weight_revision.into(),
         available: true,
         download_only_reason: spec.download_only_reason.into(),
     }
@@ -722,6 +741,17 @@ mod tests {
         assert_eq!(entry.model_id, "local/musetalk-1.5");
         assert!(entry.total_bytes > 4_000_000_000);
         assert!(entry.download_only_reason.contains("not activated"));
+        assert_eq!(
+            entry.code_revision,
+            "0a89dec45a0192b824e3cf4daf96c239440c5ed8"
+        );
+        assert_eq!(
+            entry.weight_revision,
+            "3ef28bc5cff08c90ad8178a25f1b570cd800170f"
+        );
+        assert!(entry.license_url.contains(&entry.code_revision));
+        assert!(!entry.license_url.contains(&entry.weight_revision));
+        assert!(entry.license_scope.contains("source code only"));
     }
 
     #[test]

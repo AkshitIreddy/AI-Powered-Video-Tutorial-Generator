@@ -506,6 +506,9 @@ def test_acceptance_desktop_worker_creates_approves_generates_and_exports(
         assert snapshot["generationId"] == generation_id
         assert snapshot["stage"] == "export"
         assert snapshot["stageArtifactHash"]
+        assert snapshot["title"] == "Karatsuba acceptance tutorial"
+        assert isinstance(snapshot["scenes"], list)
+        assert isinstance(snapshot["sources"], list)
         assert snapshot["payload"]["exportManifest"]["qualityGate"]["status"] in {
             "PASS",
             "WARNING",
@@ -521,7 +524,7 @@ def test_acceptance_desktop_worker_creates_approves_generates_and_exports(
                 "aspect": "16:9",
                 "resolution": "1080p",
                 "fps": 30,
-                "captions": True,
+                "captionDeliveryMode": "sidecar",
                 "transcript": True,
                 "bibliography": True,
             },
@@ -545,6 +548,12 @@ def test_acceptance_desktop_worker_creates_approves_generates_and_exports(
         assert master.stat().st_size > 0
         assert export_result["operation"] == "export_master"
         assert export_result["qualityGate"]["status"] in {"PASS", "WARNING"}
+        assert export_result["captionDelivery"] == {
+            "mode": "sidecar",
+            "sidecars": ["vtt", "srt"],
+            "burnedIntoPixels": False,
+            "embeddedInContainer": False,
+        }
         assert all(Path(path).is_file() for path in export_result["sidecarPaths"])
 
         archive = project / "exports" / "acceptance.alytutorial"

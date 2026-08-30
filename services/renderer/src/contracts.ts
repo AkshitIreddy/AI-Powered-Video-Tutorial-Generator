@@ -46,6 +46,13 @@ export interface CaptionRenderStyle {
   readonly fallbackFamilies: readonly string[];
 }
 
+/**
+ * Caption delivery is independent from caption authoring. The canonical cue
+ * ledger and UTF-8 sidecars are always written; this mode controls only what
+ * is added to the video frames/container.
+ */
+export type CaptionDeliveryMode = "sidecar" | "embedded" | "burned" | "both";
+
 export interface SceneContent {
   readonly eyebrow?: string;
   readonly title: string;
@@ -124,6 +131,8 @@ export interface RenderManifest {
   readonly scenes: readonly ResolvedScene[];
   readonly outputDirectory: string;
   readonly audioInputs?: readonly AudioInput[];
+  /** Missing means sidecar: clean frames with external UTF-8 caption files. */
+  readonly captionDeliveryMode?: CaptionDeliveryMode;
   readonly captionStyle?: CaptionRenderStyle;
   /** Attempt-local copies of immutable CAS image objects. */
   readonly visualAssets?: readonly VisualAssetInput[];
@@ -170,6 +179,13 @@ export interface PresenterVideoInput {
   readonly sceneId: string;
   /** Offset into the source clip. Defaults to zero. */
   readonly sourceStartTick?: number;
+  /**
+   * Duration for which presenter pixels are active from the scene start.
+   * Defaults to the full scene only for legacy manifests. New generation
+   * requests bind this to the finished narration duration so an authored
+   * visual tail can continue after lip-sync ends without stretching video.
+   */
+  readonly activeDurationTicks?: number;
   readonly placement: PresenterVideoPlacement;
   readonly fit?: "cover" | "contain";
 }
@@ -362,6 +378,9 @@ export function assertRenderManifest(manifest: RenderManifest): void {
     }
   }
   if (manifest.captionStyle !== undefined) assertCaptionRenderStyle(manifest.captionStyle);
+  if (manifest.captionDeliveryMode !== undefined && !(new Set<CaptionDeliveryMode>(["sidecar", "embedded", "burned", "both"])).has(manifest.captionDeliveryMode)) {
+    throw new TypeError(`Unsupported caption delivery mode ${String(manifest.captionDeliveryMode)}`);
+  }
   if (manifest.captionStyle !== undefined && manifest.typography !== undefined && manifest.captionStyle.fontFamily !== manifest.typography.captionFamily) {
     throw new TypeError("Caption font family must match the resolved caption typography role");
   }
@@ -431,6 +450,17 @@ export function assertRenderManifest(manifest: RenderManifest): void {
     }
     if (input.sourceStartTick !== undefined && (!Number.isSafeInteger(input.sourceStartTick) || input.sourceStartTick < 0)) {
       throw new RangeError(`Presenter video ${input.id} sourceStartTick must be a non-negative safe integer`);
+    }
+    if (input.activeDurationTicks !== undefined) {
+      if (!Number.isSafeInteger(input.activeDurationTicks) || input.activeDurationTicks <= 0) {
+        throw new RangeError(`Presenter video ${input.id} activeDurationTicks must be a positive safe integer`);
+      }
+      if (input.activeDurationTicks > scene.durationTicks) {
+        throw new RangeError(`Presenter video ${input.id} activeDurationTicks cannot exceed scene ${scene.id} duration`);
+      }
+      if (!Number.isSafeInteger((input.sourceStartTick ?? 0) + input.activeDurationTicks)) {
+        throw new RangeError(`Presenter video ${input.id} source interval exceeds the safe tick range`);
+      }
     }
     presenterIds.add(input.id);
     presenterSceneIds.add(input.sceneId);

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 from alystria.audio import WordTiming, captions_from_words, to_srt, to_webvtt
@@ -90,9 +91,10 @@ from .models import (
     SourceSpec,
 )
 
-IMPLEMENTATION_VERSION = "generation-v2"
+IMPLEMENTATION_VERSION = "generation-v4-media-integrity-canonical"
 PROMPT_VERSION = "offline-education-v1"
 MODEL_REVISION = "deterministic-v1"
+TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
 
 
 class ExportQualityGateError(ValueError):
@@ -353,14 +355,19 @@ class GenerationWorkflow:
             },
             *(linked_artifacts or []),
         ]
-        revision = self.store.create_revision(
-            snapshot={
+        head = self.store.head_revision()
+        snapshot = copy.deepcopy(head.snapshot) if head is not None else {}
+        snapshot.update(
+            {
                 "projectId": self.store.manifest.project_id,
                 "generationId": generation_id,
                 "stage": stage.value,
                 "stageArtifactHash": artifact.hash,
                 "payload": payload,
-            },
+            }
+        )
+        revision = self.store.create_revision(
+            snapshot=snapshot,
             kind="generation",
             message=f"Generation {generation_id}: {stage.value}",
             artifact_links=artifact_links,
@@ -655,19 +662,64 @@ class GenerationWorkflow:
             "frame-driven concept threads with reduced-motion alternatives",
         )
         sections = script["sections"]
-        seconds_each = max(1, request.duration_seconds // max(1, len(sections)))
-        types = ("question", "definition", "worked_example", "comparison", "recap")
-        scenes = []
+        fixture_scenes = request.metadata.get("canonicalFixtureScenes")
+        scenes: list[dict[str, Any]] = []
         visual_customization = request.metadata.get("visualCustomization")
         presenter_customization = (
             visual_customization.get("presenter", {})
             if isinstance(visual_customization, dict)
             else {}
         )
-        for index, section in enumerate(sections):
-            scene_id = _stable_id("scene", request.topic, section["outlineSectionId"])
-            presenter_scene = index == 0 and request.presenter_mode != "off"
-            scene = {
+        if isinstance(fixture_scenes, list) and fixture_scenes:
+            total_ticks = request.duration_seconds * TICKS_PER_SECOND
+            base_ticks, remainder_ticks = divmod(total_ticks, len(fixture_scenes))
+            for index, authored in enumerate(fixture_scenes):
+                if not isinstance(authored, dict):
+                    raise ValueError("Canonical fixture scenes must be objects")
+                scene_id = str(authored.get("id", "")).strip()
+                narration = str(authored.get("narration", "")).strip()
+                if not scene_id or not narration:
+                    raise ValueError("Canonical fixture scenes require id and narration")
+                caption_text = str(authored.get("captionText", ""))
+                scene = {
+                    "id": scene_id,
+                    "sectionId": f"fixture:{scene_id}",
+                    "type": str(authored.get("type", "definition")),
+                    "title": str(authored.get("title", "Untitled scene")),
+                    "narration": narration,
+                    "visualIntent": str(authored.get("visualIntent", "")),
+                    "claimIds": [str(value) for value in authored.get("claimIds", [])],
+                    "objectiveIds": [
+                        str(value) for value in authored.get("objectiveIds", [])
+                    ],
+                    "durationTicks": base_ticks + (1 if index < remainder_ticks else 0),
+                    "accessibilityDescription": str(
+                        authored.get("accessibilityDescription", "")
+                    ),
+                    "onScreenText": [
+                        line.strip()
+                        for line in caption_text.splitlines()
+                        if line.strip()
+                    ],
+                    "locks": [],
+                }
+                if index == 0 and request.presenter_mode != "off":
+                    # The canonical fixture owns its authored sequence, while
+                    # the selected user presenter still needs an explicit
+                    # presenter-capable opening family. Keep every other
+                    # fixture scene unchanged.
+                    scene["type"] = "presenter-slide"
+                source_locator = authored.get("sourceLocator")
+                if isinstance(source_locator, str) and source_locator:
+                    scene["sourceLocator"] = source_locator
+                scenes.append(scene)
+        else:
+            seconds_each = max(1, request.duration_seconds // max(1, len(sections)))
+            types = ("question", "definition", "worked_example", "comparison", "recap")
+            for index, section in enumerate(sections):
+                scene_id = _stable_id("scene", request.topic, section["outlineSectionId"])
+                presenter_scene = index == 0 and request.presenter_mode != "off"
+                scene = {
                     "id": scene_id,
                     "sectionId": section["outlineSectionId"],
                     # The opening is the one sparse presenter moment in the
@@ -690,17 +742,17 @@ class GenerationWorkflow:
                     ),
                     "locks": [],
                 }
-            if presenter_scene and isinstance(presenter_customization, dict):
-                scene["presenterPlacement"] = str(
-                    presenter_customization.get("placement", "picture-in-picture")
-                )
-                scene["presenterFit"] = str(
-                    presenter_customization.get("fit", "cover")
-                )
-                profile = presenter_customization.get("profile")
-                if isinstance(profile, dict) and isinstance(profile.get("displayName"), str):
-                    scene["presenterName"] = profile["displayName"]
-            scenes.append(scene)
+                if presenter_scene and isinstance(presenter_customization, dict):
+                    scene["presenterPlacement"] = str(
+                        presenter_customization.get("placement", "picture-in-picture")
+                    )
+                    scene["presenterFit"] = str(
+                        presenter_customization.get("fit", "cover")
+                    )
+                    profile = presenter_customization.get("profile")
+                    if isinstance(profile, dict) and isinstance(profile.get("displayName"), str):
+                        scene["presenterName"] = profile["displayName"]
+                scenes.append(scene)
         storyboard = {
             "id": _stable_id("storyboard", _canonical(scenes), request.deterministic_seed),
             "timebase": TICKS_PER_SECOND,
@@ -899,12 +951,28 @@ class GenerationWorkflow:
         request = _request(parameters)
         by_scene: dict[str, list[dict[str, Any]]] = {}
         all_cues = []
-        offset = 0
-        for item in narration:
+        narration_by_scene = {str(item["sceneId"]): item for item in narration}
+        offset_ticks = 0
+        for scene in approved["storyboard"]["scenes"]:
+            scene_id = str(scene["id"])
+            item = narration_by_scene.get(scene_id)
+            if item is None:
+                raise ValueError(f"Narration is missing for storyboard scene: {scene_id}")
+            # Caption sidecars share the renderer's authored storyboard clock.
+            # Raw synthesis durations can be shorter than the scene and must
+            # not pull every later cue early.
+            offset = round(offset_ticks * 1_000 / TICKS_PER_SECOND)
+            scene_duration_ms = round(
+                int(scene["durationTicks"]) * 1_000 / TICKS_PER_SECOND
+            )
             words = tuple(WordTiming(**word) for word in item["words"])
-            cues = captions_from_words(words, cue_prefix=str(item["sceneId"]))
+            cues = tuple(
+                replace(cue, end_ms=min(cue.end_ms, scene_duration_ms))
+                for cue in captions_from_words(words, cue_prefix=scene_id)
+                if cue.start_ms < scene_duration_ms
+            )
             serialized = [asdict(cue) for cue in cues]
-            by_scene[str(item["sceneId"])] = serialized
+            by_scene[scene_id] = serialized
             for cue in cues:
                 all_cues.append(
                     WordTiming(
@@ -913,7 +981,7 @@ class GenerationWorkflow:
                         cue.end_ms + offset,
                     )
                 )
-            offset += int(item["durationMs"])
+            offset_ticks += int(scene["durationTicks"])
         global_cues = captions_from_words(all_cues, cue_prefix="tutorial") if all_cues else ()
         vtt = to_webvtt(global_cues) if request.captions_enabled else "WEBVTT\n"
         srt = to_srt(global_cues) if request.captions_enabled else ""
@@ -988,6 +1056,15 @@ class GenerationWorkflow:
         selected = scenes if request.presenter_mode == "on" else scenes[:1]
         for index, scene in enumerate(selected):
             item = narration_by_scene[scene["id"]]
+            # The authored scene may intentionally hold after speech for a
+            # visual resolve or transition. A talking-head clip follows the
+            # finished narration interval only; it must never be stretched to
+            # fill the entire scene or frozen on its final frame.
+            active_duration_ticks = min(
+                _positive_int(scene.get("durationTicks"), "presenter scene durationTicks"),
+                _positive_int(item.get("durationMs"), "presenter narration durationMs")
+                * TICKS_PER_MILLISECOND,
+            )
             direction = _presenter_direction(scene)
             media = self.media_client.create_presenter(
                 scene,
@@ -1007,6 +1084,7 @@ class GenerationWorkflow:
                 {
                     "sceneId": scene["id"],
                     "artifactHash": artifact.hash,
+                    "activeDurationTicks": active_duration_ticks,
                     "syntheticDisclosureRequired": True,
                     "direction": asdict(direction),
                     "fit": _presenter_fit(scene),
@@ -2037,6 +2115,12 @@ def _number(value: object, label: str, *, minimum: float | None = None) -> float
     return result
 
 
+def _positive_int(value: object, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError(f"{label} must be a positive integer")
+    return value
+
+
 def _request(parameters: dict[str, Any]) -> GenerationRequest:
     value = parameters.get("request")
     if not isinstance(value, dict):
@@ -2247,8 +2331,17 @@ def _presenter_direction(scene: dict[str, Any]) -> PresenterDirection:
     raw = scene.get("presenterPlacement", PresenterPlacement.PICTURE_IN_PICTURE.value)
     if not isinstance(raw, str):
         raise ValueError("Presenter placement must be a string")
+    normalized = raw.strip().casefold().replace("-", "_")
+    # The renderer authors split compositions as ``split-left`` and
+    # ``split-right`` while the provider-neutral presenter contract expresses
+    # the same semantics as LEFT and RIGHT.  Translate only those exact aliases
+    # after delimiter normalization; every other value remains enum-validated.
+    normalized = {
+        "split_left": PresenterPlacement.LEFT.value,
+        "split_right": PresenterPlacement.RIGHT.value,
+    }.get(normalized, normalized)
     try:
-        placement = PresenterPlacement(raw.strip().casefold().replace("-", "_"))
+        placement = PresenterPlacement(normalized)
     except ValueError as error:
         allowed = ", ".join(item.value for item in PresenterPlacement)
         raise ValueError(f"Unsupported presenter placement {raw!r}; expected {allowed}") from error

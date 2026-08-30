@@ -260,7 +260,7 @@ describe("native desktop bridge", () => {
     const regeneration = { ...identity, baseRevisionId: "rev_2", sceneId: "scene-one", instruction: "Use a stronger contrast.", preservationLocks: ["narration" as const], alternatives: 2 };
     const render = { ...identity, baseRevisionId: "rev_2", sceneId: "scene-one", aspect: "16:9" as const, resolution: "1080p" as const, fps: 30 as const };
     const repair = { ...identity, baseRevisionId: "rev_2", baseJobId: "019d0000-0000-7000-8000-000000000020", findingIds: ["qa.caption_collision"] };
-    const master = { ...identity, baseRevisionId: "rev_2", baseJobId: repair.baseJobId, aspect: "16:9" as const, resolution: "1440p" as const, fps: 30 as const, captions: true, transcript: true, bibliography: true };
+    const master = { ...identity, baseRevisionId: "rev_2", baseJobId: repair.baseJobId, aspect: "16:9" as const, resolution: "1440p" as const, fps: 30 as const, captionDeliveryMode: "sidecar" as const, transcript: true, bibliography: true };
 
     await projectHistoryUndo({ ...identity, expectedHeadRevisionId: "rev_2" });
     await sceneRegenerate(regeneration);

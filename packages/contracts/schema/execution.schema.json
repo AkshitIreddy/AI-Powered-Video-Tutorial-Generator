@@ -18,7 +18,7 @@
     "ProviderCapability": {
       "type": "object", "additionalProperties": false, "required": ["kind", "models", "locality", "dataClasses", "retention", "regions"],
       "properties": {
-        "kind": { "enum": ["llm", "embedding", "reranking", "image", "video", "tts", "asr", "alignment", "presenter", "media-search", "research", "render", "code-execution"] },
+        "kind": { "enum": ["llm", "embedding", "reranking", "image", "video", "tts", "asr", "alignment", "presenter", "portrait-animation", "lip-sync", "media-search", "research", "render", "code-execution"] },
         "models": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/Id" }, "uniqueItems": true },
         "locality": { "enum": ["local", "cloud", "hybrid"] }, "dataClasses": { "type": "array", "items": { "enum": ["public", "project-metadata", "source-text", "media", "biometric", "private", "secret"] }, "uniqueItems": true },
         "retention": { "enum": ["none", "transient", "provider-default", "configurable", "unknown"] }, "regions": { "type": "array", "items": { "type": "string", "minLength": 2, "maxLength": 100 } },
@@ -40,8 +40,8 @@
       "required": ["id", "providerId", "name", "revision", "capability", "status", "locality", "licenseStatus", "lastVerifiedAt"],
       "properties": {
         "id": { "$ref": "common.schema.json#/$defs/Id" }, "providerId": { "$ref": "common.schema.json#/$defs/Id" }, "name": { "$ref": "common.schema.json#/$defs/ShortText" },
-        "revision": { "type": "string", "minLength": 1, "maxLength": 500 }, "capability": { "enum": ["llm", "embedding", "reranking", "image", "video", "tts", "asr", "alignment", "presenter"] },
-        "status": { "enum": ["available", "not-installed", "downloading", "incompatible", "disabled", "deprecated"] }, "locality": { "enum": ["local", "cloud"] },
+        "revision": { "type": "string", "minLength": 1, "maxLength": 500 }, "capability": { "enum": ["llm", "embedding", "reranking", "image", "video", "tts", "asr", "alignment", "presenter", "portrait-animation", "lip-sync"] },
+        "status": { "enum": ["available", "not-installed", "manifest-required", "inspecting", "license-required", "downloading", "cancelling", "cancelled", "verifying", "downloaded-quarantined", "installing", "activating", "ready", "in-use", "incompatible", "corrupt", "repairing", "removing", "removed", "failed", "disabled", "deprecated"] }, "locality": { "enum": ["local", "cloud"] },
         "downloadUri": { "$ref": "common.schema.json#/$defs/Uri" }, "contentHash": { "$ref": "common.schema.json#/$defs/Sha256" }, "sizeBytes": { "type": "integer", "minimum": 0 },
         "minimumVramMiB": { "type": "integer", "minimum": 0 }, "minimumRamMiB": { "type": "integer", "minimum": 0 }, "licenseExpression": { "type": "string", "maxLength": 500 },
         "licenseStatus": { "enum": ["approved", "review-required", "restricted", "unknown"] }, "lastVerifiedAt": { "$ref": "common.schema.json#/$defs/IsoDateTime" }
@@ -136,15 +136,19 @@
     },
     "ExportSpec": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "projectId", "revisionId", "target", "dimensions", "frameRate", "videoCodec", "audioCodec", "quality", "captions", "sidecars", "colorSpace"],
+      "required": ["id", "projectId", "revisionId", "target", "dimensions", "frameRate", "videoCodec", "audioCodec", "quality", "captionDeliveryMode", "sidecars", "colorSpace"],
       "properties": {
         "id": { "$ref": "common.schema.json#/$defs/Id" }, "projectId": { "$ref": "common.schema.json#/$defs/Id" }, "revisionId": { "$ref": "common.schema.json#/$defs/Id" },
         "target": { "enum": ["landscape", "portrait", "square", "custom"] }, "dimensions": { "$ref": "common.schema.json#/$defs/Dimensions" }, "frameRate": { "$ref": "common.schema.json#/$defs/Rational" },
         "videoCodec": { "enum": ["h264", "hevc", "av1", "prores", "vp9", "ffv1"] }, "audioCodec": { "enum": ["aac", "opus", "flac", "pcm"] }, "quality": { "enum": ["draft", "standard", "high", "maximum", "lossless"] },
         "bitrateKbps": { "type": "integer", "minimum": 100, "maximum": 500000 }, "hardwareEncoder": { "enum": ["auto", "none", "nvenc", "qsv", "amf", "videotoolbox", "vaapi"] },
-        "captions": { "enum": ["none", "sidecar", "burned-in", "both"] }, "sidecars": { "type": "array", "items": { "enum": ["vtt", "srt", "transcript", "descriptive-transcript", "bibliography", "chapters", "provenance", "c2pa", "thumbnail", "metadata", "audio-description"] }, "uniqueItems": true },
+        "captionDeliveryMode": { "enum": ["sidecar", "embedded", "burned", "both"], "default": "sidecar" }, "sidecars": { "type": "array", "items": { "enum": ["vtt", "srt", "transcript", "descriptive-transcript", "bibliography", "chapters", "provenance", "c2pa", "thumbnail", "metadata", "audio-description"] }, "uniqueItems": true },
         "colorSpace": { "const": "rec709-sdr" }, "gplRuntimePackApproved": { "type": "boolean" }, "outputPath": { "$ref": "common.schema.json#/$defs/RelativePath" }
-      }
+      },
+      "allOf": [
+        { "properties": { "sidecars": { "type": "array", "contains": { "const": "vtt" } } } },
+        { "properties": { "sidecars": { "type": "array", "contains": { "const": "srt" } } } }
+      ]
     },
     "PluginPermission": {
       "type": "object", "additionalProperties": false, "required": ["capability", "scope", "required"],

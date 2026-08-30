@@ -246,7 +246,11 @@ def render_manifest(
         ],
         "audioInputs": [
             {
+                "id": "audio.karatsuba.representative",
+                "assetId": "artifact.karatsuba.representative-narration",
                 "path": narration_path.as_posix(),
+                "sha256": sha256_file(narration_path),
+                "mediaType": "audio/wav",
                 "role": "narration",
                 "startTick": 0,
                 "endTick": duration_ticks,

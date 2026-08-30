@@ -898,3 +898,41 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .palette-list, .compact-row { grid-template-columns: 1fr; }
   .color-field-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+.export-caption-status { position: absolute; top: 9px; left: 9px; display: inline-flex; align-items: center; min-height: 23px; padding: 0 8px; border: 1px solid rgb(255 255 255 / .22); border-radius: 5px; color: #fff; font: 650 7px var(--mono); letter-spacing: .03em; backdrop-filter: blur(8px); }
+.export-caption-status.clean { background: rgb(22 143 136 / .88); }
+.export-caption-status.open { background: rgb(201 75 103 / .9); }
+.settings-intro { margin: -6px 0 14px; color: var(--muted); font-size: 8.5px; line-height: 1.55; }
+.settings-intro strong { color: var(--ink); font: 650 8px var(--mono); }
+.caption-delivery-options { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.caption-delivery-options > button { position: relative; display: grid; grid-template-columns: 27px minmax(0, 1fr) 16px; align-items: center; gap: 8px; min-height: 72px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); text-align: left; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.caption-delivery-options > button:hover { border-color: #c2c3f5; transform: translateY(-1px); }
+.caption-delivery-options > button:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+.caption-delivery-options > button.active { border-color: var(--indigo); box-shadow: 0 0 0 2px var(--indigo-soft); }
+.caption-delivery-options > button > svg { color: var(--indigo); }
+.caption-delivery-icon { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 6px; background: var(--surface-soft); color: var(--muted); }
+.caption-delivery-options > button.active .caption-delivery-icon { background: var(--indigo-soft); color: var(--indigo); }
+.caption-delivery-options > button > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; }
+.caption-delivery-options small { color: var(--indigo); font: 650 6.5px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+.caption-delivery-options strong { margin-top: 3px; font-size: 9px; }
+.caption-delivery-options em { margin-top: 3px; color: var(--quiet); font-size: 7px; font-style: normal; line-height: 1.35; }
+.caption-file-receipt, .burned-caption-warning, .caption-player-note { margin-top: 9px; border-radius: 7px; }
+.caption-file-receipt { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 7px; padding: 9px; background: var(--teal-soft); color: var(--teal); }
+.caption-file-receipt > span { display: flex; min-width: 0; flex-direction: column; }
+.caption-file-receipt strong { font-size: 8px; }
+.caption-file-receipt small { overflow: hidden; margin-top: 2px; color: #4d8581; font: 500 6.5px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.caption-player-note { display: grid; grid-template-columns: 18px 1fr; gap: 6px; padding: 9px; background: var(--surface-soft); color: var(--muted); font-size: 7.5px; line-height: 1.45; }
+.caption-player-note strong { color: var(--ink); }
+.burned-caption-warning { display: grid; grid-template-columns: 21px minmax(0, 1fr); gap: 7px; padding: 10px; border: 1px solid #efc7d0; background: #fff6f8; color: var(--rose); }
+.burned-caption-warning > span { display: flex; min-width: 0; flex-direction: column; }
+.burned-caption-warning strong { font-size: 8px; }
+.burned-caption-warning small { margin-top: 3px; color: #8f5967; font-size: 7px; line-height: 1.4; }
+.burned-caption-warning button { grid-column: 2; justify-self: start; padding: 0; background: transparent; color: var(--rose); font-size: 7.5px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.caption-authoring-scope { display: grid; grid-template-columns: 23px 1fr; gap: 7px; margin: 10px 10px 2px; padding: 10px; border: 1px solid #d9daf8; border-radius: 7px; background: var(--indigo-soft); color: var(--indigo); }
+.caption-authoring-scope > span { display: flex; flex-direction: column; }
+.caption-authoring-scope strong { font-size: 8px; }
+.caption-authoring-scope small { margin-top: 3px; color: #6567a0; font-size: 7px; line-height: 1.4; }
+
+@media (max-width: 760px) {
+  .caption-delivery-options { grid-template-columns: 1fr; }
+}
