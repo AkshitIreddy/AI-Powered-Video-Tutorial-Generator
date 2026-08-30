@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import re
+from contextlib import nullcontext
 from dataclasses import asdict, replace
 from typing import Any
 
@@ -1153,7 +1154,14 @@ class GenerationWorkflow:
             "customization": request.metadata.get("customization"),
         }
         context.set_progress(0.15, message="Submitting immutable render request")
-        rendered = self.renderer_client.render(render_request)
+        cancellation_scope = getattr(self.renderer_client, "cancellation_scope", None)
+        scope = (
+            cancellation_scope(context.is_cancelled)
+            if callable(cancellation_scope)
+            else nullcontext()
+        )
+        with scope:
+            rendered = self.renderer_client.render(render_request)
         artifact = self.store.add_artifact_bytes(
             rendered.content,
             media_type=rendered.media_type,

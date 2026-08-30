@@ -27,6 +27,7 @@ from .generation import (
     RenderedTutorial,
     RendererClient,
     RendererClientError,
+    RendererOptions,
     RendererRuntimeError,
     RuntimeGenerationMediaClient,
     create_production_renderer_client,
@@ -966,6 +967,19 @@ def _production_renderer_client(store: ProjectStore) -> RendererClient:
             "The verified renderer runtime is incomplete; missing " + ", ".join(missing)
         )
     try:
+        options = RendererOptions(
+            concurrency=_renderer_environment_integer(
+                "ALYSTRIA_RENDERER_CONCURRENCY", default=2, minimum=1, maximum=8
+            ),
+            timeout_seconds=float(
+                _renderer_environment_integer(
+                    "ALYSTRIA_RENDERER_TIMEOUT_SECONDS",
+                    default=3_600,
+                    minimum=60,
+                    maximum=86_400,
+                )
+            ),
+        )
         if mode == "production":
             return create_production_renderer_client(
                 store,
@@ -976,6 +990,7 @@ def _production_renderer_client(store: ProjectStore) -> RendererClient:
                 chromium_path=Path(required_paths["chromium_path"] or ""),
                 ffmpeg_path=Path(required_paths["ffmpeg_path"] or ""),
                 ffprobe_path=Path(required_paths["ffprobe_path"] or ""),
+                options=options,
             )
         return create_production_renderer_client(
             store,
@@ -985,11 +1000,27 @@ def _production_renderer_client(store: ProjectStore) -> RendererClient:
             chromium_path=Path(required_paths["chromium_path"] or ""),
             ffmpeg_path=Path(required_paths["ffmpeg_path"] or ""),
             ffprobe_path=Path(required_paths["ffprobe_path"] or ""),
+            options=options,
         )
     except (OSError, ValueError, RendererClientError) as error:
         raise RendererRuntimeError(
             f"The verified renderer runtime could not be loaded: {error}"
         ) from error
+
+
+def _renderer_environment_integer(
+    name: str, *, default: int, minimum: int, maximum: int
+) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise RendererRuntimeError(f"{name} must be an integer") from error
+    if not minimum <= value <= maximum:
+        raise RendererRuntimeError(f"{name} must be between {minimum} and {maximum}")
+    return value
 
 
 def _native_control_for_job(

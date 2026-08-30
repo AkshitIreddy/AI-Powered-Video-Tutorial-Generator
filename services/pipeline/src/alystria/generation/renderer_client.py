@@ -12,7 +12,8 @@ import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -398,6 +399,21 @@ class SubprocessRendererClient:
         """Request cancellation; the runner terminates the Node process group."""
 
         self._cancelled.set()
+
+    @contextmanager
+    def cancellation_scope(self, cancel_check: Callable[[], bool]) -> Iterator[None]:
+        """Include the owning durable job's cancellation flag for one render."""
+
+        previous = self.cancel_check
+
+        def scoped_check() -> bool:
+            return bool(cancel_check()) or bool(previous and previous())
+
+        self.cancel_check = scoped_check
+        try:
+            yield
+        finally:
+            self.cancel_check = previous
 
     def render(self, request: dict[str, Any]) -> RenderedTutorial:
         self._raise_if_cancelled()

@@ -87,11 +87,14 @@ class JobContext:
     attempt_number: int
     task_key: str
 
-    def check_cancelled(self) -> None:
+    def is_cancelled(self) -> bool:
         row = self.runtime.connection.execute(
             "SELECT cancel_requested FROM jobs WHERE job_id=?", (self.job_id,)
         ).fetchone()
-        if row is None or bool(row["cancel_requested"]):
+        return row is None or bool(row["cancel_requested"])
+
+    def check_cancelled(self) -> None:
+        if self.is_cancelled():
             raise CancellationRequested(f"Cancellation requested for {self.job_id}")
 
     def set_progress(self, progress: float, *, message: str | None = None) -> None:

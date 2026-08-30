@@ -1015,6 +1015,24 @@ def test_renderer_detects_runtime_replacement_and_pre_start_cancel(tmp_path: Pat
         store.close()
 
 
+def test_renderer_cancellation_scope_includes_owning_job_flag(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "cancel-scope", name="Cancel scope")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        client = SubprocessRendererClient(store, pins, runner=runner)
+
+        with client.cancellation_scope(lambda: True):
+            with pytest.raises(RendererCancelledError, match="cancelled"):
+                client.render(render_request(first.hash, second.hash))
+
+        assert client.cancel_check is None
+    finally:
+        store.close()
+
+
 def test_process_runner_enforces_timeout_without_a_shell(tmp_path: Path) -> None:
     runner = SubprocessCommandRunner()
     started = time.monotonic()
@@ -1107,6 +1125,35 @@ def test_installed_pack_factory_rejects_component_replacement(tmp_path: Path) ->
                 runtime_pack_root=pack_root,
                 runtime_manifest_path=manifest_path,
             )
+    finally:
+        store.close()
+
+
+def test_packaged_renderer_applies_bounded_performance_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pack_root = tmp_path / "pack"
+    pack_root.mkdir()
+    manifest_path, paths = installed_pack(pack_root)
+    monkeypatch.setenv("ALYSTRIA_RENDERER_MODE", "production")
+    monkeypatch.setenv("ALYSTRIA_RUNTIME_PACK_ROOT", str(pack_root))
+    monkeypatch.setenv("ALYSTRIA_RUNTIME_MANIFEST_PATH", str(manifest_path))
+    for component_id, variable in {
+        "node": "ALYSTRIA_NODE_PATH",
+        "renderer-cli": "ALYSTRIA_RENDERER_CLI_PATH",
+        "chromium": "ALYSTRIA_CHROMIUM_PATH",
+        "ffmpeg": "ALYSTRIA_FFMPEG_PATH",
+        "ffprobe": "ALYSTRIA_FFPROBE_PATH",
+    }.items():
+        monkeypatch.setenv(variable, str(paths[component_id]))
+    monkeypatch.setenv("ALYSTRIA_RENDERER_CONCURRENCY", "8")
+    monkeypatch.setenv("ALYSTRIA_RENDERER_TIMEOUT_SECONDS", "14400")
+    store = ProjectStore.create(tmp_path / "project", name="Performance runtime")
+    try:
+        client = _production_renderer_client(store)
+        assert isinstance(client, SubprocessRendererClient)
+        assert client.options.concurrency == 8
+        assert client.options.timeout_seconds == 14_400
     finally:
         store.close()
 

@@ -220,6 +220,13 @@ impl InstalledRuntimePack {
             self.manifest_path.as_os_str().to_owned(),
         );
         environment.insert("ALYSTRIA_RENDERER_MODE".into(), "production".into());
+        // The signed Windows runtime targets NVIDIA systems. Eight isolated
+        // Chromium pages keeps 1080p frame capture from becoming the dominant
+        // wall-clock bottleneck, while the renderer itself enforces this cap.
+        environment.insert("ALYSTRIA_RENDERER_CONCURRENCY".into(), "8".into());
+        // Long lessons may legitimately exceed one hour on entry-level GPUs.
+        // The durable job remains cancellable through the renderer process.
+        environment.insert("ALYSTRIA_RENDERER_TIMEOUT_SECONDS".into(), "14400".into());
         for (id, variable) in [
             (NODE, "ALYSTRIA_NODE_PATH"),
             (RENDERER_CLI, "ALYSTRIA_RENDERER_CLI_PATH"),
@@ -1127,6 +1134,8 @@ mod tests {
             "ALYSTRIA_RUNTIME_PACK_ROOT",
             "ALYSTRIA_RUNTIME_MANIFEST_PATH",
             "ALYSTRIA_RENDERER_MODE",
+            "ALYSTRIA_RENDERER_CONCURRENCY",
+            "ALYSTRIA_RENDERER_TIMEOUT_SECONDS",
             "ALYSTRIA_NODE_PATH",
             "ALYSTRIA_RENDERER_CLI_PATH",
             "ALYSTRIA_CHROMIUM_PATH",
@@ -1248,6 +1257,8 @@ mod tests {
             "ALYSTRIA_RUNTIME_PACK_ROOT",
             "ALYSTRIA_RUNTIME_MANIFEST_PATH",
             "ALYSTRIA_RENDERER_MODE",
+            "ALYSTRIA_RENDERER_CONCURRENCY",
+            "ALYSTRIA_RENDERER_TIMEOUT_SECONDS",
             "ALYSTRIA_NODE_PATH",
             "ALYSTRIA_RENDERER_CLI_PATH",
             "ALYSTRIA_CHROMIUM_PATH",
