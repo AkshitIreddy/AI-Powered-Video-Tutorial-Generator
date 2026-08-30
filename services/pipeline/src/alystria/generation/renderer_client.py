@@ -984,12 +984,25 @@ class SubprocessRendererClient:
                 raise RendererOutputError(
                     f"Visual artifact for scene {scene_id} media type does not match its CAS registration"
                 )
-            suffix = VISUAL_MEDIA_EXTENSIONS.get(registered_media_type)
-            if suffix is None:
+            if VISUAL_MEDIA_EXTENSIONS.get(registered_media_type) is None:
                 # Deterministic fixtures currently generate sanitized SVG
                 # envelopes. Keep them as evidence, but do not send active SVG
                 # content into Chromium as an image asset.
                 continue
+            object_path = self.store.cas.object_path(artifact_hash)
+            detected_media_type = _detect_visual_media_type(object_path)
+            if detected_media_type is None:
+                raise RendererOutputError(
+                    f"Visual artifact for scene {scene_id} does not contain a supported bitmap"
+                )
+            # Provider responses created before byte-sniffing was enforced can
+            # contain JPEG bytes under an image/png response header. The CAS
+            # hash remains authoritative; normalize the renderer boundary to
+            # the unambiguous bitmap signature so those durable projects can
+            # be retried without weakening content verification.
+            effective_media_type = detected_media_type
+            suffix = VISUAL_MEDIA_EXTENSIONS.get(effective_media_type)
+            assert suffix is not None
             role = _visual_asset_role(asset.get("role"), str(scene["kind"]))
             role_key = (scene_id, role)
             role_count = role_counts.get(role_key, 0)
@@ -1009,7 +1022,7 @@ class SubprocessRendererClient:
                 raise ValueError("Renderer visual asset id must not be empty")
             existing = ids.get(asset_id)
             if existing is not None:
-                if existing != (artifact_hash, registered_media_type):
+                if existing != (artifact_hash, effective_media_type):
                     raise ValueError(
                         f"Renderer visual asset id {asset_id!r} maps to conflicting immutable objects"
                     )
@@ -1023,7 +1036,7 @@ class SubprocessRendererClient:
                     }
                 )
                 continue
-            ids[asset_id] = (artifact_hash, registered_media_type)
+            ids[asset_id] = (artifact_hash, effective_media_type)
             destination = _guarded_child(
                 visual_root,
                 visual_root / f"{index:04d}-{_safe_name(scene_id)}-{role}{suffix}",
@@ -1050,7 +1063,7 @@ class SubprocessRendererClient:
                     "id": asset_id,
                     "path": _subprocess_command_path(resolved),
                     "sha256": artifact_hash,
-                    "mediaType": registered_media_type,
+                    "mediaType": effective_media_type,
                 }
             )
             references.setdefault(scene_id, []).append(
@@ -1732,6 +1745,18 @@ def _safe_name(value: str) -> str:
     if not result:
         result = hashlib.sha256(value.encode()).hexdigest()[:16]
     return result[:96]
+
+
+def _detect_visual_media_type(path: Path) -> str | None:
+    with path.open("rb") as source:
+        header = source.read(16)
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(header) >= 12 and header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
 def _render_visual_customization(

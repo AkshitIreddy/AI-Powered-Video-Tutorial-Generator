@@ -881,6 +881,34 @@ def test_subprocess_renderer_rejects_visual_media_type_mismatch(tmp_path: Path) 
         store.close()
 
 
+def test_renderer_normalizes_legacy_visual_registration_from_bitmap_magic(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Legacy visual media", name="Legacy visual media")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        jpeg_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + bytes(96)
+        legacy = store.add_artifact_bytes(jpeg_bytes, media_type="image/png")
+        request = render_request(first.hash, second.hash)
+        request["assets"] = [
+            {
+                "sceneId": "scene_intro",
+                "artifactHash": legacy.hash,
+                "mediaType": "image/png",
+                "role": "presenter-portrait",
+            }
+        ]
+
+        SubprocessRendererClient(store, pins, runner=runner).render(request)
+
+        assert runner.render_manifest is not None
+        assert runner.render_manifest["visualAssets"][0]["mediaType"] == "image/jpeg"
+        assert runner.render_manifest["visualAssets"][0]["path"].endswith(".jpg")
+    finally:
+        store.close()
+
+
 def test_renderer_rejects_output_path_escape_and_cleans(tmp_path: Path) -> None:
     store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
     pins = runtime_pins(tmp_path)
