@@ -2,15 +2,130 @@
 param(
     [string]$Destination,
     [string]$TrustedRuntimeSourceRoot,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$ValidateDestinationOnly
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Destination) {
-    $Destination = Join-Path (Split-Path -Parent $RepoRoot) "Alystria Studio Test Area"
+    $Destination = Join-Path (Split-Path -Parent $RepoRoot) "Alystria Studio 2.0 Test Sandbox"
 }
 $Destination = [IO.Path]::GetFullPath($Destination)
+$DestinationRoot = [IO.Path]::GetPathRoot($Destination)
+$env:ALYSTRIA_PACKAGER_DESTINATION_GUARD = $Destination
+
+function Test-IsReparsePoint {
+    param([Parameter(Mandatory = $true)][string]$CandidatePath)
+    $Item = Get-Item -LiteralPath $CandidatePath -Force
+    return [bool]($Item.Attributes -band [IO.FileAttributes]::ReparsePoint)
+}
+
+function Get-ReparseTargets {
+    param([Parameter(Mandatory = $true)]$ReparseItem)
+    $Targets = @($ReparseItem.Target | Where-Object {
+        -not [string]::IsNullOrWhiteSpace([string]$_)
+    })
+    if ($Targets.Count -gt 0) { return $Targets }
+
+    # Windows PowerShell 5.1 leaves Target empty for some system-created mount
+    # points (notably the WebView profile's Content.IE5 compatibility link).
+    # fsutil exposes the canonical print name without following the link.
+    $Fsutil = Join-Path $env:SystemRoot "System32\fsutil.exe"
+    $StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $StartInfo.FileName = $Fsutil
+    $StartInfo.Arguments = 'reparsepoint query "' + $ReparseItem.FullName.Replace('"', '\"') + '"'
+    $StartInfo.UseShellExecute = $false
+    $StartInfo.CreateNoWindow = $true
+    $StartInfo.RedirectStandardOutput = $true
+    $StartInfo.RedirectStandardError = $true
+    $Process = [Diagnostics.Process]::Start($StartInfo)
+    $Query = $Process.StandardOutput.ReadToEnd() + "`n" + $Process.StandardError.ReadToEnd()
+    $Process.WaitForExit()
+    $PrintName = [Regex]::Match($Query, '(?m)^\s*Print Name:\s+(.+?)\s*$')
+    if ($PrintName.Success) {
+        return @($PrintName.Groups[1].Value.Trim())
+    }
+    return @()
+}
+
+function Assert-NoReparsePoints {
+    param(
+        [Parameter(Mandatory = $true)][string]$CandidatePath,
+        [Parameter(Mandatory = $true)][string]$Label,
+        [switch]$Recurse,
+        [string]$ContainedRoot
+    )
+    if (-not (Test-Path -LiteralPath $CandidatePath)) { return }
+    if (Test-IsReparsePoint $CandidatePath) {
+        throw "$Label is a link, junction, or other reparse target: $CandidatePath"
+    }
+    if ($Recurse) {
+        $ReparseItems = @(Get-ChildItem -LiteralPath $CandidatePath -Force -Recurse |
+            Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint })
+        if ($ReparseItems.Count -gt 0 -and -not $ContainedRoot) {
+            throw "$Label contains a link, junction, or other reparse target: $($ReparseItems[0].FullName)"
+        }
+        if ($ContainedRoot) {
+            $AllowedRoot = [IO.Path]::GetFullPath($ContainedRoot).TrimEnd('\') + '\'
+            foreach ($ReparseItem in $ReparseItems) {
+                $Targets = @(Get-ReparseTargets $ReparseItem)
+                if ($Targets.Count -eq 0) {
+                    throw "$Label contains a reparse point whose target cannot be verified: $($ReparseItem.FullName)"
+                }
+                foreach ($Target in $Targets) {
+                    $ResolvedTarget = if ([IO.Path]::IsPathRooted([string]$Target)) {
+                        [IO.Path]::GetFullPath([string]$Target)
+                    }
+                    else {
+                        [IO.Path]::GetFullPath((Join-Path $ReparseItem.DirectoryName ([string]$Target)))
+                    }
+                    if (-not ($ResolvedTarget + '\').StartsWith($AllowedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                        throw "$Label contains a reparse point that escapes its root: $($ReparseItem.FullName) -> $ResolvedTarget"
+                    }
+                }
+            }
+        }
+    }
+}
+
+function Assert-SafePortableDestination {
+    param([Parameter(Mandatory = $true)][string]$CandidatePath)
+    $SafeDestinationPath = [IO.Path]::GetFullPath($CandidatePath)
+    if ($SafeDestinationPath.TrimEnd([char[]]@('\', '/')) -eq $DestinationRoot.TrimEnd([char[]]@('\', '/'))) {
+        throw "Refusing to use a filesystem root as the portable destination: $SafeDestinationPath"
+    }
+
+    $Cursor = $SafeDestinationPath
+    Assert-NoReparsePoints -CandidatePath $SafeDestinationPath -Label "Portable destination" -Recurse -ContainedRoot $SafeDestinationPath
+
+    # Validate every already-existing ancestor before creating or replacing a
+    # file. This blocks a seemingly safe child path from traversing a junction.
+    while ($Cursor -and -not (Test-Path -LiteralPath $Cursor)) {
+        $Parent = Split-Path -Parent $Cursor
+        if (-not $Parent -or $Parent -eq $Cursor) { break }
+        $Cursor = $Parent
+    }
+    if ($Cursor) {
+        $Cursor = [IO.Path]::GetFullPath($Cursor)
+        while ($Cursor) {
+            Assert-NoReparsePoints -CandidatePath $Cursor -Label "Portable destination ancestor"
+            if ($Cursor.TrimEnd([char[]]@('\', '/')) -eq $DestinationRoot.TrimEnd([char[]]@('\', '/'))) { break }
+            $Parent = Split-Path -Parent $Cursor
+            if (-not $Parent -or $Parent -eq $Cursor) { break }
+            $Cursor = $Parent
+        }
+    }
+}
+
+Assert-SafePortableDestination $env:ALYSTRIA_PACKAGER_DESTINATION_GUARD
+$Destination = $env:ALYSTRIA_PACKAGER_DESTINATION_GUARD
+Remove-Item Env:\ALYSTRIA_PACKAGER_DESTINATION_GUARD
+if ($ValidateDestinationOnly) {
+    Write-Host "Portable destination containment validation passed: $Destination"
+    return
+}
+
 $DesktopSource = Join-Path $RepoRoot "apps\desktop\src-tauri\target\debug\alystria-studio.exe"
 $WorkerSource = Join-Path $RepoRoot "dist\runtime-packs\pipeline\current\alystria-pipeline.exe"
 $StarterAudioSource = Join-Path (Split-Path -Parent $WorkerSource) "assets\starter\audio"
@@ -38,31 +153,25 @@ if (Test-Path -LiteralPath $Destination) {
     }
 }
 
-$RuntimeDirectory = Join-Path $Destination "runtime"
-$DataDirectory = Join-Path $Destination "Test Data"
-New-Item -ItemType Directory -Path $Destination, $RuntimeDirectory, $DataDirectory -Force | Out-Null
+$AppDirectory = Join-Path $Destination "App"
+$RuntimeDirectory = Join-Path $Destination "Runtime"
+$DataDirectory = Join-Path $Destination "App Data"
+$ModelsDirectory = Join-Path $Destination "Models"
+$ProjectsDirectory = Join-Path $Destination "Projects"
+$ExportsDirectory = Join-Path $Destination "Exports"
+$LogsDirectory = Join-Path $Destination "Logs"
+$CacheDirectory = Join-Path $Destination "Cache"
+$TempDirectory = Join-Path $Destination "Temp"
+$TestHarnessDirectory = Join-Path $Destination "Test Harness"
+$EvidenceDirectory = Join-Path $Destination "Evidence"
 if (-not $TrustedRuntimeSourceRoot) {
-    $TrustedRuntimeSourceRoot = Join-Path $DataDirectory "runtimes"
+    $TrustedRuntimeSourceRoot = Join-Path (Split-Path -Parent $Destination) "Alystria Studio Test Area\Test Data\runtimes"
 }
 $TrustedRuntimeSourceRoot = [IO.Path]::GetFullPath($TrustedRuntimeSourceRoot)
 if (-not (Test-Path -LiteralPath $TrustedRuntimeSourceRoot -PathType Container)) {
     throw "The trusted Node/Chromium/FFmpeg cache is missing: $TrustedRuntimeSourceRoot"
 }
-
-$DesktopDestination = Join-Path $Destination "Alystria Studio.exe"
-$WorkerDestination = Join-Path $RuntimeDirectory "alystria-pipeline.exe"
-Copy-Item -LiteralPath $DesktopSource -Destination $DesktopDestination -Force:$Force
-Copy-Item -LiteralPath $WorkerSource -Destination $WorkerDestination -Force:$Force
-$StarterAudioDestination = Join-Path $RuntimeDirectory "assets\starter\audio"
-$StarterAudioProof = Copy-AlystriaStarterAudioRoot `
-    -Source $StarterAudioSource `
-    -Destination $StarterAudioDestination `
-    -Force:$Force
-$StarterVisualDestination = Join-Path $RuntimeDirectory "assets\starter\visuals"
-$StarterVisualProof = Copy-AlystriaStarterVisualRoot `
-    -Source $StarterVisualSource `
-    -Destination $StarterVisualDestination `
-    -Force:$Force
+Assert-NoReparsePoints -CandidatePath $TrustedRuntimeSourceRoot -Label "Trusted runtime source" -Recurse
 
 function Assert-TrustedRuntimeSource {
     param([string]$Path, [string]$Label)
@@ -165,6 +274,32 @@ finally {
     $env:PATHEXT = $OriginalPathExt
 }
 
+# Resolve and inspect every copy source before the first destination write.
+# Workspace package links are resolved deliberately, but a resolved payload may
+# not itself contain links or junctions.
+foreach ($Source in @(
+    $DesktopSource,
+    $WorkerSource,
+    $StarterAudioSource,
+    $StarterVisualSource,
+    (Join-Path $RepoRoot "services\renderer\dist"),
+    (Join-Path $RepoRoot "packages\scenes\dist")
+)) {
+    Assert-NoReparsePoints -CandidatePath $Source -Label "Portable payload source" -Recurse
+}
+$ResolvedDependencies = @{}
+foreach ($Dependency in @("playwright-core", "react", "react-dom", "scheduler")) {
+    $LinkPath = if ($Dependency -eq "scheduler") {
+        Join-Path $RepoRoot "node_modules\.pnpm\scheduler@0.26.0\node_modules\scheduler"
+    }
+    else {
+        Join-Path $RepoRoot "services\renderer\node_modules\$Dependency"
+    }
+    $DependencySource = Resolve-PackageDirectory $LinkPath $Dependency
+    Assert-NoReparsePoints -CandidatePath $DependencySource -Label "$Dependency production dependency" -Recurse
+    $ResolvedDependencies[$Dependency] = $DependencySource
+}
+
 $OwnedRuntimeDirectories = @("node", "chromium", "ffmpeg", "renderer")
 foreach ($OwnedName in $OwnedRuntimeDirectories) {
     $OwnedPath = Join-Path $RuntimeDirectory $OwnedName
@@ -173,6 +308,54 @@ foreach ($OwnedName in $OwnedRuntimeDirectories) {
         Remove-Item -LiteralPath $OwnedPath -Recurse -Force
     }
 }
+
+$PortableDirectories = @(
+    $Destination,
+    $AppDirectory,
+    $RuntimeDirectory,
+    $DataDirectory,
+    $ModelsDirectory,
+    $ProjectsDirectory,
+    $ExportsDirectory,
+    $LogsDirectory,
+    $CacheDirectory,
+    $TempDirectory,
+    $TestHarnessDirectory,
+    $EvidenceDirectory,
+    (Join-Path $DataDirectory "Roaming"),
+    (Join-Path $DataDirectory "Local"),
+    (Join-Path $DataDirectory "User Profile"),
+    (Join-Path $DataDirectory "WebView2"),
+    (Join-Path $CacheDirectory "XDG"),
+    (Join-Path $CacheDirectory "HuggingFace"),
+    (Join-Path $CacheDirectory "Torch"),
+    (Join-Path $CacheDirectory "TorchInductor"),
+    (Join-Path $CacheDirectory "Triton"),
+    (Join-Path $CacheDirectory "Numba"),
+    (Join-Path $CacheDirectory "CUDA"),
+    (Join-Path $CacheDirectory "Matplotlib"),
+    (Join-Path $CacheDirectory "Docling"),
+    (Join-Path $CacheDirectory "PythonBytecode"),
+    (Join-Path $CacheDirectory "pip"),
+    (Join-Path $CacheDirectory "uv"),
+    (Join-Path $CacheDirectory "npm")
+)
+New-Item -ItemType Directory -Path $PortableDirectories -Force | Out-Null
+
+$DesktopDestination = Join-Path $AppDirectory "Alystria Studio.exe"
+$WorkerDestination = Join-Path $RuntimeDirectory "alystria-pipeline.exe"
+Copy-Item -LiteralPath $DesktopSource -Destination $DesktopDestination -Force:$Force
+Copy-Item -LiteralPath $WorkerSource -Destination $WorkerDestination -Force:$Force
+$StarterAudioDestination = Join-Path $RuntimeDirectory "assets\starter\audio"
+$StarterAudioProof = Copy-AlystriaStarterAudioRoot `
+    -Source $StarterAudioSource `
+    -Destination $StarterAudioDestination `
+    -Force:$Force
+$StarterVisualDestination = Join-Path $RuntimeDirectory "assets\starter\visuals"
+$StarterVisualProof = Copy-AlystriaStarterVisualRoot `
+    -Source $StarterVisualSource `
+    -Destination $StarterVisualDestination `
+    -Force:$Force
 
 $NodeDestination = Join-Path $RuntimeDirectory "node"
 New-Item -ItemType Directory -Path $NodeDestination -Force | Out-Null
@@ -197,21 +380,27 @@ $ScenesDestination = Join-Path $RendererDestination "node_modules\@alystria\scen
 Copy-DirectoryContents (Join-Path $RepoRoot "packages\scenes\dist") (Join-Path $ScenesDestination "dist")
 Copy-Item -LiteralPath (Join-Path $RepoRoot "packages\scenes\package.json") -Destination $ScenesDestination -Force
 foreach ($Dependency in @("playwright-core", "react", "react-dom", "scheduler")) {
-    $LinkPath = if ($Dependency -eq "scheduler") {
-        Join-Path $RepoRoot "node_modules\.pnpm\scheduler@0.26.0\node_modules\scheduler"
-    }
-    else {
-        Join-Path $RepoRoot "services\renderer\node_modules\$Dependency"
-    }
-    $DependencySource = Resolve-PackageDirectory $LinkPath $Dependency
+    $DependencySource = $ResolvedDependencies[$Dependency]
     Copy-DirectoryContents $DependencySource (Join-Path $RendererDestination "node_modules\$Dependency")
 }
 
-$ReparsePoint = Get-ChildItem -LiteralPath $RuntimeDirectory -Recurse -Force |
-    Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } |
-    Select-Object -First 1
-if ($ReparsePoint) {
-    throw "Portable runtime contains a link or junction instead of immutable files: $($ReparsePoint.FullName)"
+$BaseRuntimePayloadRoots = @(
+    $WorkerDestination,
+    (Join-Path $RuntimeDirectory "assets"),
+    $NodeDestination,
+    $ChromiumDestination,
+    $FfmpegDestination,
+    $RendererDestination
+)
+foreach ($PayloadRoot in $BaseRuntimePayloadRoots) {
+    if (Test-Path -LiteralPath $PayloadRoot -PathType Container) {
+        $ReparsePoint = Get-ChildItem -LiteralPath $PayloadRoot -Recurse -Force |
+            Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } |
+            Select-Object -First 1
+        if ($ReparsePoint) {
+            throw "Portable runtime contains a link or junction instead of immutable files: $($ReparsePoint.FullName)"
+        }
+    }
 }
 
 $RuntimeManifestPath = Join-Path $RuntimeDirectory "runtime-manifest.json"
@@ -237,9 +426,16 @@ $RequiredIds = @{
 }
 $Components = [Collections.Generic.List[object]]::new()
 $PayloadIndex = 0
-$RuntimeFiles = Get-ChildItem -LiteralPath $RuntimeDirectory -File -Recurse -Force |
-    Where-Object { $_.FullName -ne $RuntimeManifestPath } |
-    Sort-Object FullName
+$RuntimeFiles = @(
+    foreach ($PayloadRoot in $BaseRuntimePayloadRoots) {
+        if (Test-Path -LiteralPath $PayloadRoot -PathType Leaf) {
+            Get-Item -LiteralPath $PayloadRoot -Force
+        }
+        else {
+            Get-ChildItem -LiteralPath $PayloadRoot -File -Recurse -Force
+        }
+    }
+) | Sort-Object FullName
 foreach ($File in $RuntimeFiles) {
     $RelativePath = $File.FullName.Substring($RuntimeDirectory.TrimEnd('\').Length + 1).Replace('\', '/')
     $VersionAndLicense = $RelativeVersionAndLicense[$RelativePath]
@@ -282,9 +478,48 @@ $LauncherPath = Join-Path $Destination "Start Alystria Studio Test.cmd"
 $Launcher = @'
 @echo off
 setlocal
-set "ALYSTRIA_APP_DATA_DIR=%~dp0Test Data"
-set "ALYSTRIA_PIPELINE_WORKER=%~dp0runtime\alystria-pipeline.exe"
-start "" "%~dp0Alystria Studio.exe"
+set "ALYSTRIA_PORTABLE_ROOT=%~dp0"
+set "ALYSTRIA_APP_DATA_DIR=%~dp0App Data"
+set "ALYSTRIA_RUNTIME_DIR=%~dp0Runtime"
+set "ALYSTRIA_MODELS_DIR=%~dp0Models"
+set "ALYSTRIA_PROJECTS_DIR=%~dp0Projects"
+set "ALYSTRIA_EXPORTS_DIR=%~dp0Exports"
+set "ALYSTRIA_LOGS_DIR=%~dp0Logs"
+set "ALYSTRIA_CACHE_DIR=%~dp0Cache"
+set "ALYSTRIA_TEMP_DIR=%~dp0Temp"
+set "ALYSTRIA_PIPELINE_WORKER=%~dp0Runtime\alystria-pipeline.exe"
+set "ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH=%~dp0Models\presenter-runtime.json"
+set "WEBVIEW2_USER_DATA_FOLDER=%~dp0App Data\WebView2"
+set "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333"
+set "TEMP=%~dp0Temp"
+set "TMP=%~dp0Temp"
+set "TMPDIR=%~dp0Temp"
+set "APPDATA=%~dp0App Data\Roaming"
+set "LOCALAPPDATA=%~dp0App Data\Local"
+set "USERPROFILE=%~dp0App Data\User Profile"
+set "HOME=%~dp0App Data\User Profile"
+set "XDG_CACHE_HOME=%~dp0Cache\XDG"
+set "XDG_CONFIG_HOME=%~dp0App Data\XDG\Config"
+set "XDG_DATA_HOME=%~dp0App Data\XDG\Data"
+set "XDG_STATE_HOME=%~dp0App Data\XDG\State"
+set "HF_HOME=%~dp0Cache\HuggingFace"
+set "HUGGINGFACE_HUB_CACHE=%~dp0Cache\HuggingFace\Hub"
+set "TRANSFORMERS_CACHE=%~dp0Cache\HuggingFace\Transformers"
+set "HF_DATASETS_CACHE=%~dp0Cache\HuggingFace\Datasets"
+set "TORCH_HOME=%~dp0Cache\Torch"
+set "TORCHINDUCTOR_CACHE_DIR=%~dp0Cache\TorchInductor"
+set "TRITON_CACHE_DIR=%~dp0Cache\Triton"
+set "NUMBA_CACHE_DIR=%~dp0Cache\Numba"
+set "CUDA_CACHE_PATH=%~dp0Cache\CUDA"
+set "MPLCONFIGDIR=%~dp0Cache\Matplotlib"
+set "DOCLING_ARTIFACTS_PATH=%~dp0Cache\Docling"
+set "PYTHONPYCACHEPREFIX=%~dp0Cache\PythonBytecode"
+set "PIP_CACHE_DIR=%~dp0Cache\pip"
+set "UV_CACHE_DIR=%~dp0Cache\uv"
+set "NPM_CONFIG_CACHE=%~dp0Cache\npm"
+set "PLAYWRIGHT_BROWSERS_PATH=0"
+set "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1"
+start "" "%~dp0App\Alystria Studio.exe"
 '@
 Set-Content -LiteralPath $LauncherPath -Value $Launcher -Encoding ASCII
 
@@ -292,28 +527,28 @@ $Manifest = [ordered]@{
     kind = "alystria-studio-portable-debug-test-area"
     createdAt = [DateTime]::UtcNow.ToString("o")
     desktop = [ordered]@{
-        path = "Alystria Studio.exe"
+        path = "App\Alystria Studio.exe"
         sha256 = (Get-FileHash -LiteralPath $DesktopDestination -Algorithm SHA256).Hash.ToLowerInvariant()
     }
     pipelineWorker = [ordered]@{
-        path = "runtime\alystria-pipeline.exe"
+        path = "Runtime\alystria-pipeline.exe"
         sha256 = (Get-FileHash -LiteralPath $WorkerDestination -Algorithm SHA256).Hash.ToLowerInvariant()
     }
     starterAudio = [ordered]@{
-        path = "runtime\assets\starter\audio"
+        path = "Runtime\assets\starter\audio"
         catalogSha256 = $StarterAudioProof.CatalogSha256
         assetCount = $StarterAudioProof.AssetCount
         totalBytes = $StarterAudioProof.TotalBytes
     }
     starterVisuals = [ordered]@{
-        path = "runtime\assets\starter\visuals"
+        path = "Runtime\assets\starter\visuals"
         catalogSha256 = $StarterVisualProof.CatalogSha256
         assetCount = $StarterVisualProof.AssetCount
         totalBytes = $StarterVisualProof.TotalBytes
     }
     rendererRuntime = [ordered]@{
-        path = "runtime"
-        manifest = "runtime\runtime-manifest.json"
+        path = "Runtime"
+        manifest = "Runtime\runtime-manifest.json"
         manifestSha256 = $RuntimeManifestSha256
         componentCount = $Components.Count
         node = "24.20.0"
@@ -321,20 +556,26 @@ $Manifest = [ordered]@{
         ffmpeg = "$FfmpegVersion LGPL"
         renderer = $RendererVersion
     }
-    appData = "Test Data"
+    portableRoot = "."
+    appData = "App Data"
+    mutableDirectories = @("App Data", "Models", "Projects", "Exports", "Logs", "Cache", "Temp", "Evidence")
+    credentialStoreException = "Windows Credential Manager stores provider secret values outside the sandbox; only opaque keyring references may appear in Alystria files."
     launch = "Start Alystria Studio Test.cmd"
+    launcherSha256 = (Get-FileHash -LiteralPath $LauncherPath -Algorithm SHA256).Hash.ToLowerInvariant()
     notes = @(
         "Debug-only local test handoff; not a signed installer or release artifact.",
-        "Launch variables redirect app data and the supervised test sidecar to this test area.",
+        "Launch variables redirect app data, WebView2, temp, caches, models, projects, exports, logs, and the supervised test sidecar to this test area.",
         "Bundled music and sound effects are copied beside the worker and verified against their catalog before launch.",
         "Bundled backgrounds and fictional presenter portraits are copied beside the worker and verified against the starter-kit catalog.",
         "The portable debug worker derives Node, the renderer CLI, Chromium, FFmpeg, and ffprobe only from the sibling hash ledger.",
         "The renderer dependency tree contains regular files only; it has no repository links or host-browser fallback.",
-        "No model weights, provider keys, or production project folders are copied."
+        "A separately staged presenter Python environment is outside the base runtime ledger and is trusted only through Models\presenter-runtime.json plus its exact model and environment attestations.",
+        "Optional model packs may be staged under Models after this base sandbox is created; the launcher binds the presenter runtime only to Models\presenter-runtime.json.",
+        "No provider keys or production project folders are copied."
     )
 }
 $Manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
 
 Write-Host "Created Alystria portable debug test area: $Destination"
 Write-Host "Launch by double-clicking: $LauncherPath"
-Write-Host "Test-only app data: $DataDirectory"
+Write-Host "Portable root: $Destination"

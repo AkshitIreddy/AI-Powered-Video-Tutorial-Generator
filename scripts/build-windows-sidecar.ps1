@@ -9,6 +9,7 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $PipelineRoot = Join-Path $RepoRoot "services\pipeline"
 $SourceRoot = Join-Path $PipelineRoot "src"
 $StarterAudioSource = Join-Path $RepoRoot "assets\starter\audio"
+$CanonicalFixtureSource = Join-Path $RepoRoot "fixtures\canonical"
 . (Join-Path $PSScriptRoot "lib\starter-audio.ps1")
 . (Join-Path $PSScriptRoot "lib\starter-visuals.ps1")
 if (-not $OutputDirectory) {
@@ -52,6 +53,7 @@ try {
         "pyinstaller", "--noconfirm", "--clean", "--onefile", "--console",
         "--name", "alystria-pipeline", "--paths", $SourceRoot,
         "--collect-submodules", "alystria", "--collect-data", "alystria.sandbox",
+        "--add-data", ($CanonicalFixtureSource + ";alystria\generation\canonical"),
         "--distpath", $DistRoot, "--workpath", $BuildRoot, "--specpath", $SpecRoot,
         $Launcher
     )
