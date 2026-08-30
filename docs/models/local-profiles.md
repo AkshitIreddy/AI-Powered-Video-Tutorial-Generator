@@ -5,6 +5,10 @@ installation policies, not a claim that every model is already pinned,
 downloadable, or benchmarked in Alystria. No model weights are bundled in the
 installer or downloaded by this worktree.
 
+The workload-specific native-Windows runtime decision, current RTX 4080 laptop
+probe, LM Studio CUDA 12 verdict, and confirmed NVENC API mismatch are recorded
+in [Windows + NVIDIA runtime audit](windows-nvidia-runtime-audit.md).
+
 ## Recommendation in one sentence
 
 Ship a small Alystria installer, then offer a first-run **Local model setup**

@@ -33,7 +33,17 @@
       "capabilities": ["llm", "vision"],
       "launchStatus": "benchmark-and-artifact-pin-required",
       "hardBudgetEligible": true,
-      "artifactPolicy": { "format": "gguf", "trustRemoteCode": false, "sha256Required": true }
+      "artifactPolicy": { "format": "gguf", "trustRemoteCode": false, "sha256Required": true },
+      "runtimePolicy": {
+        "profileId": "windows-nvidia-llama-cpp-cuda12-headless",
+        "engine": "llama.cpp",
+        "transport": "openai-compatible-loopback",
+        "preferredDistribution": "lmstudio-llmster-or-pinned-llama-server",
+        "preferredAccelerator": "nvidia-cuda12",
+        "fallbackOrder": ["vulkan", "cpu"],
+        "runtimeIdentityRequired": true,
+        "benchmarkReceiptRequired": true
+      }
     },
     {
       "id": "local/qwen3-embedding-0.6b",
