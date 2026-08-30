@@ -39,6 +39,7 @@ describe("Alystria desktop shell", () => {
     } as typeof snapshot.projects[number];
     snapshot.recentProjectId = "removed-native-project";
     snapshot.jobs = [
+      { id: "bf4ffa96-2a10-4aa2-80f1-96cf3a1c2478", title: "Generation", detail: "Recover me", status: "attention", progress: 50 },
       { id: "orphan", title: "Old preview", detail: "Missing", status: "attention", progress: 0, projectId: "removed-native-project", projectDirectory: "C:/removed" },
       { id: "local", title: "Local work", detail: "Kept", status: "queued", progress: 0 },
     ];
@@ -47,7 +48,8 @@ describe("Alystria desktop shell", () => {
 
     expect(normalized.recentProjectId).toBe("current-project");
     expect(normalized.projects[0]?.nativeGenerationId).toBe("bf4ffa96-2a10-4aa2-80f1-96cf3a1c2478");
-    expect(normalized.jobs.map((job) => job.id)).toEqual(["orphan", "local"]);
+    expect(normalized.jobs[0]).toMatchObject({ projectId: "current-native-project", projectDirectory: "C:/current-project" });
+    expect(normalized.jobs.map((job) => job.id)).toEqual(["bf4ffa96-2a10-4aa2-80f1-96cf3a1c2478", "orphan", "local"]);
   });
 
   it("does not poll generated transport-error receipts as durable jobs", () => {

@@ -63,10 +63,18 @@ export function normalizeAppSnapshot(snapshot: AppSnapshot): AppSnapshot {
   const recent = projects.find((project) => project.id === snapshot.recentProjectId)
     ?? projects.find((project) => project.nativeProjectId === snapshot.recentProjectId)
     ?? projects[0];
+  const jobs = snapshot.jobs.map((job) => {
+    if (job.projectId && job.projectDirectory) return job;
+    const project = projects.find((candidate) => candidate.nativeGenerationId === job.id);
+    return project?.nativeProjectId && project.nativeProjectDirectory
+      ? { ...job, projectId: project.nativeProjectId, projectDirectory: project.nativeProjectDirectory }
+      : job;
+  });
   return {
     ...snapshot,
     projects,
     recentProjectId: recent?.id ?? snapshot.recentProjectId,
+    jobs,
   };
 }
 
