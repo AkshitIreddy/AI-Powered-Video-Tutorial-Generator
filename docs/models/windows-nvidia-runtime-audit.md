@@ -21,6 +21,11 @@ identifiable, and proven against the installed driver and exact workload.
   completed on this GPU.
 - Packaged FFmpeg: n9.0.1 snapshot `9d4ca21220`, built 2026-08-19 with
   ffnvcodec/NVENC API **13.1**.
+- Renderer capture profile: pinned Chromium 151, eight isolated pages, and
+  DevTools' lossless PNG `optimizeForSpeed` mode. On the real 1,920 × 1,080,
+  30 fps tutorial workload this increased authoritative-frame throughput from
+  **4.42 fps to 8.14 fps** (about **1.84×** end to end). A focused 12-frame PNG
+  encoder benchmark measured **4.94 fps versus 12.66 fps** (**2.56×**).
 
 ## Decision matrix
 
@@ -31,7 +36,7 @@ identifiable, and proven against the installed driver and exact workload.
 | Embedding/reranking/compact ONNX | **ONNX Runtime CUDA EP**, CUDA before CPU | TensorRT EP with engine/timing caches after output-parity tests | WinML/DirectML, then CPU | CUDA is the NVIDIA default; WinML is the broad-hardware Windows fallback. |
 | High-throughput LLM serving | Not a native default | **vLLM or TensorRT-LLM in WSL2/Linux**, opt-in | llama.cpp native | Linux-only stacks may win server throughput but do not fit the portable native-Windows baseline. |
 | H.264 delivery | **NVENC after a real one-frame probe** | QSV hardware encode | Approved optional GPL x264 pack | Current packaged FFmpeg and driver are incompatible; QSV is truthful but not the desired NVIDIA result. |
-| Rendering/composition | Pinned Chromium + deterministic renderer | Hardware decode/encode where probed | software composition | Keep rendering separate from model runtimes and record every encoder choice. |
+| Rendering/composition | Pinned Chromium + deterministic renderer, 8-page capture pool, lossless speed-optimized PNG | Hardware decode/encode where probed | software composition | Keep rendering separate from model runtimes, retain per-frame hashes, and record every encoder choice. |
 
 ## LM Studio screenshot verdict
 
@@ -115,6 +120,11 @@ provenance. Seeing `h264_nvenc` in `ffmpeg -encoders` is not readiness.
   Migrations are new runtime revisions, not in-place package upgrades.
 - Encode: create a real sample during the capability probe after any driver or
   runtime change.
+- Long-form frame capture: use the bounded eight-page pool on the Windows/NVIDIA
+  package, DevTools' lossless speed-optimized PNG encoder, a four-hour worker
+  bound, and cooperative job cancellation that terminates the renderer process
+  tree. Rebenchmark after Chromium, GPU driver, resolution, or scene-system
+  changes rather than assuming the reference-machine ratio.
 
 ## Primary-source ledger
 
@@ -165,3 +175,4 @@ cards and project repositories are still claims that require local measurement.
 
 32. [NVIDIA Video Codec SDK](https://developer.nvidia.com/video-codec-sdk)
 33. [NVIDIA FFmpeg integration](https://developer.nvidia.com/ffmpeg)
+34. [Chrome DevTools `Page.captureScreenshot`](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot)
