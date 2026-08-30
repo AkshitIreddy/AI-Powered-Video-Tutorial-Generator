@@ -1,4 +1,4 @@
-import type { AppSnapshot, ProjectRecord } from "./types";
+import type { AppSnapshot, JobRecord, ProjectRecord } from "./types";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -68,4 +68,8 @@ export function normalizeAppSnapshot(snapshot: AppSnapshot): AppSnapshot {
     projects,
     recentProjectId: recent?.id ?? snapshot.recentProjectId,
   };
+}
+
+export function isDurableNativeJob(job: JobRecord): job is JobRecord & Required<Pick<JobRecord, "projectId" | "projectDirectory">> {
+  return Boolean(job.projectId && job.projectDirectory && job.result?.durable !== false);
 }

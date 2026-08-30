@@ -258,7 +258,7 @@ pub fn generation_start(
         Ok(value) => serde_json::from_value(value).map_err(|_| {
             CommandError::worker("The pipeline returned an invalid job receipt.", false)
         }),
-        Err(error) => Ok(failed_receipt(generated_id, error)),
+        Err(error) => Ok(failed_receipt(generated_id, error, false)),
     }
 }
 
@@ -407,7 +407,7 @@ fn control_action<P: serde::Serialize>(
     let generated_id = Uuid::now_v7();
     match worker_result(&state.worker, method, &input) {
         Ok(receipt) => Ok(receipt),
-        Err(error) => Ok(failed_receipt(generated_id, error)),
+        Err(error) => Ok(failed_receipt(generated_id, error, false)),
     }
 }
 
@@ -465,7 +465,7 @@ fn job_action_with_transport(
         Ok(value) => serde_json::from_value(value).map_err(|_| {
             CommandError::worker("The pipeline returned an invalid job receipt.", false)
         }),
-        Err(error) => Ok(failed_receipt(job_id, error)),
+        Err(error) => Ok(failed_receipt(job_id, error, true)),
     }
 }
 
@@ -817,7 +817,7 @@ fn validate_project_asset_import(
     Ok(())
 }
 
-fn failed_receipt(job_id: Uuid, error: CommandError) -> JobReceipt {
+fn failed_receipt(job_id: Uuid, error: CommandError, durable: bool) -> JobReceipt {
     let state = if error.code == "COMPONENT_UNAVAILABLE" || error.code == "WORKER_ERROR" {
         JobState::Blocked
     } else {
@@ -831,7 +831,7 @@ fn failed_receipt(job_id: Uuid, error: CommandError) -> JobReceipt {
         retryable: error.retryable,
         operation: None,
         progress: None,
-        result: None,
+        result: Some(serde_json::json!({ "durable": durable })),
         error: None,
     }
 }
@@ -911,6 +911,19 @@ mod tests {
         assert_eq!(input.budget.currency, "USD");
         assert_eq!(input.approved_provider_ids, ["local"]);
         assert_eq!(input.preservation_locks, ["scene-a"]);
+    }
+
+    #[test]
+    fn generated_transport_failures_are_not_misclassified_as_durable_jobs() {
+        let receipt = failed_receipt(
+            Uuid::now_v7(),
+            CommandError::invalid("sceneId", "does not exist in the current revision"),
+            false,
+        );
+        assert_eq!(
+            receipt.result,
+            Some(serde_json::json!({ "durable": false }))
+        );
     }
 
     fn presenter_asset_input(identity_type: PresenterIdentityType) -> ProjectAssetImportRequest {

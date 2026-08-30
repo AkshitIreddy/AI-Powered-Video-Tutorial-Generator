@@ -139,6 +139,7 @@ import { buildProviderRoutingReview } from "./providerRouting";
 import {
   canonicalFixtureIdFromTopic,
   hydrateDurableProject,
+  isDurableNativeJob,
   normalizeAppSnapshot,
   projectTitleFromTopic,
 } from "./project-utils";
@@ -2370,7 +2371,7 @@ function authoritativeReviewMedia(project: ProjectRecord, jobs: readonly JobReco
 }
 
 function nativeJobLinks(jobs: readonly JobRecord[]): Record<string, NativeJobLink> {
-  return Object.fromEntries(jobs.flatMap((job) => job.projectId && job.projectDirectory
+  return Object.fromEntries(jobs.flatMap((job) => isDurableNativeJob(job)
     ? [[job.id, { projectId: job.projectId, projectDirectory: job.projectDirectory, jobId: job.id } satisfies NativeJobLink] as const]
     : []));
 }

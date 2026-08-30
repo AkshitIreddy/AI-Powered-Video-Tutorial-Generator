@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../App";
-import { canonicalFixtureIdFromTopic, hydrateDurableProject, normalizeAppSnapshot, projectTitleFromTopic } from "../project-utils";
+import { canonicalFixtureIdFromTopic, hydrateDurableProject, isDurableNativeJob, normalizeAppSnapshot, projectTitleFromTopic } from "../project-utils";
 import { defaultSnapshot } from "../data";
 import { localModelSetupSave, providerSecretSet } from "../native";
 import type { AppSnapshot } from "../types";
@@ -48,6 +48,15 @@ describe("Alystria desktop shell", () => {
     expect(normalized.recentProjectId).toBe("current-project");
     expect(normalized.projects[0]?.nativeGenerationId).toBe("bf4ffa96-2a10-4aa2-80f1-96cf3a1c2478");
     expect(normalized.jobs.map((job) => job.id)).toEqual(["orphan", "local"]);
+  });
+
+  it("does not poll generated transport-error receipts as durable jobs", () => {
+    const project = { projectId: "native-project", projectDirectory: "C:/Alystria/native-project" };
+    const failed = { id: "generated-error", title: "Scene preview", detail: "Unavailable", status: "attention" as const, progress: 0, result: { durable: false }, ...project };
+    const durable = { id: "durable-job", title: "Generation", detail: "Running", status: "running" as const, progress: 20, result: { durable: true }, ...project };
+
+    expect(isDurableNativeJob(failed)).toBe(false);
+    expect(isDurableNativeJob(durable)).toBe(true);
   });
 
   it("keeps the full teaching brief separate from a native-safe project title", () => {
