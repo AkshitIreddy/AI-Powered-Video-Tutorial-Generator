@@ -1045,14 +1045,14 @@ function App() {
     const baseJobId = baseGenerationJobId(project);
     const { codecPreference, ...nativeSettings } = settings;
     const codecLabel = codecPreferenceLabel(codecPreference);
+    if (runtime.environment === "browser-demo") {
+      const demo: JobReceipt = { jobId: `demo-${Date.now()}`, state: "SUCCEEDED", acceptedAt: new Date().toISOString(), message: `UI contract only: ${settings.fps} fps ${codecLabel} export simulated; no media file was created.`, retryable: false, operation: "export_master", result: { demoOnly: true, path: null, requestedFps: settings.fps, requestedCodec: codecPreference, codecForwarded: false } };
+      addJob(receiptJob(demo, `${project.title} · ${settings.resolution}`, `${settings.aspect} · ${settings.fps} fps · ${codecLabel} requested`));
+      setJobsOpen(true);
+      notify("UI contract only", demo.message, "info");
+      return demo;
+    }
     if (!link || !project.nativeHeadRevisionId || !baseJobId) {
-      if (runtime.environment === "browser-demo") {
-        const demo: JobReceipt = { jobId: `demo-${Date.now()}`, state: "SUCCEEDED", acceptedAt: new Date().toISOString(), message: `UI contract only: ${settings.fps} fps ${codecLabel} export simulated; no media file was created.`, retryable: false, operation: "export_master", result: { demoOnly: true, path: null, requestedFps: settings.fps, requestedCodec: codecPreference, codecForwarded: false } };
-        addJob(receiptJob(demo, `${project.title} · ${settings.resolution}`, `${settings.aspect} · ${settings.fps} fps · ${codecLabel} requested`));
-        setJobsOpen(true);
-        notify("UI contract only", demo.message, "info");
-        return demo;
-      }
       throw new Error("A completed durable generation and current project revision are required for master export.");
     }
     const receipt = await masterExport({ ...link, baseRevisionId: project.nativeHeadRevisionId, baseJobId, ...nativeSettings });
