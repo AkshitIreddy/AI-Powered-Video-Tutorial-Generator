@@ -139,6 +139,7 @@ import { buildProviderRoutingReview } from "./providerRouting";
 import {
   canonicalFixtureIdFromTopic,
   hydrateDurableProject,
+  normalizeAppSnapshot,
   projectTitleFromTopic,
 } from "./project-utils";
 import { SharedScenePreview } from "./ScenePreview";
@@ -411,7 +412,7 @@ function LogoMark() {
 }
 
 function App() {
-  const [snapshot, setSnapshot, resetSnapshot] = usePersistentState<AppSnapshot>("alystria-studio-v2", defaultSnapshot);
+  const [snapshot, setSnapshot, resetSnapshot] = usePersistentState<AppSnapshot>("alystria-studio-v2", defaultSnapshot, normalizeAppSnapshot);
   const [runtime, setRuntime] = useState<RuntimeState>({ environment: desktopEnvironment(), bootstrap: null, loading: true, error: null });
   const [nativeJobs, setNativeJobs] = useState<Record<string, NativeJobLink>>(() => nativeJobLinks(snapshot.jobs));
   const [area, setArea] = useState<GlobalArea>("home");
@@ -793,6 +794,7 @@ function App() {
       approvedProviderIds: settings.approvedProviderIds,
       preservationLocks: [],
     });
+    createdProject = { ...createdProject, nativeGenerationId: receipt.jobId };
     setNativeJobs((current) => ({
       ...current,
       [receipt.jobId]: { projectId: handle.manifest.projectId, projectDirectory: handle.projectDirectory, jobId: receipt.jobId },
@@ -894,7 +896,7 @@ function App() {
       const receipt = await generationApprove(link);
       setSnapshot((current) => ({
         ...current,
-        jobs: current.jobs.map((job) => job.id === jobId ? receiptJob(receipt, job.title, job.detail) : job),
+        jobs: current.jobs.map((job) => job.id === jobId ? receiptJob(receipt, job.title, job.detail, nativeJobProject(job) ?? undefined) : job),
       }));
       setWorkspace(receipt.state === "SUCCEEDED" ? "review" : "storyboard");
       setJobsOpen(receipt.state !== "SUCCEEDED");
@@ -908,9 +910,9 @@ function App() {
     }
   };
 
-  const baseGenerationJobId = (projectId: string) => snapshot.jobs.find((job) =>
-    job.projectId === projectId && !job.operation && nativeJobs[job.id],
-  )?.id;
+  const baseGenerationJobId = (project: ProjectRecord) => snapshot.jobs.find((job) =>
+    job.projectId === project.nativeProjectId && !job.operation && nativeJobs[job.id],
+  )?.id ?? project.nativeGenerationId;
 
   const addNativeControlJob = (project: ProjectRecord, receipt: JobReceipt, title: string, detail: string) => {
     const link = nativeProjectLink(project);
@@ -1000,7 +1002,7 @@ function App() {
     }
     try {
       await snapshotSaveSequence.current;
-      const baseJobId = baseGenerationJobId(project.id);
+      const baseJobId = baseGenerationJobId(project);
       const receipt = await sceneRender({
         ...link,
         baseRevisionId: project.nativeHeadRevisionId,
@@ -1020,7 +1022,7 @@ function App() {
   const repairSelectedQa = async () => {
     const project = snapshot.projects.find((item) => item.id === activeProjectId)!;
     const link = nativeProjectLink(project);
-    const baseJobId = baseGenerationJobId(project.id);
+    const baseJobId = baseGenerationJobId(project);
     const findingIds = project.nativeRepairableFindingIds ?? [];
     if (!link || !project.nativeHeadRevisionId || !baseJobId || findingIds.length === 0) {
       notify(runtime.environment === "browser-demo" ? "Browser demo only" : "QA repair unavailable", runtime.environment === "browser-demo" ? "The repair gesture is simulated in browser preview; no candidate is persisted." : "A completed durable generation with selected repairable findings is required.", "info");
@@ -1039,7 +1041,7 @@ function App() {
   const exportNativeMaster = async (settings: ExportRequestSettings) => {
     const project = snapshot.projects.find((item) => item.id === activeProjectId)!;
     const link = nativeProjectLink(project);
-    const baseJobId = baseGenerationJobId(project.id);
+    const baseJobId = baseGenerationJobId(project);
     const { codecPreference, ...nativeSettings } = settings;
     const codecLabel = codecPreferenceLabel(codecPreference);
     if (!link || !project.nativeHeadRevisionId || !baseJobId) {
@@ -1140,7 +1142,7 @@ function App() {
         const start = async () => {
           if (projectLink && activeProject.nativeHeadRevisionId) {
             await snapshotSaveSequence.current;
-            const baseJobId = baseGenerationJobId(activeProject.id);
+            const baseJobId = baseGenerationJobId(activeProject);
             const receipt = await sceneRegenerate({
               ...projectLink,
               baseRevisionId: activeProject.nativeHeadRevisionId,

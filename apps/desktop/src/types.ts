@@ -136,6 +136,8 @@ export interface ProjectRecord {
   nativeProjectDirectory?: string;
   nativeHeadRevisionId?: string;
   nativeRevisionNumber?: number;
+  /** Durable generation identity, distinct from individual stage job IDs. */
+  nativeGenerationId?: string;
   nativeArchivePath?: string;
   /** Approved no-secret provider boundary; retained across ordinary snapshot saves. */
   providerRoutingPolicy?: unknown;

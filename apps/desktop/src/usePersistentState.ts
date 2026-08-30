@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
-export function usePersistentState<T>(key: string, initial: T) {
+export function usePersistentState<T>(key: string, initial: T, normalize: (value: T) => T = (value) => value) {
   const [value, setValue] = useState<T>(() => {
     try {
       const stored = localStorage.getItem(key);
-      return stored ? (JSON.parse(stored) as T) : initial;
+      return normalize(stored ? (JSON.parse(stored) as T) : initial);
     } catch {
-      return initial;
+      return normalize(initial);
     }
   });
 
@@ -18,6 +18,6 @@ export function usePersistentState<T>(key: string, initial: T) {
     }
   }, [key, value]);
 
-  const reset = useCallback(() => setValue(initial), [initial]);
+  const reset = useCallback(() => setValue(normalize(initial)), [initial, normalize]);
   return [value, setValue, reset] as const;
 }

@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../App";
-import { canonicalFixtureIdFromTopic, hydrateDurableProject, projectTitleFromTopic } from "../project-utils";
+import { canonicalFixtureIdFromTopic, hydrateDurableProject, normalizeAppSnapshot, projectTitleFromTopic } from "../project-utils";
 import { defaultSnapshot } from "../data";
 import { localModelSetupSave, providerSecretSet } from "../native";
 import type { AppSnapshot } from "../types";
@@ -26,6 +26,28 @@ describe("Alystria desktop shell", () => {
     expect(hydrated.scenes).toEqual(project.scenes);
     expect(hydrated.sources).toEqual(project.sources);
     expect(hydrated.nativeHeadRevisionId).toBe("rev-stage");
+  });
+
+  it("repairs portable profile references and recovers a durable generation identity", () => {
+    const snapshot = structuredClone(defaultSnapshot);
+    snapshot.projects[0] = {
+      ...snapshot.projects[0]!,
+      id: "current-project",
+      nativeProjectId: "current-native-project",
+      nativeProjectDirectory: "C:/current-project",
+      generationId: "bf4ffa96-2a10-4aa2-80f1-96cf3a1c2478",
+    } as typeof snapshot.projects[number];
+    snapshot.recentProjectId = "removed-native-project";
+    snapshot.jobs = [
+      { id: "orphan", title: "Old preview", detail: "Missing", status: "attention", progress: 0, projectId: "removed-native-project", projectDirectory: "C:/removed" },
+      { id: "local", title: "Local work", detail: "Kept", status: "queued", progress: 0 },
+    ];
+
+    const normalized = normalizeAppSnapshot(snapshot);
+
+    expect(normalized.recentProjectId).toBe("current-project");
+    expect(normalized.projects[0]?.nativeGenerationId).toBe("bf4ffa96-2a10-4aa2-80f1-96cf3a1c2478");
+    expect(normalized.jobs.map((job) => job.id)).toEqual(["orphan", "local"]);
   });
 
   it("keeps the full teaching brief separate from a native-safe project title", () => {

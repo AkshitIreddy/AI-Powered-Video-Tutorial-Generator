@@ -1,4 +1,6 @@
-import type { ProjectRecord } from "./types";
+import type { AppSnapshot, ProjectRecord } from "./types";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function projectTitleFromTopic(topic: string): string {
   const normalized = topic.trim().replace(/\s+/gu, " ") || "Untitled tutorial";
@@ -38,10 +40,32 @@ export function hydrateDurableProject(
   if (!isFullProject && !isLegacyStageSnapshot) {
     throw new Error("The durable project snapshot has an unsupported shape.");
   }
+  const generationId = typeof snapshot.generationId === "string" && UUID_PATTERN.test(snapshot.generationId)
+    ? snapshot.generationId
+    : project.nativeGenerationId;
   return {
     ...project,
     ...(snapshot as unknown as ProjectRecord),
     id: links.nativeProjectId ?? project.id,
+    ...(generationId ? { nativeGenerationId: generationId } : {}),
     ...links,
+  };
+}
+
+/** Repair safe UI references after a portable profile outlives a rebuilt sandbox. */
+export function normalizeAppSnapshot(snapshot: AppSnapshot): AppSnapshot {
+  const projects = snapshot.projects.map((project) => {
+    const legacyGenerationId = (project as ProjectRecord & { generationId?: unknown }).generationId;
+    return !project.nativeGenerationId && typeof legacyGenerationId === "string" && UUID_PATTERN.test(legacyGenerationId)
+      ? { ...project, nativeGenerationId: legacyGenerationId }
+      : project;
+  });
+  const recent = projects.find((project) => project.id === snapshot.recentProjectId)
+    ?? projects.find((project) => project.nativeProjectId === snapshot.recentProjectId)
+    ?? projects[0];
+  return {
+    ...snapshot,
+    projects,
+    recentProjectId: recent?.id ?? snapshot.recentProjectId,
   };
 }
