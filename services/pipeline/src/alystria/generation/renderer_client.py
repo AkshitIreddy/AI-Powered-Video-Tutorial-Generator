@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import ntpath
 import os
 import re
 import shutil
@@ -1313,20 +1314,17 @@ class SubprocessRendererClient:
             or browser.get("networkPolicy") != "deny"
         ):
             raise RendererOutputError("Renderer browser pin or network policy does not match")
-        if (
-            Path(_required_string(browser, "executablePath")).resolve()
-            != self.runtime.chromium.path.resolve()
+        if not _same_executable_path(
+            _required_string(browser, "executablePath"), self.runtime.chromium.path
         ):
             raise RendererOutputError("Renderer used a different Chromium executable")
         executables = _required_mapping(value.get("executables"), "renderer executables")
-        if (
-            Path(_required_string(executables, "ffmpeg")).resolve()
-            != self.runtime.ffmpeg.path.resolve()
+        if not _same_executable_path(
+            _required_string(executables, "ffmpeg"), self.runtime.ffmpeg.path
         ):
             raise RendererOutputError("Renderer used a different FFmpeg executable")
-        if (
-            Path(_required_string(executables, "ffprobe")).resolve()
-            != self.runtime.ffprobe.path.resolve()
+        if not _same_executable_path(
+            _required_string(executables, "ffprobe"), self.runtime.ffprobe.path
         ):
             raise RendererOutputError("Renderer used a different ffprobe executable")
         target = _required_mapping(value.get("target"), "renderer target")
@@ -1614,12 +1612,13 @@ def _verify_regular_file(path: Path, label: str, expected_sha256: str) -> None:
 def _guarded_child(root: Path, candidate: Path) -> Path:
     root = root.resolve(strict=False)
     candidate = candidate.resolve(strict=False)
+    if candidate == root:
+        raise RendererOutputError("Renderer path must be below its guarded root")
     try:
         candidate.relative_to(root)
     except ValueError as error:
-        raise RendererOutputError(f"Renderer path escapes guarded root {root}") from error
-    if candidate == root:
-        raise RendererOutputError("Renderer path must be below its guarded root")
+        if os.name != "nt" or not _windows_path_is_below(str(root), str(candidate)):
+            raise RendererOutputError(f"Renderer path escapes guarded root {root}") from error
     return candidate
 
 
@@ -1685,6 +1684,46 @@ def _subprocess_command_path(path: Path) -> str:
     if value.startswith("\\\\?\\"):
         return value[4:]
     return value
+
+
+def _windows_executable_identity(value: str) -> str:
+    r"""Return the Win32 identity spelling used for executable path comparison.
+
+    Python and Node may independently report the same verified executable with
+    an extended-length prefix, different separators, or different casing.  The
+    runtime hash and version checks remain authoritative; this normalization
+    prevents those Win32-equivalent spellings from causing a false mismatch.
+    """
+
+    normalized = value.replace("/", "\\")
+    if normalized.casefold().startswith("\\\\?\\unc\\"):
+        normalized = "\\\\" + normalized[8:]
+    elif normalized.startswith("\\\\?\\"):
+        normalized = normalized[4:]
+    return ntpath.normcase(ntpath.normpath(normalized))
+
+
+def _windows_path_is_below(root: str, candidate: str) -> bool:
+    normalized_root = _windows_executable_identity(root)
+    normalized_candidate = _windows_executable_identity(candidate)
+    if normalized_candidate == normalized_root:
+        return False
+    try:
+        return ntpath.commonpath((normalized_root, normalized_candidate)) == normalized_root
+    except ValueError:
+        return False
+
+
+def _same_executable_path(reported: str, expected: Path) -> bool:
+    reported_path = Path(reported).resolve()
+    expected_path = expected.resolve()
+    if reported_path == expected_path:
+        return True
+    if os.name != "nt":
+        return False
+    return _windows_executable_identity(str(reported_path)) == _windows_executable_identity(
+        str(expected_path)
+    )
 
 
 def _required_mapping(value: object, label: str) -> Mapping[str, Any]:

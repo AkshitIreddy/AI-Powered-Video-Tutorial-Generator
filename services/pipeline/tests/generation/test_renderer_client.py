@@ -24,6 +24,8 @@ from alystria.generation.renderer_client import (
     SubprocessCommandRunner,
     SubprocessRendererClient,
     _subprocess_command_path,
+    _windows_executable_identity,
+    _windows_path_is_below,
     create_production_renderer_client,
 )
 from alystria.project import ProjectStore
@@ -79,6 +81,29 @@ def test_renderer_command_path_normalizes_windows_extended_prefixes() -> None:
     assert _subprocess_command_path(Path(r"\\?\UNC\server\share\renderer\cli.js")) == (
         r"\\server\share\renderer\cli.js"
     )
+
+
+def test_windows_executable_identity_accepts_only_equivalent_path_spellings() -> None:
+    expected = r"\\?\E:\temp\Alystria Studio 2.0 Test Sandbox\Runtime\chromium\chrome.exe"
+
+    assert _windows_executable_identity(expected) == _windows_executable_identity(
+        r"e:/TEMP/Alystria Studio 2.0 Test Sandbox/Runtime/chromium/chrome.exe"
+    )
+    assert _windows_executable_identity(
+        r"\\?\UNC\server\runtime\chromium\chrome.exe"
+    ) == _windows_executable_identity(r"\\server\runtime\chromium\chrome.exe")
+    assert _windows_executable_identity(expected) != _windows_executable_identity(
+        r"E:\temp\Alystria Studio 2.0 Test Sandbox\Runtime\chromium\other.exe"
+    )
+
+
+def test_windows_guarded_path_accepts_prefixed_root_and_bare_child_only() -> None:
+    root = r"\\?\E:\temp\Alystria Studio\render\output"
+
+    assert _windows_path_is_below(root, r"E:\temp\Alystria Studio\render\output\mezzanine.mkv")
+    assert not _windows_path_is_below(root, r"E:\temp\Alystria Studio\render\output")
+    assert not _windows_path_is_below(root, r"E:\temp\Alystria Studio\render\output-neighbor\escape.mkv")
+    assert not _windows_path_is_below(root, r"D:\temp\Alystria Studio\render\output\escape.mkv")
 
 
 @dataclass
