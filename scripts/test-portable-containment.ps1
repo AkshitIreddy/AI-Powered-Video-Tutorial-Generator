@@ -91,13 +91,16 @@ try {
         "PLAYWRIGHT_BROWSERS_PATH",
         "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD"
     )) {
-        if ($PackagerSource -notmatch [Regex]::Escape("set `"$Variable=")) {
+        if ($PackagerSource -notmatch [Regex]::Escape("`"$Variable`"")) {
             throw "Portable launcher is missing the $Variable redirect."
         }
     }
     foreach ($RequiredText in @(
         '"Alystria Studio 2.0 Test Sandbox"',
-        'start "" "%~dp0App\Alystria Studio.exe"',
+        'Start Alystria Studio Hidden.pyw',
+        'subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS',
+        'startup_info.wShowWindow = subprocess.SW_HIDE',
+        '[str(portable_root / "App" / "Alystria Studio.exe")]',
         'Windows Credential Manager stores provider secret values outside the sandbox',
         'Models\presenter-runtime.json plus its exact model and environment attestations',
         'launcherSha256'

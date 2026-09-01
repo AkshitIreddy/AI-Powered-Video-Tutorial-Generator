@@ -474,54 +474,96 @@ $PortableRuntimeJson = $PortableRuntimeManifest | ConvertTo-Json -Depth 8
 [IO.File]::WriteAllText($RuntimeManifestPath, $PortableRuntimeJson, [Text.UTF8Encoding]::new($false))
 $RuntimeManifestSha256 = (Get-FileHash -LiteralPath $RuntimeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
-$LauncherPath = Join-Path $Destination "Start Alystria Studio Test.cmd"
+$LauncherPath = Join-Path $Destination "Start Alystria Studio Hidden.pyw"
 $Launcher = @'
-@echo off
-setlocal
-set "ALYSTRIA_PORTABLE_ROOT=%~dp0"
-set "ALYSTRIA_APP_DATA_DIR=%~dp0App Data"
-set "ALYSTRIA_RUNTIME_DIR=%~dp0Runtime"
-set "ALYSTRIA_MODELS_DIR=%~dp0Models"
-set "ALYSTRIA_PROJECTS_DIR=%~dp0Projects"
-set "ALYSTRIA_EXPORTS_DIR=%~dp0Exports"
-set "ALYSTRIA_LOGS_DIR=%~dp0Logs"
-set "ALYSTRIA_CACHE_DIR=%~dp0Cache"
-set "ALYSTRIA_TEMP_DIR=%~dp0Temp"
-set "ALYSTRIA_PIPELINE_WORKER=%~dp0Runtime\alystria-pipeline.exe"
-set "ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH=%~dp0Models\presenter-runtime.json"
-set "WEBVIEW2_USER_DATA_FOLDER=%~dp0App Data\WebView2"
-set "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333"
-set "TEMP=%~dp0Temp"
-set "TMP=%~dp0Temp"
-set "TMPDIR=%~dp0Temp"
-set "APPDATA=%~dp0App Data\Roaming"
-set "LOCALAPPDATA=%~dp0App Data\Local"
-set "USERPROFILE=%~dp0App Data\User Profile"
-set "HOME=%~dp0App Data\User Profile"
-set "XDG_CACHE_HOME=%~dp0Cache\XDG"
-set "XDG_CONFIG_HOME=%~dp0App Data\XDG\Config"
-set "XDG_DATA_HOME=%~dp0App Data\XDG\Data"
-set "XDG_STATE_HOME=%~dp0App Data\XDG\State"
-set "HF_HOME=%~dp0Cache\HuggingFace"
-set "HUGGINGFACE_HUB_CACHE=%~dp0Cache\HuggingFace\Hub"
-set "TRANSFORMERS_CACHE=%~dp0Cache\HuggingFace\Transformers"
-set "HF_DATASETS_CACHE=%~dp0Cache\HuggingFace\Datasets"
-set "TORCH_HOME=%~dp0Cache\Torch"
-set "TORCHINDUCTOR_CACHE_DIR=%~dp0Cache\TorchInductor"
-set "TRITON_CACHE_DIR=%~dp0Cache\Triton"
-set "NUMBA_CACHE_DIR=%~dp0Cache\Numba"
-set "CUDA_CACHE_PATH=%~dp0Cache\CUDA"
-set "MPLCONFIGDIR=%~dp0Cache\Matplotlib"
-set "DOCLING_ARTIFACTS_PATH=%~dp0Cache\Docling"
-set "PYTHONPYCACHEPREFIX=%~dp0Cache\PythonBytecode"
-set "PIP_CACHE_DIR=%~dp0Cache\pip"
-set "UV_CACHE_DIR=%~dp0Cache\uv"
-set "NPM_CONFIG_CACHE=%~dp0Cache\npm"
-set "PLAYWRIGHT_BROWSERS_PATH=0"
-set "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1"
-start "" "%~dp0App\Alystria Studio.exe"
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+
+
+portable_root = Path(__file__).resolve().parent
+app_data = portable_root / "App Data"
+cache = portable_root / "Cache"
+temp = portable_root / "Temp"
+logs = portable_root / "Logs"
+
+for directory in (
+    app_data,
+    cache,
+    temp,
+    logs,
+    portable_root / "Models",
+    portable_root / "Projects",
+    portable_root / "Exports",
+):
+    directory.mkdir(parents=True, exist_ok=True)
+
+environment = os.environ.copy()
+environment.update(
+    {
+        "ALYSTRIA_PORTABLE_ROOT": str(portable_root),
+        "ALYSTRIA_APP_DATA_DIR": str(app_data),
+        "ALYSTRIA_RUNTIME_DIR": str(portable_root / "Runtime"),
+        "ALYSTRIA_MODELS_DIR": str(portable_root / "Models"),
+        "ALYSTRIA_PROJECTS_DIR": str(portable_root / "Projects"),
+        "ALYSTRIA_EXPORTS_DIR": str(portable_root / "Exports"),
+        "ALYSTRIA_LOGS_DIR": str(logs),
+        "ALYSTRIA_CACHE_DIR": str(cache),
+        "ALYSTRIA_TEMP_DIR": str(temp),
+        "ALYSTRIA_PIPELINE_WORKER": str(portable_root / "Runtime" / "alystria-pipeline.exe"),
+        "ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH": str(portable_root / "Models" / "presenter-runtime.json"),
+        "WEBVIEW2_USER_DATA_FOLDER": str(app_data / "WebView2"),
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--remote-debugging-port=9333",
+        "TEMP": str(temp),
+        "TMP": str(temp),
+        "TMPDIR": str(temp),
+        "APPDATA": str(app_data / "Roaming"),
+        "LOCALAPPDATA": str(app_data / "Local"),
+        "USERPROFILE": str(app_data / "User Profile"),
+        "HOME": str(app_data / "User Profile"),
+        "XDG_CACHE_HOME": str(cache / "XDG"),
+        "XDG_CONFIG_HOME": str(app_data / "XDG" / "Config"),
+        "XDG_DATA_HOME": str(app_data / "XDG" / "Data"),
+        "XDG_STATE_HOME": str(app_data / "XDG" / "State"),
+        "HF_HOME": str(cache / "HuggingFace"),
+        "HUGGINGFACE_HUB_CACHE": str(cache / "HuggingFace" / "Hub"),
+        "TRANSFORMERS_CACHE": str(cache / "HuggingFace" / "Transformers"),
+        "HF_DATASETS_CACHE": str(cache / "HuggingFace" / "Datasets"),
+        "TORCH_HOME": str(cache / "Torch"),
+        "TORCHINDUCTOR_CACHE_DIR": str(cache / "TorchInductor"),
+        "TRITON_CACHE_DIR": str(cache / "Triton"),
+        "NUMBA_CACHE_DIR": str(cache / "Numba"),
+        "CUDA_CACHE_PATH": str(cache / "CUDA"),
+        "MPLCONFIGDIR": str(cache / "Matplotlib"),
+        "DOCLING_ARTIFACTS_PATH": str(cache / "Docling"),
+        "PYTHONPYCACHEPREFIX": str(cache / "PythonBytecode"),
+        "PIP_CACHE_DIR": str(cache / "pip"),
+        "UV_CACHE_DIR": str(cache / "uv"),
+        "NPM_CONFIG_CACHE": str(cache / "npm"),
+        "PLAYWRIGHT_BROWSERS_PATH": "0",
+        "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
+    }
+)
+
+startup_info = subprocess.STARTUPINFO()
+startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+startup_info.wShowWindow = subprocess.SW_HIDE
+creation_flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+subprocess.Popen(
+    [str(portable_root / "App" / "Alystria Studio.exe")],
+    cwd=str(portable_root),
+    env=environment,
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    startupinfo=startup_info,
+    creationflags=creation_flags,
+    close_fds=True,
+)
 '@
-Set-Content -LiteralPath $LauncherPath -Value $Launcher -Encoding ASCII
+[IO.File]::WriteAllText($LauncherPath, $Launcher, [Text.UTF8Encoding]::new($false))
 
 $Manifest = [ordered]@{
     kind = "alystria-studio-portable-debug-test-area"
@@ -560,7 +602,7 @@ $Manifest = [ordered]@{
     appData = "App Data"
     mutableDirectories = @("App Data", "Models", "Projects", "Exports", "Logs", "Cache", "Temp", "Evidence")
     credentialStoreException = "Windows Credential Manager stores provider secret values outside the sandbox; only opaque keyring references may appear in Alystria files."
-    launch = "Start Alystria Studio Test.cmd"
+    launch = "Start Alystria Studio Hidden.pyw"
     launcherSha256 = (Get-FileHash -LiteralPath $LauncherPath -Algorithm SHA256).Hash.ToLowerInvariant()
     notes = @(
         "Debug-only local test handoff; not a signed installer or release artifact.",
@@ -577,5 +619,5 @@ $Manifest = [ordered]@{
 $Manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
 
 Write-Host "Created Alystria portable debug test area: $Destination"
-Write-Host "Launch by double-clicking: $LauncherPath"
+Write-Host "Launch without a console window by double-clicking: $LauncherPath"
 Write-Host "Portable root: $Destination"
