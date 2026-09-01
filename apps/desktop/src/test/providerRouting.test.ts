@@ -186,6 +186,55 @@ describe("provider routing review", () => {
       expect.objectContaining({ model: "System.Speech.Synthesis", voice: "Microsoft Zira Desktop" }),
     );
   });
+
+  it("blocks a known starter-presenter and local-voice mismatch", () => {
+    const localProfile: ModelProfile = {
+      ...profile,
+      routes: {
+        ...profile.routes,
+        voice: {
+          providerId: "local-runtime",
+          modelId: "System.Speech.Synthesis",
+          modelRevision: "windows-11-10.0.26200",
+          installFingerprint: "7".repeat(64),
+          voiceId: "Microsoft Zira Desktop",
+        },
+        lipSync: {
+          providerId: "local-runtime",
+          modelId: "local/musetalk-1.5",
+          modelRevision: "musetalk-1.5-pinned",
+          installFingerprint: "8".repeat(64),
+          presenterProfileId: "presenter-portrait.mathematics-arjun-v1",
+        },
+      },
+    };
+    const mismatched = buildProviderRoutingReview({
+      profile: localProfile,
+      secretRefs: secrets,
+      dataClassification: "public",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "creative",
+      reviewedAt: "2026-08-29T12:00:00.000Z",
+    });
+    expect(mismatched.errors).toContain("Arjun · mathematics needs a compatible narration voice; choose Microsoft David Desktop instead of Microsoft Zira Desktop.");
+
+    const matched = buildProviderRoutingReview({
+      profile: {
+        ...localProfile,
+        routes: { ...localProfile.routes, voice: { ...localProfile.routes.voice!, voiceId: "Microsoft David Desktop" } },
+      },
+      secretRefs: secrets,
+      dataClassification: "public",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "creative",
+      reviewedAt: "2026-08-29T12:00:00.000Z",
+    });
+    expect(matched.errors).not.toContain(expect.stringMatching(/compatible narration voice/i));
+  });
 });
 
 function secret(providerId: string): ProviderSecretRef {

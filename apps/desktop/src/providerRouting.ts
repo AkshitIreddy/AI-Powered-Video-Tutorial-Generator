@@ -31,6 +31,18 @@ const mediumCapabilities: Record<RouteMedium, ProviderCapability> = {
 
 const baselineRequiredMedia: RouteMedium[] = ["writing", "images", "voice"];
 
+const curatedStarterPresenterVoices: Record<string, {
+  readonly label: string;
+  readonly recommendedWindowsVoiceId: string;
+  readonly incompatibleWindowsVoiceIds: readonly string[];
+}> = {
+  "presenter-portrait.mathematics-arjun-v1": {
+    label: "Arjun · mathematics",
+    recommendedWindowsVoiceId: "Microsoft David Desktop",
+    incompatibleWindowsVoiceIds: ["Microsoft Zira Desktop"],
+  },
+};
+
 const providerPolicies: Record<string, ProviderPolicyDescriptor> = {
   "local-runtime": local(["llm.text", "llm.structured", "image.generate", "image.edit", "audio.tts", "audio.transcribe", "audio.align", "presenter.generate", "portrait.animate", "lipsync.generate"]),
   "openai-compatible-local": local(["llm.text", "llm.structured"]),
@@ -141,6 +153,22 @@ export function buildProviderRoutingReview(input: {
   }
   if (input.dataClassification === "project" && selectedProviders.some(([id]) => id === "nvidia-nim")) {
     errors.push("NVIDIA hosted preview accepts only public or synthetic project content.");
+  }
+  const selectedPresenterProfileId = [
+    input.profile.routes.lipSync,
+    input.profile.routes.portraitAnimation,
+    input.profile.routes.presenter,
+  ].find((route) => route && !isDisabledModel(route.modelId) && route.presenterProfileId)?.presenterProfileId;
+  const curatedPairing = selectedPresenterProfileId ? curatedStarterPresenterVoices[selectedPresenterProfileId] : undefined;
+  const narrationRoute = input.profile.routes.voice;
+  if (
+    curatedPairing
+    && narrationRoute?.providerId === "local-runtime"
+    && narrationRoute.modelId === "System.Speech.Synthesis"
+    && narrationRoute.voiceId
+    && curatedPairing.incompatibleWindowsVoiceIds.some((voiceId) => voiceId.localeCompare(narrationRoute.voiceId!, undefined, { sensitivity: "accent" }) === 0)
+  ) {
+    errors.push(`${curatedPairing.label} needs a compatible narration voice; choose ${curatedPairing.recommendedWindowsVoiceId} instead of ${narrationRoute.voiceId}.`);
   }
   if (!input.approvalChecked) {
     errors.push("Review and approve the named providers, retention boundary, and hard budget.");
