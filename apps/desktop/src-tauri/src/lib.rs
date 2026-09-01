@@ -15,7 +15,14 @@ mod validation;
 
 use commands::*;
 use state::AppState;
+use std::ffi::OsStr;
 use tauri::Manager;
+
+const HEADLESS_ACCEPTANCE_ENVIRONMENT: &str = "ALYSTRIA_HEADLESS_ACCEPTANCE";
+
+fn should_show_main_window(headless_acceptance: Option<&OsStr>) -> bool {
+    headless_acceptance != Some(OsStr::new("1"))
+}
 
 pub fn run() {
     tauri::Builder::default()
@@ -24,6 +31,14 @@ pub fn run() {
                 std::io::Error::other(format!("{}: {}", error.code, error.message))
             })?;
             app.manage(state);
+            if should_show_main_window(
+                std::env::var_os(HEADLESS_ACCEPTANCE_ENVIRONMENT).as_deref(),
+            ) {
+                let window = app.get_webview_window("main").ok_or_else(|| {
+                    std::io::Error::other("Alystria main window was not created")
+                })?;
+                window.show()?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -68,4 +83,21 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("Alystria Studio desktop runtime failed");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_show_main_window;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn main_window_is_visible_without_the_acceptance_override() {
+        assert!(should_show_main_window(None));
+        assert!(should_show_main_window(Some(OsStr::new("0"))));
+    }
+
+    #[test]
+    fn headless_acceptance_keeps_the_main_window_hidden() {
+        assert!(!should_show_main_window(Some(OsStr::new("1"))));
+    }
 }
