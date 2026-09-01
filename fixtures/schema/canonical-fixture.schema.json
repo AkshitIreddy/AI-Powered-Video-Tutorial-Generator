@@ -105,10 +105,140 @@
         "narration": { "$ref": "#/$defs/text" },
         "visualIntent": { "$ref": "#/$defs/text" },
         "captionText": { "$ref": "#/$defs/text" },
+        "onScreenText": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+        },
+        "visualBeat": { "$ref": "#/$defs/visualBeat" },
         "accessibilityDescription": { "$ref": "#/$defs/text" },
         "sourceLocator": { "$ref": "#/$defs/text" }
       }
     },
+    "visualInformationUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role"],
+      "properties": {
+        "id": { "$ref": "#/$defs/visualId" },
+        "role": { "$ref": "#/$defs/visualId" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "value": { "$ref": "#/$defs/visualScalar" },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/visualScalar" }
+        },
+        "low": { "$ref": "#/$defs/visualScalar" },
+        "middle": { "$ref": "#/$defs/visualScalar" },
+        "high": { "$ref": "#/$defs/visualScalar" },
+        "relation": { "type": "string", "minLength": 1, "maxLength": 180 }
+      },
+      "anyOf": [
+        { "required": ["text"] },
+        { "required": ["label"] },
+        { "required": ["value"] },
+        { "required": ["values"] },
+        { "required": ["low"] },
+        { "required": ["middle"] },
+        { "required": ["high"] },
+        { "required": ["relation"] }
+      ]
+    },
+    "visualAvoidRegion": {
+      "oneOf": [
+        { "$ref": "#/$defs/visualId" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "role", "x", "y", "width", "height", "priority"],
+          "properties": {
+            "id": { "$ref": "#/$defs/visualId" },
+            "role": { "enum": ["title", "essential-visual", "presenter", "source"] },
+            "x": { "type": "number", "minimum": 0, "maximum": 1 },
+            "y": { "type": "number", "minimum": 0, "maximum": 1 },
+            "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+            "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+            "priority": { "enum": ["required", "preferred"] }
+          }
+        }
+      ]
+    },
+    "visualTextRoles": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 8,
+      "properties": {
+        "eyebrow": { "$ref": "#/$defs/visualText" },
+        "hero": { "$ref": "#/$defs/visualText" },
+        "support": { "$ref": "#/$defs/visualText" },
+        "label": { "$ref": "#/$defs/visualText" },
+        "markers": { "$ref": "#/$defs/visualText" },
+        "principle": { "$ref": "#/$defs/visualText" },
+        "focus": { "$ref": "#/$defs/visualText" },
+        "proof": { "$ref": "#/$defs/visualText" },
+        "result": { "$ref": "#/$defs/visualText" },
+        "counterpoint": { "$ref": "#/$defs/visualText" },
+        "formula": { "$ref": "#/$defs/visualText" },
+        "answer": { "$ref": "#/$defs/visualText" },
+        "title": { "$ref": "#/$defs/visualText" },
+        "subtitle": { "$ref": "#/$defs/visualText" },
+        "kicker": { "$ref": "#/$defs/visualText" },
+        "value": { "$ref": "#/$defs/visualText" }
+      }
+    },
+    "visualBeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "semanticIntent", "compositionFamily", "focalAnchor", "continuityKey", "informationUnits", "attentionCue", "motionIntent", "textRoles", "avoidRegions"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "semanticIntent": { "enum": ["establish", "define", "compare", "transform", "demonstrate", "prove", "emphasize", "question", "resolve", "recap"] },
+        "compositionFamily": { "enum": ["full_bleed", "editorial_type", "object_stage", "diagram", "split_evidence", "document_focus", "data_canvas", "worked_example", "presenter", "cinematic_scale"] },
+        "focalAnchor": { "$ref": "#/$defs/visualId" },
+        "continuityKey": { "$ref": "#/$defs/visualId" },
+        "informationUnits": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/visualInformationUnit" }
+        },
+        "visualMetaphor": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "attentionCue": { "$ref": "#/$defs/visualId" },
+        "motionIntent": {
+          "oneOf": [
+            { "$ref": "#/$defs/visualMotionIntent" },
+            {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/visualMotionIntent" }
+            }
+          ]
+        },
+        "textRoles": { "$ref": "#/$defs/visualTextRoles" },
+        "avoidRegions": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/visualAvoidRegion" }
+        }
+      }
+    },
+    "visualId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },
+    "visualText": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "visualScalar": {
+      "oneOf": [
+        { "type": "string", "minLength": 1, "maxLength": 120 },
+        { "type": "number", "minimum": -1000000000, "maximum": 1000000000 }
+      ]
+    },
+    "visualMotionIntent": { "enum": ["reveal-primary", "trace-relationship", "transform-object", "compare-shift", "evidence-focus", "resolve-hold", "quiet-hold", "match-transition", "emphasize-result", "resolve-answer", "question-hold"] },
     "target": {
       "type": "object",
       "additionalProperties": false,

@@ -120,10 +120,10 @@
     }
   ],
   "description": "Alystria Studio tutorial about Karatsuba Multiplication: Three Products Instead of Four.",
-  "exportId": "export_011ee1ea121bdfa2e4976e66",
+  "exportId": "export_06bace74d15cc924da2eca8c",
   "files": [
     {
-      "artifactHash": "a8f542ffce67e8ef8f7ff6a94d4a03176542063ade1e71849f1f8ec51c317592",
+      "artifactHash": "15596294f4e415a958a33f9202a6c7108f88fa43832880f2a10ca940cabff717",
       "role": "video"
     },
     {
@@ -143,10 +143,10 @@
   "locale": "en-US",
   "projectId": "prj_fixture_karatsuba_v2",
   "provenance": {
-    "manifestArtifactHash": "ba8f76a04dd4aceaac4bc159198f9ccc33c8e745890968345bf535c49aff2724",
+    "manifestArtifactHash": "38877128f210d233f1bc75c2d95814f5a11c407c42babb21530f5827ac0bbdc1",
     "modelRevision": "fixture-media-v1",
     "provider": "local-deterministic",
-    "qaEvidenceArtifactHash": "947ac3a0eb2e44858551c6939d894b47c5759544506dde76be18fdb062ee0fda",
+    "qaEvidenceArtifactHash": "9ef49c8928a6c415b0c04f5174d82ebe065a66b1d184a2ed8b282386f6d98275",
     "renderer": "alystria-deterministic-renderer",
     "rendererVersion": "fixture-render-v1",
     "seed": 1962
@@ -156,8 +156,8 @@
     "findings": [],
     "gate_id": "generation.qa_final",
     "metadata": {
-      "provenanceManifestHash": "ba8f76a04dd4aceaac4bc159198f9ccc33c8e745890968345bf535c49aff2724",
-      "qaEvidenceHash": "947ac3a0eb2e44858551c6939d894b47c5759544506dde76be18fdb062ee0fda",
+      "provenanceManifestHash": "38877128f210d233f1bc75c2d95814f5a11c407c42babb21530f5827ac0bbdc1",
+      "qaEvidenceHash": "9ef49c8928a6c415b0c04f5174d82ebe065a66b1d184a2ed8b282386f6d98275",
       "repairAttempts": 0,
       "subgates": [
         {
@@ -198,6 +198,11 @@
         {
           "category": "content",
           "gateId": "content.contradictions",
+          "status": "PASS"
+        },
+        {
+          "category": "content",
+          "gateId": "content.narration_density",
           "status": "PASS"
         },
         {

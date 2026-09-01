@@ -186,8 +186,59 @@
       "objectiveIds": [
         "obj.karatsuba.derive"
       ],
+      "onScreenText": [
+        "x = aB + b",
+        "y = cB + d",
+        "4 products: ac · ad · bc · bd",
+        "Can ad + bc come from one product?"
+      ],
       "title": "Can four products become three?",
       "type": "title",
+      "visualBeat": {
+        "attentionCue": "merge-cross-links",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "presenter-stage"
+        ],
+        "compositionFamily": "presenter",
+        "continuityKey": "karatsuba.product-thread",
+        "focalAnchor": "four-to-three-network",
+        "informationUnits": [
+          {
+            "id": "split-x",
+            "role": "formula",
+            "text": "x = aB + b"
+          },
+          {
+            "id": "split-y",
+            "role": "formula",
+            "text": "y = cB + d"
+          },
+          {
+            "id": "four-products",
+            "role": "comparison",
+            "text": "4 products: ac · ad · bc · bd"
+          },
+          {
+            "id": "missing-cross",
+            "role": "question",
+            "text": "Can ad + bc come from one product?"
+          }
+        ],
+        "motionIntent": [
+          "reveal-primary",
+          "trace-relationship",
+          "question-hold"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "establish",
+        "textRoles": {
+          "eyebrow": "THE QUESTION",
+          "focus": "4 products → 3",
+          "title": "Can four products become three?"
+        },
+        "visualMetaphor": "four multiplication links converge into three durable branches"
+      },
       "visualIntent": "A presenter guides attention toward two split integer blocks. Four multiplication links appear, then the two cross links merge into one emphasized question mark while three durable product links remain."
     },
     {
@@ -199,8 +250,63 @@
       "objectiveIds": [
         "obj.karatsuba.derive"
       ],
+      "onScreenText": [
+        "x = aB + b",
+        "y = cB + d",
+        "1234 = 12·100 + 34",
+        "5678 = 56·100 + 78",
+        "B = 100",
+        "exact rewriting"
+      ],
       "title": "Name the place-value split",
       "type": "definition",
+      "visualBeat": {
+        "attentionCue": "align-symbolic-and-concrete-splits",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "equation-stage"
+        ],
+        "compositionFamily": "diagram",
+        "continuityKey": "karatsuba.product-thread",
+        "focalAnchor": "base-b-split-axis",
+        "informationUnits": [
+          {
+            "id": "symbolic-split",
+            "role": "ordered-sequence",
+            "values": [
+              "x = aB + b",
+              "y = cB + d"
+            ]
+          },
+          {
+            "id": "concrete-split",
+            "role": "comparison",
+            "values": [
+              "1234 = 12|34",
+              "5678 = 56|78"
+            ]
+          },
+          {
+            "id": "base-rule",
+            "role": "principle",
+            "text": "B = 100 · exact rewriting"
+          }
+        ],
+        "motionIntent": [
+          "reveal-primary",
+          "trace-relationship",
+          "match-transition"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "define",
+        "textRoles": {
+          "eyebrow": "PLACE VALUE",
+          "focus": "B = 100",
+          "label": "Separate high | low",
+          "principle": "exact rewriting"
+        },
+        "visualMetaphor": "two aligned base-B rulers separate high and low blocks without changing value"
+      },
       "visualIntent": "A place-value diagram aligns x=aB+b and y=cB+d above two base-B block rulers. High and low blocks share a measurement axis, and the concrete 12|34 and 56|78 splits appear beneath the symbolic form."
     },
     {
@@ -212,8 +318,63 @@
       "objectiveIds": [
         "obj.karatsuba.derive"
       ],
+      "onScreenText": [
+        "(aB+b)(cB+d)",
+        "acB² + adB + bcB + bd",
+        "acB² + (ad+bc)B + bd",
+        "high",
+        "middle",
+        "low",
+        "4 block products"
+      ],
       "title": "See where four products arise",
       "type": "formula",
+      "visualBeat": {
+        "attentionCue": "bracket-middle-coefficient",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "equation-stage"
+        ],
+        "compositionFamily": "object_stage",
+        "continuityKey": "karatsuba.product-thread",
+        "focalAnchor": "middle-coefficient",
+        "informationUnits": [
+          {
+            "id": "factored-product",
+            "role": "formula",
+            "text": "(aB+b)(cB+d)"
+          },
+          {
+            "id": "four-term-expansion",
+            "role": "formula",
+            "text": "acB² + adB + bcB + bd"
+          },
+          {
+            "id": "grouped-expansion",
+            "role": "formula",
+            "text": "acB² + (ad+bc)B + bd"
+          },
+          {
+            "id": "four-product-cost",
+            "role": "principle",
+            "text": "ac · ad · bc · bd = 4 block products"
+          }
+        ],
+        "motionIntent": [
+          "reveal-primary",
+          "transform-object",
+          "emphasize-result"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "transform",
+        "textRoles": {
+          "eyebrow": "EXPAND",
+          "focus": "ad + bc",
+          "formula": "xy = acB² + (ad+bc)B + bd",
+          "principle": "four products"
+        },
+        "visualMetaphor": "four product tiles regroup into high, middle, and low place-value columns"
+      },
       "visualIntent": "A measured equation row expands into four color-independent product tiles, then regroups into high, middle, and low place-value columns. Brackets and labels stay aligned with the coefficients they explain."
     },
     {
@@ -227,9 +388,70 @@
       "objectiveIds": [
         "obj.karatsuba.derive"
       ],
+      "onScreenText": [
+        "p = (a+b)(c+d)",
+        "p = ac + ad + bc + bd",
+        "z2 = ac",
+        "z0 = bd",
+        "z1 = p − z2 − z0",
+        "z1 = ad + bc",
+        "xy = z2B² + z1B + z0"
+      ],
       "sourceLocator": "src.karatsuba.note#Direct expansion",
       "title": "Recover the middle with one product",
       "type": "formula",
+      "visualBeat": {
+        "attentionCue": "connect-subtractions-to-outer-terms",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "equation-stage",
+          "source-marker"
+        ],
+        "compositionFamily": "worked_example",
+        "continuityKey": "karatsuba.product-thread",
+        "focalAnchor": "cross-term-cancellation",
+        "informationUnits": [
+          {
+            "id": "sum-product",
+            "role": "formula",
+            "text": "p = (a+b)(c+d)"
+          },
+          {
+            "id": "sum-expanded",
+            "role": "formula",
+            "text": "p = ac + ad + bc + bd"
+          },
+          {
+            "id": "subtract-outers",
+            "role": "formula",
+            "text": "z1 = p − z2 − z0"
+          },
+          {
+            "id": "cross-result",
+            "role": "result",
+            "text": "z1 = ad + bc"
+          },
+          {
+            "id": "reconstruction",
+            "role": "principle",
+            "text": "xy = z2B² + z1B + z0"
+          }
+        ],
+        "motionIntent": [
+          "trace-relationship",
+          "transform-object",
+          "emphasize-result"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "prove",
+        "textRoles": {
+          "eyebrow": "THREE-PRODUCT IDENTITY",
+          "formula": "z1 = p − z2 − z0",
+          "proof": "subtract ac and bd",
+          "result": "ad + bc"
+        },
+        "visualMetaphor": "matching outer terms cancel while the middle coefficient remains on one equation rail"
+      },
       "visualIntent": "Semantic equation segments transform through p=(a+b)(c+d), its four-term expansion, subtraction of z2 and z0, and the final identity. Each subtraction connects visibly to the matching outer term."
     },
     {
@@ -243,9 +465,58 @@
       "objectiveIds": [
         "obj.karatsuba.derive"
       ],
+      "onScreenText": [
+        "Which expression isolates ad + bc?",
+        "p",
+        "p − z2",
+        "p − z0",
+        "p − z2 − z0",
+        "ac and bd cancel"
+      ],
       "sourceLocator": "src.karatsuba.note#Direct expansion",
       "title": "Retrieve the missing step",
       "type": "quiz",
+      "visualBeat": {
+        "attentionCue": "hold-before-revealing-cancellation",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "answer-proof"
+        ],
+        "compositionFamily": "editorial_type",
+        "continuityKey": "karatsuba.product-thread",
+        "focalAnchor": "middle-term-choice",
+        "informationUnits": [
+          {
+            "id": "retrieval-question",
+            "role": "question",
+            "text": "Which expression isolates ad + bc?"
+          },
+          {
+            "id": "retrieval-answer",
+            "role": "answer",
+            "text": "p − z2 − z0"
+          },
+          {
+            "id": "cancellation-rule",
+            "role": "principle",
+            "text": "subtract ac and bd from p"
+          }
+        ],
+        "motionIntent": [
+          "question-hold",
+          "resolve-answer",
+          "evidence-focus"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "question",
+        "textRoles": {
+          "answer": "p − z2 − z0",
+          "eyebrow": "RETRIEVAL",
+          "focus": "ad + bc",
+          "proof": "ac and bd cancel"
+        },
+        "visualMetaphor": "two known outer products cancel from the sum product after a deliberate question hold"
+      },
       "visualIntent": "A four-option retrieval card delays the correctness state. After the pause, p−z2−z0 receives a check and its cancellation proof appears directly beside it without covering the options."
     },
     {
@@ -259,9 +530,73 @@
       "objectiveIds": [
         "obj.karatsuba.apply"
       ],
+      "onScreenText": [
+        "B = 100",
+        "1234 = 12·100 + 34",
+        "5678 = 56·100 + 78",
+        "a=12 · b=34",
+        "c=56 · d=78",
+        "z2=a·c",
+        "z0=b·d",
+        "p=(a+b)(c+d)"
+      ],
       "sourceLocator": "src.karatsuba.note#Worked example",
       "title": "Split 1234 × 5678",
       "type": "worked-example",
+      "visualBeat": {
+        "attentionCue": "carry-split-values-into-work-queue",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "numeric-ledger"
+        ],
+        "compositionFamily": "worked_example",
+        "continuityKey": "karatsuba.numeric-thread",
+        "focalAnchor": "base-100-split",
+        "informationUnits": [
+          {
+            "id": "split-values",
+            "role": "ordered-sequence",
+            "values": [
+              "1234 = 12·100 + 34",
+              "5678 = 56·100 + 78"
+            ]
+          },
+          {
+            "id": "queue-z2",
+            "role": "state",
+            "text": "z2 = 12 × 56"
+          },
+          {
+            "id": "queue-z0",
+            "role": "state",
+            "text": "z0 = 34 × 78"
+          },
+          {
+            "id": "queue-p",
+            "role": "state",
+            "text": "p = (12+34)(56+78)"
+          },
+          {
+            "id": "split-answer",
+            "role": "answer",
+            "text": "a=12 · b=34 · c=56 · d=78"
+          }
+        ],
+        "motionIntent": [
+          "match-transition",
+          "reveal-primary",
+          "trace-relationship"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "demonstrate",
+        "textRoles": {
+          "eyebrow": "WORKED EXAMPLE",
+          "focus": "B = 100",
+          "markers": "a · b · c · d",
+          "principle": "split exactly"
+        },
+        "visualMetaphor": "a base-100 ledger keeps each high and low block aligned with its future product"
+      },
       "visualIntent": "A base-100 place-value table aligns a=12, b=34, c=56, d=78. A three-row work queue names z2, z0, and p without calculating them yet."
     },
     {
@@ -275,9 +610,72 @@
       "objectiveIds": [
         "obj.karatsuba.apply"
       ],
+      "onScreenText": [
+        "z2 = a·c",
+        "12 × 56 = 672",
+        "shift by B²",
+        "z0 = b·d",
+        "34 × 78 = 2652",
+        "shift by B⁰",
+        "z0 may exceed B"
+      ],
       "sourceLocator": "src.karatsuba.note#Worked example",
       "title": "Compute the two outer products",
       "type": "worked-example",
+      "visualBeat": {
+        "attentionCue": "align-products-with-place-value-badges",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "arithmetic-rails"
+        ],
+        "compositionFamily": "split_evidence",
+        "continuityKey": "karatsuba.numeric-thread",
+        "focalAnchor": "outer-product-pair",
+        "informationUnits": [
+          {
+            "id": "outer-roles",
+            "role": "ordered-sequence",
+            "values": [
+              "z2 = a·c · shift B²",
+              "z0 = b·d · shift B⁰"
+            ]
+          },
+          {
+            "id": "high-product",
+            "role": "state",
+            "text": "12 × 56 = 672"
+          },
+          {
+            "id": "low-product",
+            "role": "state",
+            "text": "34 × 78 = 2652"
+          },
+          {
+            "id": "coefficient-rule",
+            "role": "principle",
+            "text": "z0 may exceed B"
+          },
+          {
+            "id": "outer-answer",
+            "role": "answer",
+            "text": "z2 = 672 · z0 = 2652"
+          }
+        ],
+        "motionIntent": [
+          "match-transition",
+          "compare-shift",
+          "emphasize-result"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "demonstrate",
+        "textRoles": {
+          "counterpoint": "z0 may exceed B",
+          "eyebrow": "PRODUCTS 1 + 2",
+          "focus": "672 · 2652",
+          "result": "two outers known"
+        },
+        "visualMetaphor": "two equal-weight arithmetic rails retain their distinct B² and B⁰ destinations"
+      },
       "visualIntent": "Two aligned arithmetic cards calculate 12×56=672 and 34×78=2652. Place-value badges mark B² and B⁰, while an explicit note explains that z0 may exceed B."
     },
     {
@@ -292,9 +690,74 @@
       "objectiveIds": [
         "obj.karatsuba.apply"
       ],
+      "onScreenText": [
+        "a+b = 12+34 = 46",
+        "c+d = 56+78 = 134",
+        "p = 46×134 = 6164",
+        "z1 = 6164−672−2652",
+        "z1 = 2840",
+        "check: 936+1904=2840"
+      ],
       "sourceLocator": "src.karatsuba.note#Worked example",
       "title": "Calculate p, then isolate z1",
       "type": "formula",
+      "visualBeat": {
+        "attentionCue": "keep-algorithm-path-primary",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "equation-stage",
+          "verification-branch"
+        ],
+        "compositionFamily": "worked_example",
+        "continuityKey": "karatsuba.numeric-thread",
+        "focalAnchor": "middle-product-equation",
+        "informationUnits": [
+          {
+            "id": "sum-a-b",
+            "role": "formula",
+            "text": "a+b = 12+34 = 46"
+          },
+          {
+            "id": "sum-c-d",
+            "role": "formula",
+            "text": "c+d = 56+78 = 134"
+          },
+          {
+            "id": "sum-product-value",
+            "role": "formula",
+            "text": "p = 46×134 = 6164"
+          },
+          {
+            "id": "middle-subtraction",
+            "role": "formula",
+            "text": "z1 = 6164−672−2652"
+          },
+          {
+            "id": "middle-result",
+            "role": "result",
+            "text": "z1 = 2840"
+          },
+          {
+            "id": "middle-check",
+            "role": "principle",
+            "text": "check only: 936+1904 = 2840"
+          }
+        ],
+        "motionIntent": [
+          "trace-relationship",
+          "transform-object",
+          "emphasize-result"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "transform",
+        "textRoles": {
+          "eyebrow": "PRODUCT 3",
+          "focus": "subtract z2 and z0",
+          "formula": "p = 46×134",
+          "result": "z1 = 2840"
+        },
+        "visualMetaphor": "one continuous equation rail branches only for a subordinate verification check"
+      },
       "visualIntent": "A continuous equation path computes 46, 134, p=6164, and z1=2840. A smaller verification branch shows 936+1904=2840 but is visually labeled as a check, not an algorithm step."
     },
     {
@@ -308,9 +771,72 @@
       "objectiveIds": [
         "obj.karatsuba.apply"
       ],
+      "onScreenText": [
+        "z2B² + z1B + z0",
+        "672 × 10,000 = 6,720,000",
+        "2840 × 100 = 284,000",
+        "2652 × 1 = 2,652",
+        "6,720,000 + 284,000 + 2,652",
+        "7,006,652"
+      ],
       "sourceLocator": "src.karatsuba.note#Worked example",
       "title": "Recombine by place value",
       "type": "worked-example",
+      "visualBeat": {
+        "attentionCue": "trace-each-coefficient-to-shifted-row",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "place-value-grid"
+        ],
+        "compositionFamily": "worked_example",
+        "continuityKey": "karatsuba.numeric-thread",
+        "focalAnchor": "place-value-sum",
+        "informationUnits": [
+          {
+            "id": "recombine-formula",
+            "role": "ordered-sequence",
+            "values": [
+              "z2B²",
+              "z1B",
+              "z0"
+            ]
+          },
+          {
+            "id": "shift-high",
+            "role": "state",
+            "text": "672 × 10,000 = 6,720,000"
+          },
+          {
+            "id": "shift-middle",
+            "role": "state",
+            "text": "2840 × 100 = 284,000"
+          },
+          {
+            "id": "shift-low",
+            "role": "state",
+            "text": "2652 × 1 = 2,652"
+          },
+          {
+            "id": "final-product",
+            "role": "answer",
+            "text": "1234 × 5678 = 7,006,652"
+          }
+        ],
+        "motionIntent": [
+          "match-transition",
+          "trace-relationship",
+          "resolve-hold"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "resolve",
+        "textRoles": {
+          "eyebrow": "RECOMBINE",
+          "focus": "align by place value",
+          "formula": "z2B² + z1B + z0",
+          "result": "7,006,652"
+        },
+        "visualMetaphor": "three coefficient rails shift into one aligned decimal grid before addition"
+      },
       "visualIntent": "A place-value addition aligns 6,720,000, 284,000, and 2,652 on one digit grid. Connector lines originate from z2, z1, and z0 and terminate at the exact shifted rows."
     },
     {
@@ -325,8 +851,74 @@
         "obj.karatsuba.derive",
         "obj.karatsuba.apply"
       ],
+      "onScreenText": [
+        "split at B",
+        "recurse z2 = ac",
+        "recurse z0 = bd",
+        "recurse p = (a+b)(c+d)",
+        "z1 = p−z2−z0",
+        "return z2B²+z1B+z0",
+        "base case: multiply directly"
+      ],
       "title": "Turn the identity into recursion",
-      "type": "execution-trace",
+      "type": "diagram",
+      "visualBeat": {
+        "attentionCue": "trace-three-children-before-return",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "call-tree",
+          "variable-ledger"
+        ],
+        "compositionFamily": "diagram",
+        "continuityKey": "karatsuba.recursion-thread",
+        "focalAnchor": "three-child-call-frame",
+        "informationUnits": [
+          {
+            "id": "frame-split",
+            "role": "state",
+            "text": "split x and y at B"
+          },
+          {
+            "id": "frame-z2",
+            "role": "state",
+            "text": "recurse z2 = ac"
+          },
+          {
+            "id": "frame-z0",
+            "role": "state",
+            "text": "recurse z0 = bd"
+          },
+          {
+            "id": "frame-p",
+            "role": "state",
+            "text": "recurse p = (a+b)(c+d)"
+          },
+          {
+            "id": "frame-return",
+            "role": "state",
+            "text": "return z2B² + (p−z2−z0)B + z0"
+          },
+          {
+            "id": "base-case-rule",
+            "role": "principle",
+            "text": "base case: multiply directly"
+          }
+        ],
+        "motionIntent": [
+          "reveal-primary",
+          "trace-relationship",
+          "match-transition"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "demonstrate",
+        "textRoles": {
+          "eyebrow": "RECURSION",
+          "focus": "3 child products",
+          "principle": "returned value equals input product",
+          "result": "recombine exactly"
+        },
+        "visualMetaphor": "one call frame branches to exactly three children and rejoins on a shared variable ledger"
+      },
       "visualIntent": "An execution trace shows one frame splitting into exactly three labeled child frames, then returning z2, z0, and z1 into the recombination formula. The active frame and variable table share aligned row keys."
     },
     {
@@ -340,9 +932,66 @@
       "objectiveIds": [
         "obj.karatsuba.compare"
       ],
+      "onScreenText": [
+        "Grade school: 4 half-size products",
+        "Karatsuba: 3 half-size products",
+        "O(n²)",
+        "O(n^log₂3)",
+        "≈ O(n^1.585)",
+        "practical crossover depends on implementation"
+      ],
       "sourceLocator": "src.karatsuba.note#Final complexity paragraph",
       "title": "Why three matters asymptotically",
       "type": "comparison",
+      "visualBeat": {
+        "attentionCue": "compare-branch-counts-on-common-baseline",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "comparison-axis",
+          "crossover-note"
+        ],
+        "compositionFamily": "data_canvas",
+        "continuityKey": "karatsuba.complexity-thread",
+        "focalAnchor": "four-versus-three-branches",
+        "informationUnits": [
+          {
+            "id": "grade-school-branches",
+            "role": "comparison",
+            "text": "Grade school · 4 branches",
+            "value": 4
+          },
+          {
+            "id": "karatsuba-branches",
+            "role": "comparison",
+            "text": "Karatsuba · 3 branches",
+            "value": 3
+          },
+          {
+            "id": "complexity-formula",
+            "role": "formula",
+            "text": "T(n)=3T(n/2)+O(n) = O(n^log₂3) ≈ O(n^1.585)"
+          },
+          {
+            "id": "crossover-rule",
+            "role": "constraint",
+            "text": "small-input crossover is implementation-dependent"
+          }
+        ],
+        "motionIntent": [
+          "compare-shift",
+          "trace-relationship",
+          "emphasize-result"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "compare",
+        "textRoles": {
+          "counterpoint": "4 branches vs 3",
+          "eyebrow": "ASYMPTOTIC COST",
+          "formula": "n² vs n^1.585",
+          "principle": "crossover varies"
+        },
+        "visualMetaphor": "same-depth recurrence trees expose the compounding cost of one extra branch"
+      },
       "visualIntent": "Comparable recurrence trees share the same depth and scale: four-way grade school versus three-way Karatsuba. A labeled exponent comparison and crossover caveat sit on a common axis using line patterns as well as color."
     },
     {
@@ -360,8 +1009,60 @@
         "obj.karatsuba.apply",
         "obj.karatsuba.compare"
       ],
+      "onScreenText": [
+        "Can you reconstruct the method?",
+        "split",
+        "3 products",
+        "subtract outers",
+        "shift",
+        "add",
+        "672 · 2652 · 6164 · 2840",
+        "7,006,652"
+      ],
       "title": "Check the whole method",
       "type": "quiz",
+      "visualBeat": {
+        "attentionCue": "hold-before-lighting-concept-thread",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "concept-thread",
+          "numeric-ledger"
+        ],
+        "compositionFamily": "editorial_type",
+        "continuityKey": "karatsuba.retrieval-thread",
+        "focalAnchor": "five-step-retrieval-thread",
+        "informationUnits": [
+          {
+            "id": "method-question",
+            "role": "question",
+            "text": "Can you reconstruct the five-step method?"
+          },
+          {
+            "id": "method-answer",
+            "role": "answer",
+            "text": "split → 3 products → subtract outers → shift → add"
+          },
+          {
+            "id": "numeric-ledger",
+            "role": "principle",
+            "text": "672 · 2652 · 6164 · 2840 · 7,006,652"
+          }
+        ],
+        "motionIntent": [
+          "question-hold",
+          "resolve-answer",
+          "emphasize-result"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "question",
+        "textRoles": {
+          "answer": "split → 3 products → subtract → shift → add",
+          "eyebrow": "FINAL RETRIEVAL",
+          "focus": "five causal steps",
+          "result": "7,006,652"
+        },
+        "visualMetaphor": "a persistent five-node thread lights in order before the numeric ledger resolves"
+      },
       "visualIntent": "Four retrieval prompts reveal one at a time. Correctness states point back to a persistent five-step concept thread, and the numeric answer set remains aligned in a compact ledger."
     },
     {
@@ -379,9 +1080,86 @@
         "obj.karatsuba.apply",
         "obj.karatsuba.compare"
       ],
+      "onScreenText": [
+        "x=aB+b · y=cB+d",
+        "z2=ac · z0=bd",
+        "p=(a+b)(c+d)",
+        "z1=p−z2−z0",
+        "z2B²+z1B+z0",
+        "7,006,652",
+        "O(n^1.585)",
+        "hash-verified teaching note"
+      ],
       "sourceLocator": "src.karatsuba.note",
       "title": "One identity, one durable thread",
       "type": "sources",
+      "visualBeat": {
+        "attentionCue": "trace-thread-then-focus-sources",
+        "avoidRegions": [
+          "caption-safe-lower-third",
+          "concept-thread",
+          "source-panel"
+        ],
+        "compositionFamily": "document_focus",
+        "continuityKey": "karatsuba.recap-thread",
+        "focalAnchor": "durable-five-step-thread",
+        "informationUnits": [
+          {
+            "id": "recap-split",
+            "role": "principle",
+            "text": "1 · split: x=aB+b · y=cB+d"
+          },
+          {
+            "id": "recap-products",
+            "role": "principle",
+            "text": "2 · compute z2=ac · z0=bd · p=(a+b)(c+d)"
+          },
+          {
+            "id": "recap-middle",
+            "role": "formula",
+            "text": "3 · z1=p−z2−z0"
+          },
+          {
+            "id": "recap-recombine",
+            "role": "formula",
+            "text": "4 · z2B²+z1B+z0"
+          },
+          {
+            "id": "recap-result",
+            "role": "result",
+            "text": "5 · 1234×5678 = 7,006,652"
+          },
+          {
+            "id": "recap-complexity",
+            "role": "result",
+            "text": "T(n)=3T(n/2)+O(n) = O(n^1.585)"
+          },
+          {
+            "id": "local-source",
+            "role": "source",
+            "text": "Hash-verified Karatsuba teaching note · CC0-1.0"
+          },
+          {
+            "id": "historical-source",
+            "role": "source",
+            "text": "Karatsuba and Ofman · 1962 historical publication"
+          }
+        ],
+        "motionIntent": [
+          "match-transition",
+          "trace-relationship",
+          "evidence-focus"
+        ],
+        "schemaVersion": 1,
+        "semanticIntent": "recap",
+        "textRoles": {
+          "eyebrow": "DURABLE THREAD",
+          "focus": "five-step reconstruction",
+          "principle": "claims stay evidence-bound",
+          "result": "7,006,652 · O(n^1.585)"
+        },
+        "visualMetaphor": "one numbered concept thread terminates in a compact evidence-bound source rail"
+      },
       "visualIntent": "A five-step recap thread occupies the main canvas while a compact sources panel binds the identity, worked example, and recurrence claims to the local teaching note and historical publication."
     }
   ],

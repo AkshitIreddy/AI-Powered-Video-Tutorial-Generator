@@ -92,7 +92,7 @@ from .models import (
     SourceSpec,
 )
 
-IMPLEMENTATION_VERSION = "generation-v4-media-integrity-canonical"
+IMPLEMENTATION_VERSION = "generation-v5-authored-fixture-visuals"
 PROMPT_VERSION = "offline-education-v1"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
@@ -682,6 +682,16 @@ class GenerationWorkflow:
                 if not scene_id or not narration:
                     raise ValueError("Canonical fixture scenes require id and narration")
                 caption_text = str(authored.get("captionText", ""))
+                fixture_on_screen_text = authored.get("onScreenText")
+                if fixture_on_screen_text is not None and not isinstance(
+                    fixture_on_screen_text, list
+                ):
+                    raise ValueError("Canonical fixture onScreenText must be a list")
+                fixture_visual_beat = authored.get("visualBeat")
+                if fixture_visual_beat is not None and not isinstance(
+                    fixture_visual_beat, dict
+                ):
+                    raise ValueError("Canonical fixture visualBeat must be an object")
                 scene = {
                     "id": scene_id,
                     "sectionId": f"fixture:{scene_id}",
@@ -697,13 +707,17 @@ class GenerationWorkflow:
                     "accessibilityDescription": str(
                         authored.get("accessibilityDescription", "")
                     ),
-                    "onScreenText": [
+                    "onScreenText": copy.deepcopy(fixture_on_screen_text)
+                    if fixture_on_screen_text is not None
+                    else [
                         line.strip()
                         for line in caption_text.splitlines()
                         if line.strip()
                     ],
                     "locks": [],
                 }
+                if fixture_visual_beat is not None:
+                    scene["visualBeat"] = copy.deepcopy(fixture_visual_beat)
                 if index == 0 and request.presenter_mode != "off":
                     # The canonical fixture owns its authored sequence, while
                     # the selected user presenter still needs an explicit

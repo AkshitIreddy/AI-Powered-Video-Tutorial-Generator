@@ -3,16 +3,16 @@
   "fixtureId": "fixture.karatsuba.undergraduate.en",
   "generationId": "19620000-0000-4000-8000-000000000002",
   "summaryFiles": {
-    "evidence.json": "876d299b28ea4a5e3dc99aed5aebde14b8a3294adb9c53ae4d3460b0320977d7",
-    "export-manifest.json": "4c0994669bd8c45bd9ae04b5db4de1e0fc377a8b2a0509076516db5367b941d0",
-    "input.json": "30a4345f9ea9deb6a0c571038e0099b8a104c0d6b0f9aa534c801b14ac677540",
+    "evidence.json": "94afb2ea227abce8fc5f861dae8eccb7d0be1a83f11b4effd71eec1bae3f5738",
+    "export-manifest.json": "22e2e34bfbedfd85a6c45f90eeca48875d9168c2ef5fac5eb2e79d4fcc7168cd",
+    "input.json": "ee3e8a150dc03c03087e3c8ec21fcca140919b9a1408a4ecbe6795b6bfd6c46d",
     "learning-plan.json": "9707f92bca41746fc2dcb261ebc57440e4f7d12229d1419fbddfdadd71e06cd1",
-    "provenance.json": "399483fe067d6a011afb35aa8682c0fb10357f69cc7097a552cb193a5073a5c2",
+    "provenance.json": "29b88f9a70f459f16f2076222ad9824df2643af270a11764203046e6711606b7",
     "script.json": "8203cd2b8c76a78219474783684cf1a24ac621dd2cb2ac08b0d75c09eef97bd3",
-    "storyboard.json": "656491ae6e923c732523b7c286fcafa53d8cfdb91083239200ccbadf93eeb8ec"
+    "storyboard.json": "5b647601d2f8fbdd682cb84d82bdea712f8a9967f173e62c31782d0728c27754"
   },
   "sourceFiles": {
-    "fixtures/canonical/karatsuba/fixture.json": "e443d116038ef739f165006129ea79e500e9bc89574077a9589214fd8e7fa3ec",
+    "fixtures/canonical/karatsuba/fixture.json": "e9f5ead8bd4bdacb3e469400471b98b4e09bf71925bcfcda6e2da405ccdccaa1",
     "fixtures/canonical/karatsuba/sources/karatsuba-derivation.md": "f41b99dc57296129f0d5466585de0542146c52bf7af3e12f2c297eef764d62d1"
   },
   "representativeDevelopmentRender": {

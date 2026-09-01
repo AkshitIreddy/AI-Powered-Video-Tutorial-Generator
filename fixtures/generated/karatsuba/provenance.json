@@ -25,6 +25,12 @@
       "sha256": "0b059ae41482ac2ebea38fdab1025a7b066664f0b9bf9f6b7e8d7fe5e90b980f"
     },
     {
+      "bytes": 363,
+      "mediaType": "application/vnd.alystria.render+json",
+      "originalName": "tutorial.render.json",
+      "sha256": "15596294f4e415a958a33f9202a6c7108f88fa43832880f2a10ca940cabff717"
+    },
+    {
       "bytes": 416,
       "mediaType": "image/svg+xml",
       "originalName": "scene.karatsuba.middle-product.svg",
@@ -59,6 +65,12 @@
       "mediaType": "image/svg+xml",
       "originalName": "scene.karatsuba.final-check.svg",
       "sha256": "339c05668b79cbf08c7891cc9a3c750d77fb4c51de7797b7e970eae8157ae49b"
+    },
+    {
+      "bytes": 12200,
+      "mediaType": "application/vnd.alystria.provenance+json",
+      "originalName": "provenance-manifest.json",
+      "sha256": "38877128f210d233f1bc75c2d95814f5a11c407c42babb21530f5827ac0bbdc1"
     },
     {
       "bytes": 415,
@@ -121,12 +133,6 @@
       "sha256": "89b301b4c6c9f7d2677c81399f927e7fb27c90c3702decd7d4481edc9f8f2634"
     },
     {
-      "bytes": 93576,
-      "mediaType": "application/vnd.alystria.qa-evidence+json",
-      "originalName": "qa-evidence.json",
-      "sha256": "947ac3a0eb2e44858551c6939d894b47c5759544506dde76be18fdb062ee0fda"
-    },
-    {
       "bytes": 384044,
       "mediaType": "audio/wav",
       "originalName": "scene.karatsuba.four-products.wav",
@@ -139,28 +145,22 @@
       "sha256": "9c4c0c5f88be68fe5996f19920d56950346b26363fb560b97e5b54f4483cb699"
     },
     {
+      "bytes": 107219,
+      "mediaType": "application/vnd.alystria.qa-evidence+json",
+      "originalName": "qa-evidence.json",
+      "sha256": "9ef49c8928a6c415b0c04f5174d82ebe065a66b1d184a2ed8b282386f6d98275"
+    },
+    {
       "bytes": 384044,
       "mediaType": "audio/wav",
       "originalName": "scene.karatsuba.recap.wav",
       "sha256": "9f37fd04d2cc22ca37436ba3772dd59561f9a55757617c776c3227b3b9579227"
     },
     {
-      "bytes": 363,
-      "mediaType": "application/vnd.alystria.render+json",
-      "originalName": "tutorial.render.json",
-      "sha256": "a8f542ffce67e8ef8f7ff6a94d4a03176542063ade1e71849f1f8ec51c317592"
-    },
-    {
       "bytes": 384044,
       "mediaType": "audio/wav",
       "originalName": "scene.karatsuba.middle-product.wav",
       "sha256": "b97df02d2b6a8f0030c4c9768dd011e37ae187014a1a223077643e91ef468d89"
-    },
-    {
-      "bytes": 12201,
-      "mediaType": "application/vnd.alystria.provenance+json",
-      "originalName": "provenance-manifest.json",
-      "sha256": "ba8f76a04dd4aceaac4bc159198f9ccc33c8e745890968345bf535c49aff2724"
     },
     {
       "bytes": 418,
@@ -195,7 +195,7 @@
   ],
   "fixture": {
     "id": "fixture.karatsuba.undergraduate.en",
-    "sha256": "e443d116038ef739f165006129ea79e500e9bc89574077a9589214fd8e7fa3ec",
+    "sha256": "e9f5ead8bd4bdacb3e469400471b98b4e09bf71925bcfcda6e2da405ccdccaa1",
     "sourceFiles": [
       {
         "id": "src.karatsuba.note",

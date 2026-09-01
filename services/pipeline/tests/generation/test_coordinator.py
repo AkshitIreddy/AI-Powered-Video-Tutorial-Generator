@@ -778,6 +778,12 @@ def test_desktop_flagship_identity_loads_the_bundled_karatsuba_contract(
         assert converted.topic == "Karatsuba Multiplication: Three Products Instead of Four"
         assert converted.duration_seconds == 720
         assert len(scenes) == 13
+        assert all(len(scene["onScreenText"]) >= 3 for scene in scenes)
+        assert all(scene["visualBeat"]["schemaVersion"] == 1 for scene in scenes)
+        assert scenes[1]["visualBeat"]["focalAnchor"] == "base-b-split-axis"
+        assert scenes[8]["visualBeat"]["informationUnits"][-1]["text"] == (
+            "1234 \N{MULTIPLICATION SIGN} 5678 = 7,006,652"
+        )
         assert sum(len(scene["narration"].split()) for scene in scenes) >= 1_600
         assert converted.output_targets == (
             {"name": "landscape", "width": 1920, "height": 1080, "fps": 30},
@@ -799,6 +805,10 @@ def test_desktop_flagship_identity_loads_the_bundled_karatsuba_contract(
         storyboard = storyboard_job.result["payload"]["storyboard"]
         assert storyboard["scenes"][0]["type"] == "presenter-slide"
         assert storyboard["scenes"][1]["type"] == "definition"
+        assert all("visualBeat" in scene for scene in storyboard["scenes"])
+        assert all("onScreenText" in scene for scene in storyboard["scenes"])
+        assert storyboard["scenes"][1]["onScreenText"] == scenes[1]["onScreenText"]
+        assert storyboard["scenes"][1]["visualBeat"] == scenes[1]["visualBeat"]
     finally:
         store.close()
 
