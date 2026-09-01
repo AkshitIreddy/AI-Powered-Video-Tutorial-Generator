@@ -7,9 +7,9 @@ import json
 import math
 import os
 import re
+import shutil
 import signal
 import subprocess
-import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -420,18 +420,20 @@ class SubprocessRendererClient:
         self._verify_runtime()
         staging_parent = _guarded_child(self.store.root, self.store.root / "staging" / "renderer")
         staging_parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="attempt-", dir=staging_parent) as temporary:
-            attempt_root = _guarded_child(staging_parent, Path(temporary))
+        generation_id = _required_string(request, "generationId")
+        attempt_root = _resumable_attempt_root(staging_parent, generation_id)
+        attempt_root.mkdir(parents=False, exist_ok=True)
+        try:
             audio_root = _guarded_child(attempt_root, attempt_root / "audio")
             visual_root = _guarded_child(attempt_root, attempt_root / "visuals")
             font_root = _guarded_child(attempt_root, attempt_root / "fonts")
             presenter_root = _guarded_child(attempt_root, attempt_root / "presenters")
             output_root = _guarded_child(attempt_root, attempt_root / "output")
-            audio_root.mkdir()
-            visual_root.mkdir()
-            font_root.mkdir()
-            presenter_root.mkdir()
-            output_root.mkdir()
+            audio_root.mkdir(exist_ok=True)
+            visual_root.mkdir(exist_ok=True)
+            font_root.mkdir(exist_ok=True)
+            presenter_root.mkdir(exist_ok=True)
+            output_root.mkdir(exist_ok=True)
             manifest = self._build_manifest(
                 request, audio_root, visual_root, font_root, presenter_root, output_root
             )
@@ -475,7 +477,7 @@ class SubprocessRendererClient:
             if len(content) != _required_int(delivery, "bytes", minimum=1):
                 raise RendererOutputError("Delivery size changed after renderer validation")
             safe_manifest = _portable_output_manifest(output)
-            return RenderedTutorial(
+            rendered = RenderedTutorial(
                 content=content,
                 media_type=(
                     "video/webm"
@@ -486,6 +488,19 @@ class SubprocessRendererClient:
                 manifest=safe_manifest,
                 metrics=_render_metrics(output),
             )
+        except (RendererRuntimeError, RendererTimeoutError, RendererCancelledError):
+            # Operational interruptions retain verified renderer checkpoints.
+            # The same durable generation can resume them after a worker or
+            # app restart instead of recapturing hours of deterministic PNGs.
+            raise
+        except Exception:
+            # Invalid requests and trust-boundary failures must not leave an
+            # attempt that a later valid request could accidentally adopt.
+            shutil.rmtree(attempt_root, ignore_errors=True)
+            raise
+        else:
+            shutil.rmtree(attempt_root, ignore_errors=True)
+            return rendered
 
     def _build_manifest(
         self,
@@ -1606,6 +1621,50 @@ def _guarded_child(root: Path, candidate: Path) -> Path:
     if candidate == root:
         raise RendererOutputError("Renderer path must be below its guarded root")
     return candidate
+
+
+def _resumable_attempt_root(staging_parent: Path, generation_id: str) -> Path:
+    """Return one stable, guarded renderer attempt for a durable generation.
+
+    Older builds used random temporary names. Adopt the strongest matching
+    interrupted attempt once so existing checkpoints remain useful after an
+    upgrade; new generations receive a deterministic opaque name.
+    """
+
+    candidates: list[tuple[int, int, Path]] = []
+    for candidate in staging_parent.glob("attempt-*"):
+        try:
+            if candidate.is_symlink() or not candidate.is_dir():
+                continue
+            guarded = _guarded_child(staging_parent, candidate.resolve(strict=True))
+            manifest_path = guarded / "render-manifest.json"
+            manifest_info = manifest_path.lstat()
+            if (
+                manifest_path.is_symlink()
+                or not manifest_path.is_file()
+                or not 0 < manifest_info.st_size <= MAX_OUTPUT_MANIFEST_BYTES
+            ):
+                continue
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if not isinstance(manifest, dict):
+                continue
+            metadata = manifest.get("metadata")
+            if not isinstance(metadata, dict) or metadata.get("generationId") != generation_id:
+                continue
+            progress_path = guarded / "output" / "render-progress.jsonl"
+            progress_bytes = 0
+            if progress_path.exists() and not progress_path.is_symlink():
+                progress_info = progress_path.lstat()
+                if progress_path.is_file():
+                    progress_bytes = progress_info.st_size
+            candidates.append((progress_bytes, manifest_info.st_mtime_ns, guarded))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, RendererOutputError):
+            continue
+    if candidates:
+        return max(candidates, key=lambda value: (value[0], value[1]))[2]
+
+    attempt_id = hashlib.sha256(generation_id.encode("utf-8")).hexdigest()[:16]
+    return _guarded_child(staging_parent, staging_parent / f"attempt-{attempt_id}")
 
 
 def _subprocess_command_path(path: Path) -> str:

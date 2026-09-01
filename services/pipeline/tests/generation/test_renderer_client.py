@@ -438,6 +438,65 @@ def test_subprocess_renderer_translates_materializes_invokes_and_cleans(tmp_path
         store.close()
 
 
+def test_subprocess_renderer_retry_reuses_interrupted_attempt_cache(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Resumable Tutorial", name="Resumable Tutorial")
+    pins = runtime_pins(tmp_path)
+
+    class InterruptedOnceRunner(FakeRendererRunner):
+        def __init__(self, runtime: RendererRuntimePins) -> None:
+            super().__init__(runtime)
+            self.render_attempts: list[Path] = []
+
+        def run(
+            self,
+            argv: Sequence[str],
+            *,
+            cwd: Path,
+            timeout_seconds: float,
+            cancelled: Callable[[], bool],
+        ) -> CommandResult:
+            if len(argv) > 2 and argv[2] == "render":
+                self.render_attempts.append(cwd)
+                marker = cwd / "output" / ".render-cache" / "fixture" / "captured-frame.png"
+                if len(self.render_attempts) == 1:
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    marker.write_bytes(ONE_PIXEL_PNG)
+                    self.attempt_root = cwd
+                    return CommandResult(
+                        1,
+                        "",
+                        "page.evaluate: Target page, context or browser has been closed",
+                    )
+                assert cwd == self.render_attempts[0], "retry abandoned the resumable attempt"
+                assert marker.read_bytes() == ONE_PIXEL_PNG, "retry discarded captured frames"
+            return super().run(
+                argv,
+                cwd=cwd,
+                timeout_seconds=timeout_seconds,
+                cancelled=cancelled,
+            )
+
+    runner = InterruptedOnceRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        request = render_request(first.hash, second.hash)
+        client = SubprocessRendererClient(store, pins, runner=runner)
+
+        with pytest.raises(RendererRuntimeError, match="Target page"):
+            client.render(request)
+
+        assert runner.attempt_root is not None and runner.attempt_root.exists()
+        rendered = client.render(request)
+
+        assert rendered.content == b"deterministic-delivery"
+        assert len(runner.render_attempts) == 2
+        assert runner.render_attempts[0] == runner.render_attempts[1]
+        assert not runner.render_attempts[1].exists(), "successful retry must clean staging"
+    finally:
+        store.close()
+
+
 def test_renderer_preserves_bounded_authored_visual_beat_and_prefers_on_screen_text(
     tmp_path: Path,
 ) -> None:
@@ -1024,9 +1083,11 @@ def test_renderer_cancellation_scope_includes_owning_job_flag(tmp_path: Path) ->
         second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
         client = SubprocessRendererClient(store, pins, runner=runner)
 
-        with client.cancellation_scope(lambda: True):
-            with pytest.raises(RendererCancelledError, match="cancelled"):
-                client.render(render_request(first.hash, second.hash))
+        with (
+            client.cancellation_scope(lambda: True),
+            pytest.raises(RendererCancelledError, match="cancelled"),
+        ):
+            client.render(render_request(first.hash, second.hash))
 
         assert client.cancel_check is None
     finally:
