@@ -102,6 +102,29 @@ class ProvenanceTests(unittest.TestCase):
 
 
 class LicensingTests(unittest.TestCase):
+    def test_apache_two_generated_asset_allows_transformed_commercial_export(self) -> None:
+        generated = AssetProvenance(
+            asset_id="scene-visual:nvidia-flux",
+            sha256=HASH,
+            origin=OriginKind.GENERATED,
+            rights_status=RightsStatus.VERIFIED,
+            license_id="Apache-2.0",
+            creator="nvidia-nim",
+            attribution=None,
+            provider_id="nvidia-nim",
+            model_id="black-forest-labs/flux.2-klein-4b",
+            model_revision="black-forest-labs/flux.2-klein-4b",
+        )
+        use = AssetUse(
+            DistributionPurpose.PUBLIC_COMMERCIAL,
+            transformed=True,
+            attribution_included=True,
+        )
+
+        decision = evaluate_license(generated, use, now=NOW)
+
+        self.assertTrue(decision.allowed, decision.reasons)
+
     def test_mit_starter_audio_allows_transformed_commercial_export(self) -> None:
         def starter_audio(role: str) -> AssetProvenance:
             return AssetProvenance(

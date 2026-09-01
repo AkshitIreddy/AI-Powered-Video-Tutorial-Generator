@@ -27,6 +27,7 @@ class LicenseRule:
 
 LICENSE_RULES: dict[str, LicenseRule] = {
     "MIT": LicenseRule("MIT", True, True, True, False),
+    "Apache-2.0": LicenseRule("Apache-2.0", True, True, True, False),
     "CC0-1.0": LicenseRule("CC0-1.0", True, True, True, False),
     "CC-BY-4.0": LicenseRule("CC-BY-4.0", True, True, True, True),
     "CC-BY-SA-4.0": LicenseRule("CC-BY-SA-4.0", True, True, True, True, True),
