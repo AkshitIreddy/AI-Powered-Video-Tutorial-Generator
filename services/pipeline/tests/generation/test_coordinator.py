@@ -13,6 +13,7 @@ from alystria.generation import (
     ALL_STAGES,
     ApprovalNotReadyError,
     ClaimSpec,
+    DeterministicMediaClient,
     DeterministicRendererClient,
     GenerationCoordinator,
     GenerationRequest,
@@ -28,6 +29,7 @@ from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
 from alystria.qa import Finding, QualityGate, Severity
 from alystria.research import GroundingMode
+from alystria.service import _configured_local_presenter
 
 
 def request(*, faults: int = 0) -> GenerationRequest:
@@ -56,6 +58,21 @@ def request(*, faults: int = 0) -> GenerationRequest:
 def open_coordinator(tmp_path: Path) -> tuple[ProjectStore, GenerationCoordinator]:
     store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
     return store, GenerationCoordinator(store)
+
+
+def test_missing_optional_presenter_config_preserves_media_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, _ = open_coordinator(tmp_path)
+    media_client = DeterministicMediaClient()
+    try:
+        monkeypatch.setenv(
+            "ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH",
+            str(tmp_path / "Models" / "presenter-runtime.json"),
+        )
+        assert _configured_local_presenter(store, media_client) is media_client
+    finally:
+        store.close()
 
 
 def test_presenter_direction_uses_only_explicit_semantic_placements() -> None:

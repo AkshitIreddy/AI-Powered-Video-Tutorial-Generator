@@ -925,7 +925,14 @@ def _configured_local_presenter(
     config_value = os.environ.get("ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH")
     if not config_value:
         return media_client
-    return load_local_presenter_media_client(store, media_client, Path(config_value))
+    config_path = Path(config_value)
+    # The portable launcher always reserves this path, including before an
+    # optional presenter runtime has been installed. A genuinely absent file
+    # means "not configured"; an existing directory, malformed file, or even a
+    # broken symlink still reaches the strict loader and fails closed.
+    if not config_path.exists() and not config_path.is_symlink():
+        return media_client
+    return load_local_presenter_media_client(store, media_client, config_path)
 
 
 def _production_renderer_client(store: ProjectStore) -> RendererClient:
