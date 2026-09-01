@@ -18,7 +18,7 @@ from alystria.generation import (
     RenderedTutorial,
     SourceSpec,
 )
-from alystria.generation.workflow import _content_quality_gates
+from alystria.generation.workflow import _content_quality_gates, _narration_density_gate
 from alystria.project import ProjectStore
 from alystria.research import GroundingMode
 
@@ -212,6 +212,32 @@ def test_strict_unsupported_claim_is_a_major_quality_failure(tmp_path: Path) -> 
         "sceneClaims": [scene.get("claimIds") for scene in approved["storyboard"]["scenes"]],
     }
     assert unsupported.severity.value == "MAJOR"
+
+
+def test_long_form_placeholder_narration_is_a_major_quality_failure() -> None:
+    sparse = replace(generation_request(), duration_seconds=720)
+    approved = {
+        "storyboard": {
+            "scenes": [
+                {
+                    "id": f"scene.{index}",
+                    "narration": " ".join(["placeholder"] * words),
+                }
+                for index, words in enumerate((80, 90, 87), start=1)
+            ]
+        }
+    }
+
+    gate = _narration_density_gate(approved, sparse)
+
+    assert gate.status.value == "FAIL"
+    finding = next(item for item in gate.findings if item.code == "content.narration_too_sparse")
+    assert finding.severity.value == "MAJOR"
+    assert finding.metadata == {
+        "actualWords": 257,
+        "minimumWords": 576,
+        "targetDurationSeconds": 720,
+    }
 
 
 def test_valid_immutable_metrics_and_provenance_pass(tmp_path: Path) -> None:

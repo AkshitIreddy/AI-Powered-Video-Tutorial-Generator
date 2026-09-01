@@ -1999,7 +1999,57 @@ def _content_quality_gates(
         scenes=tuple(scenes),
         citations=citations,
     )
-    return run_content_checks(package, strict=request.grounding_mode is GroundingMode.STRICT)
+    return (
+        *run_content_checks(package, strict=request.grounding_mode is GroundingMode.STRICT),
+        _narration_density_gate(approved, request),
+    )
+
+
+def _narration_density_gate(
+    approved: dict[str, Any], request: GenerationRequest
+) -> QualityGate:
+    """Reject long-form placeholder scripts that merely stretch a few paragraphs.
+
+    Forty-eight words per minute is intentionally a very conservative floor,
+    well below normal explanatory narration. Falling under it is not a style
+    preference: it indicates minutes of unplanned silence or repeated holding
+    frames and must not be hidden behind otherwise green schema/claim checks.
+    """
+
+    storyboard = approved.get("storyboard")
+    scene_values = storyboard.get("scenes", []) if isinstance(storyboard, dict) else []
+    actual_words = sum(
+        len(str(scene.get("narration", "")).split())
+        for scene in scene_values
+        if isinstance(scene, dict)
+    )
+    minimum_words = max(40, (request.duration_seconds * 4 + 4) // 5)
+    findings: tuple[Finding, ...] = ()
+    if actual_words < minimum_words:
+        findings = (
+            Finding(
+                "content.narration_too_sparse",
+                (
+                    f"Narration has {actual_words} words for a "
+                    f"{request.duration_seconds}-second tutorial; at least "
+                    f"{minimum_words} are required by the long-form safety floor."
+                ),
+                Severity.MAJOR,
+                "storyboard:narration",
+                repairable=True,
+                metadata={
+                    "actualWords": actual_words,
+                    "minimumWords": minimum_words,
+                    "targetDurationSeconds": request.duration_seconds,
+                },
+            ),
+        )
+    return QualityGate.from_findings(
+        "content.narration_density",
+        "content",
+        findings,
+        summary="Long-form narration cannot be a stretched placeholder script.",
+    )
 
 
 def _provenance_quality_gate(
