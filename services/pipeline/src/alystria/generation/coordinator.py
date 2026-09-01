@@ -842,12 +842,17 @@ def request_from_desktop(
     )
     if canonical_fixture_id is not None:
         fixture = request_from_canonical_fixture(canonical_fixture_id)
-        return replace(
-            fixture,
-            presenter_mode=presenter_mode,
-            hard_budget_micros=minor_units * 10_000,
-            metadata={**fixture.metadata, **metadata},
-        )
+        # A fixture is an exact-duration authored contract, not permission to
+        # override the learner's duration choice. Legacy projects may retain a
+        # canonical topic or fixture ID after the duration is edited; those
+        # projects must return to the normal generation path.
+        if duration_seconds == fixture.duration_seconds:
+            return replace(
+                fixture,
+                presenter_mode=presenter_mode,
+                hard_budget_micros=minor_units * 10_000,
+                metadata={**fixture.metadata, **metadata},
+            )
     return GenerationRequest(
         topic=topic,
         audience=audience,

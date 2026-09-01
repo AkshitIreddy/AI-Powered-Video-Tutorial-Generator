@@ -225,14 +225,33 @@ describe("Alystria desktop shell", () => {
     expect(creationJob?.projectDirectory).toBe(created?.nativeProjectDirectory);
   });
 
-  it("offers quick-draft and exact flagship durations", async () => {
+  it("accepts an exact user-entered tutorial duration", async () => {
     const user = userEvent.setup();
+    await configureCloudProfile();
     render(<App />);
     await user.click(screen.getByRole("button", { name: /create a tutorial/i }));
-    await user.type(screen.getByPlaceholderText(/explain why karatsuba/i), "Karatsuba multiplication");
+    await user.type(screen.getByPlaceholderText(/explain why karatsuba/i), "Create the canonical 12-minute Karatsuba multiplication tutorial");
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     expect(screen.getByRole("option", { name: "About 1 minute (quick draft)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "About 3 minutes (inspection draft)" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "About 12 minutes" })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Target duration"), "custom");
+    const exactDuration = screen.getByLabelText("Exact duration in minutes");
+    await user.clear(exactDuration);
+    await user.type(exactDuration, "3");
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    await user.click(screen.getByRole("button", { name: /^creative/i }));
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    expect(screen.getByText("About 3 minutes")).toBeInTheDocument();
+    await user.click(await screen.findByRole("checkbox", { name: /approve this exact routing policy/i }));
+    await user.click(screen.getByRole("button", { name: /create learning plan/i }));
+
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
+      const created = persisted.projects.find((project) => project.title === "Create the canonical 12-minute Karatsuba multiplication tutorial");
+      expect(created?.duration).toBe(3);
+      expect(created?.canonicalFixtureId).toBeUndefined();
+    });
   });
 
   it("carries an approved local starter presenter into the initial project snapshot", async () => {

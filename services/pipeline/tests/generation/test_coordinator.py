@@ -896,3 +896,46 @@ def test_desktop_does_not_replace_an_ordinary_karatsuba_topic_with_the_flagship(
         assert "canonicalFixtureScenes" not in converted.metadata
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("persisted_fixture_id", [False, True])
+def test_desktop_duration_choice_overrides_legacy_flagship_identity(
+    tmp_path: Path,
+    persisted_fixture_id: bool,
+) -> None:
+    store, _ = open_coordinator(tmp_path)
+    try:
+        snapshot: dict[str, Any] = {
+            "brief": {
+                "topic": "Create the canonical 12-minute Karatsuba multiplication tutorial",
+                "audience": "Undergraduate students",
+                "durationSeconds": 180,
+                "locale": "en-US",
+            },
+            "groundingMode": "creative",
+            "sources": [],
+        }
+        if persisted_fixture_id:
+            snapshot["canonicalFixtureId"] = "fixture.karatsuba.undergraduate.en"
+        store.create_revision(snapshot=snapshot, kind="edit")
+
+        converted = request_from_desktop(
+            store,
+            {
+                "quality": "standard",
+                "privacy": "hybrid",
+                "approvedProviderIds": ["nvidia-nim", "local-runtime"],
+                "budget": {
+                    "currency": "USD",
+                    "hardLimitMinorUnits": 0,
+                    "requireKnownPricing": True,
+                },
+            },
+        )
+
+        assert converted.topic == "Create the canonical 12-minute Karatsuba multiplication tutorial"
+        assert converted.duration_seconds == 180
+        assert "fixtureId" not in converted.metadata
+        assert "canonicalFixtureScenes" not in converted.metadata
+    finally:
+        store.close()
