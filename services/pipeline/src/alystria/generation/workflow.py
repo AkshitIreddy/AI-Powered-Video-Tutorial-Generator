@@ -2016,6 +2016,17 @@ def _narration_density_gate(
     frames and must not be hidden behind otherwise green schema/claim checks.
     """
 
+    # Short tutorials can deliberately teach one compact idea with pauses,
+    # demonstrations, or media-led explanation. The 48-wpm safety floor is a
+    # long-form anti-placeholder check, not a universal speech-density rule.
+    if request.duration_seconds < 300:
+        return QualityGate.from_findings(
+            "content.narration_density",
+            "content",
+            (),
+            summary="Long-form narration cannot be a stretched placeholder script.",
+        )
+
     storyboard = approved.get("storyboard")
     scene_values = storyboard.get("scenes", []) if isinstance(storyboard, dict) else []
     actual_words = sum(

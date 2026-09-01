@@ -240,6 +240,25 @@ def test_long_form_placeholder_narration_is_a_major_quality_failure() -> None:
     }
 
 
+def test_short_form_media_led_tutorial_is_not_rejected_by_long_form_floor() -> None:
+    short_form = replace(generation_request(), duration_seconds=180)
+    approved = {
+        "storyboard": {
+            "scenes": [
+                {
+                    "id": "scene.demonstration",
+                    "narration": "A short explanation can accompany a longer visual demonstration.",
+                }
+            ]
+        }
+    }
+
+    gate = _narration_density_gate(approved, short_form)
+
+    assert gate.status.value == "PASS"
+    assert gate.findings == ()
+
+
 def test_valid_immutable_metrics_and_provenance_pass(tmp_path: Path) -> None:
     state, qa = run_generation(tmp_path)
 
