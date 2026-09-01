@@ -286,10 +286,27 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("button", { name: /add profile/i }));
     await user.clear(screen.getByLabelText(/^name$/i));
     await user.type(screen.getByLabelText(/^name$/i), "Local presenter test");
+    await user.selectOptions(screen.getByLabelText(/narration provider/i), "elevenlabs");
+    await user.clear(screen.getByLabelText(/narration model/i));
+    await user.type(screen.getByLabelText(/narration model/i), "eleven_multilingual_v2");
+    await user.type(screen.getByLabelText(/narration voice id/i), "21m00Tcm4TlvDq8ikWAM");
+    await user.selectOptions(screen.getByLabelText(/lip-sync provider/i), "local-runtime");
+    await user.clear(screen.getByLabelText(/^lip-sync model$/i));
+    await user.type(screen.getByLabelText(/^lip-sync model$/i), "local/musetalk-1.5");
+    await user.clear(screen.getByLabelText(/lip-sync presenter profile id/i));
+    await user.type(screen.getByLabelText(/lip-sync presenter profile id/i), "presenter.arjun");
+    await user.clear(screen.getByLabelText(/lip-sync model revision/i));
+    await user.type(screen.getByLabelText(/lip-sync model revision/i), "musetalk-1.5-pinned");
+    await user.clear(screen.getByLabelText(/lip-sync install fingerprint/i));
+    await user.type(screen.getByLabelText(/lip-sync install fingerprint/i), "a".repeat(64));
     await user.click(screen.getByRole("button", { name: /save setup & active profile/i }));
     expect(await screen.findByText(/setup saved locally/i)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Local presenter test" })).toHaveAttribute("aria-selected", "true");
-  });
+    expect(screen.getByLabelText(/narration voice id/i)).toHaveValue("21m00Tcm4TlvDq8ikWAM");
+    expect(screen.getByLabelText(/lip-sync presenter profile id/i)).toHaveValue("presenter.arjun");
+    expect(screen.getByLabelText(/lip-sync model revision/i)).toHaveValue("musetalk-1.5-pinned");
+    expect(screen.getByLabelText(/lip-sync install fingerprint/i)).toHaveValue("a".repeat(64));
+  }, 30_000);
 
   it("persists a project visual bible with real typography, caption, and presenter choices", async () => {
     const user = userEvent.setup();
