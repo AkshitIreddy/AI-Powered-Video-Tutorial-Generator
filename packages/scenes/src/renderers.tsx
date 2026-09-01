@@ -163,6 +163,70 @@ export function DefinitionRenderer(props: SceneRendererProps<DefinitionContent>)
   const solveX = stage.x + stage.width * 0.5;
   const resultX = stage.x + stage.width * 0.87;
   const exampleY = body.y + body.height * 0.83;
+  if (content.placeValueRelationship) {
+    const relationship = content.placeValueRelationship;
+    const relationshipStage: Rect = {
+      x: body.x,
+      y: body.y + body.height * 0.04,
+      width: body.width,
+      height: body.height * 0.76,
+    };
+    const ruleStage: Rect = {
+      x: body.x,
+      y: body.y + body.height * 0.84,
+      width: body.width,
+      height: body.height * 0.14,
+    };
+    const rows = stackRows(
+      { x: relationshipStage.x + props.scene.metrics.gutter * 0.6, y: relationshipStage.y + relationshipStage.height * 0.14, width: relationshipStage.width - props.scene.metrics.gutter * 1.2, height: relationshipStage.height * 0.76 },
+      2,
+      props.scene.metrics.gutter * 0.75,
+    );
+    const parseConcrete = (text: string) => {
+      const equals = text.indexOf("=");
+      const divider = text.indexOf("|", equals + 1);
+      if (equals < 1 || divider < equals + 2) return { whole: text, high: "", low: "" };
+      return {
+        whole: text.slice(0, equals).trim(),
+        high: text.slice(equals + 1, divider).trim(),
+        low: text.slice(divider + 1).trim(),
+      };
+    };
+    return withFrame(props, (
+      <g id="body" data-semantic-role="visual" data-visual-grammar="place-value-ruler">
+        <path d={`M ${relationshipStage.x} ${relationshipStage.y} H ${relationshipStage.x + relationshipStage.width} V ${relationshipStage.y + relationshipStage.height} H ${relationshipStage.x + props.scene.metrics.unit * 1.2} L ${relationshipStage.x} ${relationshipStage.y + relationshipStage.height - props.scene.metrics.unit * 1.2} Z`} fill={`url(#ink-field-${safeId(props.scene.spec.id)})`} filter={`url(#soft-shadow-${safeId(props.scene.spec.id)})`} />
+        <path d={`M ${relationshipStage.x} ${relationshipStage.y} H ${relationshipStage.x + relationshipStage.width} V ${relationshipStage.y + relationshipStage.height} H ${relationshipStage.x + props.scene.metrics.unit * 1.2} L ${relationshipStage.x} ${relationshipStage.y + relationshipStage.height - props.scene.metrics.unit * 1.2} Z`} fill={`url(#micro-grid-${safeId(props.scene.spec.id)})`} opacity="0.58" />
+        <text x={relationshipStage.x + props.scene.metrics.gutter * 0.7} y={relationshipStage.y + legible(props.scene.metrics.smallSize) * 1.35} fill={theme.accent} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="820" letterSpacing="2.1">PLACE-VALUE RULER · EXACT BLOCK ALIGNMENT</text>
+        {rows.map((rect, index) => {
+          const symbolic = relationship.symbolic[index]!;
+          const concrete = parseConcrete(relationship.concrete[index]!);
+          const accent = index === 0 ? theme.primary : theme.secondary;
+          const rulerX = rect.x + rect.width * (isWide ? 0.46 : 0.36);
+          const rulerWidth = rect.width * (isWide ? 0.44 : 0.54);
+          const labelWidth = rect.width * (isWide ? 0.37 : 0.3);
+          const equalsX = rulerX - props.scene.metrics.gutter * 0.7;
+          const blockWidth = rulerWidth / 2;
+          return <g key={symbolic} data-place-value-row={index + 1}>
+            <text x={rect.x} y={rect.y + rect.height * 0.32} fill={accent} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.9)} fontWeight="820" letterSpacing="1.8">{index === 0 ? "OPERAND X" : "OPERAND Y"}</text>
+            <WrappedText text={symbolic} rect={{ x: rect.x, y: rect.y + rect.height * 0.43, width: labelWidth, height: rect.height * 0.43 }} theme={theme} fill={theme.surface} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.subtitleSize * 1.04)} fontWeight="760" maxLines={2} />
+            <text x={equalsX - props.scene.metrics.gutter * 0.25} y={rect.y + rect.height * 0.63} textAnchor="end" fill="#DDE2F1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize)} fontWeight="720">{concrete.whole} =</text>
+            {[concrete.high, concrete.low].map((value, blockIndex) => {
+              const x = rulerX + blockIndex * blockWidth;
+              const color = blockIndex === 0 ? accent : theme.warning;
+              return <g key={`${value}-${blockIndex}`} data-place-value-block={blockIndex === 0 ? "high" : "low"}>
+                <rect x={x} y={rect.y + rect.height * 0.21} width={blockWidth - props.scene.metrics.unit * 0.2} height={rect.height * 0.56} fill={blockIndex === 0 ? shade(color, 0.38) : shade(color, 0.48)} stroke={color} strokeWidth={Math.max(3, props.scene.metrics.unit * 0.28)} />
+                <text x={x + (blockWidth - props.scene.metrics.unit * 0.2) / 2} y={rect.y + rect.height * 0.59} textAnchor="middle" fill={theme.surface} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.titleSize * 0.78)} fontWeight="840">{value}</text>
+                <text x={x + (blockWidth - props.scene.metrics.unit * 0.2) / 2} y={rect.y + rect.height * 0.91} textAnchor="middle" fill={color} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.82)} fontWeight="820" letterSpacing="1.4">{blockIndex === 0 ? "HIGH · ×B" : "LOW · ×1"}</text>
+              </g>;
+            })}
+          </g>;
+        })}
+        <line x1={ruleStage.x} x2={ruleStage.x + ruleStage.width} y1={ruleStage.y} y2={ruleStage.y} stroke={theme.secondary} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.42)} />
+        <text x={ruleStage.x} y={ruleStage.y + legible(props.scene.metrics.smallSize) * 1.55} fill={paperSecondary(theme)} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="820" letterSpacing="2">BASE RULE</text>
+        <WrappedText text={relationship.rule} rect={{ x: ruleStage.x + ruleStage.width * (isWide ? 0.18 : 0), y: ruleStage.y + props.scene.metrics.unit * 0.45, width: ruleStage.width * (isWide ? 0.8 : 1), height: ruleStage.height * 0.72 }} theme={theme} fontSize={legible(props.scene.metrics.subtitleSize)} fontWeight="780" maxLines={2} />
+      </g>
+    ));
+  }
   return withFrame(props, (
     <g id="body" data-semantic-role="visual" style={animationStyle(props.scene.choreography, "body", props.frame.tick, props.frame.reducedMotion) as CSSProperties}>
       <ReadabilitySurface scene={props.scene} rect={{ x: stage.x - props.scene.metrics.gutter * 0.42, y: stage.y - props.scene.metrics.gutter * 0.4, width: stage.width + props.scene.metrics.gutter * 0.84, height: stage.height + props.scene.metrics.gutter * 1.05 }} theme={theme} role="definition-stage" />
@@ -245,14 +309,14 @@ export function ComparisonRenderer(props: SceneRendererProps<ComparisonContent>)
     return <g data-comparison-side={tone}>
       <path d={`M ${rect.x} ${rect.y} H ${rect.x + rect.width} V ${rect.y + rect.height * 0.92} L ${rect.x + rect.width * (tone === "primary" ? 0.92 : 0.08)} ${rect.y + rect.height} H ${rect.x} Z`} fill={dark} filter={`url(#shadow-${safeId(props.scene.spec.id)})`} />
       <rect x={rect.x} y={rect.y} width={Math.max(8, props.scene.metrics.unit * 0.72)} height={rect.height} fill={tone === "primary" ? theme.accent : tint(theme.secondary, 0.28)} />
-      <text x={rect.x + props.scene.metrics.gutter} y={rect.y + legible(props.scene.metrics.smallSize) * 1.2} fill={tone === "primary" ? theme.accent : "#9DE2D7"} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="820" letterSpacing={2}>{truncate(label.toUpperCase(), 24)}</text>
+      <WrappedText text={label.toUpperCase()} rect={{ x: rect.x + props.scene.metrics.gutter, y: rect.y + legible(props.scene.metrics.smallSize) * 0.45, width: rect.width - props.scene.metrics.gutter * 1.5, height: rect.height * 0.13 }} theme={theme} fill={tone === "primary" ? theme.accent : "#9DE2D7"} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.9)} fontWeight="820" maxLines={2} lineHeight={1.04} />
       <text x={rect.x + props.scene.metrics.gutter} y={rect.y + rect.height * (isWide ? 0.48 : 0.53)} fill={theme.surface} fontFamily={theme.fontDisplay} fontSize={countSize} fontWeight="840" letterSpacing={-4}>{count}</text>
       <WrappedText text={count === 1 ? "operation" : "products"} rect={{ x: rect.x + props.scene.metrics.gutter + countSize * 0.78, y: rect.y + rect.height * (isWide ? 0.29 : 0.31), width: rect.width * 0.38, height: rect.height * 0.18 }} theme={theme} fill="#C9CFDF" fontSize={legible(props.scene.metrics.bodySize)} fontWeight="680" maxLines={2} />
       <line x1={rect.x + props.scene.metrics.gutter} x2={rect.x + rect.width - props.scene.metrics.gutter * 0.5} y1={rect.y + rect.height * 0.6} y2={rect.y + rect.height * 0.6} stroke={theme.surface} strokeWidth="1.5" opacity="0.3" />
       {items.slice(0, 4).map((text, index) => {
         const x = rect.x + props.scene.metrics.gutter + index * tokenWidth;
         const y = rect.y + rect.height * 0.72;
-        return <g key={`${text}-${index}`}><rect x={x} y={y - props.scene.metrics.unit * 0.55} width={Math.max(8, props.scene.metrics.unit * 0.8)} height={Math.max(8, props.scene.metrics.unit * 0.8)} fill={color} transform={`rotate(45 ${x + props.scene.metrics.unit * 0.4} ${y - props.scene.metrics.unit * 0.15})`} /><text x={x + props.scene.metrics.unit * 1.35} y={y + legible(props.scene.metrics.bodySize) * 0.35} fill={theme.surface} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize)} fontWeight="760">{truncate(text, 18)}</text></g>;
+        return <g key={`${text}-${index}`}><rect x={x} y={y - props.scene.metrics.unit * 0.55} width={Math.max(8, props.scene.metrics.unit * 0.8)} height={Math.max(8, props.scene.metrics.unit * 0.8)} fill={color} transform={`rotate(45 ${x + props.scene.metrics.unit * 0.4} ${y - props.scene.metrics.unit * 0.15})`} />{text ? <text x={x + props.scene.metrics.unit * 1.35} y={y + legible(props.scene.metrics.bodySize) * 0.35} fill={theme.surface} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * 0.82)} fontWeight="760">{truncate(text, 22)}</text> : null}</g>;
       })}
     </g>;
   };
@@ -265,7 +329,7 @@ export function ComparisonRenderer(props: SceneRendererProps<ComparisonContent>)
       {isWide ? <g aria-hidden="true"><path d={`M ${body.x + body.width * 0.47} ${body.y + body.height * 0.38} H ${body.x + body.width * 0.53}`} stroke={theme.accent} strokeWidth={props.scene.metrics.unit * 1.1} /><path d={`M ${body.x + body.width * 0.53} ${body.y + body.height * 0.38} l ${-props.scene.metrics.unit * 1.2} ${-props.scene.metrics.unit * 0.9} v ${props.scene.metrics.unit * 1.8} z`} fill={theme.accent} /></g> : null}
       <ReadabilitySurface scene={props.scene} rect={{ x: body.x + body.width * 0.08, y: body.y + body.height * 0.855, width: body.width * 0.84, height: body.height * 0.14 }} theme={theme} opacity={0.965} role="comparison-verdict" />
       <line x1={body.x + body.width * 0.12} x2={body.x + body.width * 0.88} y1={body.y + body.height * 0.9} y2={body.y + body.height * 0.9} stroke={theme.warning} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.45)} />
-      <text x={body.x + body.width / 2} y={body.y + body.height * 0.98} textAnchor="middle" fill={theme.ink} fontFamily={theme.fontDisplay} fontSize={legible(props.scene.metrics.subtitleSize * 1.08)} fontWeight="790">{truncate(verdict, 58)}</text>
+      <WrappedText text={verdict} rect={{ x: body.x + body.width * 0.12, y: body.y + body.height * 0.91, width: body.width * 0.76, height: body.height * 0.085 }} theme={theme} fill={theme.ink} fontFamily={theme.fontDisplay} fontSize={legible(props.scene.metrics.subtitleSize * 0.84)} fontWeight="790" textAnchor="middle" maxLines={2} lineHeight={1.02} />
     </g>
   ));
 }
@@ -403,13 +467,33 @@ export function FormulaRenderer(props: SceneRendererProps<FormulaContent>) {
   const body = bodyRect(props);
   const steps = content.steps?.slice(0, 6) ?? [];
   const formulaRect: Rect = steps.length ? { x: body.x, y: body.y, width: body.width, height: body.height * 0.29 } : body;
+  const horizontalSteps = props.scene.metrics.columns === 2 && steps.length >= 2 && steps.length <= 4;
+  const stepStage: Rect = { x: body.x + body.width * 0.025, y: body.y + body.height * 0.36, width: body.width * 0.95, height: body.height * 0.46 };
+  const stepRects = horizontalSteps
+    ? splitSequenceColumns(stepStage, steps.length, props.scene.metrics.gutter * 0.8)
+    : stackRows(stepStage, steps.length, props.scene.metrics.unit * 0.6);
   return withFrame(props, (
-    <g id="body" data-semantic-role="content">
-      <rect {...formulaRect} fill={theme.codeBackground} />
+    <g id="body" data-semantic-role="content" data-visual-grammar="equation-transformation-lane">
+      <path d={`M ${formulaRect.x} ${formulaRect.y} H ${formulaRect.x + formulaRect.width} V ${formulaRect.y + formulaRect.height} H ${formulaRect.x + props.scene.metrics.unit * 1.1} L ${formulaRect.x} ${formulaRect.y + formulaRect.height - props.scene.metrics.unit * 1.1} Z`} fill={theme.codeBackground} />
+      <path d={`M ${formulaRect.x} ${formulaRect.y} H ${formulaRect.x + formulaRect.width} V ${formulaRect.y + formulaRect.height} H ${formulaRect.x + props.scene.metrics.unit * 1.1} L ${formulaRect.x} ${formulaRect.y + formulaRect.height - props.scene.metrics.unit * 1.1} Z`} fill={`url(#micro-grid-${safeId(props.scene.spec.id)})`} opacity="0.42" />
       <text x={formulaRect.x + props.scene.metrics.gutter} y={formulaRect.y + props.scene.metrics.smallSize * 1.5} fill={theme.secondary} fontFamily={theme.fontMono} fontWeight="800" fontSize={props.scene.metrics.smallSize * 0.7} letterSpacing="2">{content.kind === "derivation" ? "DERIVE" : "RELATION"}</text>
-      <text x={formulaRect.x + formulaRect.width / 2} y={formulaRect.y + formulaRect.height * 0.67} textAnchor="middle" fill={theme.codeInk} fontFamily={theme.fontMono} fontWeight="750" fontSize={Math.min(props.scene.metrics.titleSize * 1.1, formulaRect.width / Math.max(9, content.expression.length) * 1.45)}>{content.expression}</text>
-      {steps.length ? <g>{stackRows({ x: body.x + body.width * 0.04, y: body.y + body.height * 0.36, width: body.width * 0.92, height: body.height * 0.48 }, steps.length, props.scene.metrics.unit * 0.6).map((rect, index) => { const step = steps[index]; if (!step) return null; return <g key={step.id} id={step.id} style={animationStyle(props.scene.choreography, step.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}><line x1={rect.x} x2={rect.x + props.scene.metrics.bodySize * 1.1} y1={rect.y + rect.height / 2} y2={rect.y + rect.height / 2} stroke={theme.primary} strokeWidth="3" /><text x={rect.x + props.scene.metrics.bodySize * 1.6} y={rect.y + props.scene.metrics.bodySize} fill={theme.ink} fontFamily={theme.fontMono} fontWeight="650" fontSize={props.scene.metrics.bodySize}>{truncate(step.expression, 66)}</text>{step.reason ? <text x={rect.x + rect.width} y={rect.y + props.scene.metrics.bodySize} textAnchor="end" fill={theme.mutedInk} fontFamily={theme.fontBody} fontSize={props.scene.metrics.smallSize}>{truncate(step.reason, 34)}</text> : null}</g>; })}</g> : null}
-      {content.result ? <g><line x1={body.x} x2={body.x + body.width} y1={body.y + body.height * 0.91} y2={body.y + body.height * 0.91} stroke={theme.secondary} strokeWidth="4" /><text x={body.x + body.width} y={body.y + body.height * 0.98} textAnchor="end" fill={theme.secondary} fontFamily={theme.fontMono} fontWeight="800" fontSize={props.scene.metrics.smallSize}>{truncate(`RESULT  ${content.result}`, 72)}</text></g> : null}
+      <WrappedText text={content.expression} rect={{ x: formulaRect.x + formulaRect.width * 0.08, y: formulaRect.y + formulaRect.height * 0.37, width: formulaRect.width * 0.84, height: formulaRect.height * 0.42 }} theme={theme} fill={theme.codeInk} fontFamily={theme.fontMono} fontWeight="760" fontSize={Math.min(props.scene.metrics.titleSize * 1.08, formulaRect.width / Math.max(9, content.expression.length) * 1.4)} textAnchor="middle" maxLines={2} />
+      {steps.length ? <g>{stepRects.map((rect, index) => {
+        const step = steps[index];
+        if (!step) return null;
+        const color = index === steps.length - 1 ? theme.secondary : index % 2 ? theme.warning : theme.primary;
+        const copyRect = horizontalSteps
+          ? { x: rect.x + props.scene.metrics.gutter * 0.55, y: rect.y + rect.height * 0.3, width: rect.width - props.scene.metrics.gutter * 1.1, height: rect.height * 0.5 }
+          : { x: rect.x + props.scene.metrics.bodySize * 2.4, y: rect.y + rect.height * 0.18, width: rect.width - props.scene.metrics.bodySize * 3.1, height: rect.height * 0.64 };
+        return <g key={step.id} id={step.id} data-equation-step={index + 1} style={animationStyle(props.scene.choreography, step.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>
+          <path d={`M ${rect.x} ${rect.y + rect.height * 0.08} H ${rect.x + rect.width} V ${rect.y + rect.height * 0.92} H ${rect.x + props.scene.metrics.unit * 0.8} L ${rect.x} ${rect.y + rect.height * 0.82} Z`} fill={index === steps.length - 1 ? shade(theme.secondary, 0.18) : theme.surface} stroke={color} strokeWidth={Math.max(3, props.scene.metrics.unit * 0.28)} filter={`url(#soft-shadow-${safeId(props.scene.spec.id)})`} />
+          <rect x={rect.x} y={rect.y + rect.height * 0.08} width={Math.max(7, props.scene.metrics.unit * 0.62)} height={rect.height * 0.84} fill={color} />
+          <text x={rect.x + props.scene.metrics.gutter * 0.6} y={rect.y + legible(props.scene.metrics.smallSize) * 1.3} fill={color} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.82)} fontWeight="840" letterSpacing="1.4">{String(index + 1).padStart(2, "0")} · {step.reason?.toUpperCase() ?? "TRANSFORM"}</text>
+          <WrappedText text={step.expression} rect={copyRect} theme={theme} fill={index === steps.length - 1 ? theme.surface : theme.ink} fontFamily={theme.fontMono} fontWeight="720" fontSize={legible(props.scene.metrics.bodySize * (horizontalSteps ? 0.84 : 0.96))} textAnchor={horizontalSteps ? "middle" : "start"} maxLines={horizontalSteps ? 4 : 2} lineHeight={1.14} />
+          {horizontalSteps && index < steps.length - 1 ? <g aria-hidden="true"><line x1={rect.x + rect.width} x2={rect.x + rect.width + props.scene.metrics.gutter * 0.68} y1={rect.y + rect.height * 0.5} y2={rect.y + rect.height * 0.5} stroke={theme.accent} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.4)} /><path d={`M ${rect.x + rect.width + props.scene.metrics.gutter * 0.68} ${rect.y + rect.height * 0.5} l ${-props.scene.metrics.unit * 0.9} ${-props.scene.metrics.unit * 0.68} v ${props.scene.metrics.unit * 1.36} z`} fill={theme.accent} /></g> : null}
+        </g>;
+      })}</g> : null}
+      {content.result ? <g><line x1={body.x} x2={body.x + body.width} y1={body.y + body.height * 0.89} y2={body.y + body.height * 0.89} stroke={theme.secondary} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.42)} /><text x={body.x} y={body.y + body.height * 0.945} fill={paperSecondary(theme)} fontFamily={theme.fontMono} fontWeight="820" fontSize={legible(props.scene.metrics.smallSize * 0.82)} letterSpacing="1.8">RESOLVED RELATION</text><WrappedText text={content.result} rect={{ x: body.x + body.width * 0.2, y: body.y + body.height * 0.91, width: body.width * 0.78, height: body.height * 0.08 }} theme={theme} fill={paperSecondary(theme)} fontFamily={theme.fontMono} fontWeight="800" fontSize={legible(props.scene.metrics.bodySize * 0.88)} textAnchor="end" maxLines={2} /></g> : null}
     </g>
   ));
 }
@@ -932,10 +1016,40 @@ export function SourcesRenderer(props: SceneRendererProps<SourcesContent>) {
   const theme = props.theme ?? PRECISION_THEME;
   const body = bodyRect(props);
   const sources = props.scene.spec.content.sources.slice(0, props.scene.metrics.profile === "portrait" ? 8 : 10);
-  const rows = stackRows(body, sources.length, props.scene.metrics.unit * 0.6);
+  const isWide = props.scene.metrics.columns === 2;
+  const columns = isWide ? 2 : 1;
+  const rowCount = Math.ceil(sources.length / columns);
+  const columnGap = props.scene.metrics.gutter * 1.1;
+  const columnWidth = (body.width - columnGap * (columns - 1)) / columns;
+  const rowGap = props.scene.metrics.unit * 0.7;
+  const rowHeight = (body.height - rowGap * Math.max(0, rowCount - 1)) / Math.max(1, rowCount);
+  const sourceRects = sources.map((_, index) => {
+    const column = isWide ? index % 2 : 0;
+    const row = isWide ? Math.floor(index / 2) : index;
+    return {
+      x: body.x + column * (columnWidth + columnGap),
+      y: body.y + row * (rowHeight + rowGap),
+      width: columnWidth,
+      height: rowHeight,
+    };
+  });
   return withFrame(props, (
-    <g id="body" data-semantic-role="source">
-      {sources.map((source, index) => { const rect = rows[index]; if (!rect) return null; return <g key={source.id}><circle cx={rect.x + props.scene.metrics.smallSize} cy={rect.y + rect.height / 2} r={props.scene.metrics.smallSize * 0.65} fill={index % 2 ? theme.secondary : theme.primary} /><text x={rect.x + props.scene.metrics.smallSize} y={rect.y + rect.height / 2 + props.scene.metrics.smallSize * 0.32} textAnchor="middle" fill={theme.surface} fontFamily={theme.fontMono} fontWeight="800" fontSize={props.scene.metrics.smallSize * 0.7}>{source.marker ?? index + 1}</text><text x={rect.x + props.scene.metrics.bodySize * 2.1} y={rect.y + rect.height * 0.43} fill={theme.ink} fontFamily={theme.fontBody} fontWeight="700" fontSize={props.scene.metrics.smallSize}>{truncate(source.title, 82)}</text><text x={rect.x + props.scene.metrics.bodySize * 2.1} y={rect.y + rect.height * 0.78} fill={theme.mutedInk} fontFamily={theme.fontBody} fontSize={props.scene.metrics.smallSize * 0.72}>{truncate([source.creator, source.license, source.locator].filter(Boolean).join(" · "), 105)}</text></g>; })}
+    <g id="body" data-semantic-role="source" data-visual-grammar="recap-source-ledger">
+      {sources.map((source, index) => {
+        const rect = sourceRects[index];
+        if (!rect) return null;
+        const sourceRecord = source.creator === "VERIFIED SOURCE";
+        const color = sourceRecord ? theme.secondary : index % 2 ? theme.warning : theme.primary;
+        const meta = [source.creator, source.license, source.locator].filter(Boolean).join(" · ");
+        return <g key={source.id} data-ledger-kind={sourceRecord ? "source" : "concept"}>
+          <path d={`M ${rect.x} ${rect.y + rect.height * 0.06} H ${rect.x + rect.width} V ${rect.y + rect.height * 0.94} H ${rect.x + props.scene.metrics.unit * 0.72} L ${rect.x} ${rect.y + rect.height * 0.82} Z`} fill={sourceRecord ? shade(theme.secondary, 0.22) : theme.surface} stroke={color} strokeWidth={Math.max(2, props.scene.metrics.unit * 0.22)} filter={`url(#soft-shadow-${safeId(props.scene.spec.id)})`} />
+          <rect x={rect.x} y={rect.y + rect.height * 0.06} width={Math.max(7, props.scene.metrics.unit * 0.58)} height={rect.height * 0.88} fill={color} />
+          <circle cx={rect.x + props.scene.metrics.gutter * 0.72} cy={rect.y + rect.height / 2} r={props.scene.metrics.smallSize * 0.72} fill={color} />
+          <text x={rect.x + props.scene.metrics.gutter * 0.72} y={rect.y + rect.height / 2 + props.scene.metrics.smallSize * 0.32} textAnchor="middle" fill={theme.surface} fontFamily={theme.fontMono} fontWeight="840" fontSize={props.scene.metrics.smallSize * 0.72}>{source.marker ?? index + 1}</text>
+          <WrappedText text={source.title} rect={{ x: rect.x + props.scene.metrics.gutter * 1.4, y: rect.y + rect.height * 0.2, width: rect.width - props.scene.metrics.gutter * 1.8, height: rect.height * 0.42 }} theme={theme} fill={sourceRecord ? theme.surface : theme.ink} fontFamily={theme.fontBody} fontWeight="720" fontSize={legible(props.scene.metrics.smallSize * 0.9)} maxLines={2} lineHeight={1.1} />
+          {meta ? <WrappedText text={meta} rect={{ x: rect.x + props.scene.metrics.gutter * 1.4, y: rect.y + rect.height * 0.66, width: rect.width - props.scene.metrics.gutter * 1.8, height: rect.height * 0.2 }} theme={theme} fill={sourceRecord ? "#C8EAE5" : theme.mutedInk} fontFamily={theme.fontMono} fontWeight="760" fontSize={legible(props.scene.metrics.smallSize * 0.65)} maxLines={1} /> : null}
+        </g>;
+      })}
     </g>
   ));
 }

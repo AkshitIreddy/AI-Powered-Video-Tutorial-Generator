@@ -200,6 +200,12 @@ export interface DefinitionContent extends TitledContent {
   readonly term: string;
   readonly definition: string;
   readonly example?: string;
+  /** Optional exact two-line place-value relationship for mathematical definitions. */
+  readonly placeValueRelationship?: {
+    readonly symbolic: readonly [string, string];
+    readonly concrete: readonly [string, string];
+    readonly rule: string;
+  };
 }
 
 export interface BulletsContent extends TitledContent {

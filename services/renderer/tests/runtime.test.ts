@@ -124,6 +124,95 @@ test("worked examples carry labels and relations instead of narration paragraphs
   assert.doesNotMatch(rendered.svg, /which completes the search/);
 });
 
+test("canonical Karatsuba semantic beats render exact place-value and recombination state", () => {
+  const base = fixtureManifest();
+  const placeValue = {
+    ...base.scenes[0]!,
+    id: "scene.karatsuba.place-value",
+    kind: "definition",
+    content: {
+      title: "Name the place-value split",
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "define",
+        compositionFamily: "diagram",
+        focalAnchor: "base-b-split-axis",
+        continuityKey: "karatsuba.product-thread",
+        informationUnits: [
+          { id: "symbolic-split", role: "ordered-sequence", values: ["x = aB + b", "y = cB + d"] },
+          { id: "concrete-split", role: "comparison", values: ["1234 = 12|34", "5678 = 56|78"] },
+          { id: "base-rule", role: "principle", text: "B = 100 · exact rewriting" },
+        ],
+        attentionCue: "align-symbolic-and-concrete-splits",
+        motionIntent: ["reveal-primary", "trace-relationship", "match-transition"],
+        textRoles: { eyebrow: "PLACE VALUE", label: "Separate high | low", focus: "B = 100" },
+        avoidRegions: ["caption-safe-lower-third", "equation-stage"],
+      },
+    },
+  } as const;
+  const recombine = {
+    ...base.scenes[0]!,
+    id: "scene.karatsuba.recombine",
+    kind: "worked-example",
+    content: {
+      title: "Recombine by place value",
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "resolve",
+        compositionFamily: "worked_example",
+        focalAnchor: "place-value-sum",
+        continuityKey: "karatsuba.numeric-thread",
+        informationUnits: [
+          { id: "recombine-formula", role: "ordered-sequence", values: ["z2B²", "z1B", "z0"] },
+          { id: "shift-high", role: "state", text: "672 × 10,000 = 6,720,000" },
+          { id: "shift-middle", role: "state", text: "2840 × 100 = 284,000" },
+          { id: "shift-low", role: "state", text: "2652 × 1 = 2,652" },
+          { id: "final-product", role: "answer", text: "1234 × 5678 = 7,006,652" },
+        ],
+        attentionCue: "trace-each-coefficient-to-shifted-row",
+        motionIntent: ["match-transition", "trace-relationship", "resolve-hold"],
+        textRoles: { eyebrow: "RECOMBINE", result: "7,006,652" },
+        avoidRegions: ["caption-safe-lower-third", "place-value-grid"],
+      },
+    },
+  } as const;
+
+  const definition = resolveBuiltinSceneSpec(placeValue);
+  assert.equal(definition?.content.kind, "definition");
+  if (definition?.content.kind !== "definition") throw new Error("expected semantic definition");
+  assert.equal(definition.content.term, "Separate high | low");
+  assert.match(definition.content.definition, /x = aB \+ b · y = cB \+ d/u);
+  assert.equal(definition.content.example, "1234 = 12|34 · 5678 = 56|78 · B = 100 · exact rewriting");
+  assert.deepEqual(definition.content.placeValueRelationship, {
+    symbolic: ["x = aB + b", "y = cB + d"],
+    concrete: ["1234 = 12|34", "5678 = 56|78"],
+    rule: "B = 100 · exact rewriting",
+  });
+
+  const worked = resolveBuiltinSceneSpec(recombine);
+  assert.equal(worked?.content.kind, "worked-example");
+  if (worked?.content.kind !== "worked-example") throw new Error("expected semantic worked example");
+  assert.equal(worked.content.problem, "z2B² · z1B · z0");
+  assert.deepEqual(worked.content.steps.map((step) => step.text), [
+    "672 × 10,000 = 6,720,000",
+    "2840 × 100 = 284,000",
+    "2652 × 1 = 2,652",
+  ]);
+  assert.equal(worked.content.answer, "1234 × 5678 = 7,006,652");
+
+  const renderedDefinition = new FrameRenderer().render({ ...base, scenes: [placeValue] }, 24).svg;
+  for (const value of ["x = aB + b", "y = cB + d", "1234", "12", "34", "5678", "56", "78", "B = 100 · exact rewriting"]) {
+    assert.match(renderedDefinition, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"), value);
+  }
+  assert.match(renderedDefinition, /data-visual-grammar="place-value-ruler"/u);
+  assert.match(renderedDefinition, /data-place-value-block="high"/u);
+  assert.match(renderedDefinition, /data-place-value-block="low"/u);
+  assert.doesNotMatch(renderedDefinition, />Break<|>Solve similar parts<|>Combine</u);
+  const renderedRecombine = new FrameRenderer().render({ ...base, scenes: [recombine] }, 24).svg;
+  assert.match(renderedRecombine, /1234 × 5678 = 7,006,652/u);
+  assert.doesNotMatch(renderedRecombine, /narration|placeholder/iu);
+});
+
 test("visual director maps semantic intent, focal geometry, and attention motion", () => {
   const base = fixtureManifest();
   const scenes = [
@@ -564,6 +653,8 @@ test("renderer fails closed on hostile or malformed authored visual beats", () =
   const attacks: readonly ((beat: ReturnType<typeof validBeat>) => void)[] = [
     (beat) => Object.assign(beat, { path: "C:\\Users\\viewer\\scene.json" }),
     (beat) => { beat.informationUnits[0]!.text = "https://tracker.invalid/pixel"; },
+    (beat) => { beat.informationUnits[0]!.text = "../private/scene.json"; },
+    (beat) => { beat.informationUnits[0]!.text = "C:\\Users\\viewer\\scene.json"; },
     (beat) => { beat.textRoles.markers = "<img src=x onerror=alert(1)>"; },
     (beat) => { beat.motionIntent = ["Date.now"] as typeof beat.motionIntent; },
     (beat) => { beat.avoidRegions[0]!.width = Number.NaN; },
@@ -574,6 +665,16 @@ test("renderer fails closed on hostile or malformed authored visual beats", () =
     const scene = { ...base.scenes[0]!, id: `hostile-authored-${index}`, content: { title: "Hostile authored beat", visualBeat } };
     assert.throws(() => compileVisualBeatSequence([scene]), /visualBeat|paths|URLs|HTML|bounded finite number/u, `attack ${index}`);
   }
+  const recurrenceBeat = validBeat();
+  recurrenceBeat.informationUnits[0]!.text = "T(n)=3T(n/2)+O(n)";
+  const recurrence = {
+    ...base.scenes[0]!,
+    id: "legitimate-authored-recurrence",
+    kind: "formula",
+    content: { title: "Karatsuba recurrence", visualBeat: recurrenceBeat },
+  };
+  assert.doesNotThrow(() => compileVisualBeatSequence([recurrence]));
+  assert.match(new FrameRenderer().render({ ...base, scenes: [recurrence] }, 15).svg, /T\(n\)=3T\(n\/2\)\+O\(n\)/u);
   const conflictingBeat = validBeat();
   const conflicting = {
     ...base.scenes[0]!,

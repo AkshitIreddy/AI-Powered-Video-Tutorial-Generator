@@ -137,7 +137,11 @@ export interface VisualBeat {
 const SENTENCE_END = /(?<=[.!?])\s+/u;
 const VISUAL_DIRECTIVE_PREFIX = /^(?:show|illustrate|visuali[sz]e|demonstrate|explain|highlight|depict|present|display|use)\s+(?:(?:a|an|the)\s+)?/iu;
 const DISCOURSE_PREFIX = /^(?:now|first|next|then|finally|notice|remember|in other words|for example|this means|we can see that)\s*[,.:;-]?\s*/iu;
-const PATH_OR_URL = /(?:[a-z]:\\|\.{0,2}\/|https?:\/\/|file:|data:)/iu;
+// Keep mathematical notation such as n/2 available to authored lessons while
+// rejecting executable/remote schemes and strings that actually have path
+// shape. This mirrors the Python manifest boundary rather than treating every
+// slash as a locator.
+const PATH_OR_URL = /(?:https?:\/\/|file:|data:|javascript:|[a-z]:[\\/]|(?:^|\s)\.\.?[\\/]|(?:^|\s)[\\/](?:Users|home|etc|tmp|mnt|var|Windows|Program\s+Files)[\\/])/iu;
 const HTML_LIKE = /<\s*\/?\s*[a-z][^>]{0,200}>/iu;
 const SAFE_VISUAL_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const AUTHORED_BEAT_KEYS = new Set([
@@ -867,9 +871,8 @@ function exactPositiveInteger(unit: AuthoredVisualInformationUnit | undefined): 
  */
 function comparisonMeasureItems(unit: AuthoredVisualInformationUnit): readonly string[] {
   const exact = exactPositiveInteger(unit);
-  const display = authoredInformationLabel(unit);
   const count = exact === undefined ? 1 : Math.min(exact, 4_096);
-  return Object.freeze(Array.from({ length: count }, (_, itemIndex) => itemIndex === 0 ? display : ""));
+  return Object.freeze(Array.from({ length: count }, () => ""));
 }
 
 function oppositeAnswer(answer: string): string {
@@ -981,12 +984,22 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
         const middle = semantic.comparisons[0] ? targetAwareInformationLabel(semantic.comparisons[0], semantic) : undefined;
         const causal = unitText(semantic.principle);
         const label = semantic.beat.textRoles.label ?? "sorted input";
+        const symbolicValues = semantic.sequence?.values?.map(displayScalar);
+        const concreteValues = semantic.comparisons[0]?.values?.map(displayScalar);
+        const placeValueRelationship = symbolicValues?.length === 2 && concreteValues?.length === 2 && causal
+          ? {
+              symbolic: [symbolicValues[0]!, symbolicValues[1]!] as const,
+              concrete: [concreteValues[0]!, concreteValues[1]!] as const,
+              rule: causal,
+            }
+          : undefined;
         content = {
           kind,
           ...common,
           term: label,
           definition: ordered ? `${label} · ${ordered}` : (middle ?? lines[0]!),
           ...((middle || causal) ? { example: [middle, causal].filter(Boolean).join(" · ") } : {}),
+          ...(placeValueRelationship ? { placeValueRelationship } : {}),
         };
       } else {
         content = {
@@ -1062,14 +1075,25 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
       break;
     case "formula":
     case "derivation":
+      {
+        const semanticResult = semantic
+          ? unitText(semantic.answer)
+            ?? unitText(semantic.principle)
+            ?? unitText(semantic.units.find((unit) => roleMatches(unit, ["result"])))
+          : undefined;
       content = {
         kind,
         ...common,
         expression: lines[0]!,
-        ...(lines.length > 1 ? { steps: lines.slice(1).map((expression, index) => ({ id: child(`step-${index + 1}`), expression })) } : {}),
-        ...(scene.content.body ? { result: visualDirectiveLabel(scene.content.body) } : {}),
+        ...(lines.length > 1 ? { steps: lines.slice(1).map((expression, index) => ({
+          id: child(`step-${index + 1}`),
+          expression,
+          ...(semantic?.units[index + 1]?.role ? { reason: normalizedSemanticRole(semantic.units[index + 1]!.role).replaceAll("-", " ") } : {}),
+        })) } : {}),
+        ...(semanticResult ? { result: semanticResult } : scene.content.body ? { result: visualDirectiveLabel(scene.content.body) } : {}),
       };
       break;
+      }
     case "graph":
       content = { kind, ...common, series: dataSeries, xLabel: "Step", yLabel: "Relative emphasis" };
       break;
@@ -1263,7 +1287,23 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
       break;
     }
     case "sources":
-      content = { kind, ...common, sources: lines.map((title, index) => ({ id: child(`source-${index + 1}`), title, license: "Project evidence" })) };
+      content = {
+        kind,
+        ...common,
+        sources: semantic
+          ? semantic.units.map((unit, index) => {
+              const role = normalizedSemanticRole(unit.role);
+              const isSource = roleMatches(unit, ["source"]);
+              return {
+                id: child(`source-${index + 1}`),
+                title: authoredInformationLabel(unit),
+                marker: String(index + 1),
+                creator: isSource ? "VERIFIED SOURCE" : role.replaceAll("-", " ").toUpperCase(),
+                ...(isSource ? { license: /CC0/iu.test(authoredInformationLabel(unit)) ? "CC0-1.0" : "HISTORICAL RECORD" } : {}),
+              };
+            })
+          : lines.map((title, index) => ({ id: child(`source-${index + 1}`), title, creator: "PROJECT EVIDENCE" })),
+      };
       break;
     case "outro":
       content = { kind, ...common, nextSteps: lines.slice(0, 4), callToAction: visualDirectiveLabel(scene.content.body ?? "Continue learning") };
