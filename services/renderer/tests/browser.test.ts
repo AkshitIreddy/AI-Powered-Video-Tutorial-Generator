@@ -183,6 +183,58 @@ test("capture resets persistent page state between frames", async () => {
   }
 });
 
+test("capture replaces a closed page and retries the interrupted frame", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "alystria-browser-page-recovery-test-"));
+  try {
+    const executablePath = join(directory, "chromium.bin");
+    const bytes = Buffer.from("pinned chromium recovery fixture");
+    await writeFile(executablePath, bytes);
+    let createdPages = 0;
+    let closedPages = 0;
+    const driver: ChromiumDriver = {
+      name: "test",
+      executablePath,
+      version: "123.0.1",
+      networkPolicy: "deny",
+      async newPage() {
+        createdPages += 1;
+        const pageNumber = createdPages;
+        return {
+          async setViewportSize() {},
+          async setContent() {},
+          async waitForRenderReady() {
+            if (pageNumber === 1) {
+              throw new Error("page.evaluate: Target page, context or browser has been closed");
+            }
+          },
+          async screenshot(options) { await writeFile(options.path, Buffer.from("PNG recovered fixture")); },
+          async resetForReuse() {
+            if (pageNumber === 1) throw new Error("Chromium page is closed");
+          },
+          async close() { closedPages += 1; },
+        };
+      },
+      async close() {},
+    };
+    const capture = new PinnedBrowserCapture(driver, {
+      expectedVersion: driver.version,
+      expectedSha256: createHash("sha256").update(bytes).digest("hex"),
+    }, undefined, { maximumPages: 1 });
+
+    const output = join(directory, "recovered.png");
+    const result = await capture.captureFrame(fixtureManifest(), 0, output);
+
+    assert.equal(result.frame, 0);
+    assert.equal(createdPages, 2, "the failed page should be replaced exactly once");
+    assert.equal(closedPages, 1, "the failed page should be discarded before retrying");
+    assert.equal(await readFile(output, "utf8"), "PNG recovered fixture");
+    await capture.close();
+    assert.equal(closedPages, 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("capture teardown rejects queued work and closes leased pages", { timeout: 10_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "alystria-browser-close-test-"));
   try {

@@ -50,6 +50,12 @@ export interface PinnedBrowserCaptureOptions {
 }
 
 const DEFAULT_MAXIMUM_PAGES = 8;
+const MAXIMUM_CAPTURE_ATTEMPTS = 2;
+
+function isRecoverablePageClosure(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return /(?:target page, context or browser has been closed|target closed|page (?:is )?closed|browser has been closed|session closed.*page has been closed)/i.test(message);
+}
 
 interface PageWaiter {
   readonly resolve: () => void;
@@ -240,22 +246,35 @@ export class PinnedBrowserCapture {
     await this.verifyBrowser();
     const rendered = this.#renderer.render(manifest, frame, "final");
     await mkdir(dirname(outputPath), { recursive: true });
-    const page = await this.#acquirePage();
-    try {
-      await page.setViewportSize({ width: manifest.target.width, height: manifest.target.height });
-      await page.setContent(rendered.html);
-      await page.waitForRenderReady();
-      await page.screenshot({ path: outputPath, type: "png", animations: "disabled", caret: "hide" });
-    } finally {
-      await this.#releasePage(page);
+    for (let attempt = 1; attempt <= MAXIMUM_CAPTURE_ATTEMPTS; attempt += 1) {
+      const page = await this.#acquirePage();
+      let discardPage = false;
+      try {
+        await page.setViewportSize({ width: manifest.target.width, height: manifest.target.height });
+        await page.setContent(rendered.html);
+        await page.waitForRenderReady();
+        await page.screenshot({ path: outputPath, type: "png", animations: "disabled", caret: "hide" });
+      } catch (error) {
+        const mayRetry = !this.#closed && attempt < MAXIMUM_CAPTURE_ATTEMPTS && isRecoverablePageClosure(error);
+        if (!mayRetry) throw error;
+        // A target-closure error makes every later operation on the lease
+        // suspect. Remove that page from the pool before acquiring a clean
+        // context for the same deterministic frame.
+        discardPage = true;
+        continue;
+      } finally {
+        if (discardPage) await this.#discardPage(page);
+        else await this.#releasePage(page);
+      }
+      return {
+        frame,
+        outputPath,
+        contentHash: rendered.contentHash,
+        outputSha256: await sha256File(outputPath),
+        browserVersion: this.#driver.version,
+      };
     }
-    return {
-      frame,
-      outputPath,
-      contentHash: rendered.contentHash,
-      outputSha256: await sha256File(outputPath),
-      browserVersion: this.#driver.version,
-    };
+    throw new Error("Browser capture exhausted its bounded frame attempts");
   }
 
   async captureRange(manifest: RenderManifest, range: FrameRange, pathForFrame: (frame: number) => string): Promise<readonly CaptureResult[]> {
