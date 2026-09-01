@@ -234,6 +234,29 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByRole("option", { name: "About 12 minutes" })).toBeInTheDocument();
   });
 
+  it("carries an approved local starter presenter into the initial project snapshot", async () => {
+    const user = userEvent.setup();
+    await configureStarterPresenterProfile();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /create a tutorial/i }));
+    await user.type(screen.getByPlaceholderText(/explain why karatsuba/i), "Teach a visual multiplication proof");
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    await user.click(screen.getByRole("button", { name: /^creative/i }));
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    await user.click(await screen.findByRole("checkbox", { name: /approve this exact routing policy/i }));
+    await user.click(screen.getByRole("button", { name: /create learning plan/i }));
+
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
+      const created = persisted.projects.find((project) => project.title === "Teach a visual multiplication proof");
+      expect(created?.customization?.presenter).toMatchObject({
+        assetId: "presenter-portrait.mathematics-arjun-v1",
+        placement: "picture-in-picture",
+      });
+    });
+  });
+
   it("keeps accepted scenes safe when scoped regeneration starts", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -365,6 +388,37 @@ async function configureCloudProfile() {
         transcription: { providerId: "openai", modelId: "whisper-1" },
         presenter: { providerId: "local-runtime", modelId: "off by default" },
         lipSync: { providerId: "local-runtime", modelId: "off by default" },
+      },
+    }],
+  });
+  await providerSecretSet({ providerId: "openai", credentialKind: "api_key", secret: "browser-test-openai" });
+  await providerSecretSet({ providerId: "elevenlabs", credentialKind: "api_key", secret: "browser-test-elevenlabs" });
+}
+
+async function configureStarterPresenterProfile() {
+  const installFingerprint = "b".repeat(64);
+  await localModelSetupSave({
+    activeProfileId: "starter-presenter",
+    selectedModelIds: ["local/musetalk-1.5"],
+    lipSyncModelId: "local/musetalk-1.5",
+    existingModelDirectory: null,
+    profiles: [{
+      id: "starter-presenter",
+      name: "Starter presenter",
+      description: "Cloud media with an exact local presenter runtime",
+      routes: {
+        writing: { providerId: "openai", modelId: "gpt-5.4" },
+        research: { providerId: "openai", modelId: "off — creative mode" },
+        images: { providerId: "openai", modelId: "gpt-image-2" },
+        voice: { providerId: "elevenlabs", modelId: "eleven_multilingual_v2" },
+        presenter: { providerId: "local-runtime", modelId: "off — local lip-sync route" },
+        lipSync: {
+          providerId: "local-runtime",
+          modelId: "local/musetalk-1.5",
+          presenterProfileId: "presenter-portrait.mathematics-arjun-v1",
+          modelRevision: "musetalk-1.5-pinned",
+          installFingerprint,
+        },
       },
     }],
   });

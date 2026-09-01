@@ -2097,11 +2097,27 @@ function NewTutorialWizard({ environment, onClose, onCreate }: { environment: Ru
     const normalizedTopic = topic.trim() || "A new idea";
     const projectTitle = projectTitleFromTopic(normalizedTopic);
     const canonicalFixtureId = canonicalFixtureIdFromTopic(normalizedTopic);
+    const selectedPresenterAssetId = [
+      selectedProfile?.routes.lipSync,
+      selectedProfile?.routes.portraitAnimation,
+      selectedProfile?.routes.presenter,
+    ].find((route) => route?.providerId === "local-runtime"
+      && !/^(?:off|none|disabled)\b/i.test(route.modelId.trim())
+      && route.presenterProfileId
+      && STARTER_PRESENTER_PREVIEWS[route.presenterProfileId])?.presenterProfileId;
+    const presenterCustomization = selectedPresenterAssetId ? {
+      ...structuredClone(DEFAULT_CANVAS_CUSTOMIZATION),
+      presenter: {
+        ...DEFAULT_CANVAS_CUSTOMIZATION.presenter,
+        assetId: selectedPresenterAssetId,
+        placement: "picture-in-picture" as const,
+      },
+    } : undefined;
     setCreating(true);
     setCreateError(null);
     try {
       await onCreate(
-        { ...defaultSnapshot.projects[0]!, id, title: projectTitle, topic: normalizedTopic, description: `A ${grounding.toLowerCase()} tutorial for ${audience.toLowerCase()}.`, audience, locale, duration: Number(duration), progress: 8, status: "Planning", updatedAt: "just now", scenes: defaultSnapshot.projects[0]!.scenes.slice(0, 4).map((scene, index) => ({ ...scene, id: `${id}-scene-${index + 1}`, status: "draft" })), sources: [], ...(canonicalFixtureId ? { canonicalFixtureId } : {}) },
+        { ...defaultSnapshot.projects[0]!, id, title: projectTitle, topic: normalizedTopic, description: `A ${grounding.toLowerCase()} tutorial for ${audience.toLowerCase()}.`, audience, locale, duration: Number(duration), progress: 8, status: "Planning", updatedAt: "just now", scenes: defaultSnapshot.projects[0]!.scenes.slice(0, 4).map((scene, index) => ({ ...scene, id: `${id}-scene-${index + 1}`, status: "draft" })), sources: [], ...(canonicalFixtureId ? { canonicalFixtureId } : {}), ...(presenterCustomization ? { customization: presenterCustomization } : {}) },
         {
           grounding: grounding.toLowerCase() as GroundingMode,
           quality: quality.toLowerCase() as QualityPreset,
