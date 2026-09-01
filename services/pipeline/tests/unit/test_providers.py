@@ -41,6 +41,7 @@ from alystria.providers import (
     default_catalog,
     launch_media_adapter,
     launch_media_provider_ids,
+    launch_route_unit_prices,
 )
 from alystria.security.errors import PolicyViolation
 from alystria.security.network import ValidatedUrl
@@ -639,6 +640,24 @@ def test_unit_cost_estimate_and_provider_actual_cost_are_separate() -> None:
     result = adapter.invoke(request, context("elevenlabs", hard_budget_micros=50))
     assert result.usage.actual_cost_micros is None
     assert result.value.assets[0].data_base64 is not None
+
+
+def test_elevenlabs_launch_prices_are_exact_model_allowlists() -> None:
+    flash = launch_route_unit_prices(
+        "elevenlabs", {Capability.TTS: "eleven_flash_v2_5"}
+    )
+    multilingual = launch_route_unit_prices(
+        "elevenlabs", {Capability.TTS: "eleven_multilingual_v2"}
+    )
+
+    assert flash[0].micros_per_unit == 50
+    assert multilingual[0].micros_per_unit == 100
+    assert launch_route_unit_prices(
+        "elevenlabs", {Capability.TTS: "unreviewed-future-model"}
+    ) == ()
+    assert launch_route_unit_prices(
+        "openai", {Capability.TTS: "eleven_flash_v2_5"}
+    ) == ()
 
 
 @dataclass

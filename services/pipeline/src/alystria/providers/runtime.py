@@ -25,7 +25,7 @@ from .llm import (
     OpenAICompatibleLocalAdapter,
     OpenAIResponsesAdapter,
 )
-from .media import launch_media_adapter, launch_media_provider_ids
+from .media import launch_media_adapter, launch_media_provider_ids, launch_route_unit_prices
 from .nvidia_nim import NvidiaNimAdapter, configured_nvidia_visual_models
 from .policy import ProviderApproval, TutorialRoutingPolicy
 from .router import ProviderRouter, RoutingPolicy
@@ -548,7 +548,18 @@ class ProviderRuntimeFactory:
                     ),
                 )
         if provider_id in launch_media_provider_ids():
-            adapters.append(launch_media_adapter(provider_id, transport))
+            media_route_models = {
+                route.capability: route.model
+                for route in policy.routes
+                if provider_id in route.provider_ids
+            }
+            adapters.append(
+                launch_media_adapter(
+                    provider_id,
+                    transport,
+                    prices=launch_route_unit_prices(provider_id, media_route_models),
+                )
+            )
         if not adapters:
             raise ValueError(f"provider {provider_id!r} has no launch runtime adapter")
 

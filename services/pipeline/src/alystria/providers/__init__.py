@@ -24,6 +24,7 @@ from .media import (
     UnitPrice,
     launch_media_adapter,
     launch_media_provider_ids,
+    launch_route_unit_prices,
 )
 from .nvidia_nim import (
     NVIDIA_CHAT_ENDPOINT,
@@ -173,6 +174,7 @@ __all__ = [
     "default_catalog",
     "launch_media_adapter",
     "launch_media_provider_ids",
+    "launch_route_unit_prices",
     "load_and_validate_root_catalog",
     "parse_routing_policy",
     "validate_root_catalog",

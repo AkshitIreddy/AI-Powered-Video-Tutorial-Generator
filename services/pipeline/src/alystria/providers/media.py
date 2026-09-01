@@ -62,6 +62,20 @@ class UnitPrice:
     catalog_version: str
 
 
+# ElevenLabs bills these launch models per text character. Keep the table
+# deliberately narrow: an unknown or newly named model must remain unbounded
+# and fail Alystria's require-known-pricing gate until its price is reviewed.
+ELEVENLABS_TTS_MICROS_PER_CHARACTER: dict[str, int] = {
+    "eleven_flash_v2": 50,
+    "eleven_flash_v2_5": 50,
+    "eleven_turbo_v2": 50,
+    "eleven_turbo_v2_5": 50,
+    "eleven_multilingual_v2": 100,
+    "eleven_v3": 100,
+}
+ELEVENLABS_PRICING_CATALOG_VERSION = "elevenlabs-api-pricing-2026-09-01"
+
+
 RequestBuilder = Callable[[ProviderRequest, RequestContext], HttpRequest]
 
 
@@ -327,6 +341,28 @@ def launch_media_adapter(
 
 def launch_media_provider_ids() -> tuple[str, ...]:
     return tuple(_launch_configs())
+
+
+def launch_route_unit_prices(
+    provider_id: str,
+    route_models: dict[Capability, str],
+) -> tuple[UnitPrice, ...]:
+    """Return reviewed prices only for exact models in this generation policy."""
+
+    if provider_id != "elevenlabs":
+        return ()
+    model = route_models.get(Capability.TTS)
+    micros_per_character = ELEVENLABS_TTS_MICROS_PER_CHARACTER.get(model or "")
+    if micros_per_character is None:
+        return ()
+    return (
+        UnitPrice(
+            Capability.TTS,
+            "characters",
+            micros_per_character,
+            ELEVENLABS_PRICING_CATALOG_VERSION,
+        ),
+    )
 
 
 def _launch_configs() -> dict[str, LaunchProviderConfig]:
