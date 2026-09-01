@@ -250,9 +250,6 @@ def run_presenter_job(
     frames = version_root / "portrait_narration" / "%08d.png"
     intercepted = 0
 
-    def reject_shell_ffmpeg(_: str) -> int:
-        _fail("MuseTalk attempted an unexpected shell command")
-
     def safe_ffmpeg(argv: Any, **_: Any) -> subprocess.CompletedProcess[bytes]:
         nonlocal intercepted
         if not isinstance(argv, (list, tuple)) or not all(
@@ -351,6 +348,37 @@ def run_presenter_job(
             return subprocess.CompletedProcess(upstream, 0, b"", b"")
         _fail("MuseTalk attempted an unexpected additional FFmpeg invocation")
 
+    def safe_system(command: str) -> int:
+        """Translate only the two exact pinned upstream shell strings to argv."""
+
+        first = (
+            "ffmpeg -y -v warning -r 25 -f image2 -i "
+            f"{frames.parent}/%08d.png -vcodec libx264 -vf format=yuv420p -crf 18 "
+            f"{silent_video.parent}/temp_portrait_narration.mp4"
+        )
+        second = (
+            f"ffmpeg -y -v warning -i {audio_path} -i "
+            f"{silent_video.parent}/temp_portrait_narration.mp4 {generated_output}"
+        )
+        if command == first:
+            safe_ffmpeg(
+                [
+                    str(ffmpeg), "-y", "-v", "warning", "-r", "25", "-f", "image2",
+                    "-i", str(frames), "-vcodec", "libx264", "-vf", "format=yuv420p",
+                    "-crf", "18", str(silent_video),
+                ]
+            )
+            return 0
+        if command == second:
+            safe_ffmpeg(
+                [
+                    str(ffmpeg), "-y", "-v", "warning", "-i", audio_path,
+                    "-i", str(silent_video), str(generated_output),
+                ]
+            )
+            return 0
+        _fail("MuseTalk attempted an unexpected shell command")
+
     emit_progress("inference", 0.15, "Running pinned MuseTalk 1.5 inference")
     original_cwd = Path.cwd()
     upstream_failure: str | None = None
@@ -366,7 +394,7 @@ def run_presenter_job(
         module = _load_inference(inference_path, source_root)
         os_proxy = ModuleType("alystria_pinned_os_proxy")
         os_proxy.__dict__.update(os.__dict__)
-        os_proxy.system = reject_shell_ffmpeg
+        os_proxy.system = safe_system
         module.os = os_proxy
         module.subprocess = SimpleNamespace(run=safe_ffmpeg)
         module.fast_check_ffmpeg = lambda: True

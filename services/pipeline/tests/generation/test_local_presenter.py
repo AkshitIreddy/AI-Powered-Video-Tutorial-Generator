@@ -960,7 +960,7 @@ def test_cross_connection_job_cancellation_reaches_presenter_client(tmp_path: Pa
         store.close()
 
 
-def test_musetalk_adapter_replaces_upstream_subprocess_mux_with_fixed_argv(
+def test_musetalk_adapter_replaces_upstream_shell_mux_with_fixed_argv(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     adapter_path = Path(__file__).parents[2] / "scripts" / "musetalk_v15_adapter.py"
@@ -1000,7 +1000,7 @@ def test_musetalk_adapter_replaces_upstream_subprocess_mux_with_fixed_argv(
     pose_config.write_text("model = {}\n", encoding="utf-8")
     inference = source_root / "scripts" / "inference.py"
     inference.write_text(
-        "import subprocess\n"
+        "import os\n"
         "from pathlib import Path\n"
         "from musetalk.utils import preprocessing\n"
         "def main(args):\n"
@@ -1013,14 +1013,12 @@ def test_musetalk_adapter_replaces_upstream_subprocess_mux_with_fixed_argv(
         "    frames.mkdir(parents=True)\n"
         "    silent = Path(args.result_dir) / 'v15' / 'temp_portrait_narration.mp4'\n"
         "    output = Path(args.result_dir) / 'v15' / 'presenter.mp4'\n"
-        "    subprocess.run([str(Path(args.ffmpeg_path) / 'ffmpeg.exe'), '-y', '-v', "
-        "'warning', '-r', '25', '-f', 'image2', '-i', str(frames / '%08d.png'), "
-        "'-vcodec', 'libx264', '-vf', 'format=yuv420p', '-crf', '18', str(silent)], "
-        "check=True)\n"
-        "    subprocess.run([str(Path(args.ffmpeg_path) / 'ffmpeg.exe'), '-y', '-v', "
-        "'warning', '-i', str(Path(__import__('json').loads(Path(args.inference_config)"
-        ".read_text())['alystria']['audio_path'])), '-i', str(silent), str(output)], "
-        "check=True)\n"
+        "    os.system(f'ffmpeg -y -v warning -r 25 -f image2 -i {frames}/%08d.png "
+        "-vcodec libx264 -vf format=yuv420p -crf 18 {silent.parent}/temp_portrait_narration.mp4')\n"
+        "    audio = Path(__import__('json').loads(Path(args.inference_config)"
+        ".read_text())['alystria']['audio_path'])\n"
+        "    os.system(f'ffmpeg -y -v warning -i {audio} -i "
+        "{silent.parent}/temp_portrait_narration.mp4 {output}')\n"
         "    print('Error occurred during processing:', "
         "\"local variable 'save_dir_full' referenced before assignment\")\n",
         encoding="utf-8",
