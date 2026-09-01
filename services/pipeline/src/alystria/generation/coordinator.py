@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import tempfile
 import uuid
 from dataclasses import replace
@@ -130,6 +131,27 @@ _DOCUMENT_MEDIA_SUFFIXES = {
     "image/tiff": ".tiff",
     "image/webp": ".webp",
 }
+
+
+def _canonical_fixture_id_from_topic(topic: str) -> str | None:
+    """Recover the narrowly branded flagship identity from legacy projects.
+
+    Desktop builds created before ``canonicalFixtureId`` was persisted still
+    contain the exact user brief. Keep this matcher aligned with the desktop
+    creation rule: a generic Karatsuba request must continue through the chosen
+    generation path and must not be silently replaced by the bundled flagship.
+    """
+
+    normalized = re.sub(r"\s+", " ", topic).strip()
+    asks_for_karatsuba = re.search(r"\bkaratsuba\b", normalized, re.IGNORECASE)
+    asks_for_flagship = re.search(
+        r"\bcanonical\b|\b(?:12|twelve)[ -]minute\b",
+        normalized,
+        re.IGNORECASE,
+    )
+    if asks_for_karatsuba and asks_for_flagship:
+        return "fixture.karatsuba.undergraduate.en"
+    return None
 
 
 class GenerationCoordinator:
@@ -810,10 +832,15 @@ def request_from_desktop(
         or bool(visual_customization.get("presenter", {}).get("enabled"))
         else "off"
     )
-    canonical_fixture_id = snapshot.get("canonicalFixtureId")
+    canonical_fixture_value = snapshot.get("canonicalFixtureId")
+    if canonical_fixture_value is not None and not isinstance(canonical_fixture_value, str):
+        raise ValueError("canonicalFixtureId must be a string")
+    canonical_fixture_id = (
+        canonical_fixture_value
+        if isinstance(canonical_fixture_value, str)
+        else _canonical_fixture_id_from_topic(topic)
+    )
     if canonical_fixture_id is not None:
-        if not isinstance(canonical_fixture_id, str):
-            raise ValueError("canonicalFixtureId must be a string")
         fixture = request_from_canonical_fixture(canonical_fixture_id)
         return replace(
             fixture,

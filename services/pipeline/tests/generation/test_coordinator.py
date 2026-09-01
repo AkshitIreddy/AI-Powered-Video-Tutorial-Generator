@@ -784,3 +784,88 @@ def test_desktop_flagship_identity_loads_the_bundled_karatsuba_contract(
         assert storyboard["scenes"][1]["type"] == "definition"
     finally:
         store.close()
+
+
+def test_desktop_recovers_flagship_identity_from_a_legacy_exact_topic(
+    tmp_path: Path,
+) -> None:
+    store, _ = open_coordinator(tmp_path)
+    try:
+        store.create_revision(
+            snapshot={
+                "brief": {
+                    "topic": (
+                        "Create the canonical 12-minute Karatsuba multiplication tutorial: "
+                        "derive the three-multiplication method rigorously, work through "
+                        "1234 \u00d7 5678, compare O(n^log2 3) with grade-school O(n²), "
+                        "and include retrieval practice plus a recap."
+                    ),
+                    "audience": "Undergraduate students",
+                    "durationSeconds": 720,
+                    "locale": "en-US",
+                },
+                "groundingMode": "creative",
+                "sources": [],
+            },
+            kind="edit",
+        )
+
+        converted = request_from_desktop(
+            store,
+            {
+                "quality": "studio",
+                "privacy": "hybrid",
+                "approvedProviderIds": ["nvidia-nim", "local-runtime"],
+                "budget": {
+                    "currency": "USD",
+                    "hardLimitMinorUnits": 0,
+                    "requireKnownPricing": True,
+                },
+            },
+        )
+
+        assert converted.metadata["fixtureId"] == "fixture.karatsuba.undergraduate.en"
+        assert len(converted.metadata["canonicalFixtureScenes"]) == 13
+        assert converted.duration_seconds == 720
+    finally:
+        store.close()
+
+
+def test_desktop_does_not_replace_an_ordinary_karatsuba_topic_with_the_flagship(
+    tmp_path: Path,
+) -> None:
+    store, _ = open_coordinator(tmp_path)
+    try:
+        store.create_revision(
+            snapshot={
+                "brief": {
+                    "topic": "Explain why Karatsuba uses three products",
+                    "audience": "Undergraduate students",
+                    "durationSeconds": 300,
+                    "locale": "en-US",
+                },
+                "groundingMode": "creative",
+                "sources": [],
+            },
+            kind="edit",
+        )
+
+        converted = request_from_desktop(
+            store,
+            {
+                "quality": "standard",
+                "privacy": "hybrid",
+                "approvedProviderIds": ["nvidia-nim", "local-runtime"],
+                "budget": {
+                    "currency": "USD",
+                    "hardLimitMinorUnits": 0,
+                    "requireKnownPricing": True,
+                },
+            },
+        )
+
+        assert converted.topic == "Explain why Karatsuba uses three products"
+        assert "fixtureId" not in converted.metadata
+        assert "canonicalFixtureScenes" not in converted.metadata
+    finally:
+        store.close()
