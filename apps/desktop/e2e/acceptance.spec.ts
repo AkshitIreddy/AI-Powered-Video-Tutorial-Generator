@@ -42,7 +42,7 @@ test("@ui-contract drives create, approve, review boundary, and export through t
   for (const [medium, routeSettings] of Object.entries(routes)) {
     const route = page.locator(".profile-route-grid label").filter({ hasText: medium });
     await route.locator("select").selectOption(routeSettings.provider);
-    await route.getByLabel(`${medium} model`).fill(routeSettings.model);
+    await route.getByLabel(`${medium} model`, { exact: true }).fill(routeSettings.model);
   }
   await page.getByRole("button", { name: /save setup & active profile/i }).click();
   await expect(page.getByText(/setup saved locally/i)).toBeVisible();
@@ -55,12 +55,16 @@ test("@ui-contract drives create, approve, review boundary, and export through t
   );
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await wizard.getByLabel("Audience").fill("Undergraduate computer science students");
-  await wizard.getByLabel("Target duration").selectOption("5");
+  await wizard.getByLabel("Target duration").selectOption("custom");
+  await wizard.getByLabel("Exact duration in minutes").fill("3");
+  await expect(wizard.getByLabel("Exact duration in minutes")).toHaveValue("3");
+  await wizard.locator(".form-grid").screenshot({ path: testInfo.outputPath("custom-duration-three-minutes.png") });
   await wizard.getByLabel("Language").selectOption("English");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: /^creative/i }).click();
   await expect(page.getByText(/no cloud call happens/i)).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(wizard.getByText("About 3 minutes")).toBeVisible();
   await page.getByRole("button", { name: "Maximum", exact: true }).click();
   await expect(page.getByText(/hard creation budget/i)).toBeVisible();
   await page.getByLabel("Content class", { exact: true }).selectOption("public");
@@ -116,6 +120,7 @@ test("@ui-contract drives create, approve, review boundary, and export through t
   expect(persisted.projects[0].title).toBe(
     "Explain why Karatsuba multiplication needs only three recursive products",
   );
+  expect(persisted.projects[0].duration).toBe(3);
   const exportJob = persisted.jobs.find((job: { operation?: string }) => job.operation === "export_master");
   expect(exportJob).toBeTruthy();
   expect(exportJob.result).toMatchObject({ requestedFps: 24, requestedCodec: "av1", codecForwarded: false, path: null });
