@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { assertRenderManifest } from "../src/contracts.js";
 import { fixtureManifest, fixtureTarget } from "../src/fixture.js";
 import { presenterRect, resolvePresenterCompositeLayers } from "../src/presenter.js";
+import { resolveBuiltinSceneSpec } from "../src/runtime.js";
+import { SceneViewStaticAdapter } from "../src/scene-view.js";
 import { secondsToTicks } from "../src/timebase.js";
 
 const HASH = "a".repeat(64);
@@ -148,4 +150,34 @@ test("picture-in-picture composite follows the top-caption scene transform", () 
   assert.ok(withTopCaption.width < raw.width, "top caption should scale the scene and PIP together");
   assert.equal(withTopCaption.x % 2, 0);
   assert.equal(withTopCaption.y % 2, 0);
+});
+
+test("picture-in-picture video replaces the exact authored portrait stage", () => {
+  const base = presenterManifest();
+  const guide = {
+    ...base.scenes[1]!,
+    content: {
+      eyebrow: "THE QUESTION",
+      title: "Can four products become three?",
+      body: "Keep the four-to-three relationship visible.",
+      items: ["x = aB + b", "y = cB + d", "Four products", "Three products"],
+    },
+    metadata: { presenterPlacement: "picture_in_picture" },
+  };
+  const manifest = {
+    ...base,
+    scenes: [base.scenes[0]!, guide],
+    presenterVideos: [{ ...base.presenterVideos[0]!, placement: "picture-in-picture" as const }],
+  };
+  const spec = resolveBuiltinSceneSpec(guide);
+  assert.ok(spec);
+  const rendered = new SceneViewStaticAdapter({ reducedMotion: true }).renderSpec(spec, manifest.target, secondsToTicks(1));
+  const media = rendered.svg.match(/data-presenter-media="true" data-media-x="([\d.]+)" data-media-y="([\d.]+)" data-media-width="([\d.]+)" data-media-height="([\d.]+)"/);
+  assert.ok(media, "the authoritative SVG must expose the exact presenter media aperture");
+  const layer = resolvePresenterCompositeLayers(manifest, { startFrame: 60, endFrame: 90 })[0];
+  assert.ok(layer);
+  assert.deepEqual(
+    { x: layer.x, y: layer.y, width: layer.width, height: layer.height },
+    { x: Number(media[1]), y: Number(media[2]), width: Number(media[3]), height: Number(media[4]) },
+  );
 });

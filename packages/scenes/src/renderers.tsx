@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { animationStyle } from "./choreography.js";
 import { clamp, insetRect, splitColumns, stackRows } from "./layout.js";
+import { presenterLayoutFromBody } from "./presenter-layout.js";
 import {
   AssetFrame,
   BulletList,
@@ -773,34 +774,14 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
   const body = bodyRect(props);
   const withSlide = content.kind === "presenter-slide";
   const placement = content.placement ?? (withSlide ? "split-left" : "full");
-  const isWide = props.scene.metrics.columns === 2;
-  const split = isWide
-    ? splitColumns(body, props.scene.metrics.gutter * 0.65, placement === "split-right" ? 0.59 : 0.42)
-    : stackRows(body, 2, props.scene.metrics.gutter * 0.55) as readonly [Rect, Rect];
-  const presenterPanel = placement === "split-right" ? split[1] : split[0];
-  const insightPanel = placement === "split-right" ? split[0] : split[1];
-  const portraitRect: Rect = placement === "picture-in-picture"
-    ? { x: body.x + body.width * 0.68, y: body.y + body.height * 0.18, width: body.width * 0.3, height: body.height * 0.66 }
-    : withSlide || placement !== "full"
-      ? presenterPanel
-      : isWide
-        ? { x: body.x, y: body.y, width: body.width * 0.46, height: body.height }
-        : { x: body.x + body.width * 0.08, y: body.y, width: body.width * 0.84, height: body.height * 0.62 };
-  const slideRect: Rect | undefined = withSlide
-    ? placement === "picture-in-picture" && isWide
-      // Picture-in-picture is still a deliberate presenter stage, not a
-      // webcam floating over copy: reserve the left teaching field and the
-      // right portrait field as non-overlapping geometry.
-      ? { x: body.x, y: body.y, width: body.width * 0.64, height: body.height }
-      : insightPanel
-    : placement === "full"
-      ? (isWide ? { x: body.x + body.width * 0.5, y: body.y, width: body.width * 0.5, height: body.height } : { x: body.x, y: body.y + body.height * 0.67, width: body.width, height: body.height * 0.3 })
-      : undefined;
+  const layout = presenterLayoutFromBody(body, props.scene.metrics, placement, withSlide);
+  const portraitRect = layout.stage;
+  const slideRect = layout.insight;
   const points = (content.slideItems ?? []).slice(0, 4);
   const pointRows = slideRect ? stackRows({ x: slideRect.x + props.scene.metrics.gutter * 0.6, y: slideRect.y + slideRect.height * 0.16, width: slideRect.width - props.scene.metrics.gutter * 1.2, height: slideRect.height * 0.71 }, Math.max(1, points.length), props.scene.metrics.unit * 0.4) : [];
   return withFrame(props, (
     <g id="body" data-semantic-role="presenter" data-presenter-placement={placement}>
-      <PresenterPortraitStage props={props} rect={portraitRect} />
+      <PresenterPortraitStage props={props} rect={portraitRect} mediaRect={layout.media} />
       {slideRect ? <g data-presenter-insight="true" data-insight-x={Math.round(slideRect.x)} data-insight-width={Math.round(slideRect.width)}>
         <ReadabilitySurface scene={props.scene} rect={{ x: slideRect.x - props.scene.metrics.gutter * 0.25, y: slideRect.y - props.scene.metrics.gutter * 0.25, width: slideRect.width + props.scene.metrics.gutter * 0.5, height: slideRect.height + props.scene.metrics.gutter * 0.5 }} theme={theme} opacity={0.965} role="presenter-insight" />
         <text x={slideRect.x + props.scene.metrics.gutter * 0.6} y={slideRect.y + legible(props.scene.metrics.smallSize) * 1.2} fill={paperPrimary(theme)} fontFamily={theme.fontMono} fontWeight="820" fontSize={legible(props.scene.metrics.smallSize)} letterSpacing="2.2">{withSlide ? "KEEP THIS IN VIEW" : "PRESENTER NOTE"}</text>
@@ -812,11 +793,25 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
             : point.emphasis === "warning" || index === 1
               ? paperWarning(theme)
               : paperPrimary(theme);
-          return <g key={point.id} id={point.id} style={animationStyle(props.scene.choreography, point.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>
-            <text x={rect.x} y={rect.y + rect.height * 0.66} fill={numberColor} fontFamily={theme.fontDisplay} fontSize={props.scene.metrics.titleSize * 1.58} fontWeight="840" letterSpacing={-2}>{String(index + 1).padStart(2, "0")}</text>
-            <line x1={rect.x + props.scene.metrics.titleSize * 1.75} x2={rect.x + props.scene.metrics.titleSize * 1.75} y1={rect.y + rect.height * 0.18} y2={rect.y + rect.height * 0.82} stroke={color} strokeWidth={Math.max(5, props.scene.metrics.unit * 0.48)} />
-            <WrappedText text={point.text} rect={{ x: rect.x + props.scene.metrics.titleSize * 2.15, y: rect.y + rect.height * 0.12, width: rect.width - props.scene.metrics.titleSize * 2.2, height: rect.height * 0.72 }} theme={theme} fontSize={legible(props.scene.metrics.bodySize * 1.04)} fontWeight="720" maxLines={2} lineHeight={1.16} />
-            {point.supportingText ? <WrappedText text={point.supportingText} rect={{ x: rect.x + props.scene.metrics.titleSize * 2.15, y: rect.y + rect.height * 0.67, width: rect.width - props.scene.metrics.titleSize * 2.2, height: rect.height * 0.25 }} theme={theme} fill={theme.mutedInk} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="600" maxLines={1} /> : null}
+          const numberColumnWidth = props.scene.metrics.titleSize * 2.08;
+          const dividerGutter = props.scene.metrics.unit * 3.2;
+          const numberRight = rect.x + numberColumnWidth;
+          const copyX = numberRight + dividerGutter;
+          const dividerX = numberRight + dividerGutter / 2;
+          const copyWidth = Math.max(0, rect.x + rect.width - copyX);
+          return <g
+            key={point.id}
+            id={point.id}
+            data-sequence-number-right={numberRight}
+            data-sequence-divider-x={dividerX}
+            data-sequence-gutter-center-x={dividerX}
+            data-sequence-copy-x={copyX}
+            style={animationStyle(props.scene.choreography, point.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}
+          >
+            <text x={rect.x} y={rect.y + rect.height * 0.66} fill={numberColor} fontFamily={theme.fontDisplay} fontSize={props.scene.metrics.titleSize * 1.42} fontWeight="840" letterSpacing={-1.4}>{String(index + 1).padStart(2, "0")}</text>
+            <line x1={dividerX} x2={dividerX} y1={rect.y + rect.height * 0.18} y2={rect.y + rect.height * 0.82} stroke={color} strokeWidth={Math.max(5, props.scene.metrics.unit * 0.48)} />
+            <WrappedText text={point.text} rect={{ x: copyX, y: rect.y + rect.height * 0.12, width: copyWidth, height: rect.height * 0.72 }} theme={theme} fontSize={legible(props.scene.metrics.bodySize * 1.04)} fontWeight="720" maxLines={2} lineHeight={1.16} />
+            {point.supportingText ? <WrappedText text={point.supportingText} rect={{ x: copyX, y: rect.y + rect.height * 0.67, width: copyWidth, height: rect.height * 0.25 }} theme={theme} fill={theme.mutedInk} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="600" maxLines={1} /> : null}
           </g>;
         }) : content.talkingPoint ? <g><path d={`M ${slideRect.x + props.scene.metrics.gutter * 0.6} ${slideRect.y + slideRect.height * 0.24} H ${slideRect.x + slideRect.width - props.scene.metrics.gutter * 0.6}`} stroke={theme.secondary} strokeWidth={Math.max(5, props.scene.metrics.unit * 0.5)} /><WrappedText text={content.talkingPoint} rect={{ x: slideRect.x + props.scene.metrics.gutter * 0.6, y: slideRect.y + slideRect.height * 0.34, width: slideRect.width - props.scene.metrics.gutter * 1.2, height: slideRect.height * 0.48 }} theme={theme} fontFamily={theme.fontDisplay} fontSize={legible(props.scene.metrics.subtitleSize * 1.2)} fontWeight="730" maxLines={5} lineHeight={1.12} /></g> : null}
       </g> : null}
@@ -829,7 +824,7 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
   ));
 }
 
-function PresenterPortraitStage({ props, rect }: { readonly props: SceneRendererProps<PresenterContent>; readonly rect: Rect }) {
+function PresenterPortraitStage({ props, rect, mediaRect }: { readonly props: SceneRendererProps<PresenterContent>; readonly rect: Rect; readonly mediaRect: Rect }) {
   const theme = props.theme ?? PRECISION_THEME;
   const content = props.scene.spec.content;
   const name = content.presenterName ?? "Presenter";
@@ -837,10 +832,12 @@ function PresenterPortraitStage({ props, rect }: { readonly props: SceneRenderer
   const nameMaxChars = Math.max(12, Math.floor((rect.width - props.scene.metrics.gutter * 1.4) / (nameFontSize * 0.56)));
   const nameLines = wrapText(name, nameMaxChars);
   const nameLineHeight = nameFontSize * 1.08;
-  return <g data-presenter-stage="portrait" data-stage-x={Math.round(rect.x)} data-stage-width={Math.round(rect.width)}>
+  return <g data-presenter-stage="portrait" data-stage-x={Math.round(rect.x)} data-stage-y={Math.round(rect.y)} data-stage-width={Math.round(rect.width)} data-stage-height={Math.round(rect.height)}>
     <path d={`M ${rect.x} ${rect.y} H ${rect.x + rect.width} V ${rect.y + rect.height} H ${rect.x + props.scene.metrics.unit * 1.2} L ${rect.x} ${rect.y + rect.height - props.scene.metrics.unit * 1.2} Z`} fill={`url(#ink-field-${safeId(props.scene.spec.id)})`} filter={`url(#soft-shadow-${safeId(props.scene.spec.id)})`} />
     <path d={`M ${rect.x} ${rect.y} H ${rect.x + rect.width} V ${rect.y + rect.height} H ${rect.x + props.scene.metrics.unit * 1.2} L ${rect.x} ${rect.y + rect.height - props.scene.metrics.unit * 1.2} Z`} fill={`url(#micro-grid-${safeId(props.scene.spec.id)})`} opacity="0.58" />
-    {content.portrait ? <AssetFrame asset={content.portrait} rect={{ x: rect.x + rect.width * 0.07, y: rect.y + rect.height * 0.05, width: rect.width * 0.86, height: rect.height * 0.71 }} resolveAsset={props.resolveAsset} theme={theme} label="" /> : <FictionalPresenterSilhouette rect={{ x: rect.x + rect.width * 0.07, y: rect.y + rect.height * 0.04, width: rect.width * 0.86, height: rect.height * 0.72 }} theme={theme} />}
+    <g data-presenter-media="true" data-media-x={Math.round(mediaRect.x)} data-media-y={Math.round(mediaRect.y)} data-media-width={Math.round(mediaRect.width)} data-media-height={Math.round(mediaRect.height)}>
+      {content.portrait ? <AssetFrame asset={content.portrait} rect={mediaRect} resolveAsset={props.resolveAsset} theme={theme} label="" /> : <FictionalPresenterSilhouette rect={mediaRect} theme={theme} />}
+    </g>
     <path d={`M ${rect.x} ${rect.y + rect.height * 0.74} H ${rect.x + rect.width} V ${rect.y + rect.height} H ${rect.x + props.scene.metrics.unit * 1.2} L ${rect.x} ${rect.y + rect.height - props.scene.metrics.unit * 1.2} Z`} fill={theme.codeBackground} opacity="0.97" />
     <line x1={rect.x + props.scene.metrics.gutter * 0.7} x2={rect.x + rect.width * 0.42} y1={rect.y + rect.height * 0.79} y2={rect.y + rect.height * 0.79} stroke={theme.accent} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.42)} />
     <text x={rect.x + props.scene.metrics.gutter * 0.7} y={rect.y + rect.height * 0.845} fill="#AEB6CE" fontFamily={theme.fontMono} fontWeight="760" fontSize={legible(props.scene.metrics.smallSize * 0.76)} letterSpacing="1.6">PRESENTER IDENTITY</text>

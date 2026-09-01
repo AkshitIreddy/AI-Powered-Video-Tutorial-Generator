@@ -4,7 +4,9 @@ import type {
   PresenterVideoPlacement,
   RenderManifest,
   RenderTarget,
+  ResolvedScene,
 } from "./contracts.js";
+import { createPresenterLayout } from "@alystria/scenes";
 import { captionTopBandHeight } from "./captions.js";
 import type { FrameRange } from "./ranges.js";
 import { frameToTick } from "./timebase.js";
@@ -44,38 +46,14 @@ function clampRect(rect: PresenterRect, target: RenderTarget): PresenterRect {
   };
 }
 
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.max(minimum, Math.min(maximum, value));
-}
-
-/**
- * Match SceneCanvas/PresenterRenderer's deterministic PIP panel before any
- * caption-band transform. Keeping this in one explicit layout calculation
- * lets the FFmpeg video replace the preview portrait rather than appearing as
- * a second, offset presenter later in assembly.
- */
-function scenePipRect(target: RenderTarget): PresenterRect {
-  const minimum = Math.min(target.width, target.height);
-  const scale = minimum / 1_080;
-  const safeInset = Math.max(32 * scale, minimum * 0.05);
-  const safeWidth = target.width - safeInset * 2;
-  const safeHeight = target.height - safeInset * 2;
-  const portrait = target.width / target.height <= 0.85;
-  const titleSize = Math.round(clamp(44 * scale * (portrait ? 1.08 : 1), 34, 88));
-  const headerHeight = Math.min(safeHeight * 0.23, titleSize * 2.2);
-  const gutter = Math.max(18, 30 * scale);
-  const body = {
-    x: safeInset,
-    y: safeInset + headerHeight + gutter,
-    width: safeWidth,
-    height: safeHeight - headerHeight - gutter,
-  };
-  return {
-    x: body.x + body.width * 0.68,
-    y: body.y + body.height * 0.22,
-    width: body.width * 0.30,
-    height: body.height * 0.58,
-  };
+function safeAreaPercent(target: RenderTarget): number {
+  if (!target.safeArea) return 0.05;
+  return Math.max(
+    (target.safeArea.top ?? 0) / target.height,
+    (target.safeArea.bottom ?? 0) / target.height,
+    (target.safeArea.left ?? 0) / target.width,
+    (target.safeArea.right ?? 0) / target.width,
+  );
 }
 
 function captionAdjustedRect(
@@ -103,6 +81,7 @@ export function presenterRect(
   target: RenderTarget,
   placement: PresenterVideoPlacement,
   captionStyle?: CaptionRenderStyle,
+  scene?: Pick<ResolvedScene, "content" | "kind">,
 ): PresenterRect {
   const left = target.safeArea?.left ?? Math.round(target.width * 0.04);
   const right = target.safeArea?.right ?? Math.round(target.width * 0.04);
@@ -114,7 +93,12 @@ export function presenterRect(
     case "full":
       return { x: 0, y: 0, width: even(target.width), height: even(target.height) };
     case "picture-in-picture":
-      return clampRect(captionAdjustedRect(scenePipRect(target), target, captionStyle), target);
+      return clampRect(captionAdjustedRect(createPresenterLayout(
+        { width: target.width, height: target.height, safeAreaPercent: safeAreaPercent(target) },
+        scene?.content ?? {},
+        placement,
+        scene?.kind === "presenter-slide",
+      ).media, target, captionStyle), target);
     case "split-left":
       return clampRect({
         x: left,
@@ -136,6 +120,7 @@ export function presenterRect(
 
 interface TimedPresenterVideo {
   readonly input: PresenterVideoInput;
+  readonly scene: ResolvedScene;
   readonly sceneStartTick: number;
   readonly presenterEndTick: number;
 }
@@ -150,6 +135,7 @@ function timedPresenterVideos(manifest: RenderManifest): readonly TimedPresenter
     if (input) {
       timed.push({
         input,
+        scene,
         sceneStartTick,
         presenterEndTick: sceneStartTick + (input.activeDurationTicks ?? scene.durationTicks),
       });
@@ -166,11 +152,11 @@ export function resolvePresenterCompositeLayers(
 ): readonly PresenterCompositeLayer[] {
   const selectionStartTick = frameToTick(range.startFrame, manifest.target.frameRate);
   const selectionEndTick = frameToTick(range.endFrame, manifest.target.frameRate);
-  return timedPresenterVideos(manifest).flatMap(({ input, sceneStartTick, presenterEndTick }) => {
+  return timedPresenterVideos(manifest).flatMap(({ input, scene, sceneStartTick, presenterEndTick }) => {
     const overlapStartTick = Math.max(selectionStartTick, sceneStartTick);
     const overlapEndTick = Math.min(selectionEndTick, presenterEndTick);
     if (overlapEndTick <= overlapStartTick) return [];
-    const rect = presenterRect(manifest.target, input.placement, manifest.captionStyle);
+    const rect = presenterRect(manifest.target, input.placement, manifest.captionStyle, scene);
     return [{
       ...rect,
       id: input.id,

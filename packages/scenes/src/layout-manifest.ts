@@ -12,6 +12,31 @@ import type {
 
 export const SCENE_LAYOUT_COMPILER_VERSION = "constraint-layout-v1";
 
+export function commonSceneBodyRect(
+  content: unknown,
+  metrics: LayoutMetrics,
+): Rect {
+  const graphicsSafe = metrics.safe;
+  const record = typeof content === "object" && content !== null ? content as Record<string, unknown> : {};
+  const eyebrow = Boolean(record.eyebrow);
+  const eyebrowHeight = eyebrow ? Math.max(metrics.smallSize * 1.22, metrics.unit * 2) : 0;
+  const titleLineCount = metrics.profile === "portrait" ? 3 : 2;
+  const titleHeight = metrics.titleSize * titleLineCount * 1.04;
+  const headerGap = eyebrow ? Math.max(metrics.unit, metrics.smallSize * 0.42) : 0;
+  const headerHeight = Math.min(
+    graphicsSafe.height * (metrics.profile === "portrait" ? 0.2 : 0.24),
+    Math.max(metrics.titleSize * 2.2, eyebrowHeight + headerGap + titleHeight),
+  );
+  const body: Rect = {
+    x: graphicsSafe.x,
+    y: graphicsSafe.y + headerHeight + metrics.gutter,
+    width: graphicsSafe.width,
+    height: graphicsSafe.height - headerHeight - metrics.gutter,
+  };
+  if (body.height <= 0) throw new RangeError("Scene header consumes the complete graphics-safe area");
+  return body;
+}
+
 function insetForRatio(frame: Rect, ratio: number): Rect {
   const x = frame.width * ratio;
   const y = frame.height * ratio;
@@ -86,12 +111,7 @@ export function createSceneLayoutManifest(
   const subtitleRect: Rect = subtitleWidth
     ? { x: graphicsSafe.x + graphicsSafe.width - subtitleWidth, y: graphicsSafe.y, width: subtitleWidth, height: headerHeight }
     : { x: graphicsSafe.x, y: titleRect.y + titleRect.height, width: graphicsSafe.width, height: 0 };
-  const bodyRect: Rect = {
-    x: graphicsSafe.x,
-    y: graphicsSafe.y + headerHeight + metrics.gutter,
-    width: graphicsSafe.width,
-    height: graphicsSafe.height - headerHeight - metrics.gutter,
-  };
+  const bodyRect = commonSceneBodyRect(spec.content, metrics);
   if (bodyRect.height <= 0) throw new RangeError(`Scene ${spec.id} header consumes the complete graphics-safe area`);
 
   const slots: LayoutSlot[] = [

@@ -147,10 +147,42 @@ describe("built-in scene catalog", () => {
     expect(markup).not.toContain('fill="#F7F8FC" opacity="0.31"');
     expect(markup.match(/alystria-asset:sha256\//g)?.length).toBe(2);
     const insight = markup.match(/data-insight-x="(\d+)" data-insight-width="(\d+)"/);
-    const stage = markup.match(/data-stage-x="(\d+)" data-stage-width="(\d+)"/);
+    const stage = markup.match(/data-stage-x="(\d+)" data-stage-y="\d+" data-stage-width="(\d+)"/);
     expect(insight).not.toBeNull();
     expect(stage).not.toBeNull();
     expect(Number(insight?.[1]) + Number(insight?.[2])).toBeLessThanOrEqual(Number(stage?.[1]));
+  });
+
+  it("reserves collision-free presenter sequence columns and keeps the portrait inside its stage", () => {
+    const spec = specimenFor("presenter-slide");
+    if (spec.content.kind !== "presenter-slide") throw new Error("Expected presenter-slide specimen");
+    const scene = compileScene({
+      ...spec,
+      content: { ...spec.content, placement: "picture-in-picture" },
+    }, landscape);
+    const markup = renderToStaticMarkup(createElement(SceneView, {
+      scene,
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 3, reducedMotion: true },
+    }));
+
+    const rows = [...markup.matchAll(/data-sequence-number-right="([\d.]+)" data-sequence-divider-x="([\d.]+)" data-sequence-gutter-center-x="([\d.]+)" data-sequence-copy-x="([\d.]+)"/g)];
+    expect(rows).toHaveLength(spec.content.slideItems?.length ?? 0);
+    for (const row of rows) {
+      expect(Number(row[1]) + scene.metrics.unit).toBeLessThanOrEqual(Number(row[2]));
+      expect(Math.abs(Number(row[2]) - Number(row[3]))).toBeLessThanOrEqual(0.5);
+      expect(Number(row[2])).toBeLessThan(Number(row[4]));
+    }
+
+    const stage = markup.match(/data-presenter-stage="portrait" data-stage-x="([\d.]+)" data-stage-y="([\d.]+)" data-stage-width="([\d.]+)" data-stage-height="([\d.]+)"/);
+    const media = markup.match(/data-presenter-media="true" data-media-x="([\d.]+)" data-media-y="([\d.]+)" data-media-width="([\d.]+)" data-media-height="([\d.]+)"/);
+    expect(stage).not.toBeNull();
+    expect(media).not.toBeNull();
+    const [stageX, stageY, stageWidth, stageHeight] = stage!.slice(1).map(Number);
+    const [mediaX, mediaY, mediaWidth, mediaHeight] = media!.slice(1).map(Number);
+    expect(mediaX).toBeGreaterThanOrEqual(stageX);
+    expect(mediaY).toBeGreaterThanOrEqual(stageY);
+    expect(mediaX + mediaWidth).toBeLessThanOrEqual(stageX + stageWidth);
+    expect(mediaY + mediaHeight).toBeLessThanOrEqual(stageY + stageHeight);
   });
 
   it("keeps the teaching relationship visible in the premium scene families", () => {
