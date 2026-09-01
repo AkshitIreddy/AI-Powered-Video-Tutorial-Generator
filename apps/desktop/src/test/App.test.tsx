@@ -225,12 +225,13 @@ describe("Alystria desktop shell", () => {
     expect(creationJob?.projectDirectory).toBe(created?.nativeProjectDirectory);
   });
 
-  it("offers the exact twelve-minute flagship duration", async () => {
+  it("offers quick-draft and exact flagship durations", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("button", { name: /create a tutorial/i }));
     await user.type(screen.getByPlaceholderText(/explain why karatsuba/i), "Karatsuba multiplication");
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    expect(screen.getByRole("option", { name: "About 1 minute (quick draft)" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "About 12 minutes" })).toBeInTheDocument();
   });
 
