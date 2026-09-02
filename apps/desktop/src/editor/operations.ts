@@ -1,0 +1,329 @@
+import { calculateProjectDuration, cloneProject, findClip, normalizeEditorProject, sortClips } from "./model";
+import type { ClipPatch, EditOperation, EditorClip, EditorKeyframe, EditorProject, EditorTrack, FrameRange } from "./types";
+
+export interface OperationResult {
+  project: EditorProject;
+  changed: boolean;
+  announcement: string;
+}
+
+function result(project: EditorProject, changed: boolean, announcement: string): OperationResult {
+  if (!changed) return { project, changed, announcement };
+  const normalized = normalizeEditorProject(project);
+  return { project: { ...normalized, durationFrames: calculateProjectDuration(normalized) }, changed, announcement };
+}
+
+function replaceTrack(project: EditorProject, trackId: string, update: (track: EditorTrack) => EditorTrack): EditorProject {
+  return { ...project, tracks: project.tracks.map((track) => track.id === trackId ? update(track) : track) };
+}
+
+function replaceClip(project: EditorProject, clipId: string, update: (clip: EditorClip) => EditorClip): EditorProject {
+  const match = findClip(project, clipId);
+  if (!match || match.track.locked || match.clip.locked) return project;
+  return replaceTrack(project, match.track.id, (track) => ({
+    ...track,
+    clips: track.clips.map((clip) => clip.id === clipId ? update(clip) : clip),
+  }));
+}
+
+export function clipEnd(clip: EditorClip): number {
+  return clip.timelineRange.startFrame + clip.timelineRange.durationFrames;
+}
+
+export function mergeRanges(ranges: readonly FrameRange[]): FrameRange[] {
+  const sorted = ranges
+    .filter((range) => range.durationFrames > 0)
+    .map((range) => ({ startFrame: Math.max(0, range.startFrame), durationFrames: range.durationFrames }))
+    .sort((left, right) => left.startFrame - right.startFrame);
+  const merged: FrameRange[] = [];
+  for (const range of sorted) {
+    const previous = merged[merged.length - 1];
+    if (!previous || previous.startFrame + previous.durationFrames < range.startFrame) {
+      merged.push({ ...range });
+      continue;
+    }
+    const end = Math.max(previous.startFrame + previous.durationFrames, range.startFrame + range.durationFrames);
+    previous.durationFrames = end - previous.startFrame;
+  }
+  return merged;
+}
+
+export function snapFrame(
+  project: EditorProject,
+  requestedFrame: number,
+  thresholdFrames: number,
+  options: { excludeClipId?: string; playheadFrame?: number } = {},
+): number {
+  const requested = Math.max(0, Math.round(requestedFrame));
+  const candidates = new Set<number>([0, project.durationFrames, ...project.markers.map((marker) => marker.frame)]);
+  if (options.playheadFrame !== undefined) candidates.add(options.playheadFrame);
+  for (const track of project.tracks) {
+    for (const clip of track.clips) {
+      if (clip.id === options.excludeClipId) continue;
+      candidates.add(clip.timelineRange.startFrame);
+      candidates.add(clipEnd(clip));
+    }
+  }
+  let best = requested;
+  let distance = thresholdFrames + 1;
+  for (const candidate of candidates) {
+    const candidateDistance = Math.abs(candidate - requested);
+    if (candidateDistance < distance) {
+      best = candidate;
+      distance = candidateDistance;
+    }
+  }
+  return distance <= thresholdFrames ? best : requested;
+}
+
+export function insertClip(project: EditorProject, trackId: string, clip: EditorClip): OperationResult {
+  const track = project.tracks.find((candidate) => candidate.id === trackId);
+  if (!track) return result(project, false, "Clip was not inserted because the destination track does not exist.");
+  if (track.locked) return result(project, false, `${track.name} is locked.`);
+  if (findClip(project, clip.id)) return result(project, false, `A clip with ID ${clip.id} already exists.`);
+  const next = replaceTrack(project, trackId, (current) => ({
+    ...current,
+    clips: sortClips([...current.clips, {
+      ...structuredClone(clip),
+      trackId,
+      kind: current.kind,
+      timelineRange: { ...clip.timelineRange, startFrame: Math.max(0, clip.timelineRange.startFrame), durationFrames: Math.max(1, clip.timelineRange.durationFrames) },
+    }]),
+  }));
+  return result(next, true, `${clip.name} inserted on ${track.name}.`);
+}
+
+export function moveClip(
+  project: EditorProject,
+  clipId: string,
+  destinationTrackId: string,
+  startFrame: number,
+  snap: { enabled: boolean; thresholdFrames: number; playheadFrame?: number },
+): OperationResult {
+  const match = findClip(project, clipId);
+  const destination = project.tracks.find((track) => track.id === destinationTrackId);
+  if (!match || !destination) return result(project, false, "Clip move could not find its source or destination.");
+  if (match.track.locked || match.clip.locked || destination.locked) return result(project, false, "Clip move was blocked by a locked clip or track.");
+  const requested = snap.enabled ? snapFrame(project, startFrame, snap.thresholdFrames, { excludeClipId: clipId, ...(snap.playheadFrame !== undefined ? { playheadFrame: snap.playheadFrame } : {}) }) : Math.max(0, Math.round(startFrame));
+  let next = replaceTrack(project, match.track.id, (track) => ({ ...track, clips: track.clips.filter((clip) => clip.id !== clipId) }));
+  next = replaceTrack(next, destinationTrackId, (track) => ({
+    ...track,
+    clips: sortClips([...track.clips, { ...match.clip, trackId: destinationTrackId, kind: track.kind, timelineRange: { ...match.clip.timelineRange, startFrame: requested } }]),
+  }));
+  return result(next, true, `${match.clip.name} moved to ${destination.name} at frame ${requested}.`);
+}
+
+export function splitClip(project: EditorProject, clipId: string, frame: number, rightClipId: string): OperationResult {
+  const match = findClip(project, clipId);
+  if (!match || match.track.locked || match.clip.locked) return result(project, false, "The clip could not be split because it is missing or locked.");
+  const splitAt = Math.round(frame);
+  const start = match.clip.timelineRange.startFrame;
+  const end = clipEnd(match.clip);
+  if (splitAt <= start || splitAt >= end) return result(project, false, "Move the playhead inside the selected clip to split it.");
+  if (findClip(project, rightClipId)) return result(project, false, "The split clip ID is already in use.");
+  const leftDuration = splitAt - start;
+  const rightDuration = end - splitAt;
+  const left = {
+    ...match.clip,
+    timelineRange: { ...match.clip.timelineRange, durationFrames: leftDuration },
+    sourceRange: { ...match.clip.sourceRange, durationFrames: Math.min(match.clip.sourceRange.durationFrames, leftDuration) },
+    keyframes: match.clip.keyframes.filter((keyframe) => keyframe.frame < splitAt),
+  };
+  const right = {
+    ...structuredClone(match.clip),
+    id: rightClipId,
+    name: `${match.clip.name} (right)`,
+    timelineRange: { startFrame: splitAt, durationFrames: rightDuration },
+    sourceRange: { startFrame: match.clip.sourceRange.startFrame + leftDuration, durationFrames: rightDuration },
+    keyframes: match.clip.keyframes.filter((keyframe) => keyframe.frame >= splitAt),
+  };
+  const next = replaceTrack(project, match.track.id, (track) => ({
+    ...track,
+    clips: sortClips(track.clips.flatMap((clip) => clip.id === clipId ? [left, right] : [clip])),
+  }));
+  return result(next, true, `${match.clip.name} split at frame ${splitAt}.`);
+}
+
+export function trimClip(project: EditorProject, clipId: string, edge: "start" | "end", frame: number): OperationResult {
+  const match = findClip(project, clipId);
+  if (!match || match.track.locked || match.clip.locked) return result(project, false, "The clip could not be trimmed because it is missing or locked.");
+  const requested = Math.round(frame);
+  const start = match.clip.timelineRange.startFrame;
+  const end = clipEnd(match.clip);
+  if (edge === "start") {
+    const earliest = Math.max(0, start - match.clip.sourceRange.startFrame);
+    const nextStart = Math.min(end - 1, Math.max(earliest, requested));
+    const delta = nextStart - start;
+    if (delta === 0) return result(project, false, "Trim start did not change.");
+    const next = replaceClip(project, clipId, (clip) => ({
+      ...clip,
+      timelineRange: { startFrame: nextStart, durationFrames: clip.timelineRange.durationFrames - delta },
+      sourceRange: { startFrame: clip.sourceRange.startFrame + delta, durationFrames: clip.sourceRange.durationFrames - delta },
+    }));
+    return result(next, true, `${match.clip.name} start trimmed to frame ${nextStart}.`);
+  }
+  const nextEnd = Math.max(start + 1, requested);
+  const duration = nextEnd - start;
+  if (duration === match.clip.timelineRange.durationFrames) return result(project, false, "Trim end did not change.");
+  const next = replaceClip(project, clipId, (clip) => ({
+    ...clip,
+    timelineRange: { ...clip.timelineRange, durationFrames: duration },
+    sourceRange: { ...clip.sourceRange, durationFrames: duration },
+  }));
+  return result(next, true, `${match.clip.name} end trimmed to frame ${nextEnd}.`);
+}
+
+export function liftClips(project: EditorProject, clipIds: readonly string[]): OperationResult {
+  const selected = new Set(clipIds);
+  let removed = 0;
+  const tracks = project.tracks.map((track) => {
+    if (track.locked) return track;
+    const clips = track.clips.filter((clip) => {
+      const remove = selected.has(clip.id) && !clip.locked;
+      if (remove) removed += 1;
+      return !remove;
+    });
+    return clips.length === track.clips.length ? track : { ...track, clips };
+  });
+  return result({ ...project, tracks }, removed > 0, removed ? `${removed} clip${removed === 1 ? "" : "s"} lifted, leaving gaps.` : "No editable clips were selected.");
+}
+
+function shiftAfterRanges(frame: number, ranges: readonly FrameRange[]): number {
+  let shift = 0;
+  for (const range of ranges) {
+    const end = range.startFrame + range.durationFrames;
+    if (frame >= end) shift += range.durationFrames;
+  }
+  return Math.max(0, frame - shift);
+}
+
+export function rippleDeleteClips(project: EditorProject, clipIds: readonly string[]): OperationResult {
+  const selected = new Set(clipIds);
+  let removed = 0;
+  const tracks = project.tracks.map((track) => {
+    if (track.locked) return track;
+    const ranges = mergeRanges(track.clips.filter((clip) => selected.has(clip.id) && !clip.locked).map((clip) => clip.timelineRange));
+    if (!ranges.length) return track;
+    const clips = track.clips.flatMap((clip) => {
+      if (selected.has(clip.id) && !clip.locked) {
+        removed += 1;
+        return [];
+      }
+      return [{ ...clip, timelineRange: { ...clip.timelineRange, startFrame: shiftAfterRanges(clip.timelineRange.startFrame, ranges) } }];
+    });
+    return { ...track, clips: sortClips(clips) };
+  });
+  return result({ ...project, tracks }, removed > 0, removed ? `${removed} clip${removed === 1 ? "" : "s"} ripple deleted.` : "No editable clips were selected.");
+}
+
+export function extractRange(project: EditorProject, range: FrameRange): OperationResult {
+  const rangeStart = Math.max(0, Math.round(range.startFrame));
+  const rangeEnd = rangeStart + Math.max(0, Math.round(range.durationFrames));
+  if (rangeEnd <= rangeStart) return result(project, false, "Extract range is empty.");
+  let changed = false;
+  const tracks = project.tracks.map((track) => {
+    if (track.locked) return track;
+    const clips = track.clips.flatMap((clip) => {
+      if (clip.locked) return [clip];
+      const start = clip.timelineRange.startFrame;
+      const end = clipEnd(clip);
+      if (end <= rangeStart) return [clip];
+      changed = true;
+      if (start >= rangeEnd) return [{ ...clip, timelineRange: { ...clip.timelineRange, startFrame: start - (rangeEnd - rangeStart) } }];
+      if (start >= rangeStart && end <= rangeEnd) return [];
+      if (start < rangeStart && end > rangeEnd) {
+        return [{
+          ...clip,
+          timelineRange: { ...clip.timelineRange, durationFrames: clip.timelineRange.durationFrames - (rangeEnd - rangeStart) },
+          sourceRange: { ...clip.sourceRange, durationFrames: clip.sourceRange.durationFrames - (rangeEnd - rangeStart) },
+        }];
+      }
+      if (start < rangeStart) {
+        const durationFrames = rangeStart - start;
+        return [{ ...clip, timelineRange: { ...clip.timelineRange, durationFrames }, sourceRange: { ...clip.sourceRange, durationFrames } }];
+      }
+      const consumed = rangeEnd - start;
+      return [{
+        ...clip,
+        timelineRange: { startFrame: rangeStart, durationFrames: end - rangeEnd },
+        sourceRange: { startFrame: clip.sourceRange.startFrame + consumed, durationFrames: end - rangeEnd },
+      }];
+    });
+    return { ...track, clips: sortClips(clips) };
+  });
+  return result({ ...project, tracks }, changed, changed ? `Extracted frames ${rangeStart} through ${rangeEnd} across unlocked tracks.` : "Nothing intersects the extract range.");
+}
+
+export function updateClip(project: EditorProject, clipId: string, patch: ClipPatch): OperationResult {
+  const match = findClip(project, clipId);
+  if (!match) return result(project, false, "Clip not found.");
+  const next = replaceClip(project, clipId, (clip) => ({
+    ...clip,
+    ...structuredClone(patch),
+    transform: patch.transform ? { ...clip.transform, ...patch.transform } : clip.transform,
+    audio: patch.audio ? { ...clip.audio, ...patch.audio } : clip.audio,
+    ...(patch.textStyle ? { textStyle: { ...(clip.textStyle ?? patch.textStyle), ...patch.textStyle } } : {}),
+    metadata: patch.metadata ? { ...clip.metadata, ...patch.metadata } : clip.metadata,
+  }));
+  return result(next, next !== project, next !== project ? `${match.clip.name} updated.` : `${match.clip.name} is locked.`);
+}
+
+export function addKeyframe(project: EditorProject, clipId: string, keyframe: EditorKeyframe): OperationResult {
+  const next = replaceClip(project, clipId, (clip) => ({
+    ...clip,
+    keyframes: [...clip.keyframes.filter((candidate) => candidate.id !== keyframe.id), structuredClone(keyframe)].sort((left, right) => left.frame - right.frame),
+  }));
+  return result(next, next !== project, next !== project ? `Keyframe added at frame ${keyframe.frame}.` : "Keyframe was not added.");
+}
+
+export function updateKeyframe(project: EditorProject, clipId: string, keyframeId: string, patch: Partial<EditorKeyframe>): OperationResult {
+  const next = replaceClip(project, clipId, (clip) => ({
+    ...clip,
+    keyframes: clip.keyframes.map((keyframe) => keyframe.id === keyframeId ? { ...keyframe, ...patch } : keyframe).sort((left, right) => left.frame - right.frame),
+  }));
+  return result(next, next !== project, next !== project ? "Keyframe updated." : "Keyframe was not updated.");
+}
+
+export function removeKeyframe(project: EditorProject, clipId: string, keyframeId: string): OperationResult {
+  const match = findClip(project, clipId);
+  if (!match || !match.clip.keyframes.some((keyframe) => keyframe.id === keyframeId)) return result(project, false, "Keyframe not found.");
+  const next = replaceClip(project, clipId, (clip) => ({ ...clip, keyframes: clip.keyframes.filter((keyframe) => keyframe.id !== keyframeId) }));
+  return result(next, next !== project, next !== project ? "Keyframe removed." : "Keyframe was not removed.");
+}
+
+export function applyEditOperation(
+  project: EditorProject,
+  operation: EditOperation,
+  options: { snappingEnabled?: boolean; snapThresholdFrames?: number; playheadFrame?: number } = {},
+): OperationResult {
+  switch (operation.type) {
+    case "insert-clip": return insertClip(project, operation.trackId, operation.clip);
+    case "remove-clips": return operation.ripple ? rippleDeleteClips(project, operation.clipIds) : liftClips(project, operation.clipIds);
+    case "move-clip": return moveClip(project, operation.clipId, operation.trackId, operation.startFrame, {
+      enabled: operation.snap ?? options.snappingEnabled ?? false,
+      thresholdFrames: options.snapThresholdFrames ?? 5,
+      ...(options.playheadFrame !== undefined ? { playheadFrame: options.playheadFrame } : {}),
+    });
+    case "trim-clip": return trimClip(project, operation.clipId, operation.edge, operation.frame);
+    case "split-clip": return splitClip(project, operation.clipId, operation.frame, operation.rightClipId);
+    case "update-clip": return updateClip(project, operation.clipId, operation.patch);
+    case "set-transcript": return updateClip(project, operation.clipId, { text: operation.text, ...(operation.speaker !== undefined ? { speaker: operation.speaker } : {}) });
+    case "add-marker": {
+      if (project.markers.some((marker) => marker.id === operation.marker.id)) return result(project, false, "Marker ID already exists.");
+      return result({ ...project, markers: [...project.markers, structuredClone(operation.marker)].sort((left, right) => left.frame - right.frame) }, true, `${operation.marker.label} marker added.`);
+    }
+  }
+}
+
+export function applyEditOperations(project: EditorProject, operations: readonly EditOperation[]): OperationResult {
+  let current = cloneProject(project);
+  let changed = false;
+  const announcements: string[] = [];
+  for (const operation of operations) {
+    const operationResult = applyEditOperation(current, operation);
+    current = operationResult.project;
+    changed ||= operationResult.changed;
+    if (operationResult.changed) announcements.push(operationResult.announcement);
+  }
+  return result(current, changed, announcements.join(" ") || "Proposal made no applicable changes.");
+}
