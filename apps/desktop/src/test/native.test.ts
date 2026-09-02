@@ -9,6 +9,7 @@ vi.mock("@tauri-apps/api/core", () => tauri);
 
 import {
   appBootstrap,
+  catalogDiscover,
   jobStatus,
   masterExport,
   projectCreate,
@@ -32,7 +33,33 @@ describe("native desktop bridge", () => {
   beforeEach(() => {
     tauri.invoke.mockReset();
     tauri.isTauri.mockReturnValue(true);
+    vi.unstubAllGlobals();
     localStorage.clear();
+  });
+
+  it("uses the native broker for provider catalog discovery", async () => {
+    const input = { source: "hugging-face" as const, query: "flux", limit: 12 };
+    tauri.invoke.mockResolvedValueOnce({ source: input.source, items: [], nextCursor: null, retrievedAt: "2026-09-02T00:00:00Z" });
+
+    await catalogDiscover(input);
+
+    expect(tauri.invoke).toHaveBeenCalledWith("catalog_discover", { input });
+  });
+
+  it("keeps browser catalog pagination on the selected provider origin", async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await catalogDiscover({ source: "hugging-face", cursor: "https://huggingface.co/api/models?cursor=next", limit: 12 });
+    await expect(catalogDiscover({ source: "hugging-face", cursor: "https://example.com/api/models?cursor=stolen", limit: 12 }))
+      .rejects.toThrow("unsafe catalog pagination cursor");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("huggingface.co/api/models");
   });
 
   it("uses the exact Rust input envelope for project creation", async () => {

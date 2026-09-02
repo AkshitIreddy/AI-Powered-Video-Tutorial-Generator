@@ -571,6 +571,22 @@ export interface DiagnosticReport {
   };
 }
 
+export type RemoteCatalogSource = "hugging-face" | "civitai" | "nvidia-nim";
+
+export interface CatalogDiscoveryRequest {
+  source: RemoteCatalogSource;
+  query?: string;
+  limit?: number;
+  cursor?: string | null;
+}
+
+export interface CatalogDiscoveryResponse {
+  source: RemoteCatalogSource;
+  items: unknown[];
+  nextCursor: string | null;
+  retrievedAt: string;
+}
+
 const browserSecretRefs = new Set<string>();
 const browserJobs = new Map<string, JobReceipt>();
 const browserProjects = new Map<string, { handle: ProjectHandle; snapshot: ProjectSnapshotReceipt }>();
@@ -642,6 +658,71 @@ export function diagnosticsRun(): Promise<DiagnosticReport> {
       },
     };
   });
+}
+
+export function catalogDiscover(input: CatalogDiscoveryRequest): Promise<CatalogDiscoveryResponse> {
+  return command("catalog_discover", input, async () => {
+    if (input.source === "nvidia-nim") {
+      throw new Error("Open the packaged Alystria app and connect an NVIDIA NIM key before syncing the hosted catalog.");
+    }
+    const limit = Math.min(50, Math.max(1, input.limit ?? 24));
+    let url: URL;
+    if (input.cursor) {
+      url = validatedCatalogCursor(input.source, input.cursor);
+    } else if (input.source === "hugging-face") {
+      url = new URL("https://huggingface.co/api/models");
+      url.searchParams.set("limit", String(limit));
+      url.searchParams.set("full", "true");
+      url.searchParams.set("config", "true");
+      url.searchParams.set("sort", "downloads");
+      url.searchParams.set("direction", "-1");
+      if (input.query?.trim()) url.searchParams.set("search", input.query.trim());
+    } else {
+      url = new URL("https://civitai.com/api/v1/models");
+      url.searchParams.set("limit", String(limit));
+      url.searchParams.set("sort", "Most Downloaded");
+      url.searchParams.set("period", "AllTime");
+      url.searchParams.set("nsfw", "false");
+      if (input.query?.trim()) url.searchParams.set("query", input.query.trim());
+    }
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`The provider returned HTTP ${response.status}.`);
+    const body = await response.json() as unknown;
+    if (input.source === "hugging-face") {
+      if (!Array.isArray(body)) throw new Error("Hugging Face returned an unexpected catalog response.");
+      return { source: input.source, items: body, nextCursor: nextLink(response.headers.get("link")), retrievedAt: new Date().toISOString() };
+    }
+    const record = body && typeof body === "object" ? body as { items?: unknown[]; metadata?: { nextPage?: string } } : {};
+    if (!Array.isArray(record.items)) throw new Error("Civitai returned an unexpected catalog response.");
+    return { source: input.source, items: record.items, nextCursor: record.metadata?.nextPage ?? null, retrievedAt: new Date().toISOString() };
+  });
+}
+
+function validatedCatalogCursor(source: CatalogDiscoveryRequest["source"], cursor: string): URL {
+  const url = new URL(cursor);
+  const expected = source === "hugging-face"
+    ? { host: "huggingface.co", path: "/api/models" }
+    : { host: "civitai.com", path: "/api/v1/models" };
+  if (
+    url.protocol !== "https:"
+    || url.host !== expected.host
+    || url.pathname !== expected.path
+    || url.username
+    || url.password
+    || url.hash
+  ) {
+    throw new Error("The provider returned an unsafe catalog pagination cursor.");
+  }
+  return url;
+}
+
+function nextLink(header: string | null): string | null {
+  if (!header) return null;
+  for (const part of header.split(",")) {
+    const match = part.match(/<([^>]+)>;\s*rel="next"/u);
+    if (match?.[1]) return match[1];
+  }
+  return null;
 }
 
 export function projectCreate(input: CreateProjectRequest): Promise<ProjectHandle> {

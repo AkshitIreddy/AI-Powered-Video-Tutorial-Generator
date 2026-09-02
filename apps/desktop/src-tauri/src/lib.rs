@@ -1,3 +1,4 @@
+mod catalog_discovery;
 mod commands;
 mod diagnostics;
 mod error;
@@ -31,12 +32,11 @@ pub fn run() {
                 std::io::Error::other(format!("{}: {}", error.code, error.message))
             })?;
             app.manage(state);
-            if should_show_main_window(
-                std::env::var_os(HEADLESS_ACCEPTANCE_ENVIRONMENT).as_deref(),
-            ) {
-                let window = app.get_webview_window("main").ok_or_else(|| {
-                    std::io::Error::other("Alystria main window was not created")
-                })?;
+            if should_show_main_window(std::env::var_os(HEADLESS_ACCEPTANCE_ENVIRONMENT).as_deref())
+            {
+                let window = app
+                    .get_webview_window("main")
+                    .ok_or_else(|| std::io::Error::other("Alystria main window was not created"))?;
                 window.show()?;
             }
             Ok(())
@@ -79,10 +79,19 @@ pub fn run() {
             local_model_download_status,
             local_model_download_start,
             runtime_manifest,
-            updater_status
+            updater_status,
+            catalog_discover
         ])
         .run(tauri::generate_context!())
         .expect("Alystria Studio desktop runtime failed");
+}
+
+#[tauri::command]
+async fn catalog_discover(
+    input: catalog_discovery::CatalogDiscoveryRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<catalog_discovery::CatalogDiscoveryResponse, error::CommandError> {
+    catalog_discovery::discover(input, state.credentials.clone()).await
 }
 
 #[cfg(test)]
