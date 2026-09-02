@@ -2,6 +2,26 @@ import type { AppSnapshot, JobRecord, ProjectRecord } from "./types";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
+const LEGACY_DEMO_PROJECTS = new Map([
+  ["karatsuba", "Karatsuba, visually"],
+  ["binary-search", "Binary search without guessing"],
+  ["french-revolution", "A revolution in six turning points"],
+]);
+const LEGACY_DEMO_JOBS = new Set(["job-1", "job-2", "job-3"]);
+
+function isLegacySeededSnapshot(snapshot: AppSnapshot): boolean {
+  if (snapshot.version !== 12 || snapshot.recentProjectId !== "karatsuba") return false;
+  if (snapshot.projects.length !== LEGACY_DEMO_PROJECTS.size || snapshot.jobs.length !== LEGACY_DEMO_JOBS.size) return false;
+  const hasOnlySeededProjects = snapshot.projects.every((project) => (
+    LEGACY_DEMO_PROJECTS.get(project.id) === project.title
+    && !project.nativeProjectId
+    && !project.nativeProjectDirectory
+    && !project.nativeHeadRevisionId
+  ));
+  const hasOnlySeededJobs = snapshot.jobs.every((job) => LEGACY_DEMO_JOBS.has(job.id) && !job.projectDirectory);
+  return hasOnlySeededProjects && hasOnlySeededJobs;
+}
+
 export function projectTitleFromTopic(topic: string): string {
   const normalized = topic.trim().replace(/\s+/gu, " ") || "Untitled tutorial";
   const firstClause = normalized.split(/[:\n.!?]/u, 1)[0]?.trim() ?? "";
@@ -54,6 +74,18 @@ export function hydrateDurableProject(
 
 /** Repair safe UI references after a portable profile outlives a rebuilt sandbox. */
 export function normalizeAppSnapshot(snapshot: AppSnapshot): AppSnapshot {
+  // Builds before the Alystria overhaul stored the showcase workspace as if it
+  // belonged to every user. Remove that exact fingerprint once, while leaving
+  // any real native project or user-created job untouched.
+  if (isLegacySeededSnapshot(snapshot)) {
+    return {
+      projects: [],
+      recentProjectId: null,
+      studioMode: snapshot.studioMode,
+      version: 0,
+      jobs: [],
+    };
+  }
   const projects = snapshot.projects.map((project) => {
     const legacyGenerationId = (project as ProjectRecord & { generationId?: unknown }).generationId;
     return !project.nativeGenerationId && typeof legacyGenerationId === "string" && UUID_PATTERN.test(legacyGenerationId)
@@ -73,7 +105,7 @@ export function normalizeAppSnapshot(snapshot: AppSnapshot): AppSnapshot {
   return {
     ...snapshot,
     projects,
-    recentProjectId: recent?.id ?? snapshot.recentProjectId,
+    recentProjectId: recent?.id ?? null,
     jobs,
   };
 }

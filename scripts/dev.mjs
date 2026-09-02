@@ -71,7 +71,8 @@ const child = spawn(
     cwd: ROOT,
     env: { ...process.env, ALYSTRIA_PIPELINE_WORKER: resolvedWorker },
     shell: false,
-    stdio: "inherit"
+    stdio: "inherit",
+    windowsHide: true
   }
 );
 

@@ -74,21 +74,52 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import alystriaMark from "./assets/alystria-mark.svg";
+import alystriaAuroraThread from "./assets/brand/alystria-aurora-thread-v1.webp";
 import academicEvidenceBackground from "./assets/backgrounds/academic-evidence-paper-v1.png";
 import modernSignalBackground from "./assets/backgrounds/modern-tech-signal-v1.png";
 import playfulPaperBackground from "./assets/backgrounds/playful-paper-cut-v1.png";
-import academicAmara from "./assets/presenters/academic-amara-v1.png";
-import documentaryMalik from "./assets/presenters/documentary-malik-v1.png";
-import mathematicsArjun from "./assets/presenters/mathematics-arjun-v1.png";
-import modernMinji from "./assets/presenters/modern-tech-minji-v1.png";
-import playfulLucia from "./assets/presenters/playful-lucia-v1.png";
-import scienceZara from "./assets/presenters/science-zara-v1.png";
-import { defaultSnapshot, templates } from "./data";
+import explainHardIdeaTemplate from "./assets/templates/explain-hard-idea-v1.webp";
+import traceAlgorithmTemplate from "./assets/templates/trace-algorithm-v1.webp";
+import evidenceHistoryTemplate from "./assets/templates/evidence-history-v1.webp";
+import workedDerivationTemplate from "./assets/templates/worked-derivation-v1.webp";
+import productWalkthroughTemplate from "./assets/templates/product-walkthrough-v1.webp";
+import youngLearnerTemplate from "./assets/templates/young-learner-story-v1.webp";
+import academicAmara from "./assets/presenters/academic-amara-v1.webp";
+import documentaryMalik from "./assets/presenters/documentary-malik-v1.webp";
+import mathematicsArjun from "./assets/presenters/mathematics-arjun-v1.webp";
+import modernMinji from "./assets/presenters/modern-tech-minji-v1.webp";
+import playfulLucia from "./assets/presenters/playful-lucia-v1.webp";
+import scienceZara from "./assets/presenters/science-zara-v1.webp";
+import animeAstrid from "./assets/presenters/anime-astrid-v1.webp";
+import animatedTheo from "./assets/presenters/animated-feature-theo-v1.webp";
+import broadcastElena from "./assets/presenters/broadcast-elena-v1.webp";
+import cartoonOliver from "./assets/presenters/cartoon-oliver-v1.webp";
+import charcoalMarta from "./assets/presenters/charcoal-marta-v1.webp";
+import clayNora from "./assets/presenters/clay-nora-v1.webp";
+import graphicLuca from "./assets/presenters/graphic-novel-luca-v1.webp";
+import holographicSelene from "./assets/presenters/holographic-selene-v1.webp";
+import inkRoman from "./assets/presenters/ink-roman-v1.webp";
+import oilHelena from "./assets/presenters/oil-painting-helena-v1.webp";
+import papercutCelia from "./assets/presenters/papercut-celia-v1.webp";
+import retroFelix from "./assets/presenters/retro-orbit-felix-v1.webp";
+import vectorAvery from "./assets/presenters/vector-avery-v1.webp";
+import watercolorElisabeth from "./assets/presenters/watercolor-elisabeth-v1.webp";
+import { completeExampleProject, defaultSnapshot, templates } from "./data";
+import {
+  GuidedTour,
+  OnboardingDialog,
+  useOnboardingController,
+  type AccountProfileConfiguration,
+  type OnboardingCatalog,
+  type OnboardingSetupState,
+  type PersistedOnboardingState,
+} from "./onboarding";
 import {
   appBootstrap,
+  catalogDiscover,
   desktopEnvironment,
   diagnosticsRun,
   generationApprove,
@@ -120,6 +151,7 @@ import {
   sceneRender,
   sourceImport,
   type BootstrapInfo,
+  type CatalogDiscoveryResponse,
   type AssetPermission,
   type DiagnosticReport,
   type GroundingMode,
@@ -136,6 +168,24 @@ import {
   type SourceImportReceipt,
 } from "./native";
 import { buildProviderRoutingReview } from "./providerRouting";
+import { CreativeInspector } from "./creative/CreativeInspector";
+import { DEFAULT_CREATIVE_CONFIGURATION } from "./creative/defaults";
+import {
+  CatalogIntegrationExample,
+  ProviderMark,
+  adaptCivitaiModel,
+  adaptHuggingFaceModel,
+  adaptNvidiaCatalogEntry,
+  defaultCatalogSources,
+  type CatalogCapability,
+  type CatalogItem,
+  type RawCivitaiModel,
+  type RawCivitaiModelVersion,
+  type RawHuggingFaceModel,
+  type RawNvidiaCatalogEntry,
+} from "./catalog";
+import { alystriaCatalogItems, catalogHardwareFromDiagnostics } from "./appCatalog";
+import { AdvancedVideoEditor, createEditorProjectFromAlystriaProject, type EditorProject } from "./editor";
 import {
   canonicalFixtureIdFromTopic,
   hydrateDurableProject,
@@ -147,6 +197,7 @@ import { SharedScenePreview } from "./ScenePreview";
 import type {
   AppSnapshot,
   CanvasCustomization,
+  CreativeConfiguration,
   GlobalArea,
   JobRecord,
   ProjectRecord,
@@ -180,6 +231,17 @@ interface TutorialCreationSettings {
   approvedProviderIds: string[];
   privacy: TutorialRoutingPolicy["privacyMode"];
   hardLimitMinorUnits: number;
+}
+
+const ONBOARDING_STORAGE_KEY = "alystria-onboarding-v1";
+
+function persistedOnboardingState(): PersistedOnboardingState | null {
+  try {
+    const value = localStorage.getItem(ONBOARDING_STORAGE_KEY);
+    return value ? JSON.parse(value) as PersistedOnboardingState : null;
+  } catch {
+    return null;
+  }
 }
 
 type CaptionDeliveryMode = MasterExportRequest["captionDeliveryMode"];
@@ -338,12 +400,26 @@ const DEFAULT_CANVAS_CUSTOMIZATION: CanvasCustomization = {
     narrationDucking: 72,
   },
   assets: [
-    starterAsset("presenter-portrait.academic-amara-v1", "presenter", "Amara · academic", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "a168260c6087a80752c313adfb8d0f0440576fe916549f96acff4542b7714614", 2034611, "image/png"),
-    starterAsset("presenter-portrait.modern-tech-minji-v1", "presenter", "Minji · modern tech", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "fe347fb12f24238d0748f2b54484e960043d98c0667637aef6178d951bc96681", 1849015, "image/png"),
-    starterAsset("presenter-portrait.documentary-malik-v1", "presenter", "Malik · documentary", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "c66e3bf3da440110cc2ebc8e1925a632d8fc220d53c148fb05153ac6530411e5", 2224926, "image/png"),
-    starterAsset("presenter-portrait.playful-lucia-v1", "presenter", "Lucia · playful", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "e779ad0e0e31d26ded23fbf81c11c386eb0d944cc1f521f62571a809ffface50", 2083770, "image/png"),
-    starterAsset("presenter-portrait.science-zara-v1", "presenter", "Zara · science", "Alystria Studio image generation", "MIT", "34a4856e71c0895858e0c2226e33563efa4ff867b0f86b0b3154cc2d96bc0bcb", 2089478, "image/png"),
-    starterAsset("presenter-portrait.mathematics-arjun-v1", "presenter", "Arjun · mathematics", "Alystria Studio image generation", "MIT", "4f62f43d3eff3f33b5a80eafa7ada77cb017d5d440edcc0030ca501a4d940332", 2116385, "image/png"),
+    starterAsset("presenter-portrait.academic-amara-v1", "presenter", "Amara · academic", "Alystria image generation", "LicenseRef-USER-OWNED", "97067bcbeea43e043089692aa3b920ac5bd77cdd9cdb21b78ddc1f50af5221b5", 32206, "image/webp"),
+    starterAsset("presenter-portrait.modern-tech-minji-v1", "presenter", "Minji · modern tech", "Alystria image generation", "LicenseRef-USER-OWNED", "2cc8d2f36c307de9c5c5833908e98736885328671a95a56b6f6e81068e66ae64", 18782, "image/webp"),
+    starterAsset("presenter-portrait.documentary-malik-v1", "presenter", "Malik · documentary", "Alystria image generation", "LicenseRef-USER-OWNED", "ce6131d0b34c2ef033e60d4acf6f8356c21cc053787389eef1f6d95e84ed80dd", 39650, "image/webp"),
+    starterAsset("presenter-portrait.playful-lucia-v1", "presenter", "Lucia · playful", "Alystria image generation", "LicenseRef-USER-OWNED", "00c1eb046d9782f0446fb73635372cd5b4237752a89a4f72d3d142fde9b4ccb2", 41080, "image/webp"),
+    starterAsset("presenter-portrait.science-zara-v1", "presenter", "Zara · science", "Alystria image generation", "MIT", "f9526f5e1996d4ee0ec7e2461399264a8309a2cee3d08e9fcf1daf0fc915e250", 34824, "image/webp"),
+    starterAsset("presenter-portrait.mathematics-arjun-v1", "presenter", "Arjun · mathematics", "Alystria image generation", "MIT", "c12e626dfefce0a8e7c153fb0ec192f127a7feeb49f8ba21c1a620ef6f54d30e", 30902, "image/webp"),
+    starterAsset("presenter-portrait.broadcast-elena-v1", "presenter", "Elena · broadcast realism", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.anime-astrid-v1", "presenter", "Astrid · anime editorial", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.graphic-luca-v1", "presenter", "Luca · graphic novel", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.clay-nora-v1", "presenter", "Nora · tactile clay", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.watercolor-elisabeth-v1", "presenter", "Elisabeth · watercolor", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.animated-theo-v1", "presenter", "Theo · stylized 3D", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.retro-felix-v1", "presenter", "Felix · retro orbit", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.holographic-selene-v1", "presenter", "Selene · holographic", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.papercut-celia-v1", "presenter", "Celia · paper cut", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.ink-roman-v1", "presenter", "Roman · ink editorial", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.oil-helena-v1", "presenter", "Helena · oil portrait", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.vector-avery-v1", "presenter", "Avery · vector editorial", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.cartoon-oliver-v1", "presenter", "Oliver · drawn classroom", "Alystria image generation", "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.charcoal-marta-v1", "presenter", "Marta · charcoal", "Alystria image generation", "LicenseRef-USER-OWNED"),
     starterAsset("background.academic-evidence-paper-v1", "background", "Academic evidence paper", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "1ba1306b0eb2dc4af7d0c04b7e7785ed27febf2a12922c91110770c13dc155ca", 2001277, "image/png"),
     starterAsset("background.modern-tech-signal-v1", "background", "Modern signal", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "49e8abe6ba85052c6f74c022b468ebd983460600912f3e77b4b0fd301fc3a66d", 1268644, "image/png"),
     starterAsset("background.playful-paper-cut-v1", "background", "Playful paper cut", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "52f98ff2927c5f73d4518e25d70a9d93e42044e4b3363bcccd06a2f0a5471806", 1892657, "image/png"),
@@ -377,6 +453,20 @@ const STARTER_PRESENTER_PREVIEWS: Record<string, { src: string; focalPoint: stri
   "presenter-portrait.playful-lucia-v1": { src: playfulLucia, focalPoint: "50% 18%" },
   "presenter-portrait.science-zara-v1": { src: scienceZara, focalPoint: "50% 20%" },
   "presenter-portrait.mathematics-arjun-v1": { src: mathematicsArjun, focalPoint: "50% 20%" },
+  "presenter-portrait.broadcast-elena-v1": { src: broadcastElena, focalPoint: "50% 20%" },
+  "presenter-portrait.anime-astrid-v1": { src: animeAstrid, focalPoint: "50% 20%" },
+  "presenter-portrait.graphic-luca-v1": { src: graphicLuca, focalPoint: "50% 20%" },
+  "presenter-portrait.clay-nora-v1": { src: clayNora, focalPoint: "50% 20%" },
+  "presenter-portrait.watercolor-elisabeth-v1": { src: watercolorElisabeth, focalPoint: "50% 20%" },
+  "presenter-portrait.animated-theo-v1": { src: animatedTheo, focalPoint: "50% 20%" },
+  "presenter-portrait.retro-felix-v1": { src: retroFelix, focalPoint: "50% 20%" },
+  "presenter-portrait.holographic-selene-v1": { src: holographicSelene, focalPoint: "50% 20%" },
+  "presenter-portrait.papercut-celia-v1": { src: papercutCelia, focalPoint: "50% 20%" },
+  "presenter-portrait.ink-roman-v1": { src: inkRoman, focalPoint: "50% 20%" },
+  "presenter-portrait.oil-helena-v1": { src: oilHelena, focalPoint: "50% 20%" },
+  "presenter-portrait.vector-avery-v1": { src: vectorAvery, focalPoint: "50% 20%" },
+  "presenter-portrait.cartoon-oliver-v1": { src: cartoonOliver, focalPoint: "50% 20%" },
+  "presenter-portrait.charcoal-marta-v1": { src: charcoalMarta, focalPoint: "50% 20%" },
 };
 
 const STARTER_BACKGROUND_PREVIEWS: Record<string, string> = {
@@ -384,6 +474,66 @@ const STARTER_BACKGROUND_PREVIEWS: Record<string, string> = {
   "background.modern-tech-signal-v1": modernSignalBackground,
   "background.playful-paper-cut-v1": playfulPaperBackground,
 };
+
+const TEMPLATE_PREVIEWS: Record<string, string> = {
+  "explain-hard-idea": explainHardIdeaTemplate,
+  "trace-algorithm": traceAlgorithmTemplate,
+  "evidence-history": evidenceHistoryTemplate,
+  "worked-derivation": workedDerivationTemplate,
+  "product-walkthrough": productWalkthroughTemplate,
+  "young-learner-story": youngLearnerTemplate,
+};
+
+const ONBOARDING_CATALOG: OnboardingCatalog = {
+  goals: [
+    { id: "tutorial", label: "Tutorial or explainer", description: "Turn a difficult idea into a structured narrated lesson." },
+    { id: "course", label: "Course chapter", description: "Build a source-grounded sequence with consistent visual language." },
+    { id: "presenter", label: "Presenter-led video", description: "Combine a selected or generated presenter with designed slides." },
+    { id: "illustrated", label: "Illustrated story", description: "Use art-led scenes with editable text and review passes." },
+    { id: "edit", label: "Edit imported video", description: "Bring existing media into the timeline and use assisted editing." },
+  ],
+  runtimes: [
+    { id: "hybrid", label: "Choose per task", description: "Keep private work local and select cloud models only when useful.", recommended: true },
+    { id: "local", label: "Local first", description: "Prefer installed models and keep supported generation on this computer." },
+    { id: "cloud", label: "Cloud/API first", description: "Prefer explicitly connected providers with project-level approval." },
+  ],
+  providers: providerConfigs.map((provider) => ({
+    id: provider.id,
+    name: provider.name.replace(" (dev/test)", ""),
+    description: provider.detail,
+    connected: provider.local === true,
+    requiresCredential: provider.local !== true,
+  })),
+  models: [
+    ...localModelOptions.slice(0, 13).map((model) => ({
+      id: model.id,
+      name: model.name,
+      providerId: "local",
+      medium: /narration|tts|voice/i.test(model.medium) ? "speech" as const : /transcription/i.test(model.medium) ? "transcription" as const : /illustration/i.test(model.medium) ? "image" as const : "language" as const,
+      description: model.detail,
+      compatible: true,
+      recommended: /qwen3\.5|flux|kokoro|whisper/i.test(model.id),
+    })),
+    ...lipSyncModelOptions.slice(0, 3).map((model) => ({ id: model.id, name: model.name, providerId: "local", medium: "lip-sync" as const, description: model.detail, compatible: true })),
+  ],
+  portraits: DEFAULT_CANVAS_CUSTOMIZATION.assets
+    .filter((asset) => asset.kind === "presenter")
+    .flatMap((asset) => {
+      const preview = STARTER_PRESENTER_PREVIEWS[asset.id];
+      if (!preview) return [];
+      const [label, style = "Presenter"] = asset.label.split(" · ");
+      return [{ id: asset.id, src: preview.src, alt: `${style} portrait of the fictional presenter ${label}`, label: label ?? asset.label, style, attribution: asset.attribution }];
+    }),
+};
+
+const GUIDED_TOUR_STEPS = [
+  { id: "create", target: ".new-project-button", title: "Start from one clear idea", description: "Create a tutorial, choose any duration, approve its provider routes, then generate an editable learning plan.", placement: "right" as const, allowTargetInteraction: true },
+  { id: "models", target: "[aria-label='Models & providers']", title: "Every capability has its own model route", description: "Search local and hosted catalogs, compare compatibility and licenses, then choose writer, visual review, image, voice, presenter, lip-sync and upscale models independently.", placement: "right" as const },
+  { id: "templates", target: "[aria-label='Templates']", title: "Choose an authored visual grammar", description: "Templates define pacing and scene structure. Designed slides remain editable; illustrated slides keep authoritative text on deterministic layers.", placement: "right" as const },
+  { id: "jobs", target: ".jobs-button", title: "Background work stays accountable", description: "Every download, generation and render appears here only after you start it, with origin, progress, resource use and cancellation controls.", placement: "bottom" as const },
+  { id: "profile", target: ".profile-button", title: "Your profile and presenter gallery", description: "Choose from the 20 supplied visual styles or configure your own portrait. Presenter identity, voice and consent remain explicit project choices.", placement: "right" as const },
+  { id: "editor", target: ".command-trigger", title: "Edit the result, not just the prompt", description: "Open a project to refine slides, transcript, presenter, audio and timeline. AI changes arrive as previewable, reversible proposals before export.", placement: "bottom" as const },
+] as const;
 
 function starterAsset(id: string, kind: StudioAssetKind, label: string, creator: string, license: string, sha256?: string, byteSize?: number, mediaType?: string): StudioAssetReference {
   return { id, kind, label, source: "starter-pack", creator, license, attribution: `${label} — ${creator}`, rightsStatus: "cleared", ...(sha256 ? { sha256 } : {}), ...(byteSize ? { byteSize } : {}), ...(mediaType ? { mediaType } : {}) };
@@ -415,6 +565,33 @@ function LogoMark() {
 function App() {
   const [snapshot, setSnapshot, resetSnapshot] = usePersistentState<AppSnapshot>("alystria-studio-v2", defaultSnapshot, normalizeAppSnapshot);
   const [runtime, setRuntime] = useState<RuntimeState>({ environment: desktopEnvironment(), bootstrap: null, loading: true, error: null });
+  const [diagnosticReport, setDiagnosticReport] = useState<DiagnosticReport | null>(null);
+  const [initialOnboarding] = useState(persistedOnboardingState);
+  const persistOnboarding = useCallback((state: PersistedOnboardingState) => {
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(state));
+  }, []);
+  const onboardingSetup = useMemo<OnboardingSetupState>(() => {
+    const primaryGpu = diagnosticReport?.system.gpu[0];
+    return {
+      detectedRuntime: runtime.environment === "native" ? "local" : "hybrid",
+      runtimeConfigured: false,
+      privacyConfigured: false,
+      hardwareInspected: diagnosticReport !== null,
+      hardware: diagnosticReport ? {
+        cpuLabel: diagnosticReport.system.cpu,
+        memoryGb: Math.round(diagnosticReport.system.totalMemoryBytes / 1024 ** 3),
+        gpuLabel: primaryGpu?.name ?? "No NVIDIA GPU reported",
+        ...(primaryGpu?.dedicatedMemoryBytes ? { vramGb: Math.round(primaryGpu.dedicatedMemoryBytes / 1024 ** 3) } : {}),
+        localGenerationSupported: Boolean(primaryGpu?.dedicatedMemoryBytes && primaryGpu.dedicatedMemoryBytes >= 4 * 1024 ** 3),
+        warnings: diagnosticReport.checks.filter((check) => check.level === "warning" || check.level === "failure").map((check) => check.summary),
+      } : null,
+    };
+  }, [diagnosticReport, runtime.environment]);
+  const onboarding = useOnboardingController({
+    persistedState: initialOnboarding,
+    setupState: onboardingSetup,
+    onPersist: persistOnboarding,
+  });
   const [nativeJobs, setNativeJobs] = useState<Record<string, NativeJobLink>>(() => nativeJobLinks(snapshot.jobs));
   const [area, setArea] = useState<GlobalArea>("home");
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -422,10 +599,14 @@ function App() {
   const [activeSceneId, setActiveSceneId] = useState("scene-insight");
   const [jobsOpen, setJobsOpen] = useState(false);
   const [newTutorialOpen, setNewTutorialOpen] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [regenScene, setRegenScene] = useState<Scene | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [guidedTourOpen, setGuidedTourOpen] = useState(false);
+  const [guidedTourIndex, setGuidedTourIndex] = useState(0);
+  const previousOnboardingStatus = useRef(initialOnboarding?.status ?? "not-started");
   const toastCounter = useRef(0);
   const snapshotSaveSequence = useRef(Promise.resolve());
   const durableVersionByProject = useRef(new Map<string, number>());
@@ -440,8 +621,8 @@ function App() {
     timer?: number;
   }>());
 
-  const activeProject = snapshot.projects.find((project) => project.id === activeProjectId) ?? snapshot.projects[0]!;
-  const activeScene = activeProject.scenes.find((scene) => scene.id === activeSceneId) ?? activeProject.scenes[0]!;
+  const activeProject = snapshot.projects.find((project) => project.id === activeProjectId) ?? snapshot.projects[0] ?? null;
+  const activeScene = activeProject?.scenes.find((scene) => scene.id === activeSceneId) ?? activeProject?.scenes[0] ?? null;
 
   const notify = (title: string, detail: string, tone: ToastMessage["tone"] = "success") => {
     const id = ++toastCounter.current;
@@ -604,6 +785,14 @@ function App() {
     customizationSaves.current.set(project.id, next);
   };
 
+  const updateProjectCreative = (projectId: string, creative: CreativeConfiguration) => {
+    setSnapshot((current) => ({
+      ...current,
+      projects: current.projects.map((project) => project.id === projectId ? { ...project, creative, updatedAt: "just now" } : project),
+      version: current.version + 1,
+    }));
+  };
+
   const addJob = (job: JobRecord) => setSnapshot((current) => ({ ...current, jobs: [job, ...current.jobs] }));
 
   useEffect(() => {
@@ -615,6 +804,25 @@ function App() {
     });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void diagnosticsRun().then((report) => {
+      if (active) setDiagnosticReport(report);
+    }).catch(() => {
+      if (active) setDiagnosticReport(null);
+    });
+    return () => { active = false; };
+  }, [runtime.environment]);
+
+  useEffect(() => {
+    const previous = previousOnboardingStatus.current;
+    if (previous !== "completed" && onboarding.state.status === "completed" && localStorage.getItem("alystria-guided-tour-v1") !== "completed") {
+      setGuidedTourIndex(0);
+      setGuidedTourOpen(true);
+    }
+    previousOnboardingStatus.current = onboarding.state.status;
+  }, [onboarding.state.status]);
 
   useEffect(() => () => {
     for (const entry of customizationSaves.current.values()) {
@@ -1072,14 +1280,16 @@ function App() {
         workspace={workspace}
         project={activeProject}
         mobileNavOpen={mobileNavOpen}
+        profile={onboarding.state.configuration.profile}
         onGlobal={navigateGlobal}
         onWorkspace={(next) => { setWorkspace(next); setMobileNavOpen(false); }}
-        onNew={() => { setNewTutorialOpen(true); setMobileNavOpen(false); }}
+        onNew={() => { setSelectedTemplateId(null); setNewTutorialOpen(true); setMobileNavOpen(false); }}
+        onProfile={() => { onboarding.setOpen(true); onboarding.goTo("profile"); }}
       />
 
       <div className="app-stage">
         <Topbar
-          project={workspace ? activeProject : null}
+          project={workspace && activeProject ? activeProject : null}
           workspace={workspace}
           mode={snapshot.studioMode}
           jobs={snapshot.jobs}
@@ -1091,7 +1301,7 @@ function App() {
           onBack={() => navigateGlobal("projects")}
         />
         <main id="main-content" className={workspace === "studio" ? "main-content studio-main" : "main-content"}>
-          {workspace ? (
+          {workspace && activeProject && activeScene ? (
             <ProjectWorkspace
               workspace={workspace}
               project={activeProject}
@@ -1105,6 +1315,7 @@ function App() {
               onSelectScene={setActiveSceneId}
               onSceneUpdate={(sceneId, update) => updateScene(activeProject.id, sceneId, update)}
               onProjectCustomization={(customization, receipt) => updateProjectCustomization(activeProject, customization, receipt)}
+              onProjectCreative={(creative) => updateProjectCreative(activeProject.id, creative)}
               onRegenerate={setRegenScene}
               onNotify={notify}
               onAddJob={addJob}
@@ -1122,12 +1333,16 @@ function App() {
               area={area}
               snapshot={snapshot}
               runtime={runtime}
+              diagnosticReport={diagnosticReport}
               onArea={navigateGlobal}
               onOpenProject={openProject}
-              onNew={() => setNewTutorialOpen(true)}
+              onNew={() => { setSelectedTemplateId(null); setNewTutorialOpen(true); }}
+              onUseTemplate={(templateId) => { setSelectedTemplateId(templateId); setNewTutorialOpen(true); }}
               onNotify={notify}
-              onImportSources={(files) => importSources(snapshot.recentProjectId, files)}
-              onReset={() => { resetSnapshot(); notify("Demo data restored", "Local projects and preferences returned to the starter state.", "info"); }}
+              onImportSources={(files) => snapshot.recentProjectId ? importSources(snapshot.recentProjectId, files) : Promise.resolve([])}
+              onReset={() => { resetSnapshot(); notify("Workspace reset", "Local browser preferences returned to a clean state.", "info"); }}
+              onReplayOnboarding={onboarding.replay}
+              onReplayTour={() => { setGuidedTourIndex(0); setGuidedTourOpen(true); }}
             />
           )}
         </main>
@@ -1135,9 +1350,9 @@ function App() {
 
       <JobsDrawer open={jobsOpen} jobs={snapshot.jobs} nativeJobIds={new Set(Object.keys(nativeJobs))} onClose={() => setJobsOpen(false)} onCancel={(id) => { void cancelJob(id); }} onRetry={(id) => { void retryNativeJob(id); }} />
 
-      {newTutorialOpen && <NewTutorialWizard environment={runtime.environment} onClose={() => setNewTutorialOpen(false)} onCreate={createTutorial} />}
+      {newTutorialOpen && <NewTutorialWizard environment={runtime.environment} templateId={selectedTemplateId} onClose={() => setNewTutorialOpen(false)} onCreate={createTutorial} />}
 
-      {regenScene && <RegenerationSheet scene={regenScene} onClose={() => setRegenScene(null)} onRun={(instruction, preserve, alternatives) => {
+      {regenScene && activeProject && <RegenerationSheet scene={regenScene} onClose={() => setRegenScene(null)} onRun={(instruction, preserve, alternatives) => {
         const scene = regenScene;
         const projectLink = nativeProjectLink(activeProject);
         const start = async () => {
@@ -1168,6 +1383,17 @@ function App() {
 
       {commandOpen && <CommandPalette projects={snapshot.projects} onClose={() => setCommandOpen(false)} onNavigate={(next) => { navigateGlobal(next); setCommandOpen(false); }} onOpen={(id) => { openProject(id); setCommandOpen(false); }} />}
 
+      <OnboardingDialog controller={onboarding} setupState={onboardingSetup} catalog={ONBOARDING_CATALOG} productName="Alystria" />
+      <GuidedTour
+        open={guidedTourOpen}
+        steps={GUIDED_TOUR_STEPS}
+        activeIndex={guidedTourIndex}
+        onActiveIndexChange={setGuidedTourIndex}
+        onExit={() => setGuidedTourOpen(false)}
+        onComplete={() => { localStorage.setItem("alystria-guided-tour-v1", "completed"); setGuidedTourOpen(false); }}
+        reducedMotion={window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false}
+      />
+
       <div className="toast-stack" role="status" aria-live="polite">
         {toasts.map((toast) => <Toast key={toast.id} toast={toast} onClose={() => setToasts((items) => items.filter((item) => item.id !== toast.id))} />)}
       </div>
@@ -1175,20 +1401,25 @@ function App() {
   );
 }
 
-function Sidebar({ area, workspace, project, mobileNavOpen, onGlobal, onWorkspace, onNew }: {
+function Sidebar({ area, workspace, project, mobileNavOpen, profile, onGlobal, onWorkspace, onNew, onProfile }: {
   area: GlobalArea;
   workspace: Workspace | null;
-  project: ProjectRecord;
+  project: ProjectRecord | null;
   mobileNavOpen: boolean;
+  profile: AccountProfileConfiguration;
   onGlobal: (area: GlobalArea) => void;
   onWorkspace: (workspace: Workspace) => void;
   onNew: () => void;
+  onProfile: () => void;
 }) {
+  const portrait = profile.portraitAssetId ? STARTER_PRESENTER_PREVIEWS[profile.portraitAssetId] : null;
+  const displayName = profile.displayName.trim() || "Creator";
+  const initials = displayName.split(/\s+/u).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("") || "A";
   return (
     <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`} aria-label="Primary navigation">
-      <div className="brand-lockup"><LogoMark /><span><strong>Alystria</strong><small>Studio 2.0</small></span></div>
+      <div className="brand-lockup"><LogoMark /><span><strong>Alystria</strong><small>Creative intelligence</small></span></div>
       <button className="new-project-button" aria-label="New tutorial" onClick={onNew}><Plus size={17} /> <span>New tutorial</span></button>
-      {workspace ? (
+      {workspace && project ? (
         <>
           <button className="project-switcher" onClick={() => onGlobal("projects")}>
             <span className="project-glyph"><Braces size={16} /></span>
@@ -1219,7 +1450,7 @@ function Sidebar({ area, workspace, project, mobileNavOpen, onGlobal, onWorkspac
       )}
       <div className="sidebar-bottom">
         <div className="local-status"><span><HardDrive size={14} /> Local workspace</span><small>Protected · 184 GB free</small></div>
-        <button className="profile-button" aria-label="Open profile settings"><span>AI</span><span className="profile-copy"><strong>Akshit</strong><small>Local studio</small></span><MoreHorizontal size={16} /></button>
+        <button className="profile-button" aria-label="Open profile settings" onClick={onProfile}><span>{portrait ? <img src={portrait.src} alt="" width="35" height="35" /> : initials}</span><span className="profile-copy"><strong>{displayName}</strong><small>Local workspace</small></span><MoreHorizontal size={16} /></button>
       </div>
     </aside>
   );
@@ -1257,24 +1488,28 @@ function Topbar({ project, workspace, mode, jobs, runtime, onMode, onJobs, onMen
   );
 }
 
-function GlobalWorkspace({ area, snapshot, runtime, onArea, onOpenProject, onNew, onNotify, onImportSources, onReset }: {
+function GlobalWorkspace({ area, snapshot, runtime, diagnosticReport, onArea, onOpenProject, onNew, onUseTemplate, onNotify, onImportSources, onReset, onReplayOnboarding, onReplayTour }: {
   area: GlobalArea;
   snapshot: AppSnapshot;
   runtime: RuntimeState;
+  diagnosticReport: DiagnosticReport | null;
   onArea: (area: GlobalArea) => void;
   onOpenProject: (projectId: string, workspace?: Workspace) => void;
   onNew: () => void;
+  onUseTemplate: (templateId: string) => void;
   onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void;
   onImportSources: (files: File[]) => Promise<SourceImportReceipt[]>;
   onReset: () => void;
+  onReplayOnboarding: () => void;
+  onReplayTour: () => void;
 }) {
   switch (area) {
     case "home": return <HomeView snapshot={snapshot} runtime={runtime} onOpen={onOpenProject} onNew={onNew} onArea={onArea} />;
     case "projects": return <ProjectsView projects={snapshot.projects} onOpen={onOpenProject} onNew={onNew} />;
-    case "templates": return <TemplatesView onUse={onNew} />;
-    case "library": return <LibraryView project={snapshot.projects.find((project) => project.id === snapshot.recentProjectId) ?? snapshot.projects[0]!} onNotify={onNotify} onImportSources={onImportSources} />;
-    case "providers": return <ProvidersView environment={runtime.environment} onNotify={onNotify} />;
-    case "diagnostics": return <DiagnosticsView runtime={runtime} onNotify={onNotify} onReset={onReset} />;
+    case "templates": return <TemplatesView onUse={onUseTemplate} />;
+    case "library": return <LibraryView project={snapshot.projects.find((project) => project.id === snapshot.recentProjectId) ?? snapshot.projects[0] ?? null} onNotify={onNotify} onImportSources={onImportSources} />;
+    case "providers": return <ProvidersView environment={runtime.environment} diagnosticReport={diagnosticReport} onNotify={onNotify} />;
+    case "diagnostics": return <DiagnosticsView runtime={runtime} onNotify={onNotify} onReset={onReset} onReplayOnboarding={onReplayOnboarding} onReplayTour={onReplayTour} />;
   }
 }
 
@@ -1285,7 +1520,7 @@ function HomeView({ snapshot, runtime, onOpen, onNew, onArea }: {
   onNew: () => void;
   onArea: (area: GlobalArea) => void;
 }) {
-  const featured = snapshot.projects.find((project) => project.id === snapshot.recentProjectId) ?? snapshot.projects[0]!;
+  const featured = snapshot.projects.find((project) => project.id === snapshot.recentProjectId) ?? snapshot.projects[0] ?? null;
   return (
     <div className="page home-page">
       <section className="home-hero">
@@ -1293,19 +1528,20 @@ function HomeView({ snapshot, runtime, onOpen, onNew, onArea }: {
           <span className="section-kicker"><Sparkles size={14} /> Your teaching studio</span>
           <h1>Turn a difficult idea into<br /><em>a clear line of thought.</em></h1>
           <p>Research, structure, narrate, and render rigorous tutorials—without losing the thread between a claim and the scene that teaches it.</p>
-          <div className="hero-actions"><button className="primary-button" onClick={onNew}><Plus size={17} /> Create a tutorial</button><button className="secondary-button" onClick={() => onOpen(featured.id)}><PlayCircle size={17} /> Continue working</button></div>
+          <div className="hero-actions"><button className="primary-button" onClick={onNew}><Plus size={17} /> Create a tutorial</button>{featured && <button className="secondary-button" onClick={() => onOpen(featured.id)}><PlayCircle size={17} /> Continue working</button>}</div>
         </div>
         <div className="concept-thread-hero" aria-label="A tutorial moves from idea to evidence to scene to review">
+          <img className="concept-hero-art" src={alystriaAuroraThread} alt="" width="1536" height="1024" decoding="async" />
           <div className="thread-line" />
-          <div className="thread-node node-idea"><span><TextCursorInput size={17} /></span><small>Idea</small><strong>Karatsuba multiplication</strong></div>
-          <div className="thread-node node-evidence"><span><Link2 size={17} /></span><small>Evidence</small><strong>42 grounded excerpts</strong></div>
-          <div className="thread-node node-scene"><span><Film size={17} /></span><small>Scene</small><strong>8 visual moments</strong></div>
-          <div className="thread-node node-review"><span><BadgeCheck size={17} /></span><small>Review</small><strong>3 checks remain</strong></div>
-          <div className="thread-watermark">THREAD / 08</div>
+          <div className="thread-node node-idea"><span><TextCursorInput size={17} /></span><small>Idea</small><strong>Your difficult question</strong></div>
+          <div className="thread-node node-evidence"><span><Link2 size={17} /></span><small>Evidence</small><strong>Sources you approve</strong></div>
+          <div className="thread-node node-scene"><span><Film size={17} /></span><small>Scenes</small><strong>Editable visual beats</strong></div>
+          <div className="thread-node node-review"><span><BadgeCheck size={17} /></span><small>Review</small><strong>Clear export checks</strong></div>
+          <div className="thread-watermark">IDEA → VIDEO</div>
         </div>
       </section>
 
-      <section className="continue-section">
+      {featured ? <section className="continue-section">
         <div className="section-heading"><div><span className="section-kicker">Continue the thread</span><h2>{featured.title}</h2></div><button className="text-button" onClick={() => onOpen(featured.id)}>Open project <ArrowRight size={15} /></button></div>
         <button className="continue-card" onClick={() => onOpen(featured.id, "storyboard")}>
           <div className="continue-preview"><SceneArtwork scene={featured.scenes[3]!} compact /><div className="preview-time">03:14 / 12:00</div></div>
@@ -1317,12 +1553,12 @@ function HomeView({ snapshot, runtime, onOpen, onNew, onArea }: {
             <ProgressBar value={featured.progress} /><small>{featured.progress}% ready for export</small>
           </div>
         </button>
-      </section>
+      </section> : <section className="continue-section empty-workbench"><EmptyState icon={Sparkles} title="Your workbench is ready" detail="No sample projects or background jobs were added. Start a tutorial when you are ready, or follow the guided setup first." action={<button className="primary-button" onClick={onNew}><Plus size={17} /> Create your first tutorial</button>} /></section>}
 
       <section className="home-grid">
         <div className="home-panel recent-panel">
           <div className="panel-heading"><div><span className="section-kicker">Recent projects</span><h3>On your workbench</h3></div><button className="icon-button" onClick={() => onArea("projects")} aria-label="View all projects"><ArrowRight size={17} /></button></div>
-          <div className="mini-project-list">{snapshot.projects.slice(1, 3).map((project) => <button key={project.id} onClick={() => onOpen(project.id)}><span className={`mini-project-art art-${project.id}`}><Film size={19} /></span><span><strong>{project.title}</strong><small>{project.locale} · {project.duration} min · {project.updatedAt}</small></span><span className="mini-progress">{project.progress}%</span></button>)}</div>
+          <div className="mini-project-list">{snapshot.projects.length ? snapshot.projects.slice(0, 3).map((project) => <button key={project.id} onClick={() => onOpen(project.id)}><span className={`mini-project-art art-${project.id}`}><Film size={19} /></span><span><strong>{project.title}</strong><small>{project.locale} · {project.duration} min · {project.updatedAt}</small></span><span className="mini-progress">{project.progress}%</span></button>) : <p className="empty-list-copy">Projects you create will appear here.</p>}</div>
         </div>
         <div className="home-panel readiness-panel">
           <div className="panel-heading"><div><span className="section-kicker">Studio readiness</span><h3>Everything stays in view</h3></div><ShieldCheck className="teal" size={23} /></div>
@@ -1358,19 +1594,20 @@ function ProjectCard({ project, onOpen }: { project: ProjectRecord; onOpen: () =
   </button>;
 }
 
-function TemplatesView({ onUse }: { onUse: () => void }) {
+function TemplatesView({ onUse }: { onUse: (templateId: string) => void }) {
   const [category, setCategory] = useState("All");
   const shown = category === "All" ? templates : templates.filter((template) => template.category === category);
   return <div className="page">
     <PageTitle kicker="Starting structures" title="Templates" description="Editorially designed learning arcs—not prompt presets. Every structure adapts to your audience and evidence." />
-    <div className="template-banner"><div><span className="section-kicker"><Star size={14} /> Featured learning arc</span><h2>Build intuition, then earn the formula.</h2><p>A purpose-built sequence for technical concepts: misconception, visual model, derivation, worked example, and transfer check.</p><button className="light-button" onClick={onUse}>Use this structure <ArrowRight size={15} /></button></div><ConceptDiagram /></div>
+    <div className="template-banner"><div><span className="section-kicker"><Star size={14} /> Featured learning arc</span><h2>Build intuition, then earn the formula.</h2><p>A purpose-built sequence for technical concepts: misconception, visual model, derivation, worked example, and transfer check.</p><button className="light-button" onClick={() => onUse("explain-hard-idea")}>Use this structure <ArrowRight size={15} /></button></div><ConceptDiagram /></div>
     <div className="toolbar template-toolbar"><div className="filter-pills">{["All", "Concept", "Code", "Humanities", "Mathematics", "Software", "Illustrated"].map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}</button>)}</div></div>
-    <div className="template-grid">{shown.map((template, index) => <article className={`template-card template-${template.color}`} key={template.name}><div className="template-visual"><span>{template.category}</span><div className="mini-thread">{Array.from({ length: 5 }, (_, dot) => <i key={dot} style={{ left: `${12 + dot * 19}%`, top: `${54 + Math.sin(dot + index) * 20}%` }} />)}</div></div><div><small>{template.scenes} suggested scenes</small><h3>{template.name}</h3><p>{template.description}</p><button className="text-button" onClick={onUse}>Use template <ArrowRight size={15} /></button></div></article>)}</div>
+    <div className="template-grid">{shown.map((template) => <article className={`template-card template-${template.color}`} key={template.id}><div className="template-visual"><img src={TEMPLATE_PREVIEWS[template.id]} alt="" width="832" height="468" loading="eager" decoding="async" /><span>{template.category}</span></div><div><small>{template.scenes} suggested scenes</small><h3>{template.name}</h3><p>{template.description}</p><button className="text-button" onClick={() => onUse(template.id)}>Use template <ArrowRight size={15} /></button></div></article>)}</div>
   </div>;
 }
 
-function LibraryView({ project, onNotify, onImportSources }: { project: ProjectRecord; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void; onImportSources: (files: File[]) => Promise<SourceImportReceipt[]> }) {
+function LibraryView({ project, onNotify, onImportSources }: { project: ProjectRecord | null; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void; onImportSources: (files: File[]) => Promise<SourceImportReceipt[]> }) {
   const [tab, setTab] = useState("Sources");
+  if (!project) return <div className="page"><PageTitle kicker="Reusable material" title="Library" description="Sources, visuals, audio, and brand kits stay local and carry their rights information with them." /><EmptyState icon={Library} title="No project library yet" detail="Create or open a tutorial before importing project-owned material." /></div>;
   return <div className="page">
     <PageTitle kicker="Reusable material" title="Library" description="Sources, visuals, audio, and brand kits stay local and carry their rights information with them." action={<SourceImportControl label="Import assets" onImport={onImportSources} onNotify={onNotify} />} />
     <div className="subtabs">{["Sources", "Visuals", "Audio", "Brand kits"].map((item) => <button className={tab === item ? "active" : ""} onClick={() => setTab(item)} key={item}>{item}</button>)}</div>
@@ -1378,7 +1615,72 @@ function LibraryView({ project, onNotify, onImportSources }: { project: ProjectR
   </div>;
 }
 
-function ProvidersView({ environment, onNotify }: { environment: RuntimeState["environment"]; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void }) {
+function catalogItemsFromDiscovery(response: CatalogDiscoveryResponse): CatalogItem[] {
+  if (response.source === "hugging-face") {
+    return response.items.flatMap((item) => isRecord(item) && typeof item.id === "string"
+      ? [adaptHuggingFaceModel(item as unknown as RawHuggingFaceModel, response.retrievedAt)]
+      : []);
+  }
+  if (response.source === "civitai") {
+    return response.items.flatMap((item) => {
+      if (!isRecord(item) || typeof item.id !== "number") return [];
+      const model = item as unknown as RawCivitaiModel & { modelVersions?: RawCivitaiModelVersion[] };
+      return (model.modelVersions ?? []).slice(0, 2).flatMap((version) => version && typeof version.id === "number"
+        ? [adaptCivitaiModel(model, version, response.retrievedAt)]
+        : []);
+    });
+  }
+  return response.items.flatMap((item) => {
+    if (!isRecord(item) || typeof item.id !== "string") return [];
+    const id = item.id;
+    const capabilities = nvidiaCapabilities(id);
+    const raw: RawNvidiaCatalogEntry = {
+      catalog: "nim",
+      id,
+      name: id.split("/").at(-1) ?? id,
+      publisher: typeof item.owned_by === "string" ? item.owned_by : id.split("/")[0] ?? "NVIDIA API catalog",
+      revision: typeof item.root === "string" ? item.root : null,
+      description: "Model reported by the connected NVIDIA NIM /v1/models endpoint. Inspect the model documentation and entitlement before routing work.",
+      capabilities,
+      modalities: capabilities.some((capability) => capability.startsWith("image") || capability === "vlm.review") ? ["multimodal"] : ["text"],
+      tags: ["nvidia-nim", "live-endpoint"],
+      hostedApi: true,
+      downloadable: false,
+      operationIds: ["GET /v1/models"],
+      endpointBaseUrl: "https://integrate.api.nvidia.com",
+      openAiCompatible: true,
+      entitlement: "available",
+      sourceUrl: `https://build.nvidia.com/${encodeURIComponent(id)}`,
+      documentationUrl: "https://docs.api.nvidia.com/nim/",
+      publisherVerifiedBySource: true,
+      retrievedAt: response.retrievedAt,
+    };
+    return [adaptNvidiaCatalogEntry(raw)];
+  });
+}
+
+function nvidiaCapabilities(id: string): CatalogCapability[] {
+  const normalized = id.toLowerCase();
+  if (/flux|stable-diffusion|image|diffusion/u.test(normalized)) return ["image.generate", "image.edit"];
+  if (/embed/u.test(normalized)) return ["retrieval.embed"];
+  if (/rerank/u.test(normalized)) return ["retrieval.embed", "llm.structured"];
+  if (/vision|vlm|multimodal|gemma-3/u.test(normalized)) return ["llm.text", "vlm.review"];
+  return ["llm.text", "llm.structured"];
+}
+
+function mergeCatalogItems(existing: readonly CatalogItem[], incoming: readonly CatalogItem[]): CatalogItem[] {
+  const merged = new Map(existing.map((item) => [`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`, item]));
+  for (const item of incoming) merged.set(`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`, item);
+  return [...merged.values()];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+type SyncableCatalogSource = "hugging-face" | "civitai" | "nvidia-nim";
+
+function ProvidersView({ environment, diagnosticReport, onNotify }: { environment: RuntimeState["environment"]; diagnosticReport: DiagnosticReport | null; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void }) {
   const [mode, setMode] = useState("Hybrid");
   const [secretRefs, setSecretRefs] = useState<Record<string, ProviderSecretRef>>({});
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
@@ -1391,7 +1693,12 @@ function ProvidersView({ environment, onNotify }: { environment: RuntimeState["e
   const [downloadStatuses, setDownloadStatuses] = useState<ModelDownloadStatus[]>([]);
   const [licenseAccepted, setLicenseAccepted] = useState(false);
   const [downloadStarting, setDownloadStarting] = useState(false);
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>(() => [...alystriaCatalogItems]);
+  const [catalogCursors, setCatalogCursors] = useState<Partial<Record<SyncableCatalogSource, string | null>>>({});
+  const [catalogSyncing, setCatalogSyncing] = useState<SyncableCatalogSource | null>(null);
+  const [catalogSyncedCounts, setCatalogSyncedCounts] = useState<Partial<Record<SyncableCatalogSource, number>>>({});
   const providers = providerConfigs;
+  const catalogHardware = useMemo(() => catalogHardwareFromDiagnostics(diagnosticReport), [diagnosticReport]);
 
   useEffect(() => {
     let active = true;
@@ -1482,10 +1789,37 @@ function ProvidersView({ environment, onNotify }: { environment: RuntimeState["e
       onNotify("Credential removed", environment === "native" ? "The OS vault entry was deleted." : "The browser demo availability flag was cleared.", "info");
     } catch (error) { onNotify("Credential could not be removed", errorMessage(error), "warning"); }
   };
+  const syncCatalog = async (source: SyncableCatalogSource) => {
+    if (catalogSyncing) return;
+    setCatalogSyncing(source);
+    try {
+      const cursor = catalogCursors[source] ?? null;
+      const response = await catalogDiscover({ source, limit: 24, ...(cursor ? { cursor } : {}) });
+      const discovered = catalogItemsFromDiscovery(response);
+      setCatalogItems((current) => mergeCatalogItems(current, discovered));
+      setCatalogCursors((current) => ({ ...current, [source]: response.nextCursor }));
+      setCatalogSyncedCounts((current) => ({ ...current, [source]: (current[source] ?? 0) + discovered.length }));
+      onNotify(`${source === "hugging-face" ? "Hugging Face" : source === "civitai" ? "Civitai" : "NVIDIA NIM"} catalog synced`, `${discovered.length} provider rows were normalized. Unknown licenses, mutable revisions, and hardware mismatches remain blocked.`, "success");
+    } catch (error) {
+      onNotify("Catalog sync needs attention", errorMessage(error), "warning");
+    } finally {
+      setCatalogSyncing(null);
+    }
+  };
 
   return <div className="page">
     <PageTitle kicker="Your compute, your choice" title="Models & providers" description="Alystria only routes work to providers you configure and approve. Local mode blocks project-content networking." />
     <section className="routing-card"><div><span className="section-kicker">Default routing boundary</span><h3>{mode} creation</h3><p>{mode === "Local" ? "All generation remains on this device. No cloud fallback." : mode === "Cloud" ? "Use only connected cloud providers after cost and privacy approval." : "Keep private sources local; route approved creative tasks to cloud providers."}</p></div><div className="segmented-large" role="group" aria-label="Provider routing mode">{["Local", "Hybrid", "Cloud"].map((item) => <button key={item} className={mode === item ? "active" : ""} onClick={() => setMode(item)}><span>{item === "Local" ? <HardDrive /> : item === "Cloud" ? <Cloud /> : <Network />}</span>{item}</button>)}</div><div className="routing-facts"><span><ShieldCheck /> No silent fallback</span><span><CircleDollarSign /> Hard budgets enabled</span><span><Lock /> Keys in OS vault</span></div></section>
+    <section className="federated-catalog-panel" aria-labelledby="federated-catalog-title">
+      <div className="federated-catalog-heading"><div><span className="section-kicker">LM Studio-style discovery, widened for production</span><h2 id="federated-catalog-title">One model library for every capability</h2><p>Search supported recipe candidates now; sync live hub rows only from a dated API response, a connected provider, or a verified local scan. Unknown revisions and licenses stay visibly blocked.</p></div><span><Cpu size={16} /> {catalogHardware.gpuNames[0] ?? "Hardware probe pending"}</span></div>
+      <div className="catalog-source-strip" aria-label="Federated catalog sources">{defaultCatalogSources.map((source) => {
+        const syncable = (["hugging-face", "civitai", "nvidia-nim"] as const).find((candidate) => candidate === source.id);
+        const count = syncable ? catalogSyncedCounts[syncable] ?? 0 : 0;
+        const hasMore = syncable ? Boolean(catalogCursors[syncable]) : false;
+        return <article key={source.id} className={!source.catalogUrl ? "local-source" : ""}><ProviderMark providerId={source.brandAssetId} compact /><strong>{source.label}</strong><small>{count ? `${count} live rows · ` : ""}{source.discovery.replaceAll("-", " ")} · {source.authentication.replaceAll("-", " ")}</small><span>{source.catalogUrl && <a href={source.catalogUrl} target="_blank" rel="noreferrer">Explore</a>}{syncable && <button type="button" disabled={catalogSyncing !== null || (syncable === "nvidia-nim" && secretRefs["nvidia-nim"]?.availability !== "present")} onClick={() => { void syncCatalog(syncable); }}><RefreshCw size={11} className={catalogSyncing === syncable ? "spinning" : ""} />{catalogSyncing === syncable ? "Syncing…" : hasMore ? "Load more" : "Sync"}</button>}</span></article>;
+      })}</div>
+      <CatalogIntegrationExample hardware={catalogHardware} items={catalogItems} onModelSelected={(item) => onNotify("Model inspected", `${item.identity.name} remains blocked until its exact revision, license, compatibility, and required artifacts pass review.`, "info")} />
+    </section>
     <div className="provider-heading"><div><span className="section-kicker">Configured capabilities</span><h2>Provider connections</h2></div><span className="environment-note"><ShieldCheck size={15} /> {environment === "native" ? "OS credential vault" : "Browser demo · values discarded"}</span></div>
     <div className="provider-grid">{providers.map(({ id, name, icon: Icon, detail, tone, local }) => {
       const availability = local ? "manager" : secretRefs[id]?.availability ?? "missing";
@@ -1521,9 +1855,43 @@ function ProvidersView({ environment, onNotify }: { environment: RuntimeState["e
   </div>;
 }
 
-function DiagnosticsView({ runtime, onNotify, onReset }: { runtime: RuntimeState; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void; onReset: () => void }) {
+interface AlystriaPreferences {
+  modelCacheDirectory: string;
+  renderScratchDirectory: string;
+  autosaveSeconds: number;
+  backupCount: number;
+  confirmCloudTransfer: boolean;
+  redactLogs: boolean;
+  crashReports: boolean;
+  reducedMotion: boolean;
+  highContrast: boolean;
+  denseEditor: boolean;
+  defaultCaptionLanguage: string;
+  defaultExportFps: number;
+  notifyOnCompletion: boolean;
+}
+
+const DEFAULT_ALYSTRIA_PREFERENCES: AlystriaPreferences = {
+  modelCacheDirectory: "E:\\temp\\Alystria Models",
+  renderScratchDirectory: "E:\\temp\\Alystria Renders",
+  autosaveSeconds: 8,
+  backupCount: 12,
+  confirmCloudTransfer: true,
+  redactLogs: true,
+  crashReports: false,
+  reducedMotion: false,
+  highContrast: false,
+  denseEditor: false,
+  defaultCaptionLanguage: "Match tutorial",
+  defaultExportFps: 30,
+  notifyOnCompletion: true,
+};
+
+function DiagnosticsView({ runtime, onNotify, onReset, onReplayOnboarding, onReplayTour }: { runtime: RuntimeState; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void; onReset: () => void; onReplayOnboarding: () => void; onReplayTour: () => void }) {
   const [checking, setChecking] = useState(false);
   const [report, setReport] = useState<DiagnosticReport | null>(null);
+  const [preferences, setPreferences] = usePersistentState<AlystriaPreferences>("alystria-preferences-v1", DEFAULT_ALYSTRIA_PREFERENCES);
+  const updatePreference = <K extends keyof AlystriaPreferences>(key: K, value: AlystriaPreferences[K]) => setPreferences((current) => ({ ...current, [key]: value }));
   const runChecks = async () => {
     setChecking(true);
     try {
@@ -1548,9 +1916,16 @@ function DiagnosticsView({ runtime, onNotify, onReset }: { runtime: RuntimeState
       <section className="diagnostic-panel wide"><div className="panel-heading"><div><span className="section-kicker">System readiness</span><h3>{runtime.environment === "native" ? "Native toolchain" : "Browser preview"}</h3></div><span className="health-score">{rows.filter((row) => row.level === "pass").length} / {rows.length} passed</span></div><div className="diagnostic-rows">{rows.map((row) => { const Icon = diagnosticIcon(row.id); const ready = row.level === "pass"; return <div key={row.id}><span className="diagnostic-icon"><Icon size={17} /></span><span><strong>{row.label}</strong><small>{row.summary}</small></span><span className={`check-state ${ready ? "ready" : "attention"}`}>{ready ? <Check size={13} /> : <CircleAlert size={13} />}{row.level}</span></div>; })}</div></section>
       <section className="diagnostic-panel"><span className="section-kicker">Privacy boundary</span><div className="privacy-orbit"><Lock size={22} /><i /><i /></div><h3>Local means local.</h3><p>Analytics are off. Private source contents cannot leave this device unless you explicitly reclassify them.</p><button className="text-button">Review privacy controls <ArrowRight size={15} /></button></section>
       <section className="diagnostic-panel"><span className="section-kicker">Power & performance</span><div className="power-mode"><Moon size={22} /><span><strong>Silent profile respected</strong><small>Benchmarks are estimation-only</small></span></div><p>Alystria won’t change Windows or G-Helper power modes. Use a performance profile only for deliberate benchmark runs.</p><button className="text-button" onClick={() => onNotify("Power profile unchanged", "No benchmark needs boost for functional acceptance.", "info")}>Why this is recommended <ArrowRight size={15} /></button></section>
-      <section className="diagnostic-panel wide compact-settings"><div><span className="section-kicker">Recovery & maintenance</span><h3>Local state controls</h3></div><div className="setting-actions"><button className="secondary-button" onClick={() => onNotify("Backup queued", "A copy-first local project backup will be created by the desktop service.", "info")}><Archive size={16} /> Create backup</button><button className="secondary-button danger-text" onClick={onReset}><RotateCcw size={16} /> Restore demo data</button></div></section>
+      <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Storage & recovery</span><h3>Keep heavy work away from the system drive</h3></div><HardDrive size={21} /></div><div className="settings-form-grid"><label><span>Model cache</span><input value={preferences.modelCacheDirectory} onChange={(event) => updatePreference("modelCacheDirectory", event.target.value)} /></label><label><span>Render scratch</span><input value={preferences.renderScratchDirectory} onChange={(event) => updatePreference("renderScratchDirectory", event.target.value)} /></label><label><span>Autosave interval</span><select value={preferences.autosaveSeconds} onChange={(event) => updatePreference("autosaveSeconds", Number(event.target.value))}><option value="3">3 seconds</option><option value="8">8 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select></label><label><span>Local backup versions</span><input type="number" min="3" max="100" value={preferences.backupCount} onChange={(event) => updatePreference("backupCount", Number(event.target.value))} /></label></div></section>
+      <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Privacy & trust</span><h3>Every external boundary remains deliberate</h3></div><ShieldCheck size={21} /></div><div className="settings-toggle-grid"><SettingsToggle checked={preferences.confirmCloudTransfer} title="Confirm every new cloud content class" detail="A saved provider route never implies consent for private source transfer." onChange={(value) => updatePreference("confirmCloudTransfer", value)} /><SettingsToggle checked={preferences.redactLogs} title="Redact paths, keys and source excerpts from logs" detail="Keep diagnostic bundles useful without leaking project or credential content." onChange={(value) => updatePreference("redactLogs", value)} /><SettingsToggle checked={preferences.crashReports} title="Send anonymous crash reports" detail="Off by default; source text and media are never attached." onChange={(value) => updatePreference("crashReports", value)} /></div></section>
+      <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Editor & accessibility</span><h3>Fit the creative surface to the person</h3></div><MonitorPlay size={21} /></div><div className="settings-toggle-grid"><SettingsToggle checked={preferences.reducedMotion} title="Reduce interface motion" detail="Preserve hierarchy and feedback without camera-like transitions." onChange={(value) => updatePreference("reducedMotion", value)} /><SettingsToggle checked={preferences.highContrast} title="High-contrast controls and guides" detail="Increase control boundaries, focus rings and canvas guide contrast." onChange={(value) => updatePreference("highContrast", value)} /><SettingsToggle checked={preferences.denseEditor} title="Dense multitrack editor" detail="Show more tracks and inspector fields on large displays." onChange={(value) => updatePreference("denseEditor", value)} /></div><div className="settings-form-grid"><label><span>Caption language</span><select value={preferences.defaultCaptionLanguage} onChange={(event) => updatePreference("defaultCaptionLanguage", event.target.value)}><option>Match tutorial</option><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Default export rate</span><select value={preferences.defaultExportFps} onChange={(event) => updatePreference("defaultExportFps", Number(event.target.value))}><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div></section>
+      <section className="diagnostic-panel wide compact-settings"><div><span className="section-kicker">Tutorial & maintenance</span><h3>Replay guidance or clean local UI state</h3></div><div className="setting-actions"><button className="secondary-button" onClick={onReplayOnboarding}><PlayCircle size={16} /> Replay setup</button><button className="secondary-button" onClick={onReplayTour}><Sparkles size={16} /> Replay guided tour</button><button className="secondary-button" onClick={() => onNotify("Backup queued", "A copy-first local project backup will be created by the desktop service.", "info")}><Archive size={16} /> Create backup</button><button className="secondary-button danger-text" onClick={onReset}><RotateCcw size={16} /> Reset local workspace</button></div></section>
     </div>
   </div>;
+}
+
+function SettingsToggle({ checked, title, detail, onChange }: { checked: boolean; title: string; detail: string; onChange: (checked: boolean) => void }) {
+  return <label className="settings-toggle"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span><strong>{title}</strong><small>{detail}</small></span><i aria-hidden="true" /></label>;
 }
 
 function ProjectWorkspace(props: {
@@ -1566,6 +1941,7 @@ function ProjectWorkspace(props: {
   onSelectScene: (sceneId: string) => void;
   onSceneUpdate: (sceneId: string, update: Partial<Scene>) => void;
   onProjectCustomization: (customization: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => void;
+  onProjectCreative: (creative: CreativeConfiguration) => void;
   onRegenerate: (scene: Scene) => void;
   onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void;
   onAddJob: (job: JobRecord) => void;
@@ -1644,13 +2020,19 @@ function StoryboardWorkspace({ project, onScene, onRegenerate, onWorkspace }: Pr
   </div>;
 }
 
-function StudioWorkspace({ project, activeScene, mode, version, onSelectScene, onSceneUpdate, onProjectCustomization, onRegenerate, onUndo, onRedo, onRenderScene, onNotify }: ProjectWorkspaceProps) {
+function StudioWorkspace({ project, activeScene, mode, version, onSelectScene, onSceneUpdate, onProjectCustomization, onProjectCreative, onRegenerate, onUndo, onRedo, onRenderScene, onNotify, onAddJob }: ProjectWorkspaceProps) {
   const [playing, setPlaying] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorProject, setEditorProject] = useState<EditorProject>(() => createEditorProjectFromAlystriaProject(project, { now: new Date().toISOString() }));
   const [inspectorTab, setInspectorTab] = useState("Content");
   const [zoom, setZoom] = useState(72);
   const [assetPreviews, setAssetPreviews] = useState<Record<string, string>>({});
   const assetPreviewsRef = useRef(assetPreviews);
+  const projectRef = useRef(project);
+  projectRef.current = project;
   const customization = canvasCustomization(project);
+  const creative = project.creative ?? DEFAULT_CREATIVE_CONFIGURATION;
+  useEffect(() => { setEditorProject(createEditorProjectFromAlystriaProject(projectRef.current, { now: new Date().toISOString() })); }, [project.id]);
   useEffect(() => { assetPreviewsRef.current = assetPreviews; }, [assetPreviews]);
   useEffect(() => () => Object.values(assetPreviewsRef.current).forEach((url) => URL.revokeObjectURL(url)), []);
   const selectedPresenter = customization.presenter.assetId ? assetPreviews[customization.presenter.assetId] : undefined;
@@ -1666,18 +2048,24 @@ function StudioWorkspace({ project, activeScene, mode, version, onSelectScene, o
     "--project-corner": `${customization.cornerRadius}px`,
     "--project-shadow": customization.shadowStrength / 100,
   } as React.CSSProperties;
+  const queueCreativeJob = (operation: "visual_review" | "presenter_generate", title: string, detail: string) => {
+    onAddJob({ id: `${operation}-${Date.now()}`, title, detail, status: "queued", progress: 0, eta: "Waiting for an approved model route", operation });
+    onNotify(`${title} queued`, "This user-started proposal is visible in Jobs. It will not overwrite an accepted scene or portrait.", "info");
+  };
   return <div className="studio-workspace">
-    <div className="studio-toolbar"><div><span className="scene-crumb">Scene {String(activeScene.index).padStart(2, "0")}</span><strong>{activeScene.title}</strong><SceneStatus status={activeScene.status} /></div><div className="studio-toolbar-center"><button onClick={onUndo} aria-label="Undo durable revision"><Undo2 size={16} /></button><button onClick={onRedo} aria-label="Redo durable revision"><Redo2 size={16} /></button><span className="separator" /><button><Square size={14} /> Fit</button><label><input aria-label="Canvas zoom" type="range" min="45" max="110" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />{zoom}%</label></div><div><button className="secondary-button small" onClick={() => onRegenerate(activeScene)}><WandSparkles size={15} /> New candidate</button><button className="primary-button small" onClick={() => onRenderScene(activeScene)}><Play size={14} /> Render scene</button></div></div>
+    <div className="studio-toolbar"><div><span className="scene-crumb">Scene {String(activeScene.index).padStart(2, "0")}</span><strong>{activeScene.title}</strong><SceneStatus status={activeScene.status} /></div><div className="studio-toolbar-center"><button onClick={onUndo} aria-label="Undo durable revision"><Undo2 size={16} /></button><button onClick={onRedo} aria-label="Redo durable revision"><Redo2 size={16} /></button><span className="separator" /><button><Square size={14} /> Fit</button><label><input aria-label="Canvas zoom" type="range" min="45" max="110" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />{zoom}%</label></div><div><button className="secondary-button small" onClick={() => setEditorOpen(true)}><Film size={15} /> Advanced editor</button><button className="secondary-button small" onClick={() => onRegenerate(activeScene)}><WandSparkles size={15} /> New candidate</button><button className="primary-button small" onClick={() => onRenderScene(activeScene)}><Play size={14} /> Render scene</button></div></div>
     <div className="studio-layout">
       <aside className="scene-rail"><div className="scene-rail-head"><span>Scenes</span><button><Plus size={15} /></button></div><div className="scene-rail-list">{project.scenes.map((scene) => <button className={scene.id === activeScene.id ? "active" : ""} onClick={() => onSelectScene(scene.id)} key={scene.id}><span className="rail-index">{String(scene.index).padStart(2, "0")}</span><span className="rail-thumb"><SceneArtwork scene={scene} compact /></span><span className="rail-copy"><strong>{scene.title}</strong><small>{formatTime(scene.duration)} · {scene.kind.replace("-", " ")}</small></span><i className={`rail-state ${scene.status}`} /></button>)}</div></aside>
       <section className="canvas-stage"><div className="canvas-surround"><div className="canvas-rulers top" /><div className="canvas-rulers side" /><div className={`preview-canvas canvas-${customization.backgroundMode} treatment-${customization.sceneTreatment} density-${customization.density} contrast-${customization.contrast}`} style={{ ...canvasStyle, width: `${Math.min(92, zoom + 20)}%`, ...(selectedBackground ? { backgroundImage: `url(${selectedBackground})` } : {}) }} data-testid="customized-canvas"><SharedScenePreview scene={activeScene} project={project} fallback={<SceneArtwork scene={activeScene} />} />{customization.presenter.placement !== "off" && <div className={`presenter-preview placement-${customization.presenter.placement} side-${customization.presenter.side} frame-${customization.presenter.frame} crop-${customization.presenter.crop}`} style={{ width: `${Math.round(customization.presenter.scale * .42)}%` }} data-testid="presenter-preview">{selectedPresenter ? <img src={selectedPresenter} alt="Uploaded presenter preview" /> : <PresenterPortrait assetId={customization.presenter.assetId} />}</div>}<CaptionPreview settings={customization.captions} fontFamily={customization.bodyFont} /><div className="safe-area" style={{ inset: `${customization.captions.safeInset}%` }} aria-hidden="true" /><div className="frame-badge">VISUAL BIBLE · v{version} · FRAME 01842</div></div></div><div className="playback-bar"><button aria-label="Previous scene"><ArrowLeft size={17} /></button><button className="play-toggle" onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pause preview" : "Play preview"}>{playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><button aria-label="Next scene"><ArrowRight size={17} /></button><span className="timecode">{playing ? "00:00:18:08" : "00:00:00:00"} <i>/</i> 00:01:34:00</span><div className="playback-progress"><i style={{ width: playing ? "24%" : "0%" }} /></div><button><Volume2 size={16} /></button><button>1×</button></div>
       </section>
-      <aside className="inspector"><div className="inspector-tabs">{["Content", "Design", "Motion"].map((tab) => <button className={inspectorTab === tab ? "active" : ""} onClick={() => setInspectorTab(tab)} key={tab}>{tab}</button>)}</div>
+      <aside className="inspector"><div className="inspector-tabs">{["Content", "Generate", "Design", "Motion"].map((tab) => <button className={inspectorTab === tab ? "active" : ""} onClick={() => setInspectorTab(tab)} key={tab}>{tab}</button>)}</div>
         {inspectorTab === "Content" ? <div className="inspector-body"><InspectorSection title="Scene identity"><label>Title<input value={activeScene.title} onChange={(event) => onSceneUpdate(activeScene.id, { title: event.target.value })} /></label><label>Scene family<select value={activeScene.kind} onChange={(event) => onSceneUpdate(activeScene.id, { kind: event.target.value as Scene["kind"] })}><option value="title">Title</option><option value="definition">Definition</option><option value="diagram">Diagram</option><option value="worked-example">Worked example</option><option value="comparison">Comparison</option><option value="code">Code trace</option><option value="recap">Recap</option></select></label></InspectorSection><InspectorSection title="Narration"><textarea rows={7} value={activeScene.narration} onChange={(event) => onSceneUpdate(activeScene.id, { narration: event.target.value })} /><div className="field-meta"><span>{activeScene.narration.split(" ").length} words</span><span>~{activeScene.duration}s</span></div><button className="secondary-button full"><Mic2 size={15} /> Voice & pronunciation</button></InspectorSection><InspectorSection title="Evidence"><button className="evidence-chip"><ShieldCheck size={15} /><span><strong>{activeScene.citations} supported claims</strong><small>View evidence spans</small></span><ChevronRight size={15} /></button></InspectorSection>{mode === "studio" && <InspectorSection title="Dependency impact"><p className="inspector-note">Editing narration invalidates alignment, captions, presenter timing, scene render, and final composition.</p></InspectorSection>}</div>
+        : inspectorTab === "Generate" ? <CreativeInspector configuration={creative} onChange={onProjectCreative} onQueueVisualReview={() => queueCreativeJob("visual_review", `Visual review · scene ${activeScene.index}`, `${creative.slide.mode} slide · ${creative.slide.visualReviewModel}`)} onGeneratePresenter={() => queueCreativeJob("presenter_generate", "Presenter candidate", `${creative.presenter.style} · ${creative.presenter.baseModel}`)} />
         : inspectorTab === "Design" ? <DesignInspector project={project} customization={customization} onChange={onProjectCustomization} onNotify={onNotify} onPreviewAsset={(id, url) => setAssetPreviews((current) => ({ ...current, [id]: url }))} /> : <MotionInspector studioMode={mode === "studio"} />}
       </aside>
     </div>
     <div className="timeline-panel"><div className="timeline-tools"><button><PanelRightClose size={15} /> Timeline</button><span>00:00</span><span>00:20</span><span>00:40</span><span>01:00</span><span>01:20</span></div><div className="timeline-tracks"><div className="track-labels"><span><Eye size={14} /> Visual</span><span><AudioLines size={14} /> Narration</span><span><AlignLeft size={14} /> Captions</span></div><div className="track-content"><div className="timeline-cursor" style={{ left: playing ? "25%" : "2%" }} /><div className="visual-clip">Formula reveal <small>00:00–01:34</small></div><div className="audio-wave">{Array.from({ length: 90 }, (_, i) => <i key={i} style={{ height: `${8 + ((i * 13) % 24)}px` }} />)}</div><div className="caption-clips"><span style={{ width: "28%" }}>Multiply a plus b…</span><span style={{ width: "34%" }}>Subtract ac and bd…</span><span style={{ width: "29%" }}>Four products become three.</span></div></div></div><div className="version-stamp"><History size={14} /> v{version} saved</div></div>
+    {editorOpen && <div className="integrated-editor-layer" role="dialog" aria-modal="true" aria-label="Integrated advanced video editor"><div className="integrated-editor-layer__bar"><div><span className="section-kicker">Non-destructive finishing room</span><strong>{project.title}</strong></div><span>Slides · presenter · titles · captions · narration · music · SFX</span><button className="secondary-button small" onClick={() => setEditorOpen(false)}><X size={15} /> Return to scene</button></div><AdvancedVideoEditor project={editorProject} onProjectChange={(next) => setEditorProject(next)} onExportProject={() => onNotify("Editor project ready", "The versioned editor document is ready for project-owned JSON export.", "success")} onExportOtio={() => onNotify("OTIO-like timeline ready", "The interchange document preserves timing, tracks and provenance; media remains in the project store.", "success")} onCreateProjectCopy={(copy) => { setEditorProject(copy); onNotify("Version copy created", `${copy.name} is an independent non-destructive edit.`, "success"); }} /></div>}
   </div>;
 }
 
@@ -2038,7 +2426,36 @@ function SceneArtwork({ scene, compact = false }: { scene: Scene; compact?: bool
 
 function ConceptDiagram() { return <svg className="concept-diagram" viewBox="0 0 320 180" role="img" aria-label="A concept map connecting split, expand, reuse, and compare"><path d="M24 92 C68 24,112 30,146 78 S218 156,296 84" /><path d="M54 130 C110 154,176 36,266 42" className="secondary-path" /><g transform="translate(28,82)"><circle r="15" /><text x="24" y="5">split</text></g><g transform="translate(113,51)"><circle r="11" /><text x="18" y="5">expand</text></g><g transform="translate(190,116)"><circle r="13" /><text x="20" y="5">reuse</text></g><g transform="translate(286,84)"><circle r="16" /><text x="-64" y="-24">compare</text></g></svg>; }
 
-function NewTutorialWizard({ environment, onClose, onCreate }: { environment: RuntimeState["environment"]; onClose: () => void; onCreate: (project: ProjectRecord, settings: TutorialCreationSettings) => Promise<void> }) {
+const TEMPLATE_SCENE_LABELS: Readonly<Record<string, readonly string[]>> = {
+  "explain-hard-idea": ["The question", "What we already know", "Build the visual model", "Name the parts", "Earn the formal idea", "Work one example", "Test the intuition", "Thread it together"],
+  "trace-algorithm": ["The input contract", "State before the first step", "Name the invariant", "Trace the happy path", "Inspect each transition", "Catch the edge case", "Read the implementation", "Measure the cost", "Transfer challenge"],
+  "evidence-history": ["The driving question", "World before the change", "First pressure", "Primary voice", "Turning point", "Competing interpretation", "Second turning point", "Map the consequences", "Whose experience differs", "Evidence check", "Qualified conclusion"],
+  "worked-derivation": ["State the target", "List the knowns", "Choose the transformation", "Derive without a jump", "Check the result", "Work a fresh example", "Name the reusable move"],
+  "product-walkthrough": ["Outcome preview", "Orient the interface", "Complete the core task", "Handle a real exception", "Use the advanced control", "Recap and next action"],
+  "young-learner-story": ["Meet the question", "Enter the story world", "Spot the pattern", "Try the first move", "See why it works", "Make a prediction", "Correct a misconception", "Try a new example", "Mini challenge", "Bring the idea home"],
+};
+
+function createTemplateSceneScaffold(templateId: string, projectId: string, totalMinutes: number): Scene[] {
+  const labels = TEMPLATE_SCENE_LABELS[templateId] ?? TEMPLATE_SCENE_LABELS["explain-hard-idea"]!;
+  const duration = Math.max(12, Math.round((totalMinutes * 60) / labels.length));
+  return labels.map((title, index) => {
+    const reference = completeExampleProject.scenes[index % completeExampleProject.scenes.length]!;
+    return {
+      ...reference,
+      id: `${projectId}-scene-${index + 1}`,
+      index: index + 1,
+      title,
+      duration,
+      narration: "",
+      objective: "Define the learning objective for this scene.",
+      citations: 0,
+      status: "draft",
+      locked: false,
+    };
+  });
+}
+
+function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { environment: RuntimeState["environment"]; templateId: string | null; onClose: () => void; onCreate: (project: ProjectRecord, settings: TutorialCreationSettings) => Promise<void> }) {
   const [step, setStep] = useState(1);
   const [topic, setTopic] = useState("");
   const [audience, setAudience] = useState("Undergraduate students");
@@ -2060,6 +2477,7 @@ function NewTutorialWizard({ environment, onClose, onCreate }: { environment: Ru
   const [routingLoading, setRoutingLoading] = useState(true);
   const dialogRef = useRef<HTMLDivElement>(null);
   const sourceInputRef = useRef<HTMLInputElement>(null);
+  const selectedTemplate = templates.find((template) => template.id === templateId) ?? templates[0]!;
   useEffect(() => { dialogRef.current?.focus(); }, []);
   useEffect(() => {
     let active = true;
@@ -2123,7 +2541,7 @@ function NewTutorialWizard({ environment, onClose, onCreate }: { environment: Ru
     setCreateError(null);
     try {
       await onCreate(
-        { ...defaultSnapshot.projects[0]!, id, title: projectTitle, topic: normalizedTopic, description: `A ${grounding.toLowerCase()} tutorial for ${audience.toLowerCase()}.`, audience, locale, duration: durationMinutes, progress: 8, status: "Planning", updatedAt: "just now", scenes: defaultSnapshot.projects[0]!.scenes.slice(0, 4).map((scene, index) => ({ ...scene, id: `${id}-scene-${index + 1}`, status: "draft" })), sources: [], ...(canonicalFixtureId ? { canonicalFixtureId } : {}), ...(presenterCustomization ? { customization: presenterCustomization } : {}) },
+        { ...completeExampleProject, id, title: projectTitle, topic: normalizedTopic, description: `${selectedTemplate.name}: a ${grounding.toLowerCase()} tutorial for ${audience.toLowerCase()}.`, audience, locale, duration: durationMinutes, progress: 8, status: "Planning", updatedAt: "just now", templateId: selectedTemplate.id, theme: selectedTemplate.name, scenes: createTemplateSceneScaffold(selectedTemplate.id, id, durationMinutes), sources: [], ...(canonicalFixtureId ? { canonicalFixtureId } : {}), ...(presenterCustomization ? { customization: presenterCustomization } : {}) },
         {
           grounding: grounding.toLowerCase() as GroundingMode,
           quality: quality.toLowerCase() as QualityPreset,
@@ -2143,6 +2561,7 @@ function NewTutorialWizard({ environment, onClose, onCreate }: { environment: Ru
     <header><div className="brand-lockup"><LogoMark /><span><strong>New tutorial</strong><small>Build the learning plan first</small></span></div><button className="icon-button" onClick={onClose} aria-label="Close"><X size={19} /></button></header>
     <div className="wizard-steps">{["Idea", "Learner", "Grounding", "Review"].map((label, index) => <span key={label} className={step === index + 1 ? "active" : step > index + 1 ? "complete" : ""}><i>{step > index + 1 ? <Check size={12} /> : index + 1}</i>{label}</span>)}</div>
     <div className="wizard-body">
+      {step === 1 && <div className="wizard-template-selection"><img src={TEMPLATE_PREVIEWS[selectedTemplate.id]} alt="" /><span><small>Selected learning arc</small><strong>{selectedTemplate.name}</strong><em>{selectedTemplate.scenes} editable scenes · {selectedTemplate.category}</em></span></div>}
       {step === 1 && <div className="wizard-step"><span className="section-kicker">Start with the hard part</span><h2 id="wizard-title">What should become clear?</h2><p>Describe the idea, skill, or question in plain language. You can add documents and URLs after this step.</p><label className="large-input"><WandSparkles size={21} /><textarea autoFocus rows={4} placeholder="e.g. Explain why Karatsuba multiplication needs only three recursive products…" value={topic} onChange={(event) => setTopic(event.target.value)} /></label><div className="prompt-suggestions"><button onClick={() => setTopic("Explain why Karatsuba multiplication needs only three recursive products")}>Karatsuba multiplication</button><button onClick={() => setTopic("Teach binary search through loop invariants and an execution trace")}>Binary search invariants</button><button onClick={() => setTopic("Derive the central limit theorem visually")}>Visual derivation</button></div><div className="source-drop"><Upload size={20} /><span><strong>Add source material</strong><small>{sourceFiles.length ? `${sourceFiles.length} selected · imported privately before generation` : "PDF, DOCX, EPUB, Markdown, or text · 8 MiB each · optional"}</small></span><input ref={sourceInputRef} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => setSourceFiles(Array.from(event.target.files ?? []))} /><button onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? "Change files" : "Choose files"}</button></div>{sourceFiles.length > 0 && <div className="selected-source-list" aria-label="Selected source files">{sourceFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><FileCheck2 size={14} /> {file.name} <small>{formatBytes(file.size)}</small></span>)}</div>}</div>}
       {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>Alystria changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="1">About 1 minute (quick draft)</option><option value="3">About 3 minutes (inspection draft)</option><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="12">About 12 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option><option value="custom">Custom length…</option></select></label>{duration === "custom" && <label><span>Exact duration in minutes</span><input aria-label="Exact duration in minutes" type="number" min="1" max="180" step="1" inputMode="numeric" value={exactDuration} onChange={(event) => setExactDuration(event.target.value)} /><small>Choose any whole number from 1 to 180 minutes.</small></label>}<label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Format</span><select><option>Visual explanation</option><option>Code walkthrough</option><option>Presenter with slides</option><option>Worked derivation</option></select></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>Alystria will assume basic algebra, introduce divide and conquer before asymptotic analysis, and surface common misconceptions.</p></div></div></div>}
       {step === 3 && <div className="wizard-step"><span className="section-kicker">Lock the trust boundary</span><h2>How should Alystria research?</h2><p>No cloud call happens until its provider, data class, retention policy, and cost are approved.</p><div className="choice-cards">{([

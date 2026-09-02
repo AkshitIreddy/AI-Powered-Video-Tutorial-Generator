@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Alystria Studio",
+  "productName": "Alystria",
   "version": "2.0.0-rc.0",
   "identifier": "studio.alystria.desktop",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Alystria Studio",
+        "title": "Alystria",
         "width": 1440,
         "height": 940,
         "minWidth": 860,
@@ -41,9 +41,9 @@
     ],
     "targets": ["nsis", "msi"],
     "category": "Education",
-    "shortDescription": "Local-first professional tutorial studio",
-    "longDescription": "Alystria Studio creates and edits source-grounded educational video projects on your computer.",
-    "copyright": "Copyright Alystria Studio contributors",
+    "shortDescription": "Local-first educational video creation",
+    "longDescription": "Alystria creates and edits source-grounded educational video projects on your computer.",
+    "copyright": "Copyright Alystria contributors",
     "windows": {
       "nsis": {
         "installMode": "currentUser"

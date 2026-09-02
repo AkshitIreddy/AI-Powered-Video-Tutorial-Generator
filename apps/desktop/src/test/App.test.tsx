@@ -1,15 +1,71 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import App from "../App";
 import { canonicalFixtureIdFromTopic, hydrateDurableProject, isDurableNativeJob, normalizeAppSnapshot, projectTitleFromTopic } from "../project-utils";
-import { defaultSnapshot } from "../data";
+import { defaultSnapshot, exampleSnapshot } from "../data";
+import { createOnboardingState } from "../onboarding";
 import { localModelSetupSave, providerSecretSet } from "../native";
 import type { AppSnapshot } from "../types";
 
 describe("Alystria desktop shell", () => {
+  beforeEach(() => {
+    localStorage.setItem("alystria-studio-v2", JSON.stringify(exampleSnapshot));
+    const onboarding = createOnboardingState({
+      runtimeConfigured: true,
+      privacyConfigured: true,
+      hardwareInspected: true,
+      existingProfile: { displayName: "Test Creator" },
+    });
+    onboarding.status = "completed";
+    onboarding.configuration.goals = ["tutorial"];
+    localStorage.setItem("alystria-onboarding-v1", JSON.stringify(onboarding));
+    localStorage.setItem("alystria-guided-tour-v1", "completed");
+  });
+
+  it("starts a new user without unrequested projects or jobs", () => {
+    expect(defaultSnapshot.projects).toEqual([]);
+    expect(defaultSnapshot.jobs).toEqual([]);
+    expect(defaultSnapshot.recentProjectId).toBeNull();
+    expect(defaultSnapshot.version).toBe(0);
+  });
+
+  it("opens interactive onboarding on a truly clean first launch without seeding work", () => {
+    localStorage.clear();
+    render(<App />);
+
+    expect(screen.getByRole("dialog", { name: /make alystria yours/i })).toBeInTheDocument();
+    expect(screen.queryByText("Narration alignment")).not.toBeInTheDocument();
+    expect(screen.queryByText("Karatsuba, visually")).not.toBeInTheDocument();
+    expect(screen.getByText(/your workbench is ready/i)).toBeInTheDocument();
+  });
+
+  it("removes the exact legacy demo workspace from existing profiles", () => {
+    const legacy = structuredClone(exampleSnapshot);
+    const project = legacy.projects[0]!;
+    legacy.projects = [
+      project,
+      { ...project, id: "binary-search", title: "Binary search without guessing" },
+      { ...project, id: "french-revolution", title: "A revolution in six turning points" },
+    ];
+    legacy.recentProjectId = "karatsuba";
+    legacy.version = 12;
+    legacy.jobs = [
+      { id: "job-1", title: "Narration alignment", detail: "Demo", status: "running", progress: 68 },
+      { id: "job-2", title: "Citation support check", detail: "Demo", status: "queued", progress: 0 },
+      { id: "job-3", title: "Storyboard snapshot", detail: "Demo", status: "complete", progress: 100 },
+    ];
+
+    expect(normalizeAppSnapshot(legacy)).toMatchObject({
+      projects: [], recentProjectId: null, jobs: [], version: 0,
+    });
+
+    legacy.projects[0] = { ...legacy.projects[0]!, nativeProjectId: "real-project" };
+    expect(normalizeAppSnapshot(legacy).projects).toHaveLength(3);
+  });
+
   it("opens legacy generation-stage snapshots without discarding the project document", () => {
-    const project = structuredClone(defaultSnapshot.projects[0]!);
+    const project = structuredClone(exampleSnapshot.projects[0]!);
     const hydrated = hydrateDurableProject(project, {
       projectId: "native-project",
       generationId: "generation-1",
@@ -29,7 +85,7 @@ describe("Alystria desktop shell", () => {
   });
 
   it("repairs portable profile references and recovers a durable generation identity", () => {
-    const snapshot = structuredClone(defaultSnapshot);
+    const snapshot = structuredClone(exampleSnapshot);
     snapshot.projects[0] = {
       ...snapshot.projects[0]!,
       id: "current-project",
@@ -97,7 +153,7 @@ describe("Alystria desktop shell", () => {
   });
 
   it("plays the latest promoted media receipt instead of static review artwork", async () => {
-    const snapshot = structuredClone(defaultSnapshot);
+    const snapshot = structuredClone(exampleSnapshot);
     snapshot.projects[0] = { ...snapshot.projects[0]!, nativeProjectId: "native-review-project", nativeProjectDirectory: "C:/Alystria/native-review-project" };
     snapshot.jobs = [{
       id: "rendered-scene",
@@ -172,7 +228,7 @@ describe("Alystria desktop shell", () => {
   });
 
   it("shows retry and cancel actions only for eligible receipt states", async () => {
-    const snapshot = structuredClone(defaultSnapshot);
+    const snapshot = structuredClone(exampleSnapshot);
     const link = { projectId: "fault-project", projectDirectory: "C:/Alystria/fault-project" };
     snapshot.jobs = [
       { id: "retryable", title: "Retryable failure", detail: "Retry", status: "attention", progress: 0, retryable: true, result: { receiptState: "FAILED" }, ...link },

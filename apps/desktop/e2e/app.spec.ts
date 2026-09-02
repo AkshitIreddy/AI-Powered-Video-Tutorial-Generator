@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { configureE2eWorkspace } from "./fixtures";
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
+  await configureE2eWorkspace(page, "example");
 });
 
 test("home, project, and studio flows render without page errors", async ({ page }) => {
@@ -149,9 +148,9 @@ async function configureLocalRouting(page: import("@playwright/test").Page) {
   for (const label of ["Writing & review", "Images", "Narration"]) {
     await routes.locator("label", { hasText: label }).locator("select").selectOption("local-runtime");
   }
-  await page.getByLabel("Writing & review model").fill("local/qwen3.5-9b-gguf");
-  await page.getByLabel("Images model").fill("local/flux2-klein-4b");
-  await page.getByLabel("Narration model").fill("local/kokoro");
+  await page.getByLabel("Writing & review model", { exact: true }).fill("local/qwen3.5-9b-gguf");
+  await page.getByLabel("Images model", { exact: true }).fill("local/flux2-klein-4b");
+  await page.getByLabel("Narration model", { exact: true }).fill("local/kokoro");
   await page.getByRole("button", { name: /save setup & active profile/i }).click();
   await expect(page.getByText(/setup saved locally/i)).toBeVisible();
   await page.getByRole("button", { name: /^home$/i }).click();

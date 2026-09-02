@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { configureE2eWorkspace } from "./fixtures";
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
+  await configureE2eWorkspace(page, "clean");
 });
 
 test("@ui-contract drives create, approve, review boundary, and export through the browser adapter", async ({ page }, testInfo) => {

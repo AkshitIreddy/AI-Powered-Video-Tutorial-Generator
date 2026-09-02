@@ -112,6 +112,40 @@ export interface CanvasCustomization {
   assets: StudioAssetReference[];
 }
 
+export interface CreativeConfiguration {
+  slide: {
+    mode: "designed" | "illustrated";
+    layoutSystem: "editorial-grid" | "teaching-cards" | "cinematic" | "custom";
+    density: "focused" | "balanced" | "dense";
+    alignmentGuides: boolean;
+    safeAreas: boolean;
+    visualReviewModel: string;
+    patchLimit: number;
+    imageModel: string;
+    loras: string[];
+    controlAdapter: string;
+    referenceStrength: number;
+    seed: number;
+    inpaintEnabled: boolean;
+    upscaleModel: string;
+    authoritativeTextLayer: boolean;
+  };
+  presenter: {
+    workflow: "guided" | "advanced" | "graph";
+    baseModel: string;
+    style: string;
+    prompt: string;
+    negativePrompt: string;
+    loras: string[];
+    controlAdapter: string;
+    referenceImageEnabled: boolean;
+    faceDetailer: boolean;
+    inpaintEnabled: boolean;
+    upscaleModel: string;
+    provenanceRequired: boolean;
+  };
+}
+
 export interface ProjectRecord {
   id: string;
   title: string;
@@ -125,12 +159,16 @@ export interface ProjectRecord {
   status: ProjectStatus;
   theme: string;
   privacy: "Local only" | "Approved cloud";
+  /** Stable authored structure selected when the project was created. */
+  templateId?: string;
   scenes: Scene[];
   sources: SourceRecord[];
   /** Closed product fixture selected from an explicit flagship tutorial brief. */
   canonicalFixtureId?: "fixture.karatsuba.undergraduate.en";
   /** Portable, export-safe visual/audio choices. Asset bytes are stored separately. */
   customization?: CanvasCustomization;
+  /** Reproducible slide and presenter generation choices. */
+  creative?: CreativeConfiguration;
   /** Desktop project identity; safe to persist because it contains no credentials. */
   nativeProjectId?: string;
   nativeProjectDirectory?: string;
@@ -157,13 +195,13 @@ export interface JobRecord {
   projectId?: string;
   projectDirectory?: string;
   retryable?: boolean;
-  operation?: "regenerate_scene" | "render_scene" | "repair_qa" | "export_master";
+  operation?: "regenerate_scene" | "render_scene" | "repair_qa" | "export_master" | "visual_review" | "presenter_generate";
   result?: Record<string, unknown> | null;
 }
 
 export interface AppSnapshot {
   projects: ProjectRecord[];
-  recentProjectId: string;
+  recentProjectId: string | null;
   studioMode: StudioMode;
   jobs: JobRecord[];
   version: number;

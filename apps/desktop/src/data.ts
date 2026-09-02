@@ -114,8 +114,11 @@ export const sources: SourceRecord[] = [
   { id: "src-4", title: "Course notes: divide and conquer", origin: "Imported PDF · 18 pages", kind: "document", license: "Private source", evidence: 14, status: "review" },
 ];
 
-export const projects: ProjectRecord[] = [
-  {
+/**
+ * A complete, internally coherent example used by tests and the optional
+ * onboarding tutorial. It is deliberately not inserted into a new profile.
+ */
+export const completeExampleProject: ProjectRecord = {
     id: "karatsuba",
     title: "Karatsuba, visually",
     topic: "Karatsuba multiplication",
@@ -130,58 +133,29 @@ export const projects: ProjectRecord[] = [
     privacy: "Local only",
     scenes: karatsubaScenes,
     sources,
-  },
-  {
-    id: "binary-search",
-    title: "Binary search without guessing",
-    topic: "Binary search invariants",
-    description: "Execution traces that make loop invariants and boundary errors visible.",
-    locale: "English",
-    audience: "Beginning programmers",
-    duration: 8,
-    updatedAt: "Yesterday",
-    progress: 41,
-    status: "Planning",
-    theme: "Graphite lab",
-    privacy: "Approved cloud",
-    scenes: karatsubaScenes.slice(0, 5).map((scene, index) => ({ ...scene, id: `binary-${index}`, title: ["The sorted promise", "Choose the middle", "Discard half", "Trace the bounds", "The off-by-one test"][index] ?? scene.title })),
-    sources: sources.slice(0, 2),
-  },
-  {
-    id: "french-revolution",
-    title: "A revolution in six turning points",
-    topic: "The French Revolution",
-    description: "A source-grounded map and timeline for secondary history learners.",
-    locale: "Spanish",
-    audience: "Secondary history",
-    duration: 15,
-    updatedAt: "Aug 24",
-    progress: 100,
-    status: "Complete",
-    theme: "Atlas red",
-    privacy: "Local only",
-    scenes: karatsubaScenes.slice(0, 6).map((scene, index) => ({ ...scene, id: `french-${index}`, title: ["France before 1789", "The Estates", "The Tennis Court Oath", "Storming the Bastille", "Rights and rupture", "The republic emerges"][index] ?? scene.title })),
-    sources: sources,
-  },
-];
+};
 
-export const defaultSnapshot: AppSnapshot = {
-  projects,
-  recentProjectId: "karatsuba",
+export const exampleSnapshot: AppSnapshot = {
+  projects: [completeExampleProject],
+  recentProjectId: completeExampleProject.id,
   studioMode: "guided",
   version: 12,
-  jobs: [
-    { id: "job-1", title: "Narration alignment", detail: "Scene 5 · Work through 1234 × 5678", status: "running", progress: 68, eta: "about 1 min", cost: "$0.06" },
-    { id: "job-2", title: "Citation support check", detail: "18 externally verifiable claims", status: "queued", progress: 0, eta: "next", cost: "$0.03 max" },
-    { id: "job-3", title: "Storyboard snapshot", detail: "Version 12 saved locally", status: "complete", progress: 100 },
-  ],
+  jobs: [],
+};
+
+export const defaultSnapshot: AppSnapshot = {
+  projects: [],
+  recentProjectId: null,
+  studioMode: "guided",
+  version: 0,
+  jobs: [],
 };
 
 export const templates = [
-  { name: "Explain a hard idea", category: "Concept", scenes: 8, color: "indigo", description: "Build intuition first, then derive the formal model." },
-  { name: "Trace the algorithm", category: "Code", scenes: 9, color: "teal", description: "Move through state, execution, edge cases, and complexity." },
-  { name: "Evidence-led history", category: "Humanities", scenes: 11, color: "amber", description: "Anchor a timeline in primary and scholarly sources." },
-  { name: "Worked derivation", category: "Mathematics", scenes: 7, color: "rose", description: "Turn each symbolic step into a visual transition." },
-  { name: "Quick product walkthrough", category: "Software", scenes: 6, color: "blue", description: "Combine screen demonstration, callouts, and recap." },
-  { name: "Young learner story", category: "Illustrated", scenes: 10, color: "mint", description: "Teach through a consistent analogy and gentle checks." },
+  { id: "explain-hard-idea", name: "Explain a hard idea", category: "Concept", scenes: 8, color: "indigo", description: "Build intuition first, then derive the formal model." },
+  { id: "trace-algorithm", name: "Trace the algorithm", category: "Code", scenes: 9, color: "teal", description: "Move through state, execution, edge cases, and complexity." },
+  { id: "evidence-history", name: "Evidence-led history", category: "Humanities", scenes: 11, color: "amber", description: "Anchor a timeline in primary and scholarly sources." },
+  { id: "worked-derivation", name: "Worked derivation", category: "Mathematics", scenes: 7, color: "rose", description: "Turn each symbolic step into a visual transition." },
+  { id: "product-walkthrough", name: "Quick product walkthrough", category: "Software", scenes: 6, color: "blue", description: "Combine screen demonstration, callouts, and recap." },
+  { id: "young-learner-story", name: "Young learner story", category: "Illustrated", scenes: 10, color: "mint", description: "Teach through a consistent analogy and gentle checks." },
 ];

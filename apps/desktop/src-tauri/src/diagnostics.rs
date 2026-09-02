@@ -6,11 +6,22 @@ use crate::types::{
 };
 use chrono::Utc;
 use std::collections::BTreeMap;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use sysinfo::System;
 
 const GIB: u64 = 1024 * 1024 * 1024;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
 
 pub fn run(paths: &AppPaths, worker: &WorkerSupervisor) -> DiagnosticReport {
     let mut system = System::new_all();
@@ -114,7 +125,7 @@ fn ffmpeg_check(runtime_root: &Path) -> DiagnosticCheck {
     ];
     let mut details = BTreeMap::new();
     for candidate in candidates {
-        let result = Command::new(&candidate)
+        let result = hidden_command(&candidate)
             .args(["-hide_banner", "-version"])
             .output();
         if let Ok(output) = result
@@ -230,7 +241,7 @@ fn power_profile_check() -> DiagnosticCheck {
     let mut details = BTreeMap::new();
     #[cfg(windows)]
     {
-        if let Ok(output) = Command::new("powercfg.exe")
+        if let Ok(output) = hidden_command("powercfg.exe")
             .arg("/getactivescheme")
             .output()
             && output.status.success()
@@ -252,7 +263,7 @@ fn power_profile_check() -> DiagnosticCheck {
 }
 
 fn gpu_probe() -> Vec<GpuSummary> {
-    let output = Command::new(if cfg!(windows) {
+    let output = hidden_command(if cfg!(windows) {
         "nvidia-smi.exe"
     } else {
         "nvidia-smi"
