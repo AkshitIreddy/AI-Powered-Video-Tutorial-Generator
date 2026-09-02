@@ -74,6 +74,28 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--v11-root", required=True, type=Path)
     parser.add_argument("--runtime-pack", required=True, type=Path)
     parser.add_argument("--presenter-config", required=True, type=Path)
+    parser.add_argument(
+        "--presenter-file",
+        type=Path,
+        default=ROOT
+        / "apps"
+        / "desktop"
+        / "src"
+        / "assets"
+        / "presenters"
+        / "academic-amara-v1.webp",
+    )
+    parser.add_argument(
+        "--presenter-id", default="presenter-portrait.academic-amara-v1"
+    )
+    parser.add_argument("--presenter-name", default="Amara — Academic Guide")
+    parser.add_argument(
+        "--presenter-subject-id",
+        default="fictional-synthetic-academic-amara-v1",
+    )
+    parser.add_argument(
+        "--output-stem", default="alystria-karatsuba-3min-female-quality"
+    )
     return parser.parse_args()
 
 
@@ -420,7 +442,8 @@ def main() -> int:
     v9 = ProjectStore.open(options.v9_root.resolve(strict=True), readonly=True)
     v11 = ProjectStore.open(options.v11_root.resolve(strict=True), readonly=True)
     destination = ProjectStore.create(
-        output / "project", name="Accurate Karatsuba 3-minute test"
+        output / "project",
+        name=f"Accurate Karatsuba 3-minute test — {options.presenter_name}",
     )
     try:
         v9_storyboard = json.loads(
@@ -435,27 +458,30 @@ def main() -> int:
         )
         provider = AccurateProviderComposition(v11, v9_storyboard)
 
-        portrait = (
-            ROOT
-            / "apps"
-            / "desktop"
-            / "src"
-            / "assets"
-            / "presenters"
-            / "academic-amara-v1.webp"
-        )
-        if sha256_file(portrait) != EVALUATION.AMARA_HASH:
-            raise ValueError("The bundled Amara portrait hash changed")
+        portrait = options.presenter_file.resolve(strict=True)
+        portrait_hash = sha256_file(portrait)
+        portrait_media_type = {
+            ".jpeg": "image/jpeg",
+            ".jpg": "image/jpeg",
+            ".png": "image/png",
+            ".webp": "image/webp",
+        }.get(portrait.suffix.lower())
+        if portrait_media_type is None:
+            raise ValueError(
+                f"Unsupported presenter image format: {portrait.suffix or '<none>'}"
+            )
+        EVALUATION.AMARA_ID = options.presenter_id
+        EVALUATION.AMARA_HASH = portrait_hash
         portrait_artifact = destination.add_artifact_bytes(
             portrait.read_bytes(),
-            media_type="image/webp",
+            media_type=portrait_media_type,
             original_name=portrait.name,
             metadata={
-                "assetId": EVALUATION.AMARA_ID,
+                "assetId": options.presenter_id,
                 "origin": "generated",
                 "rightsStatus": "verified",
                 "licenseId": "LicenseRef-USER-OWNED",
-                "creator": "Alystria Studio project owner",
+                "creator": "Alystria project owner",
             },
         )
         destination.create_revision(
@@ -484,6 +510,20 @@ def main() -> int:
         )
         presenter_config = EVALUATION.prepare_presenter_config(
             output, options.presenter_config
+        )
+        selected_config = json.loads(presenter_config.read_text(encoding="utf-8"))
+        selected_config["defaultProfileId"] = options.presenter_id
+        selected_config["profiles"] = [
+            {
+                "profileId": options.presenter_id,
+                "portraitArtifactHash": portrait_hash,
+                "subjectId": options.presenter_subject_id,
+            }
+        ]
+        presenter_config = output / "presenter-runtime-selected.json"
+        presenter_config.write_text(
+            json.dumps(selected_config, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
         media = load_local_presenter_media_client(destination, cached, presenter_config)
         renderer = create_production_renderer_client(
@@ -515,9 +555,14 @@ def main() -> int:
             renderer_client=renderer,
             educational_provider=provider,
         )
-        generation_id = coordinator.start(
-            EVALUATION.build_request(portrait_artifact.hash)
-        ).generation_id
+        request = EVALUATION.build_request(portrait_artifact.hash)
+        visual = request.metadata["visualCustomization"]
+        visual["assets"][0]["alt"] = (
+            f"{options.presenter_name}, fictional synthetic presenter"
+        )
+        visual["assets"][0]["mediaType"] = portrait_media_type
+        visual["presenter"]["profile"]["displayName"] = options.presenter_name
+        generation_id = coordinator.start(request).generation_id
         waiting = coordinator.run_pending()
         if waiting is None or waiting.state is not GenerationState.WAITING_APPROVAL:
             raise RuntimeError(f"Pre-approval generation failed: {waiting}")
@@ -577,7 +622,7 @@ def main() -> int:
                 "transcript": ".txt",
             }[role]
             destination_path = (
-                output / f"alystria-karatsuba-3min-female-quality{suffix}"
+                output / f"{options.output_stem}{suffix}"
             )
             destination.cas.copy_to(str(item["artifactHash"]), destination_path)
             delivered[role] = str(destination_path)
@@ -594,8 +639,8 @@ def main() -> int:
                 "composition": "four exact v11 clips plus two exact v9 clips retimed with pinned FFmpeg atempo",
             },
             "presenter": {
-                "profileId": EVALUATION.AMARA_ID,
-                "name": "Amara",
+                "profileId": options.presenter_id,
+                "name": options.presenter_name,
                 "mouthMask": "raw identity-preserving MuseTalk mask",
             },
             "writing": {
