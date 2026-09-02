@@ -27,7 +27,7 @@ try {
 
     # Validation must be read-only: an absent, narrowly scoped destination is
     # accepted without creating it.
-    $ValidDestination = Join-Path $ScratchRoot "Alystria Studio 2.0 Test Sandbox"
+    $ValidDestination = Join-Path $ScratchRoot "Alystria Test Sandbox"
     & $Packager -Destination $ValidDestination -ValidateDestinationOnly
     if (Test-Path -LiteralPath $ValidDestination) {
         throw "Destination-only validation unexpectedly created the sandbox."
@@ -96,11 +96,11 @@ try {
         }
     }
     foreach ($RequiredText in @(
-        '"Alystria Studio 2.0 Test Sandbox"',
-        'Start Alystria Studio Hidden.pyw',
+        '"Alystria Test Sandbox"',
+        'Start Alystria Hidden.pyw',
         'subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS',
         'startup_info.wShowWindow = subprocess.SW_HIDE',
-        '[str(portable_root / "App" / "Alystria Studio.exe")]',
+        '[str(portable_root / "App" / "Alystria.exe")]',
         'Windows Credential Manager stores provider secret values outside the sandbox',
         'Models\presenter-runtime.json plus its exact model and environment attestations',
         'launcherSha256'

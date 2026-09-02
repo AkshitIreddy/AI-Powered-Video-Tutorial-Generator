@@ -32,7 +32,7 @@ def sha256_file(path: Path) -> str:
 def main() -> int:
     options = arguments()
     portable = options.portable_root.resolve(strict=True)
-    executable = portable / "App" / "Alystria Studio.exe"
+    executable = portable / "App" / "Alystria.exe"
     executable.resolve(strict=True)
     logs = portable / "Logs"
     evidence = portable / "Evidence"
