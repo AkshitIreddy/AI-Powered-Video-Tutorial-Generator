@@ -1,13 +1,14 @@
 import type { ProviderBrandAsset } from "./types";
 import huggingFaceLogo from "../assets/providers/hugging-face.svg";
 import nvidiaLogo from "../assets/providers/nvidia.svg";
+import cohereLogo from "../assets/providers/cohere.svg";
 
 /**
  * Metadata references are intentionally separate from binary artwork. A brand may
  * render only after its exact asset and trademark guidance have been reviewed.
  */
 export const providerBrandAssets: Readonly<Record<string, ProviderBrandAsset>> = {
-  alystria: internalBrand("alystria", "Alystria", "catalog/brands/alystria.json"),
+  alystria: internalBrand("alystria", "AI Video Tutorial Generator", "catalog/brands/alystria.json"),
   local: internalBrand("local", "Local runtime", "catalog/brands/local-runtime.json"),
   cloud: internalBrand("cloud", "Cloud endpoint", "catalog/brands/cloud-endpoint.json"),
   "hugging-face": reviewedBrand({
@@ -34,6 +35,15 @@ export const providerBrandAssets: Readonly<Record<string, ProviderBrandAsset>> =
     trademarkGuidelinesUrl: "https://www.nvidia.com/en-us/about-nvidia/legal-info/logo-brand-usage/",
     artworkLicense: "Official NVIDIA horizontal logo; governed by NVIDIA logo and brand guidelines",
     attributionText: "NVIDIA and the NVIDIA logo are trademarks of NVIDIA Corporation.",
+  }),
+  cohere: reviewedBrand({
+    id: "cohere",
+    displayName: "Cohere",
+    metadataPath: "catalog/brands/cohere.json",
+    assetPath: cohereLogo,
+    officialSourceUrl: "https://cohere.com/newsroom",
+    artworkLicense: "Official Cohere press-kit symbol; usage governed by Cohere brand and trademark terms",
+    attributionText: "Cohere name and symbol belong to Cohere Technologies, Inc.",
   }),
 };
 
@@ -66,7 +76,7 @@ function internalBrand(providerId: string, displayName: string, metadataPath: st
     assetPath: null,
     officialSourceUrl: null,
     trademarkGuidelinesUrl: null,
-    artworkLicense: "Alystria internal asset",
+    artworkLicense: "AI Video Tutorial Generator internal asset",
     attributionText: null,
     variant: "internal-generic",
     reviewState: "approved",

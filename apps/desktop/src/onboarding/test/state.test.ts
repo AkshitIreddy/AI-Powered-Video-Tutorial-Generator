@@ -34,7 +34,7 @@ describe("onboarding state", () => {
       runtime: "local",
       privacy: "ask-before-cloud",
       providerIds: ["nvidia", "elevenlabs"],
-      modelIds: ["local-llm"],
+      modelIds: ["local/qwen3.5-9b-gguf", "local/kokoro", "local/whisper-large-v3-turbo", "local/musetalk-1.5", "local-llm"],
       hardwareReviewed: true,
       profile: { displayName: "Akshit", portraitAssetId: "portrait-2" },
     });

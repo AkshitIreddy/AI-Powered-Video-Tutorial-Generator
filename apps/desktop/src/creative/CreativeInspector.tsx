@@ -57,7 +57,7 @@ export function CreativeInspector({ configuration, onChange, onQueueVisualReview
         <div className="segmented-creative" role="group" aria-label="Presenter generation workflow">
           {(["guided", "advanced", "graph"] as const).map((workflow) => <button className={configuration.presenter.workflow === workflow ? "active" : ""} key={workflow} onClick={() => updatePresenter({ workflow })}>{workflow}</button>)}
         </div>
-        <p>{configuration.presenter.workflow === "guided" ? "Alystria chooses a compatible base, identity reference, detailer and upscaler while showing every choice." : configuration.presenter.workflow === "advanced" ? "Tune every adapter and refinement stage directly." : "Build a node graph with explicit inputs, masks, revisions and outputs."}</p>
+        <p>{configuration.presenter.workflow === "guided" ? "The app chooses a compatible base, identity reference, detailer and upscaler while showing every choice." : configuration.presenter.workflow === "advanced" ? "Tune every adapter and refinement stage directly." : "Build a node graph with explicit inputs, masks, revisions and outputs."}</p>
       </section>
       <ControlInput label="Base model route" value={configuration.presenter.baseModel} onChange={(baseModel) => updatePresenter({ baseModel })} hint="Local checkpoint, Hugging Face/Civitai revision, NIM endpoint or connected image API." />
       <ControlInput label="Visual style" value={configuration.presenter.style} onChange={(style) => updatePresenter({ style })} />

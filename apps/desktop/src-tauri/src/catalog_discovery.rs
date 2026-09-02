@@ -41,10 +41,10 @@ pub async fn discover(
     credentials: Arc<CredentialManager>,
 ) -> Result<CatalogDiscoveryResponse, CommandError> {
     validate_input(&input)?;
-    let credential = if input.source == "nvidia-nim" {
-        Some(credentials.lease_reference("keyring://alystria/nvidia-nim/api_key")?)
-    } else {
-        None
+    let credential = match input.source.as_str() {
+        "nvidia-nim" => Some(credentials.lease_reference("keyring://alystria/nvidia-nim/api_key")?),
+        "cohere" => Some(credentials.lease_reference("keyring://alystria/cohere/api_key")?),
+        _ => None,
     };
     tauri::async_runtime::spawn_blocking(move || discover_blocking(input, credential))
         .await
@@ -64,7 +64,7 @@ fn discover_blocking(
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
-        .user_agent(concat!("Alystria/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("AI-Video-Tutorial-Generator/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|_| discovery_error("The catalog HTTP client could not be initialized."))?;
 
@@ -98,11 +98,11 @@ fn discover_blocking(
 fn validate_input(input: &CatalogDiscoveryRequest) -> Result<(), CommandError> {
     if !matches!(
         input.source.as_str(),
-        "hugging-face" | "civitai" | "nvidia-nim"
+        "hugging-face" | "civitai" | "nvidia-nim" | "cohere"
     ) {
         return Err(CommandError::invalid(
             "source",
-            "must be hugging-face, civitai, or nvidia-nim",
+            "must be hugging-face, civitai, nvidia-nim, or cohere",
         ));
     }
     if input.query.chars().count() > 200 || input.query.chars().any(char::is_control) {
@@ -129,6 +129,7 @@ fn discovery_url(input: &CatalogDiscoveryRequest) -> Result<Url, CommandError> {
         "hugging-face" => "https://huggingface.co/api/models",
         "civitai" => "https://civitai.com/api/v1/models",
         "nvidia-nim" => "https://integrate.api.nvidia.com/v1/models",
+        "cohere" => "https://api.cohere.com/v1/models",
         _ => unreachable!(),
     };
     let mut url =
@@ -154,6 +155,11 @@ fn discovery_url(input: &CatalogDiscoveryRequest) -> Result<Url, CommandError> {
             url.query_pairs_mut()
                 .append_pair("query", input.query.trim());
         }
+    } else if input.source == "cohere" {
+        url.query_pairs_mut().append_pair("page_size", &input.limit.to_string());
+        if !input.query.trim().is_empty() {
+            url.query_pairs_mut().append_pair("endpoint", input.query.trim());
+        }
     }
     Ok(url)
 }
@@ -168,6 +174,7 @@ fn validate_cursor(source: &str, cursor: &str) -> Result<(), CommandError> {
         "hugging-face" => ("huggingface.co", "/api/models"),
         "civitai" => ("civitai.com", "/api/v1/models"),
         "nvidia-nim" => ("integrate.api.nvidia.com", "/v1/models"),
+        "cohere" => ("api.cohere.com", "/v1/models"),
         _ => return Err(CommandError::invalid("source", "is not supported")),
     };
     if url.scheme() != "https"
@@ -234,6 +241,15 @@ fn extract_items(source: &str, body: Value) -> Result<(Vec<Value>, Option<String
             .and_then(Value::as_array)
             .cloned()
             .map(|items| (items, None)),
+        "cohere" => {
+            let items = body.get("models").and_then(Value::as_array).cloned();
+            let cursor = body.get("next_page_token").and_then(Value::as_str).map(|token| {
+                let mut url = Url::parse("https://api.cohere.com/v1/models").expect("static Cohere URL");
+                url.query_pairs_mut().append_pair("page_token", token);
+                url.to_string()
+            });
+            items.map(|items| (items, cursor))
+        }
         _ => None,
     }
     .ok_or_else(|| {

@@ -10,7 +10,7 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Destination) {
-    $Destination = Join-Path (Split-Path -Parent $RepoRoot) "Alystria Test Sandbox"
+    $Destination = Join-Path (Split-Path -Parent $RepoRoot) "AI Video Tutorial Generator Test Sandbox"
 }
 $Destination = [IO.Path]::GetFullPath($Destination)
 $DestinationRoot = [IO.Path]::GetPathRoot($Destination)
@@ -382,7 +382,7 @@ $PortableDirectories = @(
 )
 New-Item -ItemType Directory -Path $PortableDirectories -Force | Out-Null
 
-$DesktopDestination = Join-Path $AppDirectory "Alystria.exe"
+$DesktopDestination = Join-Path $AppDirectory "AI Video Tutorial Generator.exe"
 $WorkerDestination = Join-Path $RuntimeDirectory "alystria-pipeline.exe"
 Copy-Item -LiteralPath $DesktopSource -Destination $DesktopDestination -Force:$Force
 Copy-Item -LiteralPath $WorkerSource -Destination $WorkerDestination -Force:$Force
@@ -514,7 +514,7 @@ $PortableRuntimeJson = $PortableRuntimeManifest | ConvertTo-Json -Depth 8
 [IO.File]::WriteAllText($RuntimeManifestPath, $PortableRuntimeJson, [Text.UTF8Encoding]::new($false))
 $RuntimeManifestSha256 = (Get-FileHash -LiteralPath $RuntimeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
-$LauncherPath = Join-Path $Destination "Start Alystria Hidden.pyw"
+$LauncherPath = Join-Path $Destination "Start AI Video Tutorial Generator Hidden.pyw"
 $Launcher = @'
 from __future__ import annotations
 
@@ -592,7 +592,7 @@ startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 startup_info.wShowWindow = subprocess.SW_HIDE
 creation_flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
 subprocess.Popen(
-    [str(portable_root / "App" / "Alystria.exe")],
+    [str(portable_root / "App" / "AI Video Tutorial Generator.exe")],
     cwd=str(portable_root),
     env=environment,
     stdin=subprocess.DEVNULL,
@@ -609,7 +609,7 @@ $Manifest = [ordered]@{
     kind = "alystria-studio-portable-debug-test-area"
     createdAt = [DateTime]::UtcNow.ToString("o")
     desktop = [ordered]@{
-        path = "App\Alystria.exe"
+        path = "App\AI Video Tutorial Generator.exe"
         sha256 = (Get-FileHash -LiteralPath $DesktopDestination -Algorithm SHA256).Hash.ToLowerInvariant()
     }
     pipelineWorker = [ordered]@{
@@ -641,8 +641,8 @@ $Manifest = [ordered]@{
     portableRoot = "."
     appData = "App Data"
     mutableDirectories = @("App Data", "Models", "Projects", "Exports", "Logs", "Cache", "Temp", "Evidence")
-    credentialStoreException = "Windows Credential Manager stores provider secret values outside the sandbox; only opaque keyring references may appear in Alystria files."
-    launch = "Start Alystria Hidden.pyw"
+    credentialStoreException = "Windows Credential Manager stores provider secret values outside the sandbox; only opaque keyring references may appear in app files."
+    launch = "Start AI Video Tutorial Generator Hidden.pyw"
     launcherSha256 = (Get-FileHash -LiteralPath $LauncherPath -Algorithm SHA256).Hash.ToLowerInvariant()
     notes = @(
         "Debug-only local test handoff; not a signed installer or release artifact.",
@@ -658,6 +658,6 @@ $Manifest = [ordered]@{
 }
 $Manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
 
-Write-Host "Created Alystria portable debug test area: $Destination"
+Write-Host "Created AI Video Tutorial Generator portable debug test area: $Destination"
 Write-Host "Launch without a console window by double-clicking: $LauncherPath"
 Write-Host "Portable root: $Destination"

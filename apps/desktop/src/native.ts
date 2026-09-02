@@ -571,7 +571,7 @@ export interface DiagnosticReport {
   };
 }
 
-export type RemoteCatalogSource = "hugging-face" | "civitai" | "nvidia-nim";
+export type RemoteCatalogSource = "hugging-face" | "civitai" | "nvidia-nim" | "cohere";
 
 export interface CatalogDiscoveryRequest {
   source: RemoteCatalogSource;
@@ -662,8 +662,8 @@ export function diagnosticsRun(): Promise<DiagnosticReport> {
 
 export function catalogDiscover(input: CatalogDiscoveryRequest): Promise<CatalogDiscoveryResponse> {
   return command("catalog_discover", input, async () => {
-    if (input.source === "nvidia-nim") {
-      throw new Error("Open the packaged Alystria app and connect an NVIDIA NIM key before syncing the hosted catalog.");
+    if (input.source === "nvidia-nim" || input.source === "cohere") {
+      throw new Error(`Open the packaged AI Video Tutorial Generator app and connect a ${input.source === "cohere" ? "Cohere" : "NVIDIA NIM"} key before syncing the hosted catalog.`);
     }
     const limit = Math.min(50, Math.max(1, input.limit ?? 24));
     let url: URL;
@@ -702,7 +702,11 @@ function validatedCatalogCursor(source: CatalogDiscoveryRequest["source"], curso
   const url = new URL(cursor);
   const expected = source === "hugging-face"
     ? { host: "huggingface.co", path: "/api/models" }
-    : { host: "civitai.com", path: "/api/v1/models" };
+    : source === "civitai"
+      ? { host: "civitai.com", path: "/api/v1/models" }
+      : source === "cohere"
+        ? { host: "api.cohere.com", path: "/v1/models" }
+        : { host: "integrate.api.nvidia.com", path: "/v1/models" };
   if (
     url.protocol !== "https:"
     || url.host !== expected.host

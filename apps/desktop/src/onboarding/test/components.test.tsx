@@ -76,8 +76,8 @@ describe("OnboardingDialog", () => {
     const user = userEvent.setup();
     render(<OnboardingHarness />);
 
-    expect(screen.getByRole("dialog", { name: "Make Alystria yours" })).toHaveAttribute("aria-modal", "true");
-    expect(screen.getByRole("heading", { name: "Make Alystria yours" })).toHaveFocus();
+    expect(screen.getByRole("dialog", { name: "Make AI Video Tutorial Generator yours" })).toHaveAttribute("aria-modal", "true");
+    expect(screen.getByRole("heading", { name: "Make AI Video Tutorial Generator yours" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(screen.getByRole("heading", { name: "What will you create?" })).toHaveFocus();
@@ -102,7 +102,7 @@ describe("OnboardingDialog", () => {
     expect(onExit).toHaveBeenCalledWith(expect.objectContaining({ configuration: expect.objectContaining({ goals: ["tutorials"] }) }));
 
     await user.click(screen.getByRole("button", { name: "Replay onboarding" }));
-    expect(screen.getByRole("dialog", { name: "Make Alystria yours" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Make AI Video Tutorial Generator yours" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Chapter 1 What will you create/ }));
     expect(screen.getByRole("checkbox", { name: /Tutorials/ })).toBeChecked();
   });

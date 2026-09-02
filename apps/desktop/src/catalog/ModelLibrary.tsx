@@ -47,6 +47,7 @@ const sourceLabels = {
   "hugging-face": "Hugging Face",
   civitai: "Civitai",
   "nvidia-nim": "NVIDIA NIM",
+  cohere: "Cohere",
   "nvidia-ngc": "NVIDIA NGC",
   local: "Local",
   cloud: "Cloud",

@@ -63,6 +63,7 @@ const PROVIDERS: &[&str] = &[
     "local-runtime",
     "openai",
     "anthropic",
+    "cohere",
     "gemini",
     "nvidia-nim",
     "elevenlabs",

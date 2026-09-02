@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Launch a portable Alystria build invisibly and verify it stays healthy."""
+"""Launch a portable AI Video Tutorial Generator build invisibly and verify it stays healthy."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def sha256_file(path: Path) -> str:
 def main() -> int:
     options = arguments()
     portable = options.portable_root.resolve(strict=True)
-    executable = portable / "App" / "Alystria.exe"
+    executable = portable / "App" / "AI Video Tutorial Generator.exe"
     executable.resolve(strict=True)
     logs = portable / "Logs"
     evidence = portable / "Evidence"
@@ -99,7 +99,7 @@ def main() -> int:
             exit_code = process.poll()
             if exit_code is not None:
                 raise RuntimeError(
-                    f"Packaged Alystria exited during the headless smoke with code {exit_code}"
+                    f"Packaged AI Video Tutorial Generator exited during the headless smoke with code {exit_code}"
                 )
             time.sleep(0.25)
         subprocess.run(
@@ -115,7 +115,7 @@ def main() -> int:
             process.wait(timeout=10)
         except subprocess.TimeoutExpired as error:
             raise RuntimeError(
-                "Packaged Alystria did not stop after the smoke test"
+                "Packaged AI Video Tutorial Generator did not stop after the smoke test"
             ) from error
 
     report = {

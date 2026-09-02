@@ -5,6 +5,22 @@ test.beforeEach(async ({ page }) => {
   await configureE2eWorkspace(page, "clean");
 });
 
+test("settings scrolls and the guided tutorial keeps its target sharp", async ({ page }) => {
+  await page.getByRole("button", { name: /settings & diagnostics/i }).click();
+  const main = page.locator(".main-content");
+  const metrics = await main.evaluate((element) => ({ clientHeight: element.clientHeight, scrollHeight: element.scrollHeight }));
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+  await main.hover();
+  await page.mouse.wheel(0, 900);
+  await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: /replay guided tour/i }).click();
+  await expect(page.locator(".aly-onboarding-tour")).toBeVisible();
+  const backdropFilter = await page.locator(".aly-onboarding-tour__shade").evaluate((element) => getComputedStyle(element).backdropFilter);
+  expect(backdropFilter === "none" || backdropFilter === "").toBeTruthy();
+  await expect(page.locator(".aly-onboarding-tour__spotlight")).toBeVisible();
+});
+
 test("@ui-contract drives create, approve, review boundary, and export through the browser adapter", async ({ page }, testInfo) => {
   test.setTimeout(90_000);
   const pageErrors: string[] = [];

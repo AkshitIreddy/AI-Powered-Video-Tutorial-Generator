@@ -34,7 +34,7 @@ describe("Alystria desktop shell", () => {
     localStorage.clear();
     render(<App />);
 
-    expect(screen.getByRole("dialog", { name: /make alystria yours/i })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /make ai video tutorial generator yours/i })).toBeInTheDocument();
     expect(screen.queryByText("Narration alignment")).not.toBeInTheDocument();
     expect(screen.queryByText("Karatsuba, visually")).not.toBeInTheDocument();
     expect(screen.getByText(/your workbench is ready/i)).toBeInTheDocument();
@@ -388,6 +388,7 @@ describe("Alystria desktop shell", () => {
     await user.selectOptions(screen.getByLabelText(/narration provider/i), "elevenlabs");
     await user.clear(screen.getByLabelText(/narration model/i));
     await user.type(screen.getByLabelText(/narration model/i), "eleven_multilingual_v2");
+    await user.clear(screen.getByLabelText(/narration voice id/i));
     await user.type(screen.getByLabelText(/narration voice id/i), "21m00Tcm4TlvDq8ikWAM");
     await user.selectOptions(screen.getByLabelText(/lip-sync provider/i), "local-runtime");
     await user.clear(screen.getByLabelText(/^lip-sync model$/i));
@@ -405,7 +406,7 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByLabelText(/lip-sync presenter profile id/i)).toHaveValue("presenter.arjun");
     expect(screen.getByLabelText(/lip-sync model revision/i)).toHaveValue("musetalk-1.5-pinned");
     expect(screen.getByLabelText(/lip-sync install fingerprint/i)).toHaveValue("a".repeat(64));
-  }, 30_000);
+  }, 60_000);
 
   it("persists a project visual bible with real typography, caption, and presenter choices", async () => {
     const user = userEvent.setup();

@@ -1,12 +1,12 @@
-# Alystria Studio 2.0
+# AI Video Tutorial Generator
 
-> **Local release-candidate worktree — not released.** Alystria Studio 2.0 is under active local development on `feat/alystria-studio-v2`. No push, merge, package publication, deployment, public release, or announcement is authorized without explicit owner approval.
+> **Local release-candidate worktree — not released.** AI Video Tutorial Generator is under active local development on `main`. No push, merge, package publication, deployment, public release, or announcement is authorized without explicit owner approval.
 
 **Turn a difficult idea into a source-grounded, editable tutorial—without giving up ownership of the project.**
 
-Alystria Studio is a Windows-first, local-first desktop environment for researching, planning, storyboarding, editing, rendering, reviewing, and exporting educational video. Projects, source copies, revisions, artifacts, job state, and usage records stay in an ordinary local directory. Cloud AI is optional bring-your-own-key; Fully Local work has no Alystria account, hosted backend, synchronization service, or collaboration service.
+AI Video Tutorial Generator is a Windows-first, local-first desktop environment for researching, planning, storyboarding, editing, rendering, reviewing, and exporting educational video. Projects, source copies, revisions, artifacts, job state, and usage records stay in an ordinary local directory. Cloud AI is optional bring-your-own-key; Fully Local work has no required product account, hosted backend, synchronization service, or collaboration service.
 
-![Alystria Studio home screen](docs/images/alystria-home.png)
+![AI Video Tutorial Generator home screen](docs/images/alystria-home.png)
 
 [Documentation](docs/README.md) · [Architecture](docs/architecture/overview.md) · [Local model profiles](docs/models/local-profiles.md) · [Free/trial provider guide](docs/providers/free-and-trial.md) · [Security and privacy](docs/security/security-and-privacy.md) · [Evaluation](docs/testing/evaluation.md) · [Implementation ledger](IMPLEMENTATION_STATUS.md)
 
@@ -43,11 +43,11 @@ No content-bearing cloud call should occur before provider, payload class, reten
 
 Studio mode reveals stable scene navigation, the shared exact preview, Content/Design/Motion inspectors, pronunciation and evidence controls, dependency impact, 240,000-tick choreography, target overrides, narration/caption tracks, preservation locks, candidates, scene-local regeneration, undo/redo, revision history, and persistent jobs—without remounting or discarding project state.
 
-![Alystria Studio workspace](docs/images/alystria-studio.png)
+![AI Video Tutorial Generator workspace](docs/images/alystria-studio.png)
 
 Global areas are Home, Projects, Templates, Library, Models & Providers, and Settings & Diagnostics. Project workspaces are Plan, Storyboard, Studio, Review, and Export. The responsive desktop layout is tested at a narrow 860 px window as well as larger displays.
 
-![Alystria Studio at a narrow desktop width](docs/images/alystria-narrow.png)
+![AI Video Tutorial Generator at a narrow desktop width](docs/images/alystria-narrow.png)
 
 ## Feature map
 
@@ -115,11 +115,11 @@ Availability is **capability-gated**: an adapter is selectable only when its cat
 
 The local catalog records candidates for Qwen LLM/VLM and embeddings, FLUX, Qwen TTS, Kokoro, Whisper, and MuseTalk. Most remain `artifact-pin-required` or `benchmark-and-artifact-pin-required`. Weights download on demand; no model becomes supported before immutable pin/hash, license acceptance, runtime compatibility, and hardware verification.
 
-### Try Alystria with free or trial providers
+### Try AI Video Tutorial Generator with free or trial providers
 
 The [free and trial provider guide](docs/providers/free-and-trial.md) was last verified **2026-08-28**. Offers, quotas, access, data-use terms, and licenses change—check official pages again before creating a key or sending content.
 
-> Alystria is BYOK and includes no hosted AI allowance. NVIDIA NIM can reduce signup friction because one Developer API key covers several currently available prototype model families; Cohere, Gemini, speech, research, media, and local options are also documented. A free quota is not permission to upload private sources, free output may lack commercial rights, and every asset still needs provenance and export-clear rights.
+> AI Video Tutorial Generator is BYOK and includes no hosted AI allowance. NVIDIA NIM can reduce signup friction because one Developer API key covers several currently available prototype model families; Cohere, Gemini, speech, research, media, and local options are also documented. A free quota is not permission to upload private sources, free output may lack commercial rights, and every asset still needs provenance and export-clear rights.
 
 Keys belong in the operating-system credential flow, never project files, `.env`, logs, screenshots, issues, or command-line arguments.
 
@@ -278,7 +278,7 @@ Benchmarks never change Windows/G-Helper settings. Reports record power/boost, t
 - Sources/models/assets record origin, hash, rights, attribution, ingredients, consent, provider/model revision, and C2PA state where available.
 - Unknown/restricted rights, missing attribution, or missing/revoked consent block incompatible export.
 - UI/media target WCAG 2.2 AA, keyboard use, non-color cues, reduced motion, captions, transcripts, descriptive output, and English/Spanish/Hindi verification.
-- Alystria source is [MIT](LICENSE). Libraries, FFmpeg builds, models, datasets, media, and provider output retain their own licenses.
+- AI Video Tutorial Generator source is [MIT](LICENSE). Libraries, FFmpeg builds, models, datasets, media, and provider output retain their own licenses.
 
 Read [Security and privacy](docs/security/security-and-privacy.md), [Accessibility](docs/accessibility.md), and [Release policy](docs/release-policy.md).
 
@@ -304,7 +304,7 @@ Read [Contributing](docs/contributing.md). Preserve local ownership, narrow priv
 
 The [roadmap](docs/roadmap.md) covers ten gates through local RC hardening. [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) is the detailed ledger and may lag briefly during concurrent integration.
 
-| v1 prototype (`legacy/v1`) | Alystria Studio 2.0 |
+| v1 prototype (`legacy/v1`) | AI Video Tutorial Generator 2.0 overhaul |
 | --- | --- |
 | Next.js form + manually started FastAPI | Tauri desktop + Rust broker + supervised pipeline |
 | Blocking `/videoCreate` | Durable jobs, dependencies, cancellation, approval, recovery |
@@ -322,4 +322,4 @@ The tagged revision and three downloaded demo hashes are preserved in [`legacy/v
 
 The goal is a local Windows-first 2.0 RC with portable macOS/Linux build coverage. This worktree is **not an approved release**.
 
-Completion, green tests, a local installer, or silence does not authorize external action. The project must stop after producing the local evidence packet. **Do not push, merge, publish, deploy, sign a production feed, create a public release, or announce Alystria Studio 2.0 without explicit owner approval.**
+Completion, green tests, a local installer, or silence does not authorize external action. The project must stop after producing the local evidence packet. **Do not push, merge, publish, deploy, sign a production feed, create a public release, or announce AI Video Tutorial Generator without explicit owner approval.**

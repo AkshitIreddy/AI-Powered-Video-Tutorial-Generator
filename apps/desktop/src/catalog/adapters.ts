@@ -538,7 +538,7 @@ export function adaptLocalManifest(raw: LocalCatalogManifest): CatalogItem<Local
     },
     metrics: emptyMetrics(),
     presentation: {
-      description: raw.description?.trim() || "Model detected in a local Alystria model path.",
+      description: raw.description?.trim() || "Model detected in a local AI Video Tutorial Generator model path.",
       previewUrls: [],
       documentationUrl: raw.documentationUrl ?? null,
       sourceUrl: raw.sourceUrl ?? null,

@@ -3,6 +3,7 @@ export const catalogSources = [
   "hugging-face",
   "civitai",
   "nvidia-nim",
+  "cohere",
   "nvidia-ngc",
   "local",
   "cloud",

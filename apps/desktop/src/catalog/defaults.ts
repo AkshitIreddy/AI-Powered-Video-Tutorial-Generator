@@ -29,8 +29,8 @@ export interface CatalogSourceDefinition {
 export const defaultCatalogSources: readonly CatalogSourceDefinition[] = [
   {
     id: "curated",
-    label: "Alystria curated",
-    description: "Versioned, tested workflow manifests shipped by Alystria.",
+    label: "App curated",
+    description: "Versioned, tested workflow manifests shipped by AI Video Tutorial Generator.",
     brandAssetId: "alystria",
     discovery: "bundled-manifest",
     authentication: "none",
@@ -65,6 +65,16 @@ export const defaultCatalogSources: readonly CatalogSourceDefinition[] = [
     discovery: "remote-api",
     authentication: "required-token",
     catalogUrl: "https://build.nvidia.com/",
+    enabledByDefault: true,
+  },
+  {
+    id: "cohere",
+    label: "Cohere",
+    description: "Language, embedding, and reranking models discovered from a connected Cohere account.",
+    brandAssetId: "cohere",
+    discovery: "remote-api",
+    authentication: "required-token",
+    catalogUrl: "https://dashboard.cohere.com/playground/chat",
     enabledByDefault: true,
   },
   {

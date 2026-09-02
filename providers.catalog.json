@@ -20,7 +20,7 @@
     },
     {
       "id": "local-runtime",
-      "displayName": "Alystria Local Runtime",
+      "displayName": "AI Video Tutorial Generator Local Runtime",
       "execution": "local",
       "credentialKind": "none",
       "approvedByDefault": false,
@@ -65,6 +65,16 @@
       "credentialKind": "secret-reference",
       "approvedByDefault": false,
       "capabilities": ["llm", "image", "video", "tts", "asr"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+    },
+    {
+      "id": "cohere",
+      "displayName": "Cohere",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["llm", "embedding", "reranking"],
       "dataBoundary": "provider-cloud",
       "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
     },

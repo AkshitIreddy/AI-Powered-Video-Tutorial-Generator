@@ -24,6 +24,7 @@ export interface OnboardingDialogProps {
   setupState?: OnboardingSetupState | undefined;
   catalog: OnboardingCatalog;
   productName?: string;
+  brandMarkSrc?: string | undefined;
   allowSkip?: boolean;
   onAcceptProfileAsset?: ((file: File) => Promise<ImportedProfileAsset | ProfilePortraitAsset | null>) | undefined;
   headerAccessory?: ReactNode;
@@ -42,16 +43,20 @@ function SelectionCard({
   label,
   description,
   badge,
+  icon,
+  metadata,
   onChange,
 }: {
   type: "radio" | "checkbox";
   name: string;
   value: string;
   checked: boolean;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
   label: string;
   description: string;
   badge?: string | undefined;
+  icon?: ReactNode;
+  metadata?: string | undefined;
   onChange: () => void;
 }) {
   return (
@@ -66,21 +71,31 @@ function SelectionCard({
         onChange={onChange}
       />
       <span className="aly-onboarding-choice__indicator" aria-hidden="true" />
+      {icon ? <span className="aly-onboarding-choice__icon" aria-hidden="true">{icon}</span> : null}
       <span className="aly-onboarding-choice__copy">
         <span className="aly-onboarding-choice__label-row">
           <span className="aly-onboarding-choice__label">{label}</span>
           {badge ? <span className="aly-onboarding-choice__badge">{badge}</span> : null}
         </span>
         <span className="aly-onboarding-choice__description">{description}</span>
+        {metadata ? <span className="aly-onboarding-choice__metadata">{metadata}</span> : null}
       </span>
     </label>
   );
 }
 
-function WelcomeChapter({ productName }: { productName: string }) {
+function formatModelBytes(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(bytes >= 10 * 1024 ** 3 ? 0 : 1)} GB`;
+  return `${Math.ceil(bytes / 1024 ** 2)} MB`;
+}
+
+function WelcomeChapter({ productName, brandMarkSrc, setup }: { productName: string; brandMarkSrc?: string | undefined; setup: OnboardingSetupState }) {
+  const connected = setup.connectedProviderIds?.length ?? 0;
+  const attached = new Set([...(setup.installedModelIds ?? []), ...(setup.attachedModelIds ?? [])]).size;
+  const configured = connected + attached + (setup.existingProfile?.displayName ? 1 : 0);
   return (
     <div className="aly-onboarding-welcome">
-      <div className="aly-onboarding-welcome__mark" aria-hidden="true"><span /><span /><span /></div>
+      <div className="aly-onboarding-welcome__mark" aria-hidden="true">{brandMarkSrc ? <img src={brandMarkSrc} alt="" /> : null}</div>
       <p className="aly-onboarding-welcome__lede">
         Configure {productName} around your creative goals, hardware, privacy boundary, and preferred generation tools.
       </p>
@@ -89,6 +104,7 @@ function WelcomeChapter({ productName }: { productName: string }) {
         <li><strong>Cloud use remains explicit.</strong><span>Provider selection never grants blanket permission to upload source material.</span></li>
         <li><strong>Existing setup is preserved.</strong><span>Detected providers, models, and profile details are carried into this guide.</span></li>
       </ul>
+      {configured ? <div className="aly-onboarding-welcome__detected" role="status"><strong>Your existing setup is already here.</strong><span>{connected} provider{connected === 1 ? "" : "s"} connected · {attached} model{attached === 1 ? "" : "s"} attached{setup.existingProfile?.displayName ? ` · profile ${setup.existingProfile.displayName}` : ""}</span></div> : null}
     </div>
   );
 }
@@ -160,6 +176,7 @@ function ChapterContent({
   catalog,
   setup,
   productName,
+  brandMarkSrc,
   onAcceptProfileAsset,
 }: {
   chapterId: OnboardingChapterId;
@@ -167,6 +184,7 @@ function ChapterContent({
   catalog: OnboardingCatalog;
   setup: OnboardingSetupState;
   productName: string;
+  brandMarkSrc?: string | undefined;
   onAcceptProfileAsset?: ((file: File) => Promise<ImportedProfileAsset | ProfilePortraitAsset | null>) | undefined;
 }) {
   const { configuration } = controller.state;
@@ -174,7 +192,7 @@ function ChapterContent({
 
   switch (chapterId) {
     case "welcome":
-      return <WelcomeChapter productName={productName} />;
+      return <WelcomeChapter productName={productName} brandMarkSrc={brandMarkSrc} setup={setup} />;
     case "goal":
       return (
         <fieldset className="aly-onboarding-options">
@@ -236,6 +254,7 @@ function ChapterContent({
                 checked={configuration.providerIds.includes(provider.id)}
                 label={provider.name}
                 description={provider.description}
+                icon={provider.icon}
                 badge={connected ? "Connected" : provider.requiresCredential ? "Credential required" : undefined}
                 onChange={() => controller.updateConfiguration({ providerIds: toggleValue(configuration.providerIds, provider.id) })}
               />
@@ -246,27 +265,41 @@ function ChapterContent({
       );
     case "hardware":
       return <HardwareChapter setup={setup} reviewed={configuration.hardwareReviewed} onReviewedChange={(hardwareReviewed) => controller.updateConfiguration({ hardwareReviewed })} />;
-    case "model":
+    case "model": {
+      const pendingDownloadBytes = catalog.models
+        .filter((model) => configuration.modelIds.includes(model.id) && !setup.installedModelIds?.includes(model.id) && !setup.attachedModelIds?.includes(model.id))
+        .reduce((total, model) => total + (model.downloadBytes ?? 0), 0);
       return (
         <fieldset className="aly-onboarding-options aly-onboarding-options--models">
           <legend className="aly-onboarding-sr-only">Model toolkit</legend>
-          {catalog.models.map((model) => (
+          <div className="aly-onboarding-download-summary">
+            <strong>{pendingDownloadBytes > 0 ? `${formatModelBytes(pendingDownloadBytes)} selected download` : "No additional download required"}</strong>
+            <span>Estimates can vary by quantization and provider packaging. Installed footprint and temporary peak are shown when known.</span>
+          </div>
+          {catalog.models.map((model) => {
+            const installed = model.installed || setup.installedModelIds?.includes(model.id);
+            const attached = setup.attachedModelIds?.includes(model.id);
+            const size = model.downloadBytes ? `${model.sizeConfidence === "exact" ? "" : "~"}${formatModelBytes(model.downloadBytes)} download` : "Download size not published";
+            const footprint = model.installedBytes ? ` · ${formatModelBytes(model.installedBytes)} installed` : "";
+            return (
             <SelectionCard
               key={model.id}
               type="checkbox"
               name={fieldName}
               value={model.id}
               checked={configuration.modelIds.includes(model.id)}
-              disabled={model.compatible === false}
+              disabled={model.compatible === false || model.required}
               label={model.name}
               description={model.description ?? `${model.medium} model from ${model.providerId}`}
-              badge={model.installed || setup.installedModelIds?.includes(model.id) ? "Installed" : model.compatible === false ? "Not compatible" : model.recommended ? "Recommended" : undefined}
-              onChange={() => controller.updateConfiguration({ modelIds: toggleValue(configuration.modelIds, model.id) })}
+              badge={installed ? "Installed" : attached ? "Already attached" : model.compatible === false ? "Not compatible" : model.required ? "Required" : undefined}
+              metadata={`${size}${footprint}${model.requirementReason ? ` · ${model.requirementReason}` : ""}`}
+              onChange={() => { if (!model.required) controller.updateConfiguration({ modelIds: toggleValue(configuration.modelIds, model.id) }); }}
             />
-          ))}
+          );})}
           {!catalog.models.length ? <p className="aly-onboarding-options__empty">No models were supplied by the application. You can configure them later.</p> : null}
         </fieldset>
       );
+    }
     case "profile":
       return <ProfileGallery assets={catalog.portraits} profile={configuration.profile} onChange={(profile) => controller.updateConfiguration({ profile })} onAcceptAsset={onAcceptProfileAsset} />;
     case "ready":
@@ -278,7 +311,8 @@ export function OnboardingDialog({
   controller,
   setupState = {},
   catalog,
-  productName = "Alystria",
+  productName = "AI Video Tutorial Generator",
+  brandMarkSrc,
   allowSkip = true,
   onAcceptProfileAsset,
   headerAccessory,
@@ -364,7 +398,7 @@ export function OnboardingDialog({
       >
         <aside className="aly-onboarding-dialog__rail" aria-label="Onboarding chapters">
           <div className="aly-onboarding-dialog__brand">
-            <span className="aly-onboarding-dialog__brand-mark" aria-hidden="true" />
+            <span className="aly-onboarding-dialog__brand-mark" aria-hidden="true">{brandMarkSrc ? <img src={brandMarkSrc} alt="" /> : null}</span>
             <span>{productName}</span>
           </div>
           <ol className="aly-onboarding-dialog__chapters">
@@ -408,7 +442,7 @@ export function OnboardingDialog({
           </header>
 
           <div className="aly-onboarding-dialog__content">
-            <ChapterContent chapterId={chapter.id} controller={controller} catalog={catalog} setup={setupState} productName={productName} onAcceptProfileAsset={onAcceptProfileAsset} />
+            <ChapterContent chapterId={chapter.id} controller={controller} catalog={catalog} setup={setupState} productName={productName} brandMarkSrc={brandMarkSrc} onAcceptProfileAsset={onAcceptProfileAsset} />
           </div>
 
           {controller.persistenceError ? (

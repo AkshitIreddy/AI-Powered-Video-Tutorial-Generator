@@ -1,8 +1,8 @@
 [package]
 name = "alystria-desktop"
 version = "2.0.0-rc.0"
-description = "Minimal-privilege desktop broker for Alystria Studio"
-authors = ["Alystria Studio contributors"]
+description = "Minimal-privilege desktop broker for AI Video Tutorial Generator"
+authors = ["AI Video Tutorial Generator contributors"]
 edition = "2024"
 rust-version = "1.88"
 license = "MIT"

@@ -2,7 +2,7 @@
   "name": "alystria-studio",
   "version": "2.0.0-rc.0",
   "private": true,
-  "description": "A local-first AI tutorial creation studio.",
+  "description": "A local-first AI video tutorial generator.",
   "license": "MIT",
   "packageManager": "pnpm@10.15.1",
   "engines": {

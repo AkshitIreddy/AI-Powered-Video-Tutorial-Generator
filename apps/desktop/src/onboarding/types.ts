@@ -50,6 +50,12 @@ export interface ModelOption {
   installed?: boolean;
   compatible?: boolean;
   recommended?: boolean;
+  required?: boolean | undefined;
+  requirementReason?: string | undefined;
+  downloadBytes?: number | undefined;
+  installedBytes?: number | undefined;
+  temporaryBytes?: number | undefined;
+  sizeConfidence?: "exact" | "estimated" | "unknown" | undefined;
 }
 
 export interface HardwareSummary {
@@ -93,6 +99,7 @@ export interface OnboardingSetupState {
   detectedPrivacy?: PrivacyPreference | null;
   connectedProviderIds?: readonly string[];
   installedModelIds?: readonly string[];
+  attachedModelIds?: readonly string[];
   hardware?: HardwareSummary | null;
   hardwareInspected?: boolean;
   existingProfile?: Partial<AccountProfileConfiguration> | null;

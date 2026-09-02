@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Alystria",
+  "productName": "AI Video Tutorial Generator",
   "version": "2.0.0-rc.0",
   "identifier": "studio.alystria.desktop",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Alystria",
+        "title": "AI Video Tutorial Generator",
         "width": 1440,
         "height": 940,
         "minWidth": 860,
@@ -42,8 +42,8 @@
     "targets": ["nsis", "msi"],
     "category": "Education",
     "shortDescription": "Local-first educational video creation",
-    "longDescription": "Alystria creates and edits source-grounded educational video projects on your computer.",
-    "copyright": "Copyright Alystria contributors",
+    "longDescription": "AI Video Tutorial Generator creates and edits source-grounded educational video projects on your computer.",
+    "copyright": "Copyright AI Video Tutorial Generator contributors",
     "windows": {
       "nsis": {
         "installMode": "currentUser"

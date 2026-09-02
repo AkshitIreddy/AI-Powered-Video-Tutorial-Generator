@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { exampleSnapshot } from "../src/data";
 import { completedOnboarding as onboarding } from "./fixtures";
 
-const output = "E:/temp/Alystria Visual Acceptance/2026-09-02";
+const output = "E:/temp/AI Video Tutorial Generator Visual Acceptance/2026-09-03";
 async function readyPage(page: Page, withProject = false) {
   await page.addInitScript(({ snapshot, onboardingState, withProject: seedProject }) => {
     localStorage.clear();
@@ -27,7 +27,7 @@ test.beforeAll(async () => { await mkdir(output, { recursive: true }); });
 
 test("captures the clean first launch and redesigned global surfaces", async ({ page }) => {
   await page.goto("/", { waitUntil: "networkidle" });
-  await expect(page.getByRole("dialog", { name: /make alystria yours/i })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: /make ai video tutorial generator yours/i })).toBeVisible();
   await page.screenshot({ path: `${output}/01-first-launch-onboarding.png` });
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("checkbox", { name: /tutorial or explainer/i }).check();
@@ -40,17 +40,19 @@ test("captures the clean first launch and redesigned global surfaces", async ({ 
   const hardwareReview = page.getByRole("checkbox", { name: /reviewed this system summary/i });
   if (!(await hardwareReview.isChecked())) await hardwareReview.check();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await page.getByRole("button", { name: /continue without this/i }).click();
+  await expect(page.getByRole("heading", { name: /review your model toolkit/i })).toBeVisible();
+  await page.screenshot({ path: `${output}/01-model-toolkit-required-downloads.png` });
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: /create your studio profile/i })).toBeVisible();
   await waitForDecodedImages(page, ".aly-onboarding-profile__gallery img");
   await page.screenshot({ path: `${output}/01a-onboarding-profile-gallery.png` });
-  await page.locator('label:has(.aly-onboarding-profile__portrait-radio[value="presenter-portrait.broadcast-elena-v1"])').click();
+  await page.locator('label:has(.aly-onboarding-profile__portrait-radio[value="presenter-portrait.educator-maya-v1"])').click();
   await page.getByLabel("Display name", { exact: true }).fill("Akshit");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: /your studio is prepared/i })).toBeVisible();
   await page.screenshot({ path: `${output}/01b-onboarding-ready.png` });
-  await page.getByRole("button", { name: /enter alystria/i }).click();
-  await expect(page.getByRole("dialog", { name: /make alystria yours/i })).toHaveCount(0);
+  await page.getByRole("button", { name: /enter ai video tutorial generator/i }).click();
+  await expect(page.getByRole("dialog", { name: /make ai video tutorial generator yours/i })).toHaveCount(0);
   await expect(page.locator(".aly-onboarding-tour")).toBeVisible();
   await page.screenshot({ path: `${output}/01c-contextual-guided-tour.png` });
 });

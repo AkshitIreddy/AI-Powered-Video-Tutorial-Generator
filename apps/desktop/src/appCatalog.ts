@@ -60,7 +60,7 @@ export const alystriaCatalogItems: readonly CatalogItem[] = recipeCandidates.map
     derivativesAllowed: null,
     hostingAllowed: null,
     status: "unknown",
-    notes: ["This is an Alystria recipe candidate, not an installed model. Sync and review the exact upstream license before use."],
+    notes: ["This is an AI Video Tutorial Generator recipe candidate, not an installed model. Sync and review the exact upstream license before use."],
   },
   description: candidate.description,
   sourceUrl: `https://huggingface.co/models?search=${encodeURIComponent(candidate.name)}`,

@@ -76,8 +76,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import alystriaMark from "./assets/alystria-mark.svg";
-import alystriaAuroraThread from "./assets/brand/alystria-aurora-thread-v1.webp";
+import appMark from "./assets/ai-video-tutorial-generator-mark.svg";
+import tutorialCreatorStudio from "./assets/brand/ai-tutorial-creator-studio-v1.webp";
 import academicEvidenceBackground from "./assets/backgrounds/academic-evidence-paper-v1.png";
 import modernSignalBackground from "./assets/backgrounds/modern-tech-signal-v1.png";
 import playfulPaperBackground from "./assets/backgrounds/playful-paper-cut-v1.png";
@@ -107,6 +107,12 @@ import papercutCelia from "./assets/presenters/papercut-celia-v1.webp";
 import retroFelix from "./assets/presenters/retro-orbit-felix-v1.webp";
 import vectorAvery from "./assets/presenters/vector-avery-v1.webp";
 import watercolorElisabeth from "./assets/presenters/watercolor-elisabeth-v1.webp";
+import educatorMaya from "./assets/presenters/educator-maya-v1.webp";
+import softwareDaniel from "./assets/presenters/software-daniel-v1.webp";
+import sciencePriya from "./assets/presenters/science-priya-v1.webp";
+import languageSofia from "./assets/presenters/language-sofia-v1.webp";
+import historyMarcus from "./assets/presenters/history-marcus-v1.webp";
+import youngLearnersLily from "./assets/presenters/young-learners-lily-v1.webp";
 import { completeExampleProject, defaultSnapshot, templates } from "./data";
 import {
   GuidedTour,
@@ -174,11 +180,13 @@ import {
   CatalogIntegrationExample,
   ProviderMark,
   adaptCivitaiModel,
+  adaptCloudEndpoint,
   adaptHuggingFaceModel,
   adaptNvidiaCatalogEntry,
   defaultCatalogSources,
   type CatalogCapability,
   type CatalogItem,
+  type CloudCatalogEndpoint,
   type RawCivitaiModel,
   type RawCivitaiModelVersion,
   type RawHuggingFaceModel,
@@ -280,10 +288,13 @@ const CAPTION_DELIVERY_OPTIONS: Array<{
   { id: "both", label: "Open + selectable", eyebrow: "Maximum compatibility", detail: "Burned and soft tracks + sidecars", icon: Layers3 },
 ];
 
+const PRODUCT_NAME = "AI Video Tutorial Generator";
+
 const providerConfigs = [
   { id: "local", name: "Local models", icon: HardDrive, detail: "Qwen · Whisper · Kokoro", tone: "teal", local: true },
   { id: "openai", name: "OpenAI", icon: Sparkles, detail: "Language · images · speech", tone: "indigo" },
   { id: "anthropic", name: "Anthropic", icon: MessageSquareText, detail: "Language and structured review", tone: "amber" },
+  { id: "cohere", name: "Cohere", icon: Layers3, detail: "Command · Embed · Rerank", tone: "teal" },
   { id: "gemini", name: "Google AI", icon: Globe2, detail: "Language · images · video", tone: "neutral" },
   { id: "nvidia-nim", name: "NVIDIA NIM (dev/test)", icon: Cpu, detail: "One key · public/synthetic hosted previews · per-model checks", tone: "teal" },
   { id: "black-forest-labs", name: "Black Forest Labs", icon: Image, detail: "FLUX image generation and editing", tone: "neutral" },
@@ -338,6 +349,7 @@ const profileProviderOptions = [
   ["local-runtime", "Local runtime"],
   ["openai", "OpenAI"],
   ["anthropic", "Anthropic"],
+  ["cohere", "Cohere"],
   ["gemini", "Google Gemini"],
   ["nvidia-nim", "NVIDIA NIM (public/synthetic preview)"],
   ["elevenlabs", "ElevenLabs"],
@@ -400,35 +412,41 @@ const DEFAULT_CANVAS_CUSTOMIZATION: CanvasCustomization = {
     narrationDucking: 72,
   },
   assets: [
-    starterAsset("presenter-portrait.academic-amara-v1", "presenter", "Amara · academic", "Alystria image generation", "LicenseRef-USER-OWNED", "97067bcbeea43e043089692aa3b920ac5bd77cdd9cdb21b78ddc1f50af5221b5", 32206, "image/webp"),
-    starterAsset("presenter-portrait.modern-tech-minji-v1", "presenter", "Minji · modern tech", "Alystria image generation", "LicenseRef-USER-OWNED", "2cc8d2f36c307de9c5c5833908e98736885328671a95a56b6f6e81068e66ae64", 18782, "image/webp"),
-    starterAsset("presenter-portrait.documentary-malik-v1", "presenter", "Malik · documentary", "Alystria image generation", "LicenseRef-USER-OWNED", "ce6131d0b34c2ef033e60d4acf6f8356c21cc053787389eef1f6d95e84ed80dd", 39650, "image/webp"),
-    starterAsset("presenter-portrait.playful-lucia-v1", "presenter", "Lucia · playful", "Alystria image generation", "LicenseRef-USER-OWNED", "00c1eb046d9782f0446fb73635372cd5b4237752a89a4f72d3d142fde9b4ccb2", 41080, "image/webp"),
-    starterAsset("presenter-portrait.science-zara-v1", "presenter", "Zara · science", "Alystria image generation", "MIT", "f9526f5e1996d4ee0ec7e2461399264a8309a2cee3d08e9fcf1daf0fc915e250", 34824, "image/webp"),
-    starterAsset("presenter-portrait.mathematics-arjun-v1", "presenter", "Arjun · mathematics", "Alystria image generation", "MIT", "c12e626dfefce0a8e7c153fb0ec192f127a7feeb49f8ba21c1a620ef6f54d30e", 30902, "image/webp"),
-    starterAsset("presenter-portrait.broadcast-elena-v1", "presenter", "Elena · broadcast realism", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.anime-astrid-v1", "presenter", "Astrid · anime editorial", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.graphic-luca-v1", "presenter", "Luca · graphic novel", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.clay-nora-v1", "presenter", "Nora · tactile clay", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.watercolor-elisabeth-v1", "presenter", "Elisabeth · watercolor", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.animated-theo-v1", "presenter", "Theo · stylized 3D", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.retro-felix-v1", "presenter", "Felix · retro orbit", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.holographic-selene-v1", "presenter", "Selene · holographic", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.papercut-celia-v1", "presenter", "Celia · paper cut", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.ink-roman-v1", "presenter", "Roman · ink editorial", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.oil-helena-v1", "presenter", "Helena · oil portrait", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.vector-avery-v1", "presenter", "Avery · vector editorial", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.cartoon-oliver-v1", "presenter", "Oliver · drawn classroom", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("presenter-portrait.charcoal-marta-v1", "presenter", "Marta · charcoal", "Alystria image generation", "LicenseRef-USER-OWNED"),
-    starterAsset("background.academic-evidence-paper-v1", "background", "Academic evidence paper", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "1ba1306b0eb2dc4af7d0c04b7e7785ed27febf2a12922c91110770c13dc155ca", 2001277, "image/png"),
-    starterAsset("background.modern-tech-signal-v1", "background", "Modern signal", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "49e8abe6ba85052c6f74c022b468ebd983460600912f3e77b4b0fd301fc3a66d", 1268644, "image/png"),
-    starterAsset("background.playful-paper-cut-v1", "background", "Playful paper cut", "Alystria Studio image generation", "LicenseRef-USER-OWNED", "52f98ff2927c5f73d4518e25d70a9d93e42044e4b3363bcccd06a2f0a5471806", 1892657, "image/png"),
-    starterAsset("music-none", "music", "No music", "Alystria Studio", "MIT"),
-    starterAsset("starter.audio.music.focus-loop", "music", "Focus loop", "Alystria Studio", "MIT", "4552ed81a04c045d5a135ef312fccf470a69041b2da9569d339b0ecf308114f5", 3456044, "audio/wav"),
-    starterAsset("starter.audio.music.inquiry-loop", "music", "Inquiry loop", "Alystria Studio", "MIT", "a9fc0088c9a10624bacde27be451ce1865d28986b92189daae4126c5fd29a00d", 3456044, "audio/wav"),
-    starterAsset("starter.audio.sfx.emphasis-a", "sfx", "Quiet teaching cue", "Alystria Studio", "MIT", "19d1dc64015c1b527b44fdc74e30f8becc976a6ea39e6644f11fee0564d26c29", 161324, "audio/wav"),
-    starterAsset("starter.audio.sfx.emphasis-b", "sfx", "Technical emphasis", "Alystria Studio", "MIT", "92774860b29adf231e3c8c5b7da7e0cd6e222ba6fc711358496404244f0ec50b", 161324, "audio/wav"),
-    starterAsset("sfx-none", "sfx", "No sound cues", "Alystria Studio", "MIT"),
+    starterAsset("presenter-portrait.educator-maya-v1", "presenter", "Maya · mathematics educator", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "e8366f39fb96b09deafe280d62849f85c06634a709072d96513948b98de87002", 38202, "image/webp"),
+    starterAsset("presenter-portrait.software-daniel-v1", "presenter", "Daniel · software instructor", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "1d255bf5667329819cb7783d799a32adf2185efe643436e1e3e2d7651bc597ce", 32826, "image/webp"),
+    starterAsset("presenter-portrait.science-priya-v1", "presenter", "Priya · science educator", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "19721ae4c93b76b372eb9d4cf1b26974b345e9677f26a638c465cafdd1185ea3", 36586, "image/webp"),
+    starterAsset("presenter-portrait.language-sofia-v1", "presenter", "Sofia · language tutor", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "75c5d75b054a3a5bcbfc21bb9ba3c333f9159fd2920a3013ec26fd9ef54fbea1", 44438, "image/webp"),
+    starterAsset("presenter-portrait.history-marcus-v1", "presenter", "Marcus · history lecturer", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "cfc35183bfc070e357fd17b65e951466846e346e056d9cd38b831bbb4e49f5dc", 42600, "image/webp"),
+    starterAsset("presenter-portrait.young-learners-lily-v1", "presenter", "Lily · young-learner creator", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "0fd052fc986e361881c9e3c6f336e8b4b09629189dc1fb0be1a65abc65939042", 50634, "image/webp"),
+    starterAsset("presenter-portrait.academic-amara-v1", "presenter", "Amara · academic", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "97067bcbeea43e043089692aa3b920ac5bd77cdd9cdb21b78ddc1f50af5221b5", 32206, "image/webp"),
+    starterAsset("presenter-portrait.modern-tech-minji-v1", "presenter", "Minji · modern tech", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "2cc8d2f36c307de9c5c5833908e98736885328671a95a56b6f6e81068e66ae64", 18782, "image/webp"),
+    starterAsset("presenter-portrait.documentary-malik-v1", "presenter", "Malik · documentary", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "ce6131d0b34c2ef033e60d4acf6f8356c21cc053787389eef1f6d95e84ed80dd", 39650, "image/webp"),
+    starterAsset("presenter-portrait.playful-lucia-v1", "presenter", "Lucia · playful", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "00c1eb046d9782f0446fb73635372cd5b4237752a89a4f72d3d142fde9b4ccb2", 41080, "image/webp"),
+    starterAsset("presenter-portrait.science-zara-v1", "presenter", "Zara · science", `${PRODUCT_NAME} image generation`, "MIT", "f9526f5e1996d4ee0ec7e2461399264a8309a2cee3d08e9fcf1daf0fc915e250", 34824, "image/webp"),
+    starterAsset("presenter-portrait.mathematics-arjun-v1", "presenter", "Arjun · mathematics", `${PRODUCT_NAME} image generation`, "MIT", "c12e626dfefce0a8e7c153fb0ec192f127a7feeb49f8ba21c1a620ef6f54d30e", 30902, "image/webp"),
+    starterAsset("presenter-portrait.broadcast-elena-v1", "presenter", "Elena · news anchor", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.anime-astrid-v1", "presenter", "Astrid · anime editorial", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.graphic-luca-v1", "presenter", "Luca · graphic novel", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.clay-nora-v1", "presenter", "Nora · tactile clay", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.watercolor-elisabeth-v1", "presenter", "Elisabeth · watercolor", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.animated-theo-v1", "presenter", "Theo · stylized 3D", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.retro-felix-v1", "presenter", "Felix · retro orbit", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.holographic-selene-v1", "presenter", "Selene · holographic", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.papercut-celia-v1", "presenter", "Celia · paper cut", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.ink-roman-v1", "presenter", "Roman · ink editorial", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.oil-helena-v1", "presenter", "Helena · oil portrait", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.vector-avery-v1", "presenter", "Avery · vector editorial", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.cartoon-oliver-v1", "presenter", "Oliver · drawn classroom", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.charcoal-marta-v1", "presenter", "Marta · charcoal", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("background.academic-evidence-paper-v1", "background", "Academic evidence paper", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "1ba1306b0eb2dc4af7d0c04b7e7785ed27febf2a12922c91110770c13dc155ca", 2001277, "image/png"),
+    starterAsset("background.modern-tech-signal-v1", "background", "Modern signal", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "49e8abe6ba85052c6f74c022b468ebd983460600912f3e77b4b0fd301fc3a66d", 1268644, "image/png"),
+    starterAsset("background.playful-paper-cut-v1", "background", "Playful paper cut", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "52f98ff2927c5f73d4518e25d70a9d93e42044e4b3363bcccd06a2f0a5471806", 1892657, "image/png"),
+    starterAsset("music-none", "music", "No music", PRODUCT_NAME, "MIT"),
+    starterAsset("starter.audio.music.focus-loop", "music", "Focus loop", PRODUCT_NAME, "MIT", "4552ed81a04c045d5a135ef312fccf470a69041b2da9569d339b0ecf308114f5", 3456044, "audio/wav"),
+    starterAsset("starter.audio.music.inquiry-loop", "music", "Inquiry loop", PRODUCT_NAME, "MIT", "a9fc0088c9a10624bacde27be451ce1865d28986b92189daae4126c5fd29a00d", 3456044, "audio/wav"),
+    starterAsset("starter.audio.sfx.emphasis-a", "sfx", "Quiet teaching cue", PRODUCT_NAME, "MIT", "19d1dc64015c1b527b44fdc74e30f8becc976a6ea39e6644f11fee0564d26c29", 161324, "audio/wav"),
+    starterAsset("starter.audio.sfx.emphasis-b", "sfx", "Technical emphasis", PRODUCT_NAME, "MIT", "92774860b29adf231e3c8c5b7da7e0cd6e222ba6fc711358496404244f0ec50b", 161324, "audio/wav"),
+    starterAsset("sfx-none", "sfx", "No sound cues", PRODUCT_NAME, "MIT"),
   ],
 };
 
@@ -447,6 +465,12 @@ const PALETTE_PRESETS: Array<{ id: CanvasCustomization["paletteId"]; name: strin
 ];
 
 const STARTER_PRESENTER_PREVIEWS: Record<string, { src: string; focalPoint: string }> = {
+  "presenter-portrait.educator-maya-v1": { src: educatorMaya, focalPoint: "50% 20%" },
+  "presenter-portrait.software-daniel-v1": { src: softwareDaniel, focalPoint: "50% 20%" },
+  "presenter-portrait.science-priya-v1": { src: sciencePriya, focalPoint: "50% 20%" },
+  "presenter-portrait.language-sofia-v1": { src: languageSofia, focalPoint: "50% 20%" },
+  "presenter-portrait.history-marcus-v1": { src: historyMarcus, focalPoint: "50% 20%" },
+  "presenter-portrait.young-learners-lily-v1": { src: youngLearnersLily, focalPoint: "50% 20%" },
   "presenter-portrait.academic-amara-v1": { src: academicAmara, focalPoint: "50% 22%" },
   "presenter-portrait.modern-tech-minji-v1": { src: modernMinji, focalPoint: "50% 20%" },
   "presenter-portrait.documentary-malik-v1": { src: documentaryMalik, focalPoint: "50% 20%" },
@@ -503,6 +527,7 @@ const ONBOARDING_CATALOG: OnboardingCatalog = {
     description: provider.detail,
     connected: provider.local === true,
     requiresCredential: provider.local !== true,
+    icon: <ProviderMark providerId={provider.id === "nvidia-nim" ? "nvidia" : provider.id} compact />,
   })),
   models: [
     ...localModelOptions.slice(0, 13).map((model) => ({
@@ -512,9 +537,12 @@ const ONBOARDING_CATALOG: OnboardingCatalog = {
       medium: /narration|tts|voice/i.test(model.medium) ? "speech" as const : /transcription/i.test(model.medium) ? "transcription" as const : /illustration/i.test(model.medium) ? "image" as const : "language" as const,
       description: model.detail,
       compatible: true,
-      recommended: /qwen3\.5|flux|kokoro|whisper/i.test(model.id),
+      required: /qwen3\.5-9b|kokoro|whisper-large-v3-turbo/i.test(model.id),
+      requirementReason: /qwen3\.5-9b/i.test(model.id) ? "Core writing and visual review" : /kokoro/i.test(model.id) ? "Core draft narration" : /whisper/i.test(model.id) ? "Core transcription and timing" : undefined,
+      downloadBytes: /qwen3\.5-9b/i.test(model.id) ? 6.4 * 1024 ** 3 : /kokoro/i.test(model.id) ? 350 * 1024 ** 2 : /whisper/i.test(model.id) ? 1.6 * 1024 ** 3 : undefined,
+      sizeConfidence: "estimated" as const,
     })),
-    ...lipSyncModelOptions.slice(0, 3).map((model) => ({ id: model.id, name: model.name, providerId: "local", medium: "lip-sync" as const, description: model.detail, compatible: true })),
+    ...lipSyncModelOptions.slice(0, 3).map((model) => ({ id: model.id, name: model.name, providerId: "local", medium: "lip-sync" as const, description: model.detail, compatible: true, required: model.id === "local/musetalk-1.5", requirementReason: model.id === "local/musetalk-1.5" ? "Core presenter lip-sync fallback" : undefined, downloadBytes: model.id === "local/musetalk-1.5" ? 4.7 * 1024 ** 3 : undefined, sizeConfidence: "estimated" as const })),
   ],
   portraits: DEFAULT_CANVAS_CUSTOMIZATION.assets
     .filter((asset) => asset.kind === "presenter")
@@ -557,7 +585,7 @@ function canvasCustomization(project: ProjectRecord): CanvasCustomization {
 function LogoMark() {
   return (
     <span className="logo-mark" aria-hidden="true">
-      <img src={alystriaMark} alt="" />
+      <img src={appMark} alt="" />
     </span>
   );
 }
@@ -566,6 +594,8 @@ function App() {
   const [snapshot, setSnapshot, resetSnapshot] = usePersistentState<AppSnapshot>("alystria-studio-v2", defaultSnapshot, normalizeAppSnapshot);
   const [runtime, setRuntime] = useState<RuntimeState>({ environment: desktopEnvironment(), bootstrap: null, loading: true, error: null });
   const [diagnosticReport, setDiagnosticReport] = useState<DiagnosticReport | null>(null);
+  const [detectedConnections, setDetectedConnections] = useState<string[]>([]);
+  const [attachedModelIds, setAttachedModelIds] = useState<string[]>([]);
   const [initialOnboarding] = useState(persistedOnboardingState);
   const persistOnboarding = useCallback((state: PersistedOnboardingState) => {
     localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(state));
@@ -576,6 +606,9 @@ function App() {
       detectedRuntime: runtime.environment === "native" ? "local" : "hybrid",
       runtimeConfigured: false,
       privacyConfigured: false,
+      connectedProviderIds: detectedConnections,
+      attachedModelIds,
+      existingProfile: initialOnboarding?.configuration.profile ?? null,
       hardwareInspected: diagnosticReport !== null,
       hardware: diagnosticReport ? {
         cpuLabel: diagnosticReport.system.cpu,
@@ -586,12 +619,26 @@ function App() {
         warnings: diagnosticReport.checks.filter((check) => check.level === "warning" || check.level === "failure").map((check) => check.summary),
       } : null,
     };
-  }, [diagnosticReport, runtime.environment]);
+  }, [attachedModelIds, detectedConnections, diagnosticReport, initialOnboarding, runtime.environment]);
   const onboarding = useOnboardingController({
     persistedState: initialOnboarding,
     setupState: onboardingSetup,
     onPersist: persistOnboarding,
   });
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      localModelSetupGet(),
+      Promise.all(providerConfigs.filter((provider) => !provider.local).map(async (provider) => [provider.id, await providerSecretStatus({ providerId: provider.id, credentialKind: "api_key" })] as const)),
+    ]).then(([setup, refs]) => {
+      if (!active) return;
+      setAttachedModelIds(setup.selectedModelIds);
+      setDetectedConnections(refs.filter(([, reference]) => reference.availability === "present").map(([providerId]) => providerId));
+    }).catch(() => {
+      if (active) { setAttachedModelIds([]); setDetectedConnections([]); }
+    });
+    return () => { active = false; };
+  }, [runtime.environment]);
   const [nativeJobs, setNativeJobs] = useState<Record<string, NativeJobLink>>(() => nativeJobLinks(snapshot.jobs));
   const [area, setArea] = useState<GlobalArea>("home");
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -1052,7 +1099,7 @@ function App() {
   const exportArchive = async (projectId: string) => {
     const project = snapshot.projects.find((item) => item.id === projectId);
     if (!project?.nativeProjectId || !project.nativeProjectDirectory) {
-      throw new Error("This project is not linked to a local Alystria folder.");
+      throw new Error(`This project is not linked to a local ${PRODUCT_NAME} folder.`);
     }
     const receipt = await projectExportArchive({
       projectId: project.nativeProjectId,
@@ -1383,7 +1430,7 @@ function App() {
 
       {commandOpen && <CommandPalette projects={snapshot.projects} onClose={() => setCommandOpen(false)} onNavigate={(next) => { navigateGlobal(next); setCommandOpen(false); }} onOpen={(id) => { openProject(id); setCommandOpen(false); }} />}
 
-      <OnboardingDialog controller={onboarding} setupState={onboardingSetup} catalog={ONBOARDING_CATALOG} productName="Alystria" />
+      <OnboardingDialog controller={onboarding} setupState={onboardingSetup} catalog={ONBOARDING_CATALOG} productName={PRODUCT_NAME} brandMarkSrc={appMark} />
       <GuidedTour
         open={guidedTourOpen}
         steps={GUIDED_TOUR_STEPS}
@@ -1417,7 +1464,7 @@ function Sidebar({ area, workspace, project, mobileNavOpen, profile, onGlobal, o
   const initials = displayName.split(/\s+/u).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("") || "A";
   return (
     <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`} aria-label="Primary navigation">
-      <div className="brand-lockup"><LogoMark /><span><strong>Alystria</strong><small>Creative intelligence</small></span></div>
+      <div className="brand-lockup"><LogoMark /><span><strong>{PRODUCT_NAME}</strong><small>Tutorial creation studio</small></span></div>
       <button className="new-project-button" aria-label="New tutorial" onClick={onNew}><Plus size={17} /> <span>New tutorial</span></button>
       {workspace && project ? (
         <>
@@ -1439,7 +1486,7 @@ function Sidebar({ area, workspace, project, mobileNavOpen, profile, onGlobal, o
           <button className="all-projects-link" onClick={() => onGlobal("projects")}><ArrowLeft size={15} /> <span>All projects</span></button>
         </>
       ) : (
-        <nav className="nav-list" aria-label="Alystria areas">
+        <nav className="nav-list" aria-label={`${PRODUCT_NAME} areas`}>
           {globalNav.map(({ id, label, icon: Icon }) => (
             <button key={id} aria-label={label} className={area === id ? "active" : ""} onClick={() => onGlobal(id)} aria-current={area === id ? "page" : undefined}>
               <Icon size={18} /><span>{label}</span>
@@ -1531,7 +1578,7 @@ function HomeView({ snapshot, runtime, onOpen, onNew, onArea }: {
           <div className="hero-actions"><button className="primary-button" onClick={onNew}><Plus size={17} /> Create a tutorial</button>{featured && <button className="secondary-button" onClick={() => onOpen(featured.id)}><PlayCircle size={17} /> Continue working</button>}</div>
         </div>
         <div className="concept-thread-hero" aria-label="A tutorial moves from idea to evidence to scene to review">
-          <img className="concept-hero-art" src={alystriaAuroraThread} alt="" width="1536" height="1024" decoding="async" />
+          <img className="concept-hero-art" src={tutorialCreatorStudio} alt="A tutorial creator teaching beside a camera, storyboard, waveform, and editing timeline" width="1536" height="1024" decoding="async" />
           <div className="thread-line" />
           <div className="thread-node node-idea"><span><TextCursorInput size={17} /></span><small>Idea</small><strong>Your difficult question</strong></div>
           <div className="thread-node node-evidence"><span><Link2 size={17} /></span><small>Evidence</small><strong>Sources you approve</strong></div>
@@ -1630,6 +1677,35 @@ function catalogItemsFromDiscovery(response: CatalogDiscoveryResponse): CatalogI
         : []);
     });
   }
+  if (response.source === "cohere") {
+    return response.items.flatMap((item) => {
+      if (!isRecord(item)) return [];
+      const name = typeof item.name === "string" ? item.name : typeof item.id === "string" ? item.id : null;
+      if (!name) return [];
+      const endpoints = Array.isArray(item.endpoints) ? item.endpoints.filter((value): value is string => typeof value === "string") : [];
+      const capabilities: CatalogCapability[] = endpoints.some((endpoint) => /embed/i.test(endpoint)) ? ["retrieval.embed"] : endpoints.some((endpoint) => /rerank/i.test(endpoint)) ? ["retrieval.embed", "llm.structured"] : ["llm.text", "llm.structured"];
+      const raw: CloudCatalogEndpoint = {
+        id: `cohere/${name}`,
+        providerId: "cohere",
+        publisher: "Cohere",
+        name,
+        revision: null,
+        capabilities,
+        modalities: ["text"],
+        operationIds: endpoints.length ? endpoints : ["POST /v2/chat"],
+        endpointBaseUrl: "https://api.cohere.com",
+        openAiCompatible: false,
+        tags: ["cohere", "live-endpoint"],
+        credentialConfigured: true,
+        reachable: true,
+        description: "Model reported by Cohere's authenticated model catalog. Availability and deprecation state remain provider-controlled.",
+        documentationUrl: "https://docs.cohere.com/reference/list-models",
+        sourceUrl: "https://dashboard.cohere.com/playground/chat",
+        retrievedAt: response.retrievedAt,
+      };
+      return [adaptCloudEndpoint(raw)];
+    });
+  }
   return response.items.flatMap((item) => {
     if (!isRecord(item) || typeof item.id !== "string") return [];
     const id = item.id;
@@ -1678,7 +1754,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-type SyncableCatalogSource = "hugging-face" | "civitai" | "nvidia-nim";
+type SyncableCatalogSource = "hugging-face" | "civitai" | "nvidia-nim" | "cohere";
 
 function ProvidersView({ environment, diagnosticReport, onNotify }: { environment: RuntimeState["environment"]; diagnosticReport: DiagnosticReport | null; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void }) {
   const [mode, setMode] = useState("Hybrid");
@@ -1779,7 +1855,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       const reference = await providerSecretSet({ providerId: editingProvider, credentialKind: "api_key", secret });
       setSecretRefs((current) => ({ ...current, [editingProvider]: reference }));
       setSecret(""); setEditingProvider(null);
-      onNotify(environment === "native" ? "Credential stored in OS vault" : "Browser demo connection updated", environment === "native" ? "Only an opaque reference is visible to Alystria projects." : "The preview discarded the credential value and retained only session availability.", "success");
+      onNotify(environment === "native" ? "Credential stored in OS vault" : "Browser demo connection updated", environment === "native" ? `Only an opaque reference is visible to ${PRODUCT_NAME} projects.` : "The preview discarded the credential value and retained only session availability.", "success");
     } catch (error) { onNotify("Credential was not stored", errorMessage(error), "warning"); } finally { setSaving(false); }
   };
   const deleteSecret = async (providerId: string) => {
@@ -1799,7 +1875,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       setCatalogItems((current) => mergeCatalogItems(current, discovered));
       setCatalogCursors((current) => ({ ...current, [source]: response.nextCursor }));
       setCatalogSyncedCounts((current) => ({ ...current, [source]: (current[source] ?? 0) + discovered.length }));
-      onNotify(`${source === "hugging-face" ? "Hugging Face" : source === "civitai" ? "Civitai" : "NVIDIA NIM"} catalog synced`, `${discovered.length} provider rows were normalized. Unknown licenses, mutable revisions, and hardware mismatches remain blocked.`, "success");
+      onNotify(`${source === "hugging-face" ? "Hugging Face" : source === "civitai" ? "Civitai" : source === "cohere" ? "Cohere" : "NVIDIA NIM"} catalog synced`, `${discovered.length} provider rows were normalized. Unknown licenses, mutable revisions, and hardware mismatches remain blocked.`, "success");
     } catch (error) {
       onNotify("Catalog sync needs attention", errorMessage(error), "warning");
     } finally {
@@ -1808,15 +1884,15 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   };
 
   return <div className="page">
-    <PageTitle kicker="Your compute, your choice" title="Models & providers" description="Alystria only routes work to providers you configure and approve. Local mode blocks project-content networking." />
+    <PageTitle kicker="Your compute, your choice" title="Models & providers" description={`${PRODUCT_NAME} only routes work to providers you configure and approve. Local mode blocks project-content networking.`} />
     <section className="routing-card"><div><span className="section-kicker">Default routing boundary</span><h3>{mode} creation</h3><p>{mode === "Local" ? "All generation remains on this device. No cloud fallback." : mode === "Cloud" ? "Use only connected cloud providers after cost and privacy approval." : "Keep private sources local; route approved creative tasks to cloud providers."}</p></div><div className="segmented-large" role="group" aria-label="Provider routing mode">{["Local", "Hybrid", "Cloud"].map((item) => <button key={item} className={mode === item ? "active" : ""} onClick={() => setMode(item)}><span>{item === "Local" ? <HardDrive /> : item === "Cloud" ? <Cloud /> : <Network />}</span>{item}</button>)}</div><div className="routing-facts"><span><ShieldCheck /> No silent fallback</span><span><CircleDollarSign /> Hard budgets enabled</span><span><Lock /> Keys in OS vault</span></div></section>
     <section className="federated-catalog-panel" aria-labelledby="federated-catalog-title">
       <div className="federated-catalog-heading"><div><span className="section-kicker">LM Studio-style discovery, widened for production</span><h2 id="federated-catalog-title">One model library for every capability</h2><p>Search supported recipe candidates now; sync live hub rows only from a dated API response, a connected provider, or a verified local scan. Unknown revisions and licenses stay visibly blocked.</p></div><span><Cpu size={16} /> {catalogHardware.gpuNames[0] ?? "Hardware probe pending"}</span></div>
       <div className="catalog-source-strip" aria-label="Federated catalog sources">{defaultCatalogSources.map((source) => {
-        const syncable = (["hugging-face", "civitai", "nvidia-nim"] as const).find((candidate) => candidate === source.id);
+        const syncable = (["hugging-face", "civitai", "nvidia-nim", "cohere"] as const).find((candidate) => candidate === source.id);
         const count = syncable ? catalogSyncedCounts[syncable] ?? 0 : 0;
         const hasMore = syncable ? Boolean(catalogCursors[syncable]) : false;
-        return <article key={source.id} className={!source.catalogUrl ? "local-source" : ""}><ProviderMark providerId={source.brandAssetId} compact /><strong>{source.label}</strong><small>{count ? `${count} live rows · ` : ""}{source.discovery.replaceAll("-", " ")} · {source.authentication.replaceAll("-", " ")}</small><span>{source.catalogUrl && <a href={source.catalogUrl} target="_blank" rel="noreferrer">Explore</a>}{syncable && <button type="button" disabled={catalogSyncing !== null || (syncable === "nvidia-nim" && secretRefs["nvidia-nim"]?.availability !== "present")} onClick={() => { void syncCatalog(syncable); }}><RefreshCw size={11} className={catalogSyncing === syncable ? "spinning" : ""} />{catalogSyncing === syncable ? "Syncing…" : hasMore ? "Load more" : "Sync"}</button>}</span></article>;
+        return <article key={source.id} className={!source.catalogUrl ? "local-source" : ""}><ProviderMark providerId={source.brandAssetId} compact /><strong>{source.label}</strong><small>{count ? `${count} live rows · ` : ""}{source.discovery.replaceAll("-", " ")} · {source.authentication.replaceAll("-", " ")}</small><span>{source.catalogUrl && <a href={source.catalogUrl} target="_blank" rel="noreferrer">Explore</a>}{syncable && <button type="button" disabled={catalogSyncing !== null || ((syncable === "nvidia-nim" || syncable === "cohere") && secretRefs[syncable]?.availability !== "present")} onClick={() => { void syncCatalog(syncable); }}><RefreshCw size={11} className={catalogSyncing === syncable ? "spinning" : ""} />{catalogSyncing === syncable ? "Syncing…" : hasMore ? "Load more" : "Sync"}</button>}</span></article>;
       })}</div>
       <CatalogIntegrationExample hardware={catalogHardware} items={catalogItems} onModelSelected={(item) => onNotify("Model inspected", `${item.identity.name} remains blocked until its exact revision, license, compatibility, and required artifacts pass review.`, "info")} />
     </section>
@@ -1824,13 +1900,13 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     <div className="provider-grid">{providers.map(({ id, name, icon: Icon, detail, tone, local }) => {
       const availability = local ? "manager" : secretRefs[id]?.availability ?? "missing";
       const connected = availability === "present";
-      return <article className="provider-card" key={name}><span className={`provider-icon ${tone}`}><Icon size={22} /></span><div><h3>{name}</h3><p>{detail}</p></div><span className={`provider-state ${connected || local ? "" : "add"}`}>{connected || local ? <Check size={13} /> : null}{local ? "Manager ready" : connected ? "Connected" : availability === "keyringUnavailable" ? "Vault unavailable" : "Add key"}</span>{local && <div className="model-meter"><span><b>On-demand profiles</b><small>Nothing bundled · download and verify before use</small></span><div><i style={{ width: "18%" }} /></div></div>}{!local && <button className="icon-button" aria-label={`${connected ? "Manage" : "Add"} ${name} credential`} onClick={() => { setEditingProvider(id); setSecret(""); }}><KeyRound size={17} /></button>}</article>;
+      return <article className="provider-card" key={name}><span className={`provider-icon ${tone}`}>{local ? <Icon size={22} /> : <ProviderMark providerId={id === "nvidia-nim" ? "nvidia" : id} compact />}</span><div><h3>{name}</h3><p>{detail}</p></div><span className={`provider-state ${connected || local ? "" : "add"}`}>{connected || local ? <Check size={13} /> : null}{local ? "Manager ready" : connected ? "Connected" : availability === "keyringUnavailable" ? "Vault unavailable" : "Add key"}</span>{local && <div className="model-meter"><span><b>On-demand profiles</b><small>Nothing bundled · download and verify before use</small></span><div><i style={{ width: "18%" }} /></div></div>}{!local && <button className="icon-button" aria-label={`${connected ? "Manage" : "Add"} ${name} credential`} onClick={() => { setEditingProvider(id); setSecret(""); }}><KeyRound size={17} /></button>}</article>;
     })}</div>
     {editingProvider && <section className="credential-panel" aria-labelledby="credential-title"><div><span className="section-kicker">Credential broker</span><h3 id="credential-title">Connect {providers.find((provider) => provider.id === editingProvider)?.name}</h3><p>{environment === "native" ? "The value goes directly to the operating-system vault. Project files receive only an opaque reference." : "Browser demo mode exercises the flow but immediately discards the value."}</p></div><label>API key<input autoFocus type="password" autoComplete="off" value={secret} onChange={(event) => setSecret(event.target.value)} /></label><div className="credential-actions">{secretRefs[editingProvider]?.availability === "present" && <button className="secondary-button danger-text" onClick={() => { void deleteSecret(editingProvider); setEditingProvider(null); }}><X size={15} /> Remove</button>}<button className="secondary-button" onClick={() => { setEditingProvider(null); setSecret(""); }}>Cancel</button><button className="primary-button" disabled={!secret.trim() || saving} onClick={() => { void saveSecret(); }}><KeyRound size={15} /> {saving ? "Saving…" : "Store securely"}</button></div></section>}
     <section className="model-setup-panel" aria-labelledby="local-model-setup-title">
       <div className="model-setup-heading"><div><span className="section-kicker">First-run setup</span><h2 id="local-model-setup-title">Local models, without surprise downloads.</h2><p>Pick a small local profile, bring a pre-existing model folder, or stay API-first. Model weights are never bundled or activated until a signed immutable manifest, license acceptance, hash check, and hardware preflight all pass.</p></div><span className="setup-state"><HardDrive size={15} /> {setupLoading ? "Loading setup" : `${setup?.selectedModelIds.length ?? 0} choices saved`}</span></div>
       <div className="local-model-grid" aria-busy={setupLoading}>{localModelOptions.map((model) => { const selected = setup?.selectedModelIds.includes(model.id) ?? false; return <label className={`local-model-choice ${selected ? "selected" : ""}`} key={model.id}><input type="checkbox" checked={selected} disabled={!setup} onChange={(event) => toggleLocalModel(model.id, event.target.checked)} /><span><b>{model.name}</b><small>{model.medium} · {model.detail}</small></span><em>Manifest required</em></label>; })}</div>
-      <div className="existing-model-row"><div><b>Use an existing model folder</b><small>The native app proves the folder exists when you save. It records the location but never executes or activates its contents; a later manifest inspection still has to identify every revision, license, file, and hash.</small>{setup?.existingModelDirectory && <span className="folder-record-state"><FolderClock size={13} /> Folder path entered · save to verify it exists</span>}</div><label><span>Existing folder path</span><input value={setup?.existingModelDirectory ?? ""} disabled={!setup} placeholder={environment === "native" ? "C:\\Models\\Alystria" : "/your/local/model-folder"} onChange={(event) => mutateSetup((current) => ({ ...current, existingModelDirectory: event.target.value || null }))} /></label></div>
+      <div className="existing-model-row"><div><b>Use an existing model folder</b><small>The native app proves the folder exists when you save. It records the location but never executes or activates its contents; a later manifest inspection still has to identify every revision, license, file, and hash.</small>{setup?.existingModelDirectory && <span className="folder-record-state"><FolderClock size={13} /> Folder path entered · save to verify it exists</span>}</div><label><span>Existing folder path</span><input value={setup?.existingModelDirectory ?? ""} disabled={!setup} placeholder={environment === "native" ? "E:\\temp\\AI Video Tutorial Generator Models" : "/your/local/model-folder"} onChange={(event) => mutateSetup((current) => ({ ...current, existingModelDirectory: event.target.value || null }))} /></label></div>
       <div className="lipsync-chooser"><div><span className="section-kicker">Optional presenter pack</span><h3>Choose your local lip-sync model</h3><p>Presenter shots are selective. Choosing a pack saves a preference; downloading is a separate, explicit step and inference stays blocked until activation review.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onChange={() => { selectLipSync(model.id); setLicenseAccepted(false); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{downloadCatalog.some((entry) => entry.modelId === model.id) ? "Download declaration ready" : model.tag}</em></label>)}</div></div>
       <div className="model-download-panel" aria-live="polite">
         {selectedDownload ? <>
@@ -1839,7 +1915,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
           <div className="download-detail"><span>{selectedDownloadStatus?.detail ?? "Pinned declaration ready for review."}</span><span>{formatBytes(selectedDownloadStatus?.downloadedBytes ?? 0)} / {formatBytes(selectedDownload.totalBytes)} · {selectedDownloadStatus?.verifiedArtifacts ?? 0}/{selectedDownload.artifactCount} hashes verified</span></div>
           <label className="license-accept"><input type="checkbox" checked={licenseAccepted} disabled={selectedDownloadStatus?.phase === "downloadedQuarantined"} onChange={(event) => setLicenseAccepted(event.target.checked)} /><span>I accept <a href={selectedDownload.licenseUrl} target="_blank" rel="noreferrer">{selectedDownload.licenseId}</a> for this exact license hash <code>{selectedDownload.licenseSha256.slice(0, 12)}…</code>.</span></label>
           <div className="model-setup-actions"><button className="secondary-button" disabled={!licenseAccepted || downloadStarting || environment !== "native" || selectedDownloadStatus?.phase === "downloadedQuarantined" || selectedDownloadStatus?.phase === "downloading" || selectedDownloadStatus?.phase === "verifying"} onClick={() => { void beginModelDownload(); }}><Download size={16} /> {downloadStarting ? "Starting…" : selectedDownloadStatus?.downloadedBytes ? "Resume verified download" : "Start verified download"}</button><small>{environment === "native" ? "Download uses no GPU. Completion means hash-verified and quarantined—not installed, active, or ready for inference." : "Open the native app to download; browser preview never fetches model bytes. A completed native download is still quarantined—not installed, active, or ready for inference."}</small></div>
-        </> : <div className="download-empty"><ShieldCheck size={18} /><div><b>No immutable download declaration for this choice</b><small>Keep the preference or choose an existing folder. Alystria will not fetch a mutable repository snapshot or guess a license.</small></div></div>}
+        </> : <div className="download-empty"><ShieldCheck size={18} /><div><b>No immutable download declaration for this choice</b><small>Keep the preference or choose an existing folder. The app will not fetch a mutable repository snapshot or guess a license.</small></div></div>}
       </div>
     </section>
     <section className="profile-panel" aria-labelledby="profile-title">
@@ -1872,8 +1948,8 @@ interface AlystriaPreferences {
 }
 
 const DEFAULT_ALYSTRIA_PREFERENCES: AlystriaPreferences = {
-  modelCacheDirectory: "E:\\temp\\Alystria Models",
-  renderScratchDirectory: "E:\\temp\\Alystria Renders",
+  modelCacheDirectory: "E:\\temp\\AI Video Tutorial Generator Models",
+  renderScratchDirectory: "E:\\temp\\AI Video Tutorial Generator Renders",
   autosaveSeconds: 8,
   backupCount: 12,
   confirmCloudTransfer: true,
@@ -1915,7 +1991,7 @@ function DiagnosticsView({ runtime, onNotify, onReset, onReplayOnboarding, onRep
     <div className="diagnostics-grid">
       <section className="diagnostic-panel wide"><div className="panel-heading"><div><span className="section-kicker">System readiness</span><h3>{runtime.environment === "native" ? "Native toolchain" : "Browser preview"}</h3></div><span className="health-score">{rows.filter((row) => row.level === "pass").length} / {rows.length} passed</span></div><div className="diagnostic-rows">{rows.map((row) => { const Icon = diagnosticIcon(row.id); const ready = row.level === "pass"; return <div key={row.id}><span className="diagnostic-icon"><Icon size={17} /></span><span><strong>{row.label}</strong><small>{row.summary}</small></span><span className={`check-state ${ready ? "ready" : "attention"}`}>{ready ? <Check size={13} /> : <CircleAlert size={13} />}{row.level}</span></div>; })}</div></section>
       <section className="diagnostic-panel"><span className="section-kicker">Privacy boundary</span><div className="privacy-orbit"><Lock size={22} /><i /><i /></div><h3>Local means local.</h3><p>Analytics are off. Private source contents cannot leave this device unless you explicitly reclassify them.</p><button className="text-button">Review privacy controls <ArrowRight size={15} /></button></section>
-      <section className="diagnostic-panel"><span className="section-kicker">Power & performance</span><div className="power-mode"><Moon size={22} /><span><strong>Silent profile respected</strong><small>Benchmarks are estimation-only</small></span></div><p>Alystria won’t change Windows or G-Helper power modes. Use a performance profile only for deliberate benchmark runs.</p><button className="text-button" onClick={() => onNotify("Power profile unchanged", "No benchmark needs boost for functional acceptance.", "info")}>Why this is recommended <ArrowRight size={15} /></button></section>
+      <section className="diagnostic-panel"><span className="section-kicker">Power & performance</span><div className="power-mode"><Moon size={22} /><span><strong>Silent profile respected</strong><small>Benchmarks are estimation-only</small></span></div><p>{PRODUCT_NAME} won’t change Windows or G-Helper power modes. Use a performance profile only for deliberate benchmark runs.</p><button className="text-button" onClick={() => onNotify("Power profile unchanged", "No benchmark needs boost for functional acceptance.", "info")}>Why this is recommended <ArrowRight size={15} /></button></section>
       <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Storage & recovery</span><h3>Keep heavy work away from the system drive</h3></div><HardDrive size={21} /></div><div className="settings-form-grid"><label><span>Model cache</span><input value={preferences.modelCacheDirectory} onChange={(event) => updatePreference("modelCacheDirectory", event.target.value)} /></label><label><span>Render scratch</span><input value={preferences.renderScratchDirectory} onChange={(event) => updatePreference("renderScratchDirectory", event.target.value)} /></label><label><span>Autosave interval</span><select value={preferences.autosaveSeconds} onChange={(event) => updatePreference("autosaveSeconds", Number(event.target.value))}><option value="3">3 seconds</option><option value="8">8 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select></label><label><span>Local backup versions</span><input type="number" min="3" max="100" value={preferences.backupCount} onChange={(event) => updatePreference("backupCount", Number(event.target.value))} /></label></div></section>
       <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Privacy & trust</span><h3>Every external boundary remains deliberate</h3></div><ShieldCheck size={21} /></div><div className="settings-toggle-grid"><SettingsToggle checked={preferences.confirmCloudTransfer} title="Confirm every new cloud content class" detail="A saved provider route never implies consent for private source transfer." onChange={(value) => updatePreference("confirmCloudTransfer", value)} /><SettingsToggle checked={preferences.redactLogs} title="Redact paths, keys and source excerpts from logs" detail="Keep diagnostic bundles useful without leaking project or credential content." onChange={(value) => updatePreference("redactLogs", value)} /><SettingsToggle checked={preferences.crashReports} title="Send anonymous crash reports" detail="Off by default; source text and media are never attached." onChange={(value) => updatePreference("crashReports", value)} /></div></section>
       <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Editor & accessibility</span><h3>Fit the creative surface to the person</h3></div><MonitorPlay size={21} /></div><div className="settings-toggle-grid"><SettingsToggle checked={preferences.reducedMotion} title="Reduce interface motion" detail="Preserve hierarchy and feedback without camera-like transitions." onChange={(value) => updatePreference("reducedMotion", value)} /><SettingsToggle checked={preferences.highContrast} title="High-contrast controls and guides" detail="Increase control boundaries, focus rings and canvas guide contrast." onChange={(value) => updatePreference("highContrast", value)} /><SettingsToggle checked={preferences.denseEditor} title="Dense multitrack editor" detail="Show more tracks and inspector fields on large displays." onChange={(value) => updatePreference("denseEditor", value)} /></div><div className="settings-form-grid"><label><span>Caption language</span><select value={preferences.defaultCaptionLanguage} onChange={(event) => updatePreference("defaultCaptionLanguage", event.target.value)}><option>Match tutorial</option><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Default export rate</span><select value={preferences.defaultExportFps} onChange={(event) => updatePreference("defaultExportFps", Number(event.target.value))}><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div></section>
@@ -2563,8 +2639,8 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
     <div className="wizard-body">
       {step === 1 && <div className="wizard-template-selection"><img src={TEMPLATE_PREVIEWS[selectedTemplate.id]} alt="" /><span><small>Selected learning arc</small><strong>{selectedTemplate.name}</strong><em>{selectedTemplate.scenes} editable scenes · {selectedTemplate.category}</em></span></div>}
       {step === 1 && <div className="wizard-step"><span className="section-kicker">Start with the hard part</span><h2 id="wizard-title">What should become clear?</h2><p>Describe the idea, skill, or question in plain language. You can add documents and URLs after this step.</p><label className="large-input"><WandSparkles size={21} /><textarea autoFocus rows={4} placeholder="e.g. Explain why Karatsuba multiplication needs only three recursive products…" value={topic} onChange={(event) => setTopic(event.target.value)} /></label><div className="prompt-suggestions"><button onClick={() => setTopic("Explain why Karatsuba multiplication needs only three recursive products")}>Karatsuba multiplication</button><button onClick={() => setTopic("Teach binary search through loop invariants and an execution trace")}>Binary search invariants</button><button onClick={() => setTopic("Derive the central limit theorem visually")}>Visual derivation</button></div><div className="source-drop"><Upload size={20} /><span><strong>Add source material</strong><small>{sourceFiles.length ? `${sourceFiles.length} selected · imported privately before generation` : "PDF, DOCX, EPUB, Markdown, or text · 8 MiB each · optional"}</small></span><input ref={sourceInputRef} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => setSourceFiles(Array.from(event.target.files ?? []))} /><button onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? "Change files" : "Choose files"}</button></div>{sourceFiles.length > 0 && <div className="selected-source-list" aria-label="Selected source files">{sourceFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><FileCheck2 size={14} /> {file.name} <small>{formatBytes(file.size)}</small></span>)}</div>}</div>}
-      {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>Alystria changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="1">About 1 minute (quick draft)</option><option value="3">About 3 minutes (inspection draft)</option><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="12">About 12 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option><option value="custom">Custom length…</option></select></label>{duration === "custom" && <label><span>Exact duration in minutes</span><input aria-label="Exact duration in minutes" type="number" min="1" max="180" step="1" inputMode="numeric" value={exactDuration} onChange={(event) => setExactDuration(event.target.value)} /><small>Choose any whole number from 1 to 180 minutes.</small></label>}<label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Format</span><select><option>Visual explanation</option><option>Code walkthrough</option><option>Presenter with slides</option><option>Worked derivation</option></select></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>Alystria will assume basic algebra, introduce divide and conquer before asymptotic analysis, and surface common misconceptions.</p></div></div></div>}
-      {step === 3 && <div className="wizard-step"><span className="section-kicker">Lock the trust boundary</span><h2>How should Alystria research?</h2><p>No cloud call happens until its provider, data class, retention policy, and cost are approved.</p><div className="choice-cards">{([
+      {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>{PRODUCT_NAME} changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="1">About 1 minute (quick draft)</option><option value="3">About 3 minutes (inspection draft)</option><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="12">About 12 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option><option value="custom">Custom length…</option></select></label>{duration === "custom" && <label><span>Exact duration in minutes</span><input aria-label="Exact duration in minutes" type="number" min="1" max="180" step="1" inputMode="numeric" value={exactDuration} onChange={(event) => setExactDuration(event.target.value)} /><small>Choose any whole number from 1 to 180 minutes.</small></label>}<label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Format</span><select><option>Visual explanation</option><option>Code walkthrough</option><option>Presenter with slides</option><option>Worked derivation</option></select></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>{PRODUCT_NAME} will assume basic algebra, introduce divide and conquer before asymptotic analysis, and surface common misconceptions.</p></div></div></div>}
+      {step === 3 && <div className="wizard-step"><span className="section-kicker">Lock the trust boundary</span><h2>How should {PRODUCT_NAME} research?</h2><p>No cloud call happens until its provider, data class, retention policy, and cost are approved.</p><div className="choice-cards">{([
         { name: "Creative", detail: "Use the prompt as the source of truth", icon: Sparkles }, { name: "Grounded", detail: "Connect verifiable claims to reliable evidence", icon: ShieldCheck }, { name: "Strict", detail: "Block every unsupported external claim", icon: Lock },
       ] satisfies Array<{ name: string; detail: string; icon: LucideIcon }>).map(({ name, detail, icon: Icon }) => <button key={name} className={grounding === name ? "active" : ""} onClick={() => setGrounding(name)}><span><Icon size={20} /></span><strong>{name}</strong><small>{detail}</small>{grounding === name && <CheckCircle2 size={17} />}</button>)}</div><div className="privacy-selection"><Lock size={18} /><div><strong>Private sources remain local</strong><p>Imported documents start as Local only. Reclassifying them always requires an explicit decision.</p></div><span className="toggle-on"><i /></span></div></div>}
       {step === 4 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration === "custom" ? exactDuration : duration} minutes</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} private file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Privacy</dt><dd>{routingReview?.privacy ?? "Pending review"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
@@ -2595,7 +2671,7 @@ function JobsDrawer({ open, jobs, nativeJobIds, onClose, onCancel, onRetry }: { 
 function CommandPalette({ projects, onClose, onNavigate, onOpen }: { projects: ProjectRecord[]; onClose: () => void; onNavigate: (area: GlobalArea) => void; onOpen: (id: string) => void }) {
   const [query, setQuery] = useState("");
   const filteredProjects = projects.filter((project) => project.title.toLowerCase().includes(query.toLowerCase()));
-  return <div className="command-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="command-palette" role="dialog" aria-modal="true"><label><Search size={19} /><input autoFocus placeholder="Search projects or run a command…" value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>esc</kbd></label><div className="command-results"><small>Projects</small>{filteredProjects.map((project) => <button key={project.id} onClick={() => onOpen(project.id)}><span className="command-icon"><Film size={16} /></span><span><strong>{project.title}</strong><small>{project.status} · {project.updatedAt}</small></span><kbd>↵</kbd></button>)}<small>Go to</small>{globalNav.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())).map(({ id, label, icon: Icon }) => <button key={id} onClick={() => onNavigate(id)}><span className="command-icon"><Icon size={16} /></span><span><strong>{label}</strong><small>Alystria area</small></span></button>)}</div></div></div>;
+  return <div className="command-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="command-palette" role="dialog" aria-modal="true"><label><Search size={19} /><input autoFocus placeholder="Search projects or run a command…" value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>esc</kbd></label><div className="command-results"><small>Projects</small>{filteredProjects.map((project) => <button key={project.id} onClick={() => onOpen(project.id)}><span className="command-icon"><Film size={16} /></span><span><strong>{project.title}</strong><small>{project.status} · {project.updatedAt}</small></span><kbd>↵</kbd></button>)}<small>Go to</small>{globalNav.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())).map(({ id, label, icon: Icon }) => <button key={id} onClick={() => onNavigate(id)}><span className="command-icon"><Icon size={16} /></span><span><strong>{label}</strong><small>{PRODUCT_NAME} area</small></span></button>)}</div></div></div>;
 }
 
 function Toast({ toast, onClose }: { toast: ToastMessage; onClose: () => void }) { return <div className={`toast ${toast.tone ?? "success"}`}><span>{toast.tone === "warning" ? <CircleAlert size={17} /> : toast.tone === "info" ? <CircleHelp size={17} /> : <CheckCircle2 size={17} />}</span><div><strong>{toast.title}</strong><p>{toast.detail}</p></div><button onClick={onClose}><X size={14} /></button></div>; }
@@ -2629,7 +2705,7 @@ function localeCode(locale: ProjectRecord["locale"]): string {
 }
 
 function providerDisplayName(providerId: string): string {
-  if (providerId === "local-runtime") return "Alystria local runtime";
+  if (providerId === "local-runtime") return `${PRODUCT_NAME} local runtime`;
   if (providerId === "openai-compatible-local") return "OpenAI-compatible local";
   return providerConfigs.find((provider) => provider.id === providerId)?.name ?? providerId;
 }

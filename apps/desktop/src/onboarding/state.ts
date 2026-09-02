@@ -9,15 +9,22 @@ import {
 } from "./types";
 
 export const onboardingChapters: readonly OnboardingChapterDefinition[] = [
-  { id: "welcome", eyebrow: "Welcome", title: "Make Alystria yours", description: "A short guided setup keeps every generation deliberate, private, and matched to your computer." },
+  { id: "welcome", eyebrow: "Welcome", title: "Make AI Video Tutorial Generator yours", description: "A short guided setup keeps every generation deliberate, private, and matched to your computer." },
   { id: "goal", eyebrow: "Chapter 1", title: "What will you create?", description: "Choose one or more goals. You can change these later in Settings." },
   { id: "runtime", eyebrow: "Chapter 2", title: "Choose where work runs", description: "Balance local control, cloud capability, and convenience." },
-  { id: "privacy", eyebrow: "Chapter 3", title: "Set your privacy boundary", description: "Alystria should never send source material somewhere you did not approve." },
+  { id: "privacy", eyebrow: "Chapter 3", title: "Set your privacy boundary", description: "The app should never send source material somewhere you did not approve." },
   { id: "provider", eyebrow: "Chapter 4", title: "Connect generation providers", description: "Use existing connections or select providers to configure after onboarding.", optional: true },
   { id: "hardware", eyebrow: "Chapter 5", title: "Review this system", description: "Confirm the detected hardware before selecting local workloads." },
-  { id: "model", eyebrow: "Chapter 6", title: "Select your model toolkit", description: "Choose explicit models for the media you plan to generate.", optional: true },
+  { id: "model", eyebrow: "Chapter 6", title: "Review your model toolkit", description: "Core models are already selected. Review their download size and add optional specialists.", optional: true },
   { id: "profile", eyebrow: "Chapter 7", title: "Create your studio profile", description: "Choose how your account appears in the workspace." },
-  { id: "ready", eyebrow: "Ready", title: "Your studio is prepared", description: "Review the choices below, then enter Alystria." },
+  { id: "ready", eyebrow: "Ready", title: "Your studio is prepared", description: "Review the choices below, then enter the workspace." },
+] as const;
+
+export const REQUIRED_ONBOARDING_MODEL_IDS = [
+  "local/qwen3.5-9b-gguf",
+  "local/kokoro",
+  "local/whisper-large-v3-turbo",
+  "local/musetalk-1.5",
 ] as const;
 
 export const defaultOnboardingConfiguration: OnboardingConfiguration = {
@@ -25,7 +32,7 @@ export const defaultOnboardingConfiguration: OnboardingConfiguration = {
   runtime: null,
   privacy: null,
   providerIds: [],
-  modelIds: [],
+  modelIds: [...REQUIRED_ONBOARDING_MODEL_IDS],
   hardwareReviewed: false,
   profile: { displayName: "", portraitAssetId: null },
 };
@@ -50,7 +57,12 @@ function mergeSetupConfiguration(
     runtime: configuration.runtime ?? setup.detectedRuntime ?? null,
     privacy: configuration.privacy ?? setup.detectedPrivacy ?? null,
     providerIds: unique([...configuration.providerIds, ...(setup.connectedProviderIds ?? [])]),
-    modelIds: unique([...configuration.modelIds, ...(setup.installedModelIds ?? [])]),
+    modelIds: unique([
+      ...REQUIRED_ONBOARDING_MODEL_IDS,
+      ...configuration.modelIds,
+      ...(setup.installedModelIds ?? []),
+      ...(setup.attachedModelIds ?? []),
+    ]),
     hardwareReviewed: configuration.hardwareReviewed || setup.hardwareInspected === true,
     profile: {
       displayName: configuration.profile.displayName || existingProfile?.displayName || "",
@@ -78,7 +90,7 @@ export function isChapterConfigured(
     case "hardware":
       return configuration.hardwareReviewed || setup.hardwareInspected === true;
     case "model":
-      return configuration.modelIds.length > 0 || (setup.installedModelIds?.length ?? 0) > 0;
+      return configuration.modelIds.length > 0 || (setup.installedModelIds?.length ?? 0) > 0 || (setup.attachedModelIds?.length ?? 0) > 0;
     case "profile":
       return configuration.profile.displayName.trim().length > 0;
     case "ready":
