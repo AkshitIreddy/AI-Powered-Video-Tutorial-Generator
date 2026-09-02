@@ -3,7 +3,8 @@ param(
     [string]$Destination,
     [string]$TrustedRuntimeSourceRoot,
     [switch]$Force,
-    [switch]$ValidateDestinationOnly
+    [switch]$ValidateDestinationOnly,
+    [switch]$SkipSourceBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -204,9 +205,10 @@ function Resolve-PackageDirectory {
     param([string]$Path, [string]$Label)
     $Item = Get-Item -LiteralPath $Path
     $Resolved = if ($Item.LinkType) {
-        $Target = [string]$Item.Target[0]
+        $Targets = @($Item.Target)
+        $Target = [string]$Targets[0]
         if ([IO.Path]::IsPathRooted($Target)) { $Target }
-        else { [IO.Path]::GetFullPath((Join-Path $Item.DirectoryName $Target)) }
+        else { [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $Item.FullName) $Target)) }
     }
     else { $Item.FullName }
     if (-not (Test-Path -LiteralPath $Resolved -PathType Container)) {
@@ -224,19 +226,42 @@ $FfmpegVersion = [string]$RepositoryRuntimeManifest.media.ffmpeg.version
 $RendererPackage = Get-Content -LiteralPath (Join-Path $RepoRoot "services\renderer\package.json") -Raw | ConvertFrom-Json
 $RendererVersion = [string]$RendererPackage.version
 
-$NodeSourceRoot = Assert-TrustedRuntimeSource `
-    (Join-Path $TrustedRuntimeSourceRoot "node-v$NodeVersion-win-x64\extracted\node-v$NodeVersion-win-x64") `
-    "Node $NodeVersion"
-$NodeSource = Join-Path $NodeSourceRoot "node.exe"
-$CorepackSource = Join-Path $NodeSourceRoot "corepack.cmd"
-$ChromiumSourceRoot = Assert-TrustedRuntimeSource `
-    (Join-Path $TrustedRuntimeSourceRoot "chromium-$ChromiumRevision\chrome-win64") `
-    "Chromium revision $ChromiumRevision"
-$ChromiumSource = Join-Path $ChromiumSourceRoot "chrome.exe"
-$FfmpegSourceRoot = Assert-TrustedRuntimeSource `
-    (Join-Path $TrustedRuntimeSourceRoot "ffmpeg-n9.0.1-6-g9d4ca21220-win64-lgpl-shared-9.0\extracted\ffmpeg-n9.0.1-6-g9d4ca21220-win64-lgpl-shared-9.0") `
-    "FFmpeg $FfmpegVersion LGPL"
-$FfmpegSourceBin = Join-Path $FfmpegSourceRoot "bin"
+$PortableRuntimeSource = (
+    (Test-Path -LiteralPath (Join-Path $TrustedRuntimeSourceRoot "node\node.exe") -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $TrustedRuntimeSourceRoot "chromium\chrome.exe") -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $TrustedRuntimeSourceRoot "ffmpeg\ffmpeg.exe") -PathType Leaf)
+)
+if ($PortableRuntimeSource) {
+    $NodeSourceRoot = Assert-TrustedRuntimeSource `
+        (Join-Path $TrustedRuntimeSourceRoot "node") "Portable Node $NodeVersion"
+    $NodeSource = Join-Path $NodeSourceRoot "node.exe"
+    $NodeLicenseSource = Join-Path $NodeSourceRoot "LICENSE.txt"
+    $CorepackSource = $null
+    $ChromiumSourceRoot = Assert-TrustedRuntimeSource `
+        (Join-Path $TrustedRuntimeSourceRoot "chromium") "Portable Chromium $ChromiumVersion"
+    $ChromiumSource = Join-Path $ChromiumSourceRoot "chrome.exe"
+    $FfmpegSourceRoot = Assert-TrustedRuntimeSource `
+        (Join-Path $TrustedRuntimeSourceRoot "ffmpeg") "Portable FFmpeg $FfmpegVersion LGPL"
+    $FfmpegSourceBin = $FfmpegSourceRoot
+    $FfmpegLicenseSource = Join-Path $FfmpegSourceRoot "LICENSE.txt"
+}
+else {
+    $NodeSourceRoot = Assert-TrustedRuntimeSource `
+        (Join-Path $TrustedRuntimeSourceRoot "node-v$NodeVersion-win-x64\extracted\node-v$NodeVersion-win-x64") `
+        "Node $NodeVersion"
+    $NodeSource = Join-Path $NodeSourceRoot "node.exe"
+    $NodeLicenseSource = Join-Path $NodeSourceRoot "LICENSE"
+    $CorepackSource = Join-Path $NodeSourceRoot "corepack.cmd"
+    $ChromiumSourceRoot = Assert-TrustedRuntimeSource `
+        (Join-Path $TrustedRuntimeSourceRoot "chromium-$ChromiumRevision\chrome-win64") `
+        "Chromium revision $ChromiumRevision"
+    $ChromiumSource = Join-Path $ChromiumSourceRoot "chrome.exe"
+    $FfmpegSourceRoot = Assert-TrustedRuntimeSource `
+        (Join-Path $TrustedRuntimeSourceRoot "ffmpeg-n9.0.1-6-g9d4ca21220-win64-lgpl-shared-9.0\extracted\ffmpeg-n9.0.1-6-g9d4ca21220-win64-lgpl-shared-9.0") `
+        "FFmpeg $FfmpegVersion LGPL"
+    $FfmpegSourceBin = Join-Path $FfmpegSourceRoot "bin"
+    $FfmpegLicenseSource = Join-Path $FfmpegSourceRoot "LICENSE.txt"
+}
 $FfmpegSource = Join-Path $FfmpegSourceBin "ffmpeg.exe"
 $FfprobeSource = Join-Path $FfmpegSourceBin "ffprobe.exe"
 
@@ -253,25 +278,40 @@ if ((Get-Item -LiteralPath $ChromiumSource).VersionInfo.ProductVersion -ne $Chro
 # Build the current renderer and its scene package before copying production
 # files. Runtime execution uses the exact Node 24 binary copied below; Corepack
 # is used here only as the lockfile-aware build driver.
-$OriginalPath = $env:PATH
-$OriginalPathExt = $env:PATHEXT
-$env:PATH = "$NodeSourceRoot;$OriginalPath"
-$env:PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL"
-try {
-    $BuildArguments = @("pnpm", "--filter", "@alystria/scenes", "build")
-    $BuildProcess = Start-Process -FilePath $CorepackSource -ArgumentList $BuildArguments -WorkingDirectory $RepoRoot -Wait -PassThru -NoNewWindow
-    if ($BuildProcess.ExitCode -ne 0) {
-        throw "The scene package build failed with exit code $($BuildProcess.ExitCode)."
-    }
-    $BuildArguments = @("pnpm", "--filter", "@alystria/renderer", "build")
-    $BuildProcess = Start-Process -FilePath $CorepackSource -ArgumentList $BuildArguments -WorkingDirectory $RepoRoot -Wait -PassThru -NoNewWindow
-    if ($BuildProcess.ExitCode -ne 0) {
-        throw "The renderer build failed with exit code $($BuildProcess.ExitCode)."
+if ($SkipSourceBuild) {
+    foreach ($BuiltPath in @(
+        (Join-Path $RepoRoot "packages\scenes\dist"),
+        (Join-Path $RepoRoot "services\renderer\dist")
+    )) {
+        if (-not (Test-Path -LiteralPath $BuiltPath -PathType Container)) {
+            throw "-SkipSourceBuild requires the already-verified build output: $BuiltPath"
+        }
     }
 }
-finally {
-    $env:PATH = $OriginalPath
-    $env:PATHEXT = $OriginalPathExt
+else {
+    if (-not $CorepackSource -or -not (Test-Path -LiteralPath $CorepackSource -PathType Leaf)) {
+        throw "The selected runtime source has no Corepack launcher. Run the source build first and pass -SkipSourceBuild."
+    }
+    $OriginalPath = $env:PATH
+    $OriginalPathExt = $env:PATHEXT
+    $env:PATH = "$NodeSourceRoot;$OriginalPath"
+    $env:PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL"
+    try {
+        $BuildArguments = @("pnpm", "--filter", "@alystria/scenes", "build")
+        $BuildProcess = Start-Process -FilePath $CorepackSource -ArgumentList $BuildArguments -WorkingDirectory $RepoRoot -Wait -PassThru -NoNewWindow
+        if ($BuildProcess.ExitCode -ne 0) {
+            throw "The scene package build failed with exit code $($BuildProcess.ExitCode)."
+        }
+        $BuildArguments = @("pnpm", "--filter", "@alystria/renderer", "build")
+        $BuildProcess = Start-Process -FilePath $CorepackSource -ArgumentList $BuildArguments -WorkingDirectory $RepoRoot -Wait -PassThru -NoNewWindow
+        if ($BuildProcess.ExitCode -ne 0) {
+            throw "The renderer build failed with exit code $($BuildProcess.ExitCode)."
+        }
+    }
+    finally {
+        $env:PATH = $OriginalPath
+        $env:PATHEXT = $OriginalPathExt
+    }
 }
 
 # Resolve and inspect every copy source before the first destination write.
@@ -360,14 +400,14 @@ $StarterVisualProof = Copy-AlystriaStarterVisualRoot `
 $NodeDestination = Join-Path $RuntimeDirectory "node"
 New-Item -ItemType Directory -Path $NodeDestination -Force | Out-Null
 Copy-Item -LiteralPath $NodeSource -Destination (Join-Path $NodeDestination "node.exe") -Force
-Copy-Item -LiteralPath (Join-Path $NodeSourceRoot "LICENSE") -Destination (Join-Path $NodeDestination "LICENSE.txt") -Force
+Copy-Item -LiteralPath $NodeLicenseSource -Destination (Join-Path $NodeDestination "LICENSE.txt") -Force
 
 $ChromiumDestination = Join-Path $RuntimeDirectory "chromium"
 Copy-Item -LiteralPath $ChromiumSourceRoot -Destination $ChromiumDestination -Recurse -Force
 
 $FfmpegDestination = Join-Path $RuntimeDirectory "ffmpeg"
 Copy-DirectoryContents $FfmpegSourceBin $FfmpegDestination
-Copy-Item -LiteralPath (Join-Path $FfmpegSourceRoot "LICENSE.txt") -Destination (Join-Path $FfmpegDestination "LICENSE.txt") -Force
+Copy-Item -LiteralPath $FfmpegLicenseSource -Destination (Join-Path $FfmpegDestination "LICENSE.txt") -Force
 
 # Create a flat, link-free production dependency tree. pnpm's workspace links
 # are appropriate for development but are deliberately not copied into a
