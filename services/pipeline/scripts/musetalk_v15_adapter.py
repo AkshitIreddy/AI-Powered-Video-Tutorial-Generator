@@ -54,6 +54,31 @@ def _library_path(path: Path) -> str:
     return value
 
 
+def _normalize_portrait_for_upstream(portrait: Path, workspace: Path) -> Path:
+    """Convert verified WebP inputs for MuseTalk's extension-gated loader.
+
+    The app's asset pipeline intentionally supports WebP, while the pinned
+    MuseTalk 1.5 entrypoint only recognizes JPEG and PNG image suffixes before
+    it asks OpenCV to decode the file. Decode and re-encode inside the isolated
+    attempt workspace so the immutable CAS input and its provenance remain
+    untouched.
+    """
+
+    if portrait.suffix.casefold() != ".webp":
+        return portrait
+    import cv2
+
+    image = cv2.imread(_library_path(portrait), cv2.IMREAD_UNCHANGED)
+    if image is None or image.size == 0:
+        _fail("Verified WebP presenter portrait could not be decoded")
+    normalized = workspace / "portrait-normalized.png"
+    if normalized.exists() or not cv2.imwrite(_library_path(normalized), image):
+        _fail("WebP presenter portrait could not be normalized to PNG")
+    if not normalized.is_file() or normalized.stat().st_size <= 0:
+        _fail("Normalized presenter portrait is missing or empty")
+    return normalized
+
+
 def _fixed_argv_matches(
     actual: tuple[str, ...], expected: tuple[str, ...], *, path_indices: set[int]
 ) -> bool:
@@ -255,12 +280,15 @@ def run_presenter_job(
     source_manifest = json.loads(files["runtime-source-manifest"].read_text(encoding="utf-8"))
     source_root = Path(str(source_manifest["root"])).resolve(strict=True)
     inputs = job["inputs"]
-    portrait_path = _library_path(Path(str(inputs["portrait"]["path"])))
-    audio_path = _library_path(Path(str(inputs["audio"]["path"])))
     output = Path(_library_path(Path(str(job["output"]["path"]))))
     workspace = output.parent.parent / "workspace"
     if not workspace.resolve(strict=True).is_dir():
         _fail("MuseTalk workspace is unavailable")
+    portrait = _normalize_portrait_for_upstream(
+        Path(str(inputs["portrait"]["path"])).resolve(strict=True), workspace
+    )
+    portrait_path = _library_path(portrait)
+    audio_path = _library_path(Path(str(inputs["audio"]["path"])))
     result_root = workspace / "musetalk-results"
     result_root.mkdir()
     inference_config = workspace / "inference.json"

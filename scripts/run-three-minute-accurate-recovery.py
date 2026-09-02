@@ -481,7 +481,7 @@ def main() -> int:
                 "origin": "generated",
                 "rightsStatus": "verified",
                 "licenseId": "LicenseRef-USER-OWNED",
-                "creator": "Alystria project owner",
+                "creator": "AI Video Tutorial Generator project owner",
             },
         )
         destination.create_revision(
@@ -655,7 +655,7 @@ def main() -> int:
                 "rendered": False,
                 "renderPolicy": (
                     "Generated backgrounds were suppressed because visual review found "
-                    "glyph-like pseudo-text; Alystria-rendered semantic diagrams and typography "
+                    "glyph-like pseudo-text; AI Video Tutorial Generator semantic diagrams and typography "
                     "remain authoritative."
                 ),
             },
