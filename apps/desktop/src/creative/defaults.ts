@@ -1,0 +1,35 @@
+import type { CreativeConfiguration } from "../types";
+
+export const DEFAULT_CREATIVE_CONFIGURATION: CreativeConfiguration = {
+  slide: {
+    mode: "designed",
+    layoutSystem: "editorial-grid",
+    density: "balanced",
+    alignmentGuides: true,
+    safeAreas: true,
+    visualReviewModel: "Choose a vision model",
+    patchLimit: 3,
+    imageModel: "Choose an image model",
+    loras: [],
+    controlAdapter: "None",
+    referenceStrength: 55,
+    seed: 1842,
+    inpaintEnabled: true,
+    upscaleModel: "Choose an upscaler",
+    authoritativeTextLayer: true,
+  },
+  presenter: {
+    workflow: "guided",
+    baseModel: "Choose from model library",
+    style: "Editorial portrait",
+    prompt: "Friendly adult educator, direct eye contact, calm confident expression, clean silhouette, mouth unobstructed",
+    negativePrompt: "text, watermark, child, celebrity, occluded mouth, cropped chin, distorted face",
+    loras: [],
+    controlAdapter: "Identity reference + pose guide",
+    referenceImageEnabled: false,
+    faceDetailer: true,
+    inpaintEnabled: true,
+    upscaleModel: "Choose an upscaler",
+    provenanceRequired: true,
+  },
+};
