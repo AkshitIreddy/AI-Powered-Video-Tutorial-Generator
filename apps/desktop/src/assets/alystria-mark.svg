@@ -1,20 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
-  <title id="title">Alystria Studio</title>
-  <desc id="description">A precise luminous concept thread crossing a deep-ink studio tile.</desc>
+  <title id="title">Alystria</title>
+  <desc id="description">A luminous story thread passes through three scene frames and becomes a play spark.</desc>
   <defs>
-    <linearGradient id="thread" x1="106" y1="408" x2="403" y2="93" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#168F88"/>
-      <stop offset="0.48" stop-color="#5658E8"/>
-      <stop offset="1" stop-color="#A9A8FF"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#080A14" flood-opacity="0.34"/>
-    </filter>
+    <radialGradient id="tile" cx="35%" cy="20%" r="100%"><stop offset="0" stop-color="#202957"/><stop offset="0.58" stop-color="#11162F"/><stop offset="1" stop-color="#080B18"/></radialGradient>
+    <linearGradient id="thread" x1="88" y1="390" x2="426" y2="106" gradientUnits="userSpaceOnUse"><stop stop-color="#F5B44C"/><stop offset="0.32" stop-color="#35D9E9"/><stop offset="0.68" stop-color="#7B61FF"/><stop offset="1" stop-color="#E45EEA"/></linearGradient>
+    <filter id="glow" x="-35%" y="-35%" width="170%" height="170%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#03040A" flood-opacity=".58"/></filter>
   </defs>
-  <rect x="34" y="34" width="444" height="444" rx="112" fill="#151827" filter="url(#shadow)"/>
-  <path d="M142 367C190 322 196 259 236 218C274 179 324 166 367 121" fill="none" stroke="url(#thread)" stroke-width="34" stroke-linecap="round"/>
-  <path d="M159 349C191 313 204 269 232 237" fill="none" stroke="#F7F8FC" stroke-width="12" stroke-linecap="round" opacity="0.94"/>
-  <circle cx="142" cy="367" r="26" fill="#168F88" stroke="#F7F8FC" stroke-width="10"/>
-  <circle cx="236" cy="218" r="23" fill="#5658E8" stroke="#F7F8FC" stroke-width="9"/>
-  <circle cx="367" cy="121" r="25" fill="#A9A8FF" stroke="#F7F8FC" stroke-width="10"/>
+  <rect x="28" y="28" width="456" height="456" rx="118" fill="url(#tile)" filter="url(#shadow)"/>
+  <path d="M82 365C132 365 147 315 180 291C220 261 256 286 293 245C329 205 333 142 417 117" fill="none" stroke="#080B18" stroke-opacity=".72" stroke-width="46" stroke-linecap="round"/>
+  <g fill="#11162F" stroke="#DCE7FF" stroke-opacity=".72" stroke-width="9"><rect x="128" y="286" width="92" height="72" rx="19" transform="rotate(-12 174 322)"/><rect x="220" y="224" width="96" height="76" rx="20" transform="rotate(6 268 262)"/><rect x="314" y="146" width="98" height="78" rx="21" transform="rotate(-9 363 185)"/></g>
+  <path d="M82 365C132 365 147 315 180 291C220 261 256 286 293 245C329 205 333 142 417 117" fill="none" stroke="url(#thread)" stroke-width="22" stroke-linecap="round" filter="url(#glow)"/>
+  <circle cx="82" cy="365" r="18" fill="#F5B44C" stroke="#FFF7E6" stroke-width="8"/>
+  <path d="M405 92L414 108L432 111L419 124L422 143L405 134L389 143L392 124L378 111L397 108Z" fill="#F4F7FF" stroke="#E45EEA" stroke-width="6" filter="url(#glow)"/>
+  <path d="M258 244L285 261L258 278Z" fill="#F4F7FF" opacity=".94"/>
 </svg>

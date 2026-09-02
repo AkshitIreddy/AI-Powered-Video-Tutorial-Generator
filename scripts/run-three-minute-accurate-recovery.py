@@ -442,13 +442,13 @@ def main() -> int:
             / "src"
             / "assets"
             / "presenters"
-            / "academic-amara-v1.png"
+            / "academic-amara-v1.webp"
         )
         if sha256_file(portrait) != EVALUATION.AMARA_HASH:
             raise ValueError("The bundled Amara portrait hash changed")
         portrait_artifact = destination.add_artifact_bytes(
             portrait.read_bytes(),
-            media_type="image/png",
+            media_type="image/webp",
             original_name=portrait.name,
             metadata={
                 "assetId": EVALUATION.AMARA_ID,

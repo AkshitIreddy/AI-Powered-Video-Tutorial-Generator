@@ -9,7 +9,7 @@ const output = process.argv[2];
 if (!output) throw new Error("Usage: node render-specimen-board.mjs <output.html>");
 const requestedKind = process.argv[3];
 const backgroundPath = resolve("apps/desktop/src/assets/backgrounds/modern-tech-signal-v1.png");
-const portraitPath = resolve("apps/desktop/src/assets/presenters/modern-tech-minji-v1.png");
+const portraitPath = resolve("apps/desktop/src/assets/presenters/modern-tech-minji-v1.webp");
 const backgroundBytes = readFileSync(backgroundPath);
 const portraitBytes = readFileSync(portraitPath);
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");

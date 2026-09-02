@@ -45,7 +45,7 @@ describe("built-in starter kit", () => {
       const bytes = await readFile(resolve(process.cwd(), "../..", asset.source.relativePath!));
       expect(bytes.byteLength, asset.id).toBe(asset.source.byteSize);
       expect(createHash("sha256").update(bytes).digest("hex"), asset.id).toBe(asset.source.contentHash);
-      if (asset.technical.mediaType === "image/png") {
+      if (asset.technical.mediaType === "image/png" || asset.technical.mediaType === "image/webp") {
         expect(asset.provenance).toMatchObject({ origin: "generated", tool: "image_gen", model: "gpt-image 2.0", synthetic: true, c2paStatus: "present-embedded", reviewStatus: "verified" });
       } else {
         expect(asset.provenance).toMatchObject({ origin: "alystria-authored", creationMethod: "procedural-code", tool: "assets/starter/audio/tools/generate.py", sourceRevision: "alystria-starter-audio-v1", reviewStatus: "verified" });

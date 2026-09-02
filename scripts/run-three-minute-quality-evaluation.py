@@ -41,7 +41,7 @@ from alystria.providers import (
 from alystria.research import GroundingMode
 
 AMARA_ID = "presenter-portrait.academic-amara-v1"
-AMARA_HASH = "a168260c6087a80752c313adfb8d0f0440576fe916549f96acff4542b7714614"
+AMARA_HASH = "97067bcbeea43e043089692aa3b920ac5bd77cdd9cdb21b78ddc1f50af5221b5"
 ALICE_VOICE_ID = "Xb7hH8MSUJpSbSDYk0k2"
 
 
@@ -326,7 +326,7 @@ def build_request(portrait_hash: str) -> GenerationRequest:
                     {
                         "assetId": AMARA_ID,
                         "artifactHash": portrait_hash,
-                        "mediaType": "image/png",
+                        "mediaType": "image/webp",
                         "role": "presenter-portrait",
                         "source": "starter",
                         "fit": "cover",
@@ -416,13 +416,13 @@ def main() -> int:
             / "src"
             / "assets"
             / "presenters"
-            / "academic-amara-v1.png"
+            / "academic-amara-v1.webp"
         )
         if sha256_file(portrait) != AMARA_HASH:
             raise ValueError("The bundled Amara portrait hash changed")
         portrait_artifact = store.add_artifact_bytes(
             portrait.read_bytes(),
-            media_type="image/png",
+            media_type="image/webp",
             original_name=portrait.name,
             metadata={
                 "assetId": AMARA_ID,

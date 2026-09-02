@@ -2696,9 +2696,9 @@
       "source": {
         "delivery": "bundled-file",
         "availability": "ready",
-        "relativePath": "apps/desktop/src/assets/presenters/academic-amara-v1.png",
-        "contentHash": "a168260c6087a80752c313adfb8d0f0440576fe916549f96acff4542b7714614",
-        "byteSize": 2034611
+        "relativePath": "apps/desktop/src/assets/presenters/academic-amara-v1.webp",
+        "contentHash": "97067bcbeea43e043089692aa3b920ac5bd77cdd9cdb21b78ddc1f50af5221b5",
+        "byteSize": 32206
       },
       "license": {
         "status": "cleared",
@@ -2730,7 +2730,7 @@
         "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted."
       },
       "technical": {
-        "mediaType": "image/png",
+        "mediaType": "image/webp",
         "renderSafe": true,
         "remoteFetchRequired": false,
         "dimensions": {
@@ -2760,9 +2760,9 @@
       "source": {
         "delivery": "bundled-file",
         "availability": "ready",
-        "relativePath": "apps/desktop/src/assets/presenters/modern-tech-minji-v1.png",
-        "contentHash": "fe347fb12f24238d0748f2b54484e960043d98c0667637aef6178d951bc96681",
-        "byteSize": 1849015
+        "relativePath": "apps/desktop/src/assets/presenters/modern-tech-minji-v1.webp",
+        "contentHash": "2cc8d2f36c307de9c5c5833908e98736885328671a95a56b6f6e81068e66ae64",
+        "byteSize": 18782
       },
       "license": {
         "status": "cleared",
@@ -2794,7 +2794,7 @@
         "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted."
       },
       "technical": {
-        "mediaType": "image/png",
+        "mediaType": "image/webp",
         "renderSafe": true,
         "remoteFetchRequired": false,
         "dimensions": {
@@ -2824,9 +2824,9 @@
       "source": {
         "delivery": "bundled-file",
         "availability": "ready",
-        "relativePath": "apps/desktop/src/assets/presenters/documentary-malik-v1.png",
-        "contentHash": "c66e3bf3da440110cc2ebc8e1925a632d8fc220d53c148fb05153ac6530411e5",
-        "byteSize": 2224926
+        "relativePath": "apps/desktop/src/assets/presenters/documentary-malik-v1.webp",
+        "contentHash": "ce6131d0b34c2ef033e60d4acf6f8356c21cc053787389eef1f6d95e84ed80dd",
+        "byteSize": 39650
       },
       "license": {
         "status": "cleared",
@@ -2858,7 +2858,7 @@
         "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted."
       },
       "technical": {
-        "mediaType": "image/png",
+        "mediaType": "image/webp",
         "renderSafe": true,
         "remoteFetchRequired": false,
         "dimensions": {
@@ -2888,9 +2888,9 @@
       "source": {
         "delivery": "bundled-file",
         "availability": "ready",
-        "relativePath": "apps/desktop/src/assets/presenters/playful-lucia-v1.png",
-        "contentHash": "e779ad0e0e31d26ded23fbf81c11c386eb0d944cc1f521f62571a809ffface50",
-        "byteSize": 2083770
+        "relativePath": "apps/desktop/src/assets/presenters/playful-lucia-v1.webp",
+        "contentHash": "00c1eb046d9782f0446fb73635372cd5b4237752a89a4f72d3d142fde9b4ccb2",
+        "byteSize": 41080
       },
       "license": {
         "status": "cleared",
@@ -2922,7 +2922,7 @@
         "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted."
       },
       "technical": {
-        "mediaType": "image/png",
+        "mediaType": "image/webp",
         "renderSafe": true,
         "remoteFetchRequired": false,
         "dimensions": {
@@ -2953,9 +2953,9 @@
       "source": {
         "delivery": "bundled-file",
         "availability": "ready",
-        "relativePath": "apps/desktop/src/assets/presenters/science-zara-v1.png",
-        "contentHash": "34a4856e71c0895858e0c2226e33563efa4ff867b0f86b0b3154cc2d96bc0bcb",
-        "byteSize": 2089478
+        "relativePath": "apps/desktop/src/assets/presenters/science-zara-v1.webp",
+        "contentHash": "f9526f5e1996d4ee0ec7e2461399264a8309a2cee3d08e9fcf1daf0fc915e250",
+        "byteSize": 34824
       },
       "license": {
         "status": "cleared",
@@ -2985,7 +2985,7 @@
         "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted."
       },
       "technical": {
-        "mediaType": "image/png",
+        "mediaType": "image/webp",
         "renderSafe": true,
         "remoteFetchRequired": false,
         "dimensions": {
@@ -3017,9 +3017,9 @@
       "source": {
         "delivery": "bundled-file",
         "availability": "ready",
-        "relativePath": "apps/desktop/src/assets/presenters/mathematics-arjun-v1.png",
-        "contentHash": "4f62f43d3eff3f33b5a80eafa7ada77cb017d5d440edcc0030ca501a4d940332",
-        "byteSize": 2116385
+        "relativePath": "apps/desktop/src/assets/presenters/mathematics-arjun-v1.webp",
+        "contentHash": "c12e626dfefce0a8e7c153fb0ec192f127a7feeb49f8ba21c1a620ef6f54d30e",
+        "byteSize": 30902
       },
       "license": {
         "status": "cleared",
@@ -3049,7 +3049,7 @@
         "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted."
       },
       "technical": {
-        "mediaType": "image/png",
+        "mediaType": "image/webp",
         "renderSafe": true,
         "remoteFetchRequired": false,
         "dimensions": {
