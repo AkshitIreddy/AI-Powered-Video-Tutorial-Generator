@@ -85,17 +85,17 @@ export function SceneCanvas({ scene, frame, theme = PRECISION_THEME, children, r
         <pattern id={`micro-grid-${safeId(scene.spec.id)}`} width={scene.metrics.unit * 2.2} height={scene.metrics.unit * 2.2} patternUnits="userSpaceOnUse">
           <path d={`M ${scene.metrics.unit * 2.2} 0 L 0 0 0 ${scene.metrics.unit * 2.2}`} fill="none" stroke={theme.surface} strokeWidth="1" opacity="0.12" />
         </pattern>
-        <mask id={`background-treatment-${safeId(scene.spec.id)}`} maskUnits="userSpaceOnUse" x="0" y="0" width={width} height={height}>
-          <rect width={width} height={height} fill="#FFFFFF" opacity="0.085" />
+        <mask id={`background-treatment-${safeId(scene.spec.id)}`} maskUnits="userSpaceOnUse" x="0" y="0" width={width} height={height} data-background-mask="aperture-only">
+          <rect width={width} height={height} fill="#000000" />
           <path d={`M ${width * 0.865} 0 H ${width} V ${height} H ${width * 0.57} L ${width * 0.7} ${height * 0.885} L ${width * 0.79} ${height * 0.61} Z`} fill="#FFFFFF" />
         </mask>
       </defs>
       <rect width={width} height={height} fill={theme.paper} />
       {safeBackgroundHref ? (
         <g data-semantic-role="visual" aria-label={background?.alt} data-background-treatment="artwork-aperture">
-          {/* A single asset is alpha-masked into two treatments: a faint paper
-              texture and a full-colour editorial aperture. Keeping one image
-              also preserves one-to-one provenance and browser asset mapping. */}
+          {/* Keep generated art inside the editorial aperture. A former faint
+              full-frame copy made accidental glyph-like model artifacts look
+              like damaged slide text, even underneath authored content. */}
           <image
             href={safeBackgroundHref}
             x="0"

@@ -82,6 +82,187 @@ test("default presenter mapping is semantic and never consumes path-like metadat
   assert.doesNotMatch(rendered.svg, /https:\/\/tracker\.invalid/);
 });
 
+test("unreviewed generated backgrounds remain provenance-only while explicit backgrounds render", () => {
+  const base = fixtureManifest();
+  const scene = {
+    ...base.scenes[0]!,
+    kind: "definition",
+    visualAssets: [{
+      assetId: "visual-0000-generated-background",
+      sha256: "a".repeat(64),
+      role: "background" as const,
+      alt: "Generated text-free candidate",
+      fit: "cover" as const,
+    }],
+  };
+  const generated = resolveBuiltinSceneSpec(scene);
+  assert.equal(generated?.content.kind, "definition");
+  if (generated?.content.kind !== "definition") throw new Error("expected definition");
+  assert.equal(generated.content.background, undefined);
+
+  const explicit = resolveBuiltinSceneSpec({
+    ...scene,
+    visualAssets: [{
+      ...scene.visualAssets[0]!,
+      assetId: "project-background.precision-grid-v1",
+    }],
+  });
+  assert.equal(explicit?.content.kind, "definition");
+  if (explicit?.content.kind !== "definition") throw new Error("expected definition");
+  assert.equal(explicit.content.background?.id, "project-background.precision-grid-v1");
+});
+
+test("provider role descriptions cannot replace authored titles and presenter questions lead their card", () => {
+  const base = fixtureManifest();
+  const question = "Why can we replace four products with three?";
+  const scene = {
+    ...base.scenes[0]!,
+    id: "presenter-question",
+    kind: "presenter-slide",
+    content: {
+      title: question,
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "question",
+        compositionFamily: "presenter",
+        focalAnchor: "opening-question",
+        continuityKey: "karatsuba-thread",
+        informationUnits: [{ id: "insight", role: "concept", text: "Algebraic regrouping saves one recursive product." }],
+        attentionCue: "opening-question",
+        motionIntent: ["reveal-primary"],
+        textRoles: {
+          title: "scene heading",
+          focus: "primary learner attention",
+          support: "concise supporting information",
+        },
+        avoidRegions: [],
+      },
+    },
+  };
+  const spec = resolveBuiltinSceneSpec(scene);
+  assert.equal(spec?.content.kind, "presenter-slide");
+  if (spec?.content.kind !== "presenter-slide") throw new Error("expected presenter slide");
+  assert.equal(spec.content.title, "Why can we replace four products with three");
+  assert.equal(spec.content.slideItems?.[0]?.text, question);
+  assert.equal(spec.content.slideItems?.[1]?.text, "Algebraic regrouping saves one recursive product");
+  assert.notEqual(spec.content.title, "scene heading");
+});
+
+test("authored diagram semantics retain concrete scene examples", () => {
+  const base = fixtureManifest();
+  const scene = {
+    ...base.scenes[0]!,
+    id: "karatsuba-split-diagram",
+    kind: "diagram",
+    content: {
+      title: "Decomposing numbers into high/low halves",
+      items: ["1234 → (12, 34)", "5678 → (56, 78)"],
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "demonstrate",
+        compositionFamily: "diagram",
+        focalAnchor: "place-value-split",
+        continuityKey: "karatsuba-thread",
+        informationUnits: [
+          { id: "split-rule", role: "formula", text: "x = a·B + b, y = c·B + d, where B = 10²" },
+        ],
+        attentionCue: "place-value-split",
+        motionIntent: ["trace-relationship"],
+        textRoles: { title: "scene heading" },
+        avoidRegions: [],
+      },
+    },
+  };
+
+  const spec = resolveBuiltinSceneSpec(scene);
+  assert.equal(spec?.content.kind, "diagram");
+  if (spec?.content.kind !== "diagram") throw new Error("expected diagram");
+  assert.deepEqual(spec.content.nodes.map((node) => node.label), [
+    "x = a·B + b, y = c·B + d, where B = 10²",
+    "1234 → (12, 34)",
+    "5678 → (56, 78)",
+  ]);
+});
+
+test("complexity comparisons render two real recurrences instead of generic numeric cards", () => {
+  const base = fixtureManifest();
+  const scene = {
+    ...base.scenes[0]!,
+    id: "karatsuba-complexity",
+    kind: "comparison",
+    content: {
+      title: "Complexity Comparison",
+      body: "Plot two curves: n² and n¹·⁵⁸⁵, labeling the gap.",
+      items: ["O(n¹·⁵⁸⁵) vs O(n²)"],
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "compare",
+        compositionFamily: "split_evidence",
+        focalAnchor: "complexity-gap",
+        continuityKey: "karatsuba-thread",
+        informationUnits: [
+          { id: "recurrence", role: "formula", text: "T(n)=3T(n/2)+O(n) → O(n¹·⁵⁸⁵)" },
+        ],
+        attentionCue: "complexity-gap",
+        motionIntent: ["compare-shift"],
+        textRoles: { title: "scene heading" },
+        avoidRegions: [],
+      },
+    },
+  };
+
+  const spec = resolveBuiltinSceneSpec(scene);
+  assert.equal(spec?.content.kind, "comparison");
+  if (spec?.content.kind !== "comparison") throw new Error("expected comparison");
+  assert.equal(spec.content.left.label, "Three-product recurrence");
+  assert.equal(spec.content.left.count, 3);
+  assert.equal(spec.content.left.countLabel, "recursive products");
+  assert.deepEqual(spec.content.left.items, ["T(n)=3T(n/2)+O(n) → O(n¹·⁵⁸⁵)"]);
+  assert.equal(spec.content.right.label, "Four-product recurrence");
+  assert.equal(spec.content.right.count, 4);
+  assert.equal(spec.content.right.countLabel, "recursive products");
+  assert.deepEqual(spec.content.right.items, ["T(n)=4T(n/2)+O(n) → O(n²)"]);
+  assert.equal(spec.content.verdict, "Three recursive products replace four as input size grows");
+});
+
+test("semantic recaps do not repeat shorter on-screen aliases", () => {
+  const base = fixtureManifest();
+  const scene = {
+    ...base.scenes[0]!,
+    id: "karatsuba-recap",
+    kind: "recap",
+    content: {
+      title: "Quick Recap",
+      items: ["Three products", "Worked example", "O(n¹·⁵⁸⁵)"],
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "recap",
+        compositionFamily: "editorial_type",
+        focalAnchor: "takeaways",
+        continuityKey: "karatsuba-thread",
+        informationUnits: [
+          { id: "products", role: "concept", text: "Three products replace four in Karatsuba." },
+          { id: "example", role: "example", text: "1234 × 5678 = 7,006,652." },
+          { id: "complexity", role: "formula", text: "T(n)=3T(n/2)+O(n) → O(n¹·⁵⁸⁵)" },
+        ],
+        attentionCue: "takeaways",
+        motionIntent: ["resolve-hold"],
+        textRoles: { title: "scene heading" },
+        avoidRegions: [],
+      },
+    },
+  };
+
+  const spec = resolveBuiltinSceneSpec(scene);
+  assert.equal(spec?.content.kind, "recap");
+  if (spec?.content.kind !== "recap") throw new Error("expected recap");
+  assert.deepEqual(spec.content.items.map((item) => item.text), [
+    "Three products replace four in Karatsuba",
+    "1234 × 5678 = 7,006,652",
+    "T(n)=3T(n/2)+O(n) → O(n¹·⁵⁸⁵)",
+  ]);
+});
+
 test("worked examples carry labels and relations instead of narration paragraphs", () => {
   const base = fixtureManifest();
   const scene = {

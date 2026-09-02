@@ -215,8 +215,8 @@ export interface BulletsContent extends TitledContent {
 
 export interface ComparisonContent extends TitledContent {
   readonly kind: "comparison";
-  readonly left: { readonly label: string; readonly items: readonly string[] };
-  readonly right: { readonly label: string; readonly items: readonly string[] };
+  readonly left: { readonly label: string; readonly items: readonly string[]; readonly count?: number; readonly countLabel?: string };
+  readonly right: { readonly label: string; readonly items: readonly string[]; readonly count?: number; readonly countLabel?: string };
   readonly verdict?: string;
 }
 

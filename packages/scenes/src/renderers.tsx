@@ -301,10 +301,12 @@ export function ComparisonRenderer(props: SceneRendererProps<ComparisonContent>)
   const [first, second] = isWide
     ? splitColumns({ x: body.x, y: body.y + body.height * 0.08, width: body.width, height: body.height * 0.72 }, props.scene.metrics.unit * 1.4)
     : stackRows({ x: body.x, y: body.y + body.height * 0.06, width: body.width, height: body.height * 0.76 }, 2, props.scene.metrics.unit * 1.2) as readonly [Rect, Rect];
-  const renderSide = (rect: Rect, label: string, items: readonly string[], tone: "primary" | "secondary") => {
+  const renderSide = (rect: Rect, side: ComparisonContent["left"], tone: "primary" | "secondary") => {
+    const { label, items } = side;
     const color = tone === "primary" ? theme.primary : theme.secondary;
     const dark = tone === "primary" ? shade(theme.primary, 0.4) : shade(theme.secondary, 0.34);
-    const count = Math.max(1, items.length);
+    const count = side.count ?? Math.max(1, items.length);
+    const countLabel = side.countLabel ?? (count === 1 ? "operation" : "products");
     const countSize = props.scene.metrics.titleSize * (isWide ? 3.1 : 2.05);
     const tokenWidth = (rect.width - props.scene.metrics.gutter * 1.35) / Math.min(4, count);
     return <g data-comparison-side={tone}>
@@ -312,12 +314,13 @@ export function ComparisonRenderer(props: SceneRendererProps<ComparisonContent>)
       <rect x={rect.x} y={rect.y} width={Math.max(8, props.scene.metrics.unit * 0.72)} height={rect.height} fill={tone === "primary" ? theme.accent : tint(theme.secondary, 0.28)} />
       <WrappedText text={label.toUpperCase()} rect={{ x: rect.x + props.scene.metrics.gutter, y: rect.y + legible(props.scene.metrics.smallSize) * 0.45, width: rect.width - props.scene.metrics.gutter * 1.5, height: rect.height * 0.13 }} theme={theme} fill={tone === "primary" ? theme.accent : "#9DE2D7"} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.9)} fontWeight="820" maxLines={2} lineHeight={1.04} />
       <text x={rect.x + props.scene.metrics.gutter} y={rect.y + rect.height * (isWide ? 0.48 : 0.53)} fill={theme.surface} fontFamily={theme.fontDisplay} fontSize={countSize} fontWeight="840" letterSpacing={-4}>{count}</text>
-      <WrappedText text={count === 1 ? "operation" : "products"} rect={{ x: rect.x + props.scene.metrics.gutter + countSize * 0.78, y: rect.y + rect.height * (isWide ? 0.29 : 0.31), width: rect.width * 0.38, height: rect.height * 0.18 }} theme={theme} fill="#C9CFDF" fontSize={legible(props.scene.metrics.bodySize)} fontWeight="680" maxLines={2} />
+      <WrappedText text={countLabel} rect={{ x: rect.x + props.scene.metrics.gutter + countSize * 0.78, y: rect.y + rect.height * (isWide ? 0.29 : 0.31), width: rect.width * 0.38, height: rect.height * 0.18 }} theme={theme} fill="#C9CFDF" fontSize={legible(props.scene.metrics.bodySize)} fontWeight="680" maxLines={2} />
       <line x1={rect.x + props.scene.metrics.gutter} x2={rect.x + rect.width - props.scene.metrics.gutter * 0.5} y1={rect.y + rect.height * 0.6} y2={rect.y + rect.height * 0.6} stroke={theme.surface} strokeWidth="1.5" opacity="0.3" />
       {items.slice(0, 4).map((text, index) => {
         const x = rect.x + props.scene.metrics.gutter + index * tokenWidth;
         const y = rect.y + rect.height * 0.72;
-        return <g key={`${text}-${index}`}><rect x={x} y={y - props.scene.metrics.unit * 0.55} width={Math.max(8, props.scene.metrics.unit * 0.8)} height={Math.max(8, props.scene.metrics.unit * 0.8)} fill={color} transform={`rotate(45 ${x + props.scene.metrics.unit * 0.4} ${y - props.scene.metrics.unit * 0.15})`} />{text ? <text x={x + props.scene.metrics.unit * 1.35} y={y + legible(props.scene.metrics.bodySize) * 0.35} fill={theme.surface} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * 0.82)} fontWeight="760">{truncate(text, 22)}</text> : null}</g>;
+        const evidenceLimit = isWide && items.length === 1 ? 48 : 22;
+        return <g key={`${text}-${index}`}><rect x={x} y={y - props.scene.metrics.unit * 0.55} width={Math.max(8, props.scene.metrics.unit * 0.8)} height={Math.max(8, props.scene.metrics.unit * 0.8)} fill={color} transform={`rotate(45 ${x + props.scene.metrics.unit * 0.4} ${y - props.scene.metrics.unit * 0.15})`} />{text ? <text x={x + props.scene.metrics.unit * 1.35} y={y + legible(props.scene.metrics.bodySize) * 0.35} fill={theme.surface} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * 0.82)} fontWeight="760">{truncate(text, evidenceLimit)}</text> : null}</g>;
       })}
     </g>;
   };
@@ -325,8 +328,8 @@ export function ComparisonRenderer(props: SceneRendererProps<ComparisonContent>)
   return withFrame(props, (
     <g id="body" data-semantic-role="visual">
       <text x={body.x + body.width / 2} y={body.y + legible(props.scene.metrics.smallSize)} textAnchor="middle" fill={theme.mutedInk} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="820" letterSpacing={2.3}>SAME INPUT · SAME ANSWER</text>
-      {renderSide(first, content.left.label, content.left.items, "primary")}
-      {renderSide(second, content.right.label, content.right.items, "secondary")}
+      {renderSide(first, content.left, "primary")}
+      {renderSide(second, content.right, "secondary")}
       {isWide ? <g aria-hidden="true"><path d={`M ${body.x + body.width * 0.47} ${body.y + body.height * 0.38} H ${body.x + body.width * 0.53}`} stroke={theme.accent} strokeWidth={props.scene.metrics.unit * 1.1} /><path d={`M ${body.x + body.width * 0.53} ${body.y + body.height * 0.38} l ${-props.scene.metrics.unit * 1.2} ${-props.scene.metrics.unit * 0.9} v ${props.scene.metrics.unit * 1.8} z`} fill={theme.accent} /></g> : null}
       <ReadabilitySurface scene={props.scene} rect={{ x: body.x + body.width * 0.08, y: body.y + body.height * 0.855, width: body.width * 0.84, height: body.height * 0.14 }} theme={theme} opacity={0.965} role="comparison-verdict" />
       <line x1={body.x + body.width * 0.12} x2={body.x + body.width * 0.88} y1={body.y + body.height * 0.9} y2={body.y + body.height * 0.9} stroke={theme.warning} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.45)} />
@@ -793,12 +796,22 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
             : point.emphasis === "warning" || index === 1
               ? paperWarning(theme)
               : paperPrimary(theme);
-          const numberColumnWidth = props.scene.metrics.titleSize * 2.08;
+          const numberFontSize = legible(props.scene.metrics.titleSize * 1.18);
+          const numberColumnWidth = numberFontSize * 1.55;
           const dividerGutter = props.scene.metrics.unit * 3.2;
           const numberRight = rect.x + numberColumnWidth;
           const copyX = numberRight + dividerGutter;
           const dividerX = numberRight + dividerGutter / 2;
           const copyWidth = Math.max(0, rect.x + rect.width - copyX);
+          const copyFontSize = legible(props.scene.metrics.bodySize * 1.04);
+          const copyLineHeight = copyFontSize * 1.16;
+          const copyLines = wrapText(point.text, Math.max(8, Math.floor(copyWidth / (copyFontSize * 0.56)))).slice(0, 2);
+          const supportingFontSize = legible(props.scene.metrics.smallSize);
+          const supportingGap = point.supportingText ? props.scene.metrics.unit * 0.55 : 0;
+          const copyBlockHeight = copyLines.length * copyLineHeight + supportingGap + (point.supportingText ? supportingFontSize * 1.08 : 0);
+          const copyCenterY = rect.y + rect.height / 2;
+          const copyBaselineY = copyCenterY - copyBlockHeight / 2 + copyFontSize;
+          const supportingBaselineY = copyBaselineY + copyLines.length * copyLineHeight + supportingGap;
           return <g
             key={point.id}
             id={point.id}
@@ -806,19 +819,19 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
             data-sequence-divider-x={dividerX}
             data-sequence-gutter-center-x={dividerX}
             data-sequence-copy-x={copyX}
+            data-sequence-copy-center-y={copyCenterY}
+            data-sequence-copy-baseline-y={copyBaselineY}
+            data-sequence-row-center-y={rect.y + rect.height / 2}
+            data-sequence-number-center-y={copyCenterY}
+            data-sequence-number-font-size={numberFontSize}
             style={animationStyle(props.scene.choreography, point.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}
           >
-            <text x={rect.x} y={rect.y + rect.height * 0.66} fill={numberColor} fontFamily={theme.fontDisplay} fontSize={props.scene.metrics.titleSize * 1.42} fontWeight="840" letterSpacing={-1.4}>{String(index + 1).padStart(2, "0")}</text>
+            <text x={rect.x} y={copyCenterY} dominantBaseline="central" fill={numberColor} fontFamily={theme.fontDisplay} fontSize={numberFontSize} fontWeight="840" letterSpacing={-1.2}>{String(index + 1).padStart(2, "0")}</text>
             <line x1={dividerX} x2={dividerX} y1={rect.y + rect.height * 0.18} y2={rect.y + rect.height * 0.82} stroke={color} strokeWidth={Math.max(5, props.scene.metrics.unit * 0.48)} />
-            <WrappedText text={point.text} rect={{ x: copyX, y: rect.y + rect.height * 0.12, width: copyWidth, height: rect.height * 0.72 }} theme={theme} fontSize={legible(props.scene.metrics.bodySize * 1.04)} fontWeight="720" maxLines={2} lineHeight={1.16} />
-            {point.supportingText ? <WrappedText text={point.supportingText} rect={{ x: copyX, y: rect.y + rect.height * 0.67, width: copyWidth, height: rect.height * 0.25 }} theme={theme} fill={theme.mutedInk} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="600" maxLines={1} /> : null}
+            <MultilineText x={copyX} y={copyBaselineY} lines={copyLines} lineHeight={copyLineHeight} fill={theme.ink} fontFamily={theme.fontBody} fontSize={copyFontSize} fontWeight="720" maxLines={2} />
+            {point.supportingText ? <MultilineText x={copyX} y={supportingBaselineY} lines={[truncate(point.supportingText, Math.max(12, Math.floor(copyWidth / (supportingFontSize * 0.56))))]} lineHeight={supportingFontSize * 1.08} fill={theme.mutedInk} fontFamily={theme.fontBody} fontSize={supportingFontSize} fontWeight="600" maxLines={1} /> : null}
           </g>;
         }) : content.talkingPoint ? <g><path d={`M ${slideRect.x + props.scene.metrics.gutter * 0.6} ${slideRect.y + slideRect.height * 0.24} H ${slideRect.x + slideRect.width - props.scene.metrics.gutter * 0.6}`} stroke={theme.secondary} strokeWidth={Math.max(5, props.scene.metrics.unit * 0.5)} /><WrappedText text={content.talkingPoint} rect={{ x: slideRect.x + props.scene.metrics.gutter * 0.6, y: slideRect.y + slideRect.height * 0.34, width: slideRect.width - props.scene.metrics.gutter * 1.2, height: slideRect.height * 0.48 }} theme={theme} fontFamily={theme.fontDisplay} fontSize={legible(props.scene.metrics.subtitleSize * 1.2)} fontWeight="730" maxLines={5} lineHeight={1.12} /></g> : null}
-      </g> : null}
-      {content.disclosure ? <g data-presenter-disclosure="true">
-        <rect x={body.x + body.width * 0.54} y={body.y + body.height - legible(props.scene.metrics.smallSize) * 3.65} width={body.width * 0.46} height={legible(props.scene.metrics.smallSize) * 3.65} fill={theme.paper} opacity="0.97" />
-        <text x={body.x + body.width} y={body.y + body.height - legible(props.scene.metrics.smallSize) * 2.5} textAnchor="end" fill={paperSecondary(theme)} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.82)} fontWeight="820" letterSpacing="1.6">SYNTHETIC MEDIA DISCLOSURE</text>
-        <WrappedText text={content.disclosure} rect={{ x: body.x + body.width * 0.54, y: body.y + body.height - legible(props.scene.metrics.smallSize) * 2.25, width: body.width * 0.46, height: legible(props.scene.metrics.smallSize) * 2.2 }} theme={theme} fill={theme.mutedInk} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.82)} fontWeight="650" textAnchor="end" maxLines={2} lineHeight={1.08} />
       </g> : null}
     </g>
   ));

@@ -138,13 +138,15 @@ describe("built-in scene catalog", () => {
     expect(markup).toContain('data-background-treatment="artwork-aperture"');
     expect(markup).toContain('data-readability-surface="header"');
     expect(markup).toContain('data-readability-surface="presenter-insight"');
-    expect(markup).toContain('data-presenter-disclosure="true"');
+    expect(markup).not.toContain('data-presenter-disclosure="true"');
     expect(markup).toContain('data-presenter-placement="picture-in-picture"');
     expect(markup).toContain("Pinned synthetic replay guide for end-to-end");
     expect(markup).toContain(">validation</tspan>");
-    expect(markup).toContain("Previously generated synthetic presenter replay");
+    expect(markup).not.toContain("Previously generated synthetic presenter replay");
     expect(markup).not.toContain("Pinned synthetic replay gui…");
     expect(markup).not.toContain('fill="#F7F8FC" opacity="0.31"');
+    expect(markup).toContain('data-background-mask="aperture-only"');
+    expect(markup).not.toContain('fill="#FFFFFF" opacity="0.085"');
     expect(markup.match(/alystria-asset:sha256\//g)?.length).toBe(2);
     const insight = markup.match(/data-insight-x="(\d+)" data-insight-width="(\d+)"/);
     const stage = markup.match(/data-stage-x="(\d+)" data-stage-y="\d+" data-stage-width="(\d+)"/);
@@ -171,6 +173,17 @@ describe("built-in scene catalog", () => {
       expect(Number(row[1]) + scene.metrics.unit).toBeLessThanOrEqual(Number(row[2]));
       expect(Math.abs(Number(row[2]) - Number(row[3]))).toBeLessThanOrEqual(0.5);
       expect(Number(row[2])).toBeLessThan(Number(row[4]));
+    }
+    const centeredRows = [...markup.matchAll(/data-sequence-copy-center-y="([\d.]+)" data-sequence-copy-baseline-y="([\d.]+)" data-sequence-row-center-y="([\d.]+)"/g)];
+    expect(centeredRows).toHaveLength(spec.content.slideItems?.length ?? 0);
+    for (const row of centeredRows) {
+      expect(Math.abs(Number(row[1]) - Number(row[3]))).toBeLessThanOrEqual(scene.metrics.bodySize);
+    }
+    const centeredNumbers = [...markup.matchAll(/data-sequence-row-center-y="([\d.]+)" data-sequence-number-center-y="([\d.]+)" data-sequence-number-font-size="([\d.]+)"/g)];
+    expect(centeredNumbers).toHaveLength(spec.content.slideItems?.length ?? 0);
+    for (const row of centeredNumbers) {
+      expect(Number(row[1])).toBe(Number(row[2]));
+      expect(Number(row[3])).toBeLessThan(scene.metrics.titleSize * 1.25);
     }
 
     const stage = markup.match(/data-presenter-stage="portrait" data-stage-x="([\d.]+)" data-stage-y="([\d.]+)" data-stage-width="([\d.]+)" data-stage-height="([\d.]+)"/);

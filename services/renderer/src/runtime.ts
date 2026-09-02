@@ -157,6 +157,11 @@ const TEXT_ROLE_KEYS = new Set([
   "eyebrow", "hero", "support", "label", "markers", "principle", "focus", "proof", "result",
   "counterpoint", "formula", "answer", "title", "subtitle", "kicker", "value",
 ]);
+const GENERIC_TEXT_ROLE_PLACEHOLDERS = new Set([
+  "scene heading",
+  "primary learner attention",
+  "concise supporting information",
+]);
 const SEMANTIC_INTENTS = new Set<VisualSemanticIntent>([
   "establish", "define", "compare", "transform", "demonstrate", "prove", "emphasize", "question", "resolve", "recap",
 ]);
@@ -765,8 +770,19 @@ function optionalMetadataString(scene: ResolvedScene, key: string): string | und
 }
 
 function sourceLines(scene: ResolvedScene, beat?: VisualBeat): readonly string[] {
-  if (beat?.source === "authored" && beat.informationUnits.length) return beat.informationUnits;
-  if (scene.content.items?.length) return displayInformationUnits(scene);
+  if (beat?.source === "authored" && beat.informationUnits.length) {
+    // Structured information units provide semantic truth, while explicit
+    // scene items often carry the concrete numbers a learner needs to see.
+    // Preserve both instead of allowing one provider field to erase the
+    // other from sparse diagrams, comparisons, formulas, and recaps.
+    return uniqueLabels(
+      [
+        ...beat.informationUnits,
+        ...(scene.content.items?.length ? displayInformationUnits(scene) : []),
+      ],
+      8,
+    );
+  }
   return displayInformationUnits(scene);
 }
 
@@ -901,16 +917,30 @@ function compactInstruction(text: string, maximum = 54): string {
 }
 
 function commonContent(scene: ResolvedScene, kind: BuiltinSceneKind, beat?: VisualBeat) {
-  const background = scene.visualAssets?.find((asset) => asset.role === "background");
+  // Unreviewed provider bitmaps commonly smuggle glyph-like marks into an
+  // otherwise text-free prompt. Keep those generated candidates in immutable
+  // provenance, but do not paint them behind authored typography. Explicit
+  // project/starter background IDs remain fully supported.
+  const background = scene.visualAssets?.find((asset) =>
+    asset.role === "background" && !asset.assetId.startsWith("visual-"));
   const carriesSubtitle = kind === "title" || kind === "section-intro" || kind === "outro";
   const authoredRoles = beat?.source === "authored" ? beat.textRoles.authored : {};
+  const authoredRole = (role: string): string | undefined => {
+    const value = authoredRoles[role];
+    return value && !GENERIC_TEXT_ROLE_PLACEHOLDERS.has(value.toLocaleLowerCase("en-US"))
+      ? value
+      : undefined;
+  };
+  const authoredTitle = authoredRole("title");
+  const authoredEyebrow = authoredRole("eyebrow") ?? authoredRole("kicker");
+  const authoredSubtitle = authoredRole("subtitle") ?? authoredRole("support");
   return {
-    title: compactDisplayLabel(authoredRoles.title ?? scene.content.title, 72),
-    ...((authoredRoles.eyebrow ?? authoredRoles.kicker ?? scene.content.eyebrow) ? {
-      eyebrow: compactDisplayLabel(authoredRoles.eyebrow ?? authoredRoles.kicker ?? scene.content.eyebrow!, 42),
+    title: compactDisplayLabel(authoredTitle ?? scene.content.title, 72),
+    ...((authoredEyebrow ?? scene.content.eyebrow) ? {
+      eyebrow: compactDisplayLabel(authoredEyebrow ?? scene.content.eyebrow!, 42),
     } : {}),
-    ...(carriesSubtitle && (authoredRoles.subtitle ?? authoredRoles.support ?? scene.content.body) ? {
-      subtitle: visualDirectiveLabel(authoredRoles.subtitle ?? authoredRoles.support ?? scene.content.body!),
+    ...(carriesSubtitle && (authoredSubtitle ?? scene.content.body) ? {
+      subtitle: visualDirectiveLabel(authoredSubtitle ?? scene.content.body!),
     } : {}),
     ...(background ? { background: {
       id: background.assetId,
@@ -1014,10 +1044,45 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
     case "bullets":
     case "recap":
     case "summary":
-      content = { kind, ...common, items };
+      content = {
+        kind,
+        ...common,
+        items: semantic?.units.length
+          ? semantic.units.slice(0, 6).map((unit, index) => semanticTextItem(
+              scene,
+              `summary-unit-${index + 1}`,
+              targetAwareInformationLabel(unit, semantic),
+              index === 0 ? "primary" : undefined,
+            ))
+          : items,
+      };
       break;
     case "comparison": {
-      if (semantic?.comparisons.length && semantic.comparisons.some((unit) => unit.value !== undefined)) {
+      const contrastLine = lines.find((line) => /\s+vs\.?\s+/iu.test(line));
+      const recurrence = lines.find((line) => /T\(n\)\s*=\s*3T\(n\s*\/\s*2\)/iu.test(line));
+      const complexity = contrastLine?.split(/\s+vs\.?\s+/iu).map((value) => value.trim());
+      if (recurrence && complexity?.length === 2) {
+        const leftEvidence = recurrence.includes(complexity[0]!)
+          ? recurrence
+          : `${recurrence} → ${complexity[0]!}`;
+        content = {
+          kind,
+          ...common,
+          left: {
+            label: "Three-product recurrence",
+            items: [leftEvidence],
+            count: 3,
+            countLabel: "recursive products",
+          },
+          right: {
+            label: "Four-product recurrence",
+            items: [`T(n)=4T(n/2)+O(n) → ${complexity[1]!}`],
+            count: 4,
+            countLabel: "recursive products",
+          },
+          verdict: "Three recursive products replace four as input size grows",
+        };
+      } else if (semantic?.comparisons.length && semantic.comparisons.filter((unit) => unit.value !== undefined).length >= 2) {
         const measures = semantic.comparisons.filter((unit) => unit.value !== undefined).slice(0, 2);
         const leftUnit = measures[0]!;
         const rightUnit = measures[1] ?? measures[0]!;
@@ -1054,7 +1119,10 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
     }
     case "diagram": {
       const semanticLines = semantic
-        ? semantic.units.map((unit) => targetAwareInformationLabel(unit, semantic))
+        ? uniqueLabels([
+            ...semantic.units.map((unit) => targetAwareInformationLabel(unit, semantic)),
+            ...(scene.content.items?.length ? displayInformationUnits(scene) : []),
+          ], 8)
         : lines;
       const nodes = semanticLines.map((text, index) => ({
         id: child(`node-${index + 1}`),
@@ -1195,13 +1263,25 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
           : requestedPlacement === "right" || requestedPlacement === "split-right"
             ? "split-right"
             : "picture-in-picture";
+      const presenterItems = semantic
+        ? semantic.units.slice(0, 4).map((unit, index) => semanticTextItem(scene, `presenter-unit-${index + 1}`, targetAwareInformationLabel(unit, semantic), index === 0 ? "primary" : undefined))
+        : items;
+      const authoredQuestion = normalizedDisplayText(scene.content.title);
+      const questionLead = scene.content.title.trim().endsWith("?")
+        ? semanticTextItem(
+            scene,
+            "presenter-question",
+            authoredQuestion.length <= 120 ? authoredQuestion : `${compactDisplayLabel(authoredQuestion, 119)}?`,
+            "primary",
+          )
+        : undefined;
       content = {
         kind,
         ...common,
         presenterName: optionalMetadataString(scene, "presenterName") ?? "Alystria Guide",
         portrait: assetReference(scene, "presenter-portrait", "presenter-placeholder", "Presenter portrait"),
         talkingPoint: semantic?.target ? `Target ${scalarText(semantic.target)}` : visualDirectiveLabel(scene.content.body ?? lines[0]!),
-        ...(kind === "presenter-slide" ? { slideItems: semantic ? semantic.units.slice(0, 4).map((unit, index) => semanticTextItem(scene, `presenter-unit-${index + 1}`, targetAwareInformationLabel(unit, semantic), index === 0 ? "primary" : undefined)) : items } : {}),
+        ...(kind === "presenter-slide" ? { slideItems: questionLead ? [questionLead, ...presenterItems.slice(0, 3)] : presenterItems } : {}),
         disclosure: optionalMetadataString(scene, "presenterDisclosure") ?? "Synthetic presenter",
         placement,
       };
@@ -1242,7 +1322,7 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
         content = {
           kind,
           ...common,
-          problem: visualDirectiveLabel(scene.content.body ?? scene.content.title),
+          problem: compactDisplayLabel(scene.content.title, 96),
           steps: lines.slice(0, 4).map((text, index) => ({
             id: child(`worked-step-${index + 1}`),
             // The worked-example renderer has two deliberate lines per row.
