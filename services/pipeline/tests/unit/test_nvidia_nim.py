@@ -90,6 +90,35 @@ def test_chat_uses_fixed_openai_compatible_endpoint_and_parses_usage() -> None:
     assert result.usage.units == {"input_tokens": 12.0, "output_tokens": 7.0}
 
 
+def test_structured_chat_reserves_completion_budget_with_low_reasoning_effort() -> None:
+    transport = FakeTransport(
+        {
+            "model": "openai/gpt-oss-20b",
+            "choices": [{"message": {"content": '{"answer":"yes"}'}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 4},
+        }
+    )
+    adapter = NvidiaNimAdapter(transport)
+
+    result = adapter.invoke(
+        TextRequest(
+            "Return a structured answer",
+            "openai/gpt-oss-20b",
+            json_schema={
+                "type": "object",
+                "properties": {"answer": {"type": "string"}},
+                "required": ["answer"],
+                "additionalProperties": False,
+            },
+        ),
+        preview_context(),
+    )
+
+    assert transport.requests[0].json_body["reasoning_effort"] == "low"
+    assert transport.requests[0].timeout_seconds == 300.0
+    assert result.value.parsed == {"answer": "yes"}
+
+
 def test_embedding_and_reranking_contracts_are_typed() -> None:
     transport = FakeTransport(
         {
@@ -109,9 +138,7 @@ def test_embedding_and_reranking_contracts_are_typed() -> None:
     )
     adapter = NvidiaNimAdapter(
         transport,
-        configured_rerank_models=frozenset(
-            {"nvidia/nv-rerankqa-mistral-4b-v3"}
-        ),
+        configured_rerank_models=frozenset({"nvidia/nv-rerankqa-mistral-4b-v3"}),
     )
     embeddings = adapter.invoke(
         EmbeddingRequest(
@@ -134,9 +161,7 @@ def test_embedding_and_reranking_contracts_are_typed() -> None:
     assert transport.requests[0].url == "https://integrate.api.nvidia.com/v1/embeddings"
     assert embeddings.value.dimensions == 2
     assert embeddings.value.vectors[1] == (0.3, 0.4)
-    assert transport.requests[1].url == (
-        "https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking"
-    )
+    assert transport.requests[1].url == ("https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking")
     assert transport.requests[1].json_body == {
         "model": "nvidia/nv-rerankqa-mistral-4b-v3",
         "query": {"text": "Which passage?"},
@@ -162,9 +187,7 @@ def test_retired_embedding_and_unclassified_models_fail_before_network() -> None
     adapter = NvidiaNimAdapter(transport)
     with pytest.raises(ProviderFailure, match="retired") as retired:
         adapter.build_request(
-            EmbeddingRequest(
-                ("query",), "nvidia/nv-embed-v1", EmbeddingInputType.QUERY
-            ),
+            EmbeddingRequest(("query",), "nvidia/nv-embed-v1", EmbeddingInputType.QUERY),
             preview_context(),
         )
     assert retired.value.code is FailureCode.PROVIDER_UNAVAILABLE
@@ -197,9 +220,7 @@ def test_visual_models_require_exact_active_allowlisted_configuration() -> None:
     with pytest.raises(ValueError, match="unavailable"):
         NvidiaNimAdapter(
             FakeTransport(),
-            configured_visual_models=frozenset(
-                {"stabilityai/stable-video-diffusion"}
-            ),
+            configured_visual_models=frozenset({"stabilityai/stable-video-diffusion"}),
         )
 
     adapter = NvidiaNimAdapter(
@@ -215,9 +236,7 @@ def test_visual_models_require_exact_active_allowlisted_configuration() -> None:
         ),
         preview_context(),
     )
-    assert request.url == (
-        "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.2-klein-4b"
-    )
+    assert request.url == ("https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.2-klein-4b")
     assert request.json_body is not None
     assert request.json_body["width"] == 1024
     assert request.json_body["height"] == 1024
@@ -228,9 +247,7 @@ def test_visual_models_require_exact_active_allowlisted_configuration() -> None:
 
 def test_flux_klein_visual_response_preserves_its_exact_model_license() -> None:
     jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\xff\xd9"
-    transport = FakeTransport(
-        {"artifacts": [{"base64": base64.b64encode(jpeg).decode("ascii")}]}
-    )
+    transport = FakeTransport({"artifacts": [{"base64": base64.b64encode(jpeg).decode("ascii")}]})
     adapter = NvidiaNimAdapter(
         transport,
         configured_visual_models=frozenset({"black-forest-labs/flux.2-klein-4b"}),
@@ -253,20 +270,16 @@ def test_flux_klein_visual_response_preserves_its_exact_model_license() -> None:
 def test_flux_klein_binds_media_type_to_returned_bytes_not_requested_format() -> None:
     jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\xff\xd9"
     adapter = NvidiaNimAdapter(
-        FakeTransport(
-            {"artifacts": [{"base64": base64.b64encode(jpeg).decode("ascii")}]}
-        ),
-        configured_visual_models=frozenset(
-            {"black-forest-labs/flux.2-klein-4b"}
-        ),
+        FakeTransport({"artifacts": [{"base64": base64.b64encode(jpeg).decode("ascii")}]}),
+        configured_visual_models=frozenset({"black-forest-labs/flux.2-klein-4b"}),
     )
     result = adapter.invoke(
-            ImageRequest(
-                "A precise educational diagram",
-                "black-forest-labs/flux.2-klein-4b",
-                aspect_ratio="1:1",
-                output_format="png",
-            ),
+        ImageRequest(
+            "A precise educational diagram",
+            "black-forest-labs/flux.2-klein-4b",
+            aspect_ratio="1:1",
+            output_format="png",
+        ),
         preview_context(),
     )
     assert result.value.assets[0].media_type == "image/jpeg"
@@ -276,9 +289,7 @@ def test_flux_klein_binds_media_type_to_returned_bytes_not_requested_format() ->
 def test_flux_klein_rejects_unverifiable_visual_bytes(encoded: str) -> None:
     adapter = NvidiaNimAdapter(
         FakeTransport({"artifacts": [{"base64": encoded}]}),
-        configured_visual_models=frozenset(
-            {"black-forest-labs/flux.2-klein-4b"}
-        ),
+        configured_visual_models=frozenset({"black-forest-labs/flux.2-klein-4b"}),
     )
     with pytest.raises(ProviderFailure) as caught:
         adapter.invoke(
@@ -303,9 +314,7 @@ def test_flux_klein_rejects_unverifiable_visual_bytes(encoded: str) -> None:
 def test_hosted_preview_policy_blocks_before_network(context: RequestContext) -> None:
     transport = FakeTransport()
     with pytest.raises(ProviderFailure):
-        NvidiaNimAdapter(transport).invoke(
-            TextRequest("private", "openai/gpt-oss-20b"), context
-        )
+        NvidiaNimAdapter(transport).invoke(TextRequest("private", "openai/gpt-oss-20b"), context)
     assert transport.requests == []
 
 

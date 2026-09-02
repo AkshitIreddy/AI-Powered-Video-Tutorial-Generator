@@ -77,6 +77,7 @@ class SubprocessRunner:
             text=True,
             timeout=timeout_seconds,
             shell=False,
+            creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
         )
         return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 

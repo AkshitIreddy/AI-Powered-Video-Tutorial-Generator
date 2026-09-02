@@ -39,6 +39,7 @@ from alystria.research import (
     AtomicClaim,
     ClaimSupport,
     DeterministicOfflineProvider,
+    EducationalProvider,
     EducationalWorkflow,
     EvidenceChunk,
     EvidenceLedger,
@@ -96,6 +97,7 @@ IMPLEMENTATION_VERSION = "generation-v5-authored-fixture-visuals"
 PROMPT_VERSION = "offline-education-v1"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
+PRESENTER_SCENE_TYPES = frozenset({"presenter", "presenter-slide", "presenter-with-slide"})
 
 
 class ExportQualityGateError(ValueError):
@@ -131,11 +133,13 @@ class GenerationWorkflow:
         *,
         media_client: GenerationMediaClient | None = None,
         renderer_client: RendererClient | None = None,
+        educational_provider: EducationalProvider | None = None,
     ) -> None:
         self.store = store
         self.runtime = runtime
         self.media_client = media_client or DeterministicMediaClient()
         self.renderer_client = renderer_client or DeterministicRendererClient()
+        self.educational_provider = educational_provider or DeterministicOfflineProvider()
 
     @property
     def handlers(self) -> dict[str, TaskHandler]:
@@ -599,7 +603,7 @@ class GenerationWorkflow:
         prerequisites = tuple(
             Prerequisite.create(label, assumed=True) for label in request.prerequisites
         )
-        workflow = EducationalWorkflow(DeterministicOfflineProvider())
+        workflow = EducationalWorkflow(self.educational_provider)
         plan = workflow.create_plan(
             topic=request.topic,
             learner=learner,
@@ -627,7 +631,7 @@ class GenerationWorkflow:
         request = _request(parameters)
         context.set_progress(0.12, message="Drafting and reviewing script")
         plan = _plan_from_dict(previous["learningPlan"])
-        result = EducationalWorkflow(DeterministicOfflineProvider()).create_script(
+        result = EducationalWorkflow(self.educational_provider).create_script(
             plan,
             grounding=request.grounding_mode,
         )
@@ -688,9 +692,7 @@ class GenerationWorkflow:
                 ):
                     raise ValueError("Canonical fixture onScreenText must be a list")
                 fixture_visual_beat = authored.get("visualBeat")
-                if fixture_visual_beat is not None and not isinstance(
-                    fixture_visual_beat, dict
-                ):
+                if fixture_visual_beat is not None and not isinstance(fixture_visual_beat, dict):
                     raise ValueError("Canonical fixture visualBeat must be an object")
                 scene = {
                     "id": scene_id,
@@ -700,20 +702,12 @@ class GenerationWorkflow:
                     "narration": narration,
                     "visualIntent": str(authored.get("visualIntent", "")),
                     "claimIds": [str(value) for value in authored.get("claimIds", [])],
-                    "objectiveIds": [
-                        str(value) for value in authored.get("objectiveIds", [])
-                    ],
+                    "objectiveIds": [str(value) for value in authored.get("objectiveIds", [])],
                     "durationTicks": base_ticks + (1 if index < remainder_ticks else 0),
-                    "accessibilityDescription": str(
-                        authored.get("accessibilityDescription", "")
-                    ),
+                    "accessibilityDescription": str(authored.get("accessibilityDescription", "")),
                     "onScreenText": copy.deepcopy(fixture_on_screen_text)
                     if fixture_on_screen_text is not None
-                    else [
-                        line.strip()
-                        for line in caption_text.splitlines()
-                        if line.strip()
-                    ],
+                    else [line.strip() for line in caption_text.splitlines() if line.strip()],
                     "locks": [],
                 }
                 if fixture_visual_beat is not None:
@@ -729,7 +723,30 @@ class GenerationWorkflow:
                     scene["sourceLocator"] = source_locator
                 scenes.append(scene)
         else:
-            seconds_each = max(1, request.duration_seconds // max(1, len(sections)))
+            total_ticks = request.duration_seconds * TICKS_PER_SECOND
+            script_metadata = script.get("metadata", {})
+            if isinstance(script_metadata, dict) and script_metadata.get("provider") not in {
+                None,
+                "offline",
+            }:
+                scene_ticks = _paced_scene_ticks(sections, total_ticks)
+            else:
+                outline_durations = {
+                    str(item["id"]): int(item["estimatedSeconds"])
+                    for item in previous["learningPlan"]["outline"]
+                }
+                authored_ticks = [
+                    max(1, outline_durations.get(str(section["outlineSectionId"]), 1))
+                    * TICKS_PER_SECOND
+                    for section in sections
+                ]
+                authored_total = sum(authored_ticks)
+                if authored_total <= 0:
+                    raise ValueError("Generated storyboard has no positive scene duration")
+                scene_ticks = [
+                    max(1, round(value * total_ticks / authored_total)) for value in authored_ticks
+                ]
+                scene_ticks[-1] += total_ticks - sum(scene_ticks)
             types = ("question", "definition", "worked_example", "comparison", "recap")
             for index, section in enumerate(sections):
                 scene_id = _stable_id("scene", request.topic, section["outlineSectionId"])
@@ -742,28 +759,39 @@ class GenerationWorkflow:
                     # composited into an explicit presenter family; the
                     # renderer rejects a clip bound to an unrelated visual
                     # scene rather than guessing a placement.
-                    "type": "presenter-slide" if presenter_scene else types[min(index, len(types) - 1)],
-                    "title": _title_from_narration(section["narration"], index),
+                    "type": "presenter-slide"
+                    if presenter_scene
+                    else str(section.get("sceneType") or types[min(index, len(types) - 1)]),
+                    "title": str(
+                        section.get("title") or _title_from_narration(section["narration"], index)
+                    ),
                     "narration": section["narration"],
                     "visualIntent": section["visualIntent"],
                     "claimIds": section["claimIds"],
                     "objectiveIds": _objective_ids_for_section(
                         previous["learningPlan"], section["outlineSectionId"]
                     ),
-                    "durationTicks": seconds_each * TICKS_PER_SECOND,
+                    "durationTicks": scene_ticks[index],
                     "accessibilityDescription": (
                         "A precise explanatory composition presents "
-                        + _title_from_narration(section["narration"], index).lower()
+                        + str(
+                            section.get("title")
+                            or _title_from_narration(section["narration"], index)
+                        ).lower()
                     ),
                     "locks": [],
                 }
+                on_screen_text = section.get("onScreenText")
+                if isinstance(on_screen_text, list) and on_screen_text:
+                    scene["onScreenText"] = copy.deepcopy(on_screen_text)
+                visual_beat = section.get("visualBeat")
+                if isinstance(visual_beat, dict):
+                    scene["visualBeat"] = copy.deepcopy(visual_beat)
                 if presenter_scene and isinstance(presenter_customization, dict):
                     scene["presenterPlacement"] = str(
                         presenter_customization.get("placement", "picture-in-picture")
                     )
-                    scene["presenterFit"] = str(
-                        presenter_customization.get("fit", "cover")
-                    )
+                    scene["presenterFit"] = str(presenter_customization.get("fit", "cover"))
                     profile = presenter_customization.get("profile")
                     if isinstance(profile, dict) and isinstance(profile.get("displayName"), str):
                         scene["presenterName"] = profile["displayName"]
@@ -915,13 +943,20 @@ class GenerationWorkflow:
                     "textSha256": hashlib.sha256(str(scene["narration"]).encode()).hexdigest(),
                 },
             )
-            word_timings = _deterministic_word_timings(str(scene["narration"]))
+            unscaled_word_timings = _deterministic_word_timings(str(scene["narration"]))
+            duration_ms = _positive_int(
+                media.metadata.get("durationMs", unscaled_word_timings[-1].end_ms),
+                "narration durationMs",
+            )
+            word_timings = _deterministic_word_timings(
+                str(scene["narration"]), duration_ms=duration_ms
+            )
             narration.append(
                 {
                     "sceneId": scene["id"],
                     "artifactHash": artifact.hash,
                     "mediaType": media.media_type,
-                    "durationMs": media.metadata.get("durationMs", word_timings[-1].end_ms),
+                    "durationMs": duration_ms,
                     "sampleRateHz": media.metadata.get("sampleRateHz", 48_000),
                     "words": [asdict(word) for word in word_timings],
                 }
@@ -938,10 +973,11 @@ class GenerationWorkflow:
                 artifact.hash,
             )
             context.set_progress((index + 1) / max(1, len(approved["storyboard"]["scenes"])) * 0.9)
+        fitted_storyboard = _fit_storyboard_to_narration(approved["storyboard"], narration)
         result = self._persist_stage(
             context,
             parameters,
-            {"narration": narration, "storyboard": approved["storyboard"]},
+            {"narration": narration, "storyboard": fitted_storyboard},
             upstream_stages=[GenerationStage.APPROVAL],
             linked_artifacts=links,
         )
@@ -961,14 +997,14 @@ class GenerationWorkflow:
         return result
 
     def _captions(self, context: JobContext, parameters: dict[str, Any]) -> dict[str, Any]:
-        approved = self._approved_storyboard(parameters)
-        narration = self._input_payload(parameters, "narration")["narration"]
+        narration_payload = self._input_payload(parameters, "narration")
+        narration = narration_payload["narration"]
         request = _request(parameters)
         by_scene: dict[str, list[dict[str, Any]]] = {}
         all_cues = []
         narration_by_scene = {str(item["sceneId"]): item for item in narration}
         offset_ticks = 0
-        for scene in approved["storyboard"]["scenes"]:
+        for scene in narration_payload["storyboard"]["scenes"]:
             scene_id = str(scene["id"])
             item = narration_by_scene.get(scene_id)
             if item is None:
@@ -977,9 +1013,7 @@ class GenerationWorkflow:
             # Raw synthesis durations can be shorter than the scene and must
             # not pull every later cue early.
             offset = round(offset_ticks * 1_000 / TICKS_PER_SECOND)
-            scene_duration_ms = round(
-                int(scene["durationTicks"]) * 1_000 / TICKS_PER_SECOND
-            )
+            scene_duration_ms = round(int(scene["durationTicks"]) * 1_000 / TICKS_PER_SECOND)
             words = tuple(WordTiming(**word) for word in item["words"])
             cues = tuple(
                 replace(cue, end_ms=min(cue.end_ms, scene_duration_ms))
@@ -1013,7 +1047,7 @@ class GenerationWorkflow:
             metadata={"locale": request.locale, "rightsStatus": "owned"},
         )
         transcript = "\n\n".join(
-            str(scene["narration"]) for scene in approved["storyboard"]["scenes"]
+            str(scene["narration"]) for scene in narration_payload["storyboard"]["scenes"]
         )
         transcript_artifact = self.store.add_artifact_bytes(
             transcript.encode(),
@@ -1054,8 +1088,8 @@ class GenerationWorkflow:
         )
 
     def _presenter(self, context: JobContext, parameters: dict[str, Any]) -> dict[str, Any]:
-        approved = self._approved_storyboard(parameters)
-        narration = self._input_payload(parameters, "narration")["narration"]
+        narration_payload = self._input_payload(parameters, "narration")
+        narration = narration_payload["narration"]
         request = _request(parameters)
         if request.presenter_mode == "off":
             return self._persist_stage(
@@ -1067,8 +1101,9 @@ class GenerationWorkflow:
         narration_by_scene = {item["sceneId"]: item for item in narration}
         presenters: list[dict[str, Any]] = []
         links: list[dict[str, str]] = []
-        scenes = approved["storyboard"]["scenes"]
-        selected = scenes if request.presenter_mode == "on" else scenes[:1]
+        scenes = narration_payload["storyboard"]["scenes"]
+        presenter_scenes = [scene for scene in scenes if _is_presenter_scene(scene)]
+        selected = presenter_scenes if request.presenter_mode == "on" else presenter_scenes[:1]
         for index, scene in enumerate(selected):
             item = narration_by_scene[scene["id"]]
             # The authored scene may intentionally hold after speech for a
@@ -1088,6 +1123,16 @@ class GenerationWorkflow:
             )
             if media is None:
                 continue
+            media_duration = media.usage_units.get("seconds")
+            if (
+                isinstance(media_duration, (int, float))
+                and not isinstance(media_duration, bool)
+                and media_duration > 0
+            ):
+                active_duration_ticks = min(
+                    active_duration_ticks,
+                    max(1, int(float(media_duration) * TICKS_PER_SECOND)),
+                )
             self._record_media_usage(context, media, scene_id=str(scene["id"]), kind="presenter")
             artifact = self.store.add_artifact_bytes(
                 media.content,
@@ -1156,12 +1201,16 @@ class GenerationWorkflow:
             "timebase": TICKS_PER_SECOND,
             "seed": request.deterministic_seed,
             "targets": list(request.output_targets),
-            "scenes": approved["storyboard"]["scenes"],
-            "visualBible": approved["storyboard"]["visualBible"],
+            "scenes": narration["storyboard"]["scenes"],
+            "visualBible": narration["storyboard"]["visualBible"],
             "assets": assets["assets"],
             "narration": narration["narration"],
             "captions": captions,
-            "presenters": presenter["presenters"],
+            "presenters": _presenters_for_render(
+                narration["storyboard"]["scenes"],
+                presenter["presenters"],
+                store=self.store,
+            ),
             "audioCustomization": audio_customization,
             "visualCustomization": visual_customization,
             "fontCustomization": font_customization,
@@ -1214,11 +1263,11 @@ class GenerationWorkflow:
             "renderManifestSha256": _fingerprint(rendered.manifest),
             "rendererMetrics": rendered.metrics,
             "durationTicks": sum(
-                int(scene["durationTicks"]) for scene in approved["storyboard"]["scenes"]
+                int(scene["durationTicks"]) for scene in narration["storyboard"]["scenes"]
             ),
             "fps": float(request.output_targets[0]["fps"]),
             "captionCues": _global_caption_cues(
-                approved["storyboard"]["scenes"], captions.get("byScene", {})
+                narration["storyboard"]["scenes"], captions.get("byScene", {})
             ),
             "contentEvidence": {
                 key: approved[key]
@@ -1371,10 +1420,15 @@ class GenerationWorkflow:
         return self._persist_stage(context, parameters, payload, upstream_stages=upstream)
 
     def _export(self, context: JobContext, parameters: dict[str, Any]) -> dict[str, Any]:
+        distribution_purpose = _distribution_purpose(_request(parameters))
         validate_approved_presenter_for_export(
             self.store,
             str(parameters["approvalRevisionId"]),
-            distribution_scope="publicCommercial",
+            distribution_scope={
+                DistributionPurpose.PRIVATE: "privatePreview",
+                DistributionPurpose.PUBLIC_NONCOMMERCIAL: "publicNonCommercial",
+                DistributionPurpose.PUBLIC_COMMERCIAL: "publicCommercial",
+            }[distribution_purpose],
         )
         approved = self._approved_storyboard(parameters)
         captions = self._input_payload(parameters, "captions")
@@ -2019,9 +2073,7 @@ def _content_quality_gates(
     )
 
 
-def _narration_density_gate(
-    approved: dict[str, Any], request: GenerationRequest
-) -> QualityGate:
+def _narration_density_gate(approved: dict[str, Any], request: GenerationRequest) -> QualityGate:
     """Reject long-form placeholder scripts that merely stretch a few paragraphs.
 
     Forty-eight words per minute is intentionally a very conservative floor,
@@ -2101,8 +2153,7 @@ def _provenance_quality_gate(
             if not isinstance(value, dict):
                 raise ValueError("record is not an object")
             origin = OriginKind(str(value["origin"]))
-            records.append(
-                AssetProvenance(
+            record = AssetProvenance(
                     asset_id=str(value["assetId"]),
                     sha256=str(value["sha256"]),
                     origin=origin,
@@ -2119,7 +2170,23 @@ def _provenance_quality_gate(
                     consent_ids=tuple(str(item) for item in value.get("consentIds", [])),
                     c2pa=C2paRecord(C2paStatus.NOT_APPLICABLE),
                 )
-            )
+            # Runs created before the provider adapter recorded ElevenLabs'
+            # output terms are upgraded conservatively: private and attributed
+            # non-commercial use are allowed, while commercial export remains
+            # blocked unless an account-aware paid-plan grant is present.
+            if (
+                record.provider_id == "elevenlabs"
+                and record.origin is OriginKind.GENERATED
+                and record.rights_status is RightsStatus.UNKNOWN
+                and record.license_id == "UNKNOWN"
+            ):
+                record = replace(
+                    record,
+                    rights_status=RightsStatus.VERIFIED,
+                    license_id="ELEVENLABS-OUTPUT",
+                    attribution="Generated with ElevenLabs (elevenlabs.io)",
+                )
+            records.append(record)
         except (KeyError, TypeError, ValueError) as error:
             findings.append(
                 Finding(
@@ -2146,7 +2213,7 @@ def _provenance_quality_gate(
             export_id=str(candidate.get("renderArtifactHash", "render:master")),
             assets=tuple(records),
             asset_use=AssetUse(
-                DistributionPurpose.PUBLIC_COMMERCIAL,
+                _distribution_purpose(request),
                 transformed=True,
                 attribution_included=True,
             ),
@@ -2167,6 +2234,22 @@ def _provenance_quality_gate(
         for item in decision.findings
     )
     return QualityGate.from_findings("security.export", "provenance", findings)
+
+
+def _distribution_purpose(request: GenerationRequest) -> DistributionPurpose:
+    value = request.metadata.get("distributionPurpose", DistributionPurpose.PRIVATE.value)
+    aliases = {
+        "private": DistributionPurpose.PRIVATE,
+        "privatePreview": DistributionPurpose.PRIVATE,
+        "public-noncommercial": DistributionPurpose.PUBLIC_NONCOMMERCIAL,
+        "publicNonCommercial": DistributionPurpose.PUBLIC_NONCOMMERCIAL,
+        "public-commercial": DistributionPurpose.PUBLIC_COMMERCIAL,
+        "publicCommercial": DistributionPurpose.PUBLIC_COMMERCIAL,
+    }
+    try:
+        return aliases[str(value)]
+    except KeyError as error:
+        raise ValueError(f"Unsupported distribution purpose: {value!r}") from error
 
 
 def _global_caption_cues(scenes: list[dict[str, Any]], by_scene: object) -> list[dict[str, Any]]:
@@ -2372,6 +2455,14 @@ def _draft_to_dict(draft: ScriptDraft) -> dict[str, Any]:
                 "narration": item.narration,
                 "visualIntent": item.visual_intent,
                 "claimIds": list(item.claim_ids),
+                **({"sceneType": item.scene_type} if item.scene_type else {}),
+                **({"title": item.title} if item.title else {}),
+                **({"onScreenText": list(item.on_screen_text)} if item.on_screen_text else {}),
+                **(
+                    {"visualBeat": copy.deepcopy(dict(item.visual_beat))}
+                    if item.visual_beat
+                    else {}
+                ),
             }
             for item in draft.sections
         ],
@@ -2400,6 +2491,94 @@ def _script_workflow_to_dict(result: ScriptWorkflowResult) -> dict[str, Any]:
 def _title_from_narration(value: str, index: int) -> str:
     words = re.findall(r"\b[\w'-]+\b", value, re.UNICODE)
     return " ".join(words[:7]).strip().capitalize() or f"Scene {index + 1}"
+
+
+def _paced_scene_ticks(sections: list[dict[str, Any]], total_ticks: int) -> list[int]:
+    """Allocate the exact timeline in proportion to authored narration.
+
+    A one-tick floor keeps even an unusually terse authored scene valid.  The
+    remaining ticks use largest-remainder apportionment, so rounding is exact
+    without hiding a potentially long silent hold in the final scene.
+    """
+
+    if not sections or total_ticks < len(sections):
+        raise ValueError("Generated storyboard has no usable scene duration")
+    if len(sections) == 1:
+        return [total_ticks]
+    weights = [
+        max(1, len(re.findall(r"\b\w+[\w'-]*\b", str(section.get("narration", "")))))
+        for section in sections
+    ]
+    distributable = total_ticks - len(sections)
+    total_weight = sum(weights)
+    ticks = [1 + distributable * weight // total_weight for weight in weights]
+    fractions = [distributable * weight % total_weight for weight in weights]
+    remainder = total_ticks - sum(ticks)
+    for index in sorted(range(len(sections)), key=lambda item: (-fractions[item], item))[
+        :remainder
+    ]:
+        ticks[index] += 1
+    return ticks
+
+
+def _is_presenter_scene(scene: dict[str, Any]) -> bool:
+    scene_type = str(scene.get("type", "")).strip().casefold().replace("_", "-")
+    return scene_type in PRESENTER_SCENE_TYPES
+
+
+def _presenters_for_render(
+    scenes: list[dict[str, Any]],
+    presenters: object,
+    *,
+    store: ProjectStore | None = None,
+) -> list[dict[str, Any]]:
+    """Drop only legacy presenter clips bound to known non-presenter scenes.
+
+    Older runs could generate clips for every scene when presenter mode was
+    explicitly enabled. Those expensive clips remain in project provenance,
+    but they cannot be composited into a layout that has no presenter stage.
+    Unknown scene IDs and malformed bindings are retained or rejected so this
+    compatibility path does not hide integrity errors.
+    """
+
+    if not isinstance(presenters, list):
+        raise ValueError("Presenter stage payload must contain a presenter list")
+    known_scene_ids = {str(scene.get("id", "")) for scene in scenes}
+    compatible_scene_ids = {
+        str(scene.get("id", "")) for scene in scenes if _is_presenter_scene(scene)
+    }
+    compatible: list[dict[str, Any]] = []
+    for item in presenters:
+        if not isinstance(item, dict):
+            raise ValueError("Presenter stage payload contains a malformed binding")
+        scene_id = str(item.get("sceneId", ""))
+        if scene_id in compatible_scene_ids or scene_id not in known_scene_ids:
+            normalized = dict(item)
+            if store is not None:
+                artifact_hash = normalized.get("artifactHash")
+                if isinstance(artifact_hash, str):
+                    row = store.connection.execute(
+                        "SELECT metadata_json FROM artifacts WHERE hash=?", (artifact_hash,)
+                    ).fetchone()
+                    if row is not None:
+                        metadata = json.loads(str(row["metadata_json"]))
+                        probe = metadata.get("probe") if isinstance(metadata, dict) else None
+                        duration_value = (
+                            probe.get("durationSeconds") if isinstance(probe, dict) else None
+                        )
+                        if (
+                            isinstance(duration_value, (int, float, str))
+                            and not isinstance(duration_value, bool)
+                            and isinstance(normalized.get("activeDurationTicks"), int)
+                        ):
+                            duration_ticks = max(
+                                1, int(float(duration_value) * TICKS_PER_SECOND)
+                            )
+                            normalized["activeDurationTicks"] = min(
+                                normalized["activeDurationTicks"], duration_ticks
+                            )
+            compatible.append(normalized)
+    return compatible
 
 
 def _presenter_direction(scene: dict[str, Any]) -> PresenterDirection:
@@ -2449,7 +2628,46 @@ def _objective_ids_for_section(plan: dict[str, Any], section_id: str) -> list[st
     return []
 
 
-def _deterministic_word_timings(text: str) -> tuple[WordTiming, ...]:
+def _fit_storyboard_to_narration(
+    storyboard: dict[str, Any], narration: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Fit every scene to measured audio while preserving the exact total."""
+
+    fitted = copy.deepcopy(storyboard)
+    scenes = fitted.get("scenes")
+    if not isinstance(scenes, list) or not scenes:
+        raise ValueError("Narration timing requires a non-empty storyboard")
+    narration_by_scene = {str(item.get("sceneId")): item for item in narration}
+    total_ticks = sum(
+        _positive_int(scene.get("durationTicks"), "storyboard durationTicks")
+        for scene in scenes
+    )
+    measured_ticks: list[int] = []
+    for scene in scenes:
+        scene_id = str(scene.get("id", ""))
+        item = narration_by_scene.get(scene_id)
+        if item is None:
+            raise ValueError(f"Narration timing is missing storyboard scene {scene_id!r}")
+        measured_ticks.append(
+            _positive_int(item.get("durationMs"), "narration durationMs")
+            * TICKS_PER_MILLISECOND
+        )
+    measured_total = sum(measured_ticks)
+    if measured_total > total_ticks:
+        overrun_ms = round((measured_total - total_ticks) / TICKS_PER_MILLISECOND)
+        raise ValueError(
+            f"Measured narration exceeds the requested tutorial duration by {overrun_ms} ms"
+        )
+    breath, remainder = divmod(total_ticks - measured_total, len(scenes))
+    for index, (scene, audio_ticks) in enumerate(zip(scenes, measured_ticks, strict=True)):
+        scene["durationTicks"] = audio_ticks + breath + (1 if index < remainder else 0)
+        scene["timingSource"] = "measured-narration+balanced-visual-breath"
+    return fitted
+
+
+def _deterministic_word_timings(
+    text: str, *, duration_ms: int | None = None
+) -> tuple[WordTiming, ...]:
     matches = list(re.finditer(r"\b[\w'-]+\b|[.,!?;:]", text, re.UNICODE))
     timings: list[WordTiming] = []
     current = 0
@@ -2469,4 +2687,17 @@ def _deterministic_word_timings(text: str) -> tuple[WordTiming, ...]:
         current += duration + (100 if token in {".", "!", "?"} else 30)
     if not timings:
         return (WordTiming("Narration", 0, 800, 0, len(text), 1.0),)
+    if duration_ms is not None:
+        if duration_ms <= 0:
+            raise ValueError("Narration duration must be positive")
+        scale = duration_ms / timings[-1].end_ms
+        timings = [
+            replace(
+                timing,
+                start_ms=round(timing.start_ms * scale),
+                end_ms=round(timing.end_ms * scale),
+            )
+            for timing in timings
+        ]
+        timings[-1] = replace(timings[-1], end_ms=duration_ms)
     return tuple(timings)

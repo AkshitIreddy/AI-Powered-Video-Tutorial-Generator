@@ -512,6 +512,23 @@ def test_launch_media_request_builders(
     assert sent.method in {"GET", "POST"}
 
 
+def test_elevenlabs_builder_uses_stable_long_form_voice_settings() -> None:
+    adapter = launch_media_adapter("elevenlabs", FakeTransport())
+
+    sent = adapter.build_request(
+        SpeechRequest("Explain the example.", "eleven_multilingual_v2", "alice", "en-US"),
+        context("elevenlabs"),
+    )
+
+    assert sent.json_body["voice_settings"] == {
+        "stability": 0.5,
+        "similarity_boost": 0.78,
+        "style": 0.0,
+        "use_speaker_boost": True,
+        "speed": 1.0,
+    }
+
+
 def test_image_edit_builder_uses_multipart_and_never_fetches_remote_input() -> None:
     adapter = launch_media_adapter("openai", FakeTransport())
     request = ImageRequest(
@@ -572,9 +589,7 @@ def test_pexels_result_preserves_download_source_attribution_and_license() -> No
         )
     )
     adapter = launch_media_adapter("pexels", transport)
-    result = adapter.invoke(
-        MediaSearchRequest("ocean", media_type="video"), context("pexels")
-    )
+    result = adapter.invoke(MediaSearchRequest("ocean", media_type="video"), context("pexels"))
     asset = result.value.assets[0]
     assert asset.uri == "https://cdn.test/large.mp4"
     assert asset.source_url == "https://pexels.test/video/1"
@@ -626,9 +641,7 @@ def test_presenter_requires_consent_and_disclosure_before_network() -> None:
 
 
 def test_unit_cost_estimate_and_provider_actual_cost_are_separate() -> None:
-    transport = FakeTransport(
-        HttpResponse(200, {"Content-Type": "audio/wav"}, b"RIFFaudio")
-    )
+    transport = FakeTransport(HttpResponse(200, {"Content-Type": "audio/wav"}, b"RIFFaudio"))
     adapter = launch_media_adapter(
         "elevenlabs",
         transport,
@@ -639,25 +652,22 @@ def test_unit_cost_estimate_and_provider_actual_cost_are_separate() -> None:
     assert estimate.micros == 50 and estimate.bounded
     result = adapter.invoke(request, context("elevenlabs", hard_budget_micros=50))
     assert result.usage.actual_cost_micros is None
-    assert result.value.assets[0].data_base64 is not None
+    asset = result.value.assets[0]
+    assert asset.data_base64 is not None
+    assert asset.license == "ELEVENLABS-OUTPUT"
+    assert asset.attribution == "Generated with ElevenLabs (elevenlabs.io)"
 
 
 def test_elevenlabs_launch_prices_are_exact_model_allowlists() -> None:
-    flash = launch_route_unit_prices(
-        "elevenlabs", {Capability.TTS: "eleven_flash_v2_5"}
-    )
+    flash = launch_route_unit_prices("elevenlabs", {Capability.TTS: "eleven_flash_v2_5"})
     multilingual = launch_route_unit_prices(
         "elevenlabs", {Capability.TTS: "eleven_multilingual_v2"}
     )
 
     assert flash[0].micros_per_unit == 50
     assert multilingual[0].micros_per_unit == 100
-    assert launch_route_unit_prices(
-        "elevenlabs", {Capability.TTS: "unreviewed-future-model"}
-    ) == ()
-    assert launch_route_unit_prices(
-        "openai", {Capability.TTS: "eleven_flash_v2_5"}
-    ) == ()
+    assert launch_route_unit_prices("elevenlabs", {Capability.TTS: "unreviewed-future-model"}) == ()
+    assert launch_route_unit_prices("openai", {Capability.TTS: "eleven_flash_v2_5"}) == ()
 
 
 @dataclass

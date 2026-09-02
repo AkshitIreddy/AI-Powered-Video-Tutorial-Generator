@@ -21,6 +21,7 @@ from .coordinator import (
     request_from_desktop,
     request_from_fixture,
 )
+from .education_provider import StructuredWritingEducationalProvider
 from .local_presenter import (
     LocalPresenterCancelledError,
     LocalPresenterError,
@@ -132,6 +133,7 @@ __all__ = [
     "RuntimeGenerationMediaClient",
     "SourceSpec",
     "StageStatus",
+    "StructuredWritingEducationalProvider",
     "SubprocessCommandRunner",
     "SubprocessPresenterCommandRunner",
     "SubprocessRendererClient",

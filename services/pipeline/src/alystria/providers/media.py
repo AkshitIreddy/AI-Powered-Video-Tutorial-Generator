@@ -158,8 +158,10 @@ class LaunchMediaAdapter(GuardedAdapter):
         headers.update(_auth_headers(self.config.auth, context.credential))
         if self.descriptor.supports_idempotency:
             headers.setdefault("Idempotency-Key", context.idempotency_key)
-        url = built.url if built.url.startswith(("http://", "https://")) else (
-            f"{self.config.base_url.rstrip('/')}/{built.url.lstrip('/')}"
+        url = (
+            built.url
+            if built.url.startswith(("http://", "https://"))
+            else (f"{self.config.base_url.rstrip('/')}/{built.url.lstrip('/')}")
         )
         return replace(built, url=url, headers=headers)
 
@@ -209,9 +211,7 @@ class LaunchMediaAdapter(GuardedAdapter):
             cancel_url=_format_operation_url(self.config.base_url, spec.cancel_path, operation_id),
         )
 
-    def poll(
-        self, handle: AsyncHandle, context: RequestContext
-    ) -> OperationStatus[MediaOutput]:
+    def poll(self, handle: AsyncHandle, context: RequestContext) -> OperationStatus[MediaOutput]:
         self._guard_handle(handle, context)
         spec = self.config.operations[handle.capability]
         if not handle.poll_url:
@@ -254,9 +254,7 @@ class LaunchMediaAdapter(GuardedAdapter):
             usage=_usage_from_payload(self.descriptor.provider_id, handle.model, payload),
         )
 
-    def cancel(
-        self, handle: AsyncHandle, context: RequestContext
-    ) -> OperationStatus[MediaOutput]:
+    def cancel(self, handle: AsyncHandle, context: RequestContext) -> OperationStatus[MediaOutput]:
         self._guard_handle(handle, context)
         if not handle.cancel_url:
             raise ProviderFailure(
@@ -297,11 +295,21 @@ class LaunchMediaAdapter(GuardedAdapter):
         )
         if "json" not in content_type.lower():
             media_type = content_type.split(";", maxsplit=1)[0] or "application/octet-stream"
+            is_elevenlabs_speech = (
+                self.descriptor.provider_id == "elevenlabs"
+                and isinstance(request, SpeechRequest)
+            )
             output = MediaOutput(
                 (
                     MediaAsset(
                         data_base64=base64.b64encode(response.body).decode(),
                         media_type=media_type,
+                        license="ELEVENLABS-OUTPUT" if is_elevenlabs_speech else None,
+                        attribution=(
+                            "Generated with ElevenLabs (elevenlabs.io)"
+                            if is_elevenlabs_speech
+                            else None
+                        ),
                     ),
                 )
             )
@@ -377,9 +385,7 @@ def _launch_configs() -> dict[str, LaunchProviderConfig]:
                 ),
                 Capability.IMAGE_EDITING: OperationSpec(Capability.IMAGE_EDITING, _openai_image),
                 Capability.TTS: OperationSpec(Capability.TTS, _openai_audio),
-                Capability.TRANSCRIPTION: OperationSpec(
-                    Capability.TRANSCRIPTION, _openai_audio
-                ),
+                Capability.TRANSCRIPTION: OperationSpec(Capability.TRANSCRIPTION, _openai_audio),
                 Capability.ALIGNMENT: OperationSpec(Capability.ALIGNMENT, _openai_audio),
             },
         ),
@@ -401,9 +407,7 @@ def _launch_configs() -> dict[str, LaunchProviderConfig]:
                     operation_id_paths=("name", "id"),
                 ),
                 Capability.TTS: OperationSpec(Capability.TTS, _gemini_media),
-                Capability.TRANSCRIPTION: OperationSpec(
-                    Capability.TRANSCRIPTION, _gemini_media
-                ),
+                Capability.TRANSCRIPTION: OperationSpec(Capability.TRANSCRIPTION, _gemini_media),
             },
             extra_headers={"Api-Revision": "2026-05-20"},
         ),
@@ -480,9 +484,7 @@ def _launch_configs() -> dict[str, LaunchProviderConfig]:
             AuthMode.AZURE_KEY,
             {
                 Capability.TTS: OperationSpec(Capability.TTS, _azure_speech),
-                Capability.TRANSCRIPTION: OperationSpec(
-                    Capability.TRANSCRIPTION, _azure_speech
-                ),
+                Capability.TRANSCRIPTION: OperationSpec(Capability.TRANSCRIPTION, _azure_speech),
                 Capability.ALIGNMENT: OperationSpec(Capability.ALIGNMENT, _azure_speech),
             },
         ),
@@ -495,9 +497,7 @@ def _launch_configs() -> dict[str, LaunchProviderConfig]:
                 Capability.TRANSCRIPTION: OperationSpec(
                     Capability.TRANSCRIPTION, _google_cloud_speech
                 ),
-                Capability.ALIGNMENT: OperationSpec(
-                    Capability.ALIGNMENT, _google_cloud_speech
-                ),
+                Capability.ALIGNMENT: OperationSpec(Capability.ALIGNMENT, _google_cloud_speech),
             },
         ),
         "heygen": LaunchProviderConfig(
@@ -725,7 +725,16 @@ def _elevenlabs(request: ProviderRequest, _context: RequestContext) -> HttpReque
                 "text": request.text,
                 "model_id": request.model,
                 "language_code": request.locale.split("-", maxsplit=1)[0],
-                "voice_settings": {"speed": request.speed},
+                # Stable long-form defaults recommended for a natural voice:
+                # preserve speaker identity, avoid exaggerated style drift,
+                # and let the user-selected speed remain authoritative.
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.78,
+                    "style": 0.0,
+                    "use_speaker_boost": True,
+                    "speed": request.speed,
+                },
                 "pronunciation_dictionary_locators": [
                     {"pronunciation": spoken, "word": word}
                     for word, spoken in request.pronunciation_lexicon
@@ -804,9 +813,7 @@ def _google_cloud_speech(request: ProviderRequest, _context: RequestContext) -> 
                 "model": request.model,
                 "enableWordTimeOffsets": request.word_timestamps,
                 "enableAutomaticPunctuation": True,
-                "speechContexts": [{"phrases": [request.known_text]}]
-                if request.known_text
-                else [],
+                "speechContexts": [{"phrases": [request.known_text]}] if request.known_text else [],
             },
             "audio": {"content": _asset_base64(request.audio)},
         },
@@ -879,7 +886,7 @@ def _multipart_request(
                 str(value).encode(),
                 b"\r\n",
             ]
-    )
+        )
     for index, asset in enumerate(assets):
         data = _asset_bytes(asset)
         chunks.extend(
@@ -948,8 +955,9 @@ def _pexels_output(payload: dict[str, Any]) -> MediaOutput:
             continue
         files = [item for item in video.get("video_files", []) if isinstance(item, dict)]
         files.sort(
-            key=lambda item: (_integer(item.get("width")) or 0)
-            * (_integer(item.get("height")) or 0),
+            key=lambda item: (
+                (_integer(item.get("width")) or 0) * (_integer(item.get("height")) or 0)
+            ),
             reverse=True,
         )
         if not files or not isinstance(files[0].get("link"), str):

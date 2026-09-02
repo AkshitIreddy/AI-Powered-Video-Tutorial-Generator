@@ -37,6 +37,11 @@ LICENSE_RULES: dict[str, LicenseRule] = {
     "USER-OWNED": LicenseRule("USER-OWNED", True, True, True, False),
     "PEXELS": LicenseRule("PEXELS", True, True, True, False),
     "PROPRIETARY-EXPLICIT": LicenseRule("PROPRIETARY-EXPLICIT", True, True, True, False),
+    # ElevenLabs retains plan-specific commercial restrictions, but its terms
+    # allow generated speech to be used privately and shared non-commercially
+    # with attribution. Paid commercial entitlement must be recorded as the
+    # stronger PROPRIETARY-EXPLICIT grant by account-aware configuration.
+    "ELEVENLABS-OUTPUT": LicenseRule("ELEVENLABS-OUTPUT", True, False, True, True),
     "PREVIEW-ONLY": LicenseRule("PREVIEW-ONLY", False, False, False, False),
     "UNKNOWN": LicenseRule("UNKNOWN", False, False, False, False),
 }

@@ -1114,7 +1114,11 @@ function defaultLocalModelSetup(): LocalModelSetup {
         writing: { providerId: "openai", modelId: "choose at generation" },
         research: { providerId: "openai", modelId: "choose at generation" },
         images: { providerId: "openai", modelId: "gpt-image-2" },
-        voice: { providerId: "elevenlabs", modelId: "choose a voice" },
+        voice: {
+          providerId: "elevenlabs",
+          modelId: "eleven_multilingual_v2",
+          voiceId: "Xb7hH8MSUJpSbSDYk0k2",
+        },
         transcription: { providerId: "openai", modelId: "choose at generation" },
         presenter: { providerId: "local-runtime", modelId: "off by default" },
         portraitAnimation: { providerId: "local-runtime", modelId: "off by default" },

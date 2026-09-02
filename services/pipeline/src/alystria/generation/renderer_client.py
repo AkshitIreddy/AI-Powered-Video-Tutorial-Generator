@@ -245,7 +245,9 @@ class SubprocessCommandRunner:
         creation_flags = 0
         popen_options: dict[str, Any] = {}
         if os.name == "nt":
-            creation_flags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+            creation_flags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) | int(
+                getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
         else:
             popen_options["start_new_session"] = True
         try:

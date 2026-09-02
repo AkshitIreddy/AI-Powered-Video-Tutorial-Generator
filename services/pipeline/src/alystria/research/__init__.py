@@ -17,6 +17,7 @@ from .adapters import (
 )
 from .education import (
     DeterministicOfflineProvider,
+    EducationalProvider,
     EducationalWorkflow,
     ExperienceLevel,
     LearnerProfile,
@@ -30,6 +31,7 @@ from .education import (
     ReviewDimension,
     ScriptDraft,
     ScriptReview,
+    ScriptSection,
     ScriptWorkflowResult,
 )
 from .evidence import (
@@ -60,6 +62,7 @@ __all__ = [
     "CrossrefAdapter",
     "DataCiteAdapter",
     "DeterministicOfflineProvider",
+    "EducationalProvider",
     "EducationalWorkflow",
     "EuropePmcAdapter",
     "EvidenceChunk",
@@ -88,6 +91,7 @@ __all__ = [
     "ReviewDimension",
     "ScriptDraft",
     "ScriptReview",
+    "ScriptSection",
     "ScriptWorkflowResult",
     "SupportRelation",
     "chunk_source",

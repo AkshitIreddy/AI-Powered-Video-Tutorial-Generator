@@ -113,6 +113,7 @@ class SubprocessRunner:
                 timeout=2.0,
                 shell=False,
                 env=_platform_environment(environment),
+                creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
             )
         except (OSError, subprocess.SubprocessError) as error:
             return ProbeResult(None, "", "", str(error))
@@ -136,7 +137,9 @@ class SubprocessRunner:
                     cwd=plan.cwd,
                     env=_platform_environment(dict(plan.environment)),
                     shell=False,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    creationflags=(
+                        subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+                    ),
                 )
             else:
                 process = subprocess.Popen(
@@ -180,8 +183,12 @@ class SubprocessRunner:
         assert process.stderr is not None
         streams = _BoundedStreams(plan.limits.output_bytes)
         readers = (
-            threading.Thread(target=streams.consume, args=(process.stdout, streams.stdout), daemon=True),
-            threading.Thread(target=streams.consume, args=(process.stderr, streams.stderr), daemon=True),
+            threading.Thread(
+                target=streams.consume, args=(process.stdout, streams.stdout), daemon=True
+            ),
+            threading.Thread(
+                target=streams.consume, args=(process.stderr, streams.stderr), daemon=True
+            ),
         )
         for reader in readers:
             reader.start()
@@ -237,9 +244,7 @@ def _posix_limits(limits: ProcessLimits) -> Callable[[], None]:
     def apply() -> None:
         cpu_seconds = max(1, math.ceil(limits.cpu_time_ms / 1_000))
         resource_api.setrlimit(resource_api.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
-        resource_api.setrlimit(
-            resource_api.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes)
-        )
+        resource_api.setrlimit(resource_api.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
         resource_api.setrlimit(
             resource_api.RLIMIT_FSIZE, (limits.output_bytes, limits.output_bytes)
         )
@@ -289,6 +294,7 @@ def _windows_taskkill(pid: int) -> None:
             capture_output=True,
             timeout=2.0,
             shell=False,
+            creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
         )
 
 

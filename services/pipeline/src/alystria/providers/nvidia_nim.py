@@ -139,9 +139,7 @@ class NvidiaNimAdapter(GuardedAdapter):
             self.descriptor.catalog_version,
         )
 
-    def invoke(
-        self, request: ProviderRequest, context: RequestContext
-    ) -> ProviderResult[Any]:
+    def invoke(self, request: ProviderRequest, context: RequestContext) -> ProviderResult[Any]:
         built = self.build_request(request, context)
         payload = self._json_response(self._send(built, context))
         if isinstance(request, (TextRequest, VisionLanguageRequest)):
@@ -173,6 +171,11 @@ class NvidiaNimAdapter(GuardedAdapter):
                 NVIDIA_CHAT_ENDPOINT,
                 headers=headers,
                 json_body=self._chat_body(request),
+                # Long strict-schema responses from hosted gpt-oss can spend
+                # more than two minutes in the model before returning a single
+                # non-streamed JSON document. Keep the bounded request alive;
+                # the durable workflow and idempotency key still own retries.
+                timeout_seconds=300.0 if request.json_schema is not None else 120.0,
             )
         if isinstance(request, VisionLanguageRequest):
             _require_model(request.model, NVIDIA_VLM_MODELS, "vision-language")
@@ -215,9 +218,7 @@ class NvidiaNimAdapter(GuardedAdapter):
                 "query": {"text": request.query},
                 "passages": [{"text": passage.text} for passage in request.passages],
             }
-            return HttpRequest(
-                "POST", NVIDIA_RERANK_ENDPOINT, headers=headers, json_body=body
-            )
+            return HttpRequest("POST", NVIDIA_RERANK_ENDPOINT, headers=headers, json_body=body)
         if isinstance(request, (ImageRequest, MotionRequest)):
             return self._visual_request(request, headers)
         raise ProviderFailure(
@@ -262,6 +263,10 @@ class NvidiaNimAdapter(GuardedAdapter):
         if request.temperature is not None:
             body["temperature"] = request.temperature
         if request.json_schema is not None:
+            # gpt-oss exposes reasoning separately from message content. Low
+            # effort leaves the bounded completion budget for schema-valid
+            # application output instead of exhausting it on hidden analysis.
+            body["reasoning_effort"] = "low"
             body["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
@@ -311,9 +316,7 @@ class NvidiaNimAdapter(GuardedAdapter):
             content.append(
                 {
                     "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{image.media_type};base64,{image.data_base64}"
-                    },
+                    "image_url": {"url": f"data:{image.media_type};base64,{image.data_base64}"},
                 }
             )
         messages: list[dict[str, Any]] = []
@@ -389,9 +392,7 @@ class NvidiaNimAdapter(GuardedAdapter):
                 provider_id="nvidia-nim",
             )
         body = {
-            "image": (
-                f"data:{request.image.media_type};base64,{request.image.data_base64}"
-            ),
+            "image": (f"data:{request.image.media_type};base64,{request.image.data_base64}"),
             "motion_bucket_id": 127,
         }
         if request.seed is not None:
@@ -454,9 +455,12 @@ class NvidiaNimAdapter(GuardedAdapter):
                     raise _malformed("NVIDIA NIM returned an invalid base64 embedding")
                 vectors.append(value)
                 continue
-            if not isinstance(value, list) or not value or not all(
-                isinstance(item, (int, float)) and not isinstance(item, bool)
-                for item in value
+            if (
+                not isinstance(value, list)
+                or not value
+                or not all(
+                    isinstance(item, (int, float)) and not isinstance(item, bool) for item in value
+                )
             ):
                 raise _malformed("NVIDIA NIM returned an invalid float embedding")
             vector = tuple(float(item) for item in value)
@@ -488,13 +492,13 @@ class NvidiaNimAdapter(GuardedAdapter):
         for row in rows:
             index = _integer(row.get("index"))
             score_value = row.get("logit", row.get("score", row.get("relevance_score")))
-            if not 0 <= index < len(request.passages) or not isinstance(
-                score_value, (int, float)
-            ) or isinstance(score_value, bool):
+            if (
+                not 0 <= index < len(request.passages)
+                or not isinstance(score_value, (int, float))
+                or isinstance(score_value, bool)
+            ):
                 raise _malformed("NVIDIA NIM returned an invalid ranking entry")
-            rankings.append(
-                RerankScore(index, float(score_value), request.passages[index].id)
-            )
+            rankings.append(RerankScore(index, float(score_value), request.passages[index].id))
         if not rankings:
             raise _malformed("NVIDIA NIM returned no rankings")
         rankings.sort(key=lambda value: value.score, reverse=True)
@@ -593,9 +597,7 @@ def _media_type(request: ImageRequest | MotionRequest) -> str:
     return "image/png" if request.output_format == "png" else "image/jpeg"
 
 
-def _visual_media_type_from_bytes(
-    request: ImageRequest | MotionRequest, content: bytes
-) -> str:
+def _visual_media_type_from_bytes(request: ImageRequest | MotionRequest, content: bytes) -> str:
     """Bind provider media metadata to the returned bytes, not requested intent."""
 
     if isinstance(request, MotionRequest):

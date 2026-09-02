@@ -169,8 +169,12 @@ class OutlineSection:
             raise ValueError("section duration must be positive")
         normalized = re.sub(r"\s+", " ", title).strip()
         return cls(
-            stable_id("section", normalized, *objective_ids), normalized, tuple(objective_ids),
-            teaching_strategy.strip(), estimated_seconds, tuple(evidence_claim_ids),
+            stable_id("section", normalized, *objective_ids),
+            normalized,
+            tuple(objective_ids),
+            teaching_strategy.strip(),
+            estimated_seconds,
+            tuple(evidence_claim_ids),
         )
 
 
@@ -189,9 +193,7 @@ class LearningPlan:
             raise ValueError("learning plan requires a topic, objectives, and outline")
         objective_ids = {objective.id for objective in self.objectives}
         referenced = {
-            objective_id
-            for section in self.outline
-            for objective_id in section.objective_ids
+            objective_id for section in self.outline for objective_id in section.objective_ids
         }
         unknown = referenced - objective_ids
         if unknown:
@@ -208,6 +210,10 @@ class ScriptSection:
     narration: str
     visual_intent: str
     claim_ids: tuple[str, ...] = ()
+    scene_type: str | None = None
+    title: str | None = None
+    on_screen_text: tuple[str, ...] = ()
+    visual_beat: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,8 +236,7 @@ class ScriptDraft:
     ) -> ScriptDraft:
         section_tuple = tuple(sections)
         words = sum(
-            len(re.findall(r"\b\w+[\w'-]*\b", section.narration))
-            for section in section_tuple
+            len(re.findall(r"\b\w+[\w'-]*\b", section.narration)) for section in section_tuple
         )
         content = "\n".join(section.narration for section in section_tuple)
         return cls(
@@ -510,8 +515,13 @@ class EducationalWorkflow:
     ) -> LearningPlan:
         outline = self.provider.build_outline(topic, learner, objectives, target_duration_seconds)
         return LearningPlan(
-            topic.strip(), learner, tuple(objectives), prerequisites, tuple(misconceptions),
-            tuple(outline), target_duration_seconds,
+            topic.strip(),
+            learner,
+            tuple(objectives),
+            prerequisites,
+            tuple(misconceptions),
+            tuple(outline),
+            target_duration_seconds,
         )
 
     def create_script(

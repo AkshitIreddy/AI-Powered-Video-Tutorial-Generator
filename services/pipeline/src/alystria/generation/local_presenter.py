@@ -67,6 +67,7 @@ PORTRAIT_SUFFIXES = {
     "image/webp": ".webp",
 }
 AUDIO_SUFFIXES = {
+    "audio/mpeg": ".mp3",
     "audio/wav": ".wav",
     "audio/x-wav": ".wav",
 }
@@ -168,7 +169,9 @@ class SubprocessPresenterCommandRunner:
         creation_flags = 0
         process_options: dict[str, Any] = {}
         if os.name == "nt":
-            creation_flags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+            creation_flags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) | int(
+                getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
         else:
             process_options["start_new_session"] = True
         try:
@@ -407,9 +410,7 @@ class LocalPresenterRuntime:
                         "libx264 muxing is not permitted"
                     )
                 if self.worker_contract is None:
-                    raise ValueError(
-                        "Managed MuseTalk requires an exact-hash worker contract"
-                    )
+                    raise ValueError("Managed MuseTalk requires an exact-hash worker contract")
                 if self.gpu_lease is None:
                     raise ValueError("Managed MuseTalk requires GPU lease metadata")
         elif not self.unsafe_test_only_acknowledged:
@@ -621,8 +622,7 @@ class LocalPresenterMediaClient:
                     "contractId": contract.contract_id,
                     "entrypoint": _pin_manifest(contract.entrypoint),
                     "files": [
-                        {"role": item.role, **_pin_manifest(item.pin)}
-                        for item in contract.files
+                        {"role": item.role, **_pin_manifest(item.pin)} for item in contract.files
                     ],
                 }
             if self.runtime.gpu_lease is not None:
@@ -718,7 +718,9 @@ class LocalPresenterMediaClient:
                 state_path,
                 {
                     "schemaVersion": 1,
-                    "state": "cancelled" if isinstance(error, LocalPresenterCancelledError) else "failed",
+                    "state": "cancelled"
+                    if isinstance(error, LocalPresenterCancelledError)
+                    else "failed",
                     "requestKey": request_key,
                     "errorType": type(error).__name__,
                 },
@@ -801,7 +803,9 @@ class LocalPresenterMediaClient:
     def _read_progress(self, path: Path) -> tuple[dict[str, object], ...]:
         if not path.exists():
             if self.runtime.execution_policy is PresenterExecutionPolicy.MANAGED_VERIFIED:
-                raise LocalPresenterOutputError("Managed presenter worker emitted no progress ledger")
+                raise LocalPresenterOutputError(
+                    "Managed presenter worker emitted no progress ledger"
+                )
             return ()
         try:
             info = path.lstat()
@@ -809,7 +813,9 @@ class LocalPresenterMediaClient:
                 raise LocalPresenterOutputError("Presenter progress ledger is unsafe or oversized")
             lines = path.read_text(encoding="utf-8").splitlines()
         except (OSError, UnicodeDecodeError) as error:
-            raise LocalPresenterOutputError("Presenter progress ledger could not be read") from error
+            raise LocalPresenterOutputError(
+                "Presenter progress ledger could not be read"
+            ) from error
         if not 1 <= len(lines) <= MAX_PROGRESS_EVENTS:
             raise LocalPresenterOutputError("Presenter progress ledger has an invalid event count")
         events: list[dict[str, object]] = []
@@ -826,7 +832,9 @@ class LocalPresenterMediaClient:
             try:
                 event = json.loads(line)
             except json.JSONDecodeError as error:
-                raise LocalPresenterOutputError("Presenter progress ledger contains invalid JSON") from error
+                raise LocalPresenterOutputError(
+                    "Presenter progress ledger contains invalid JSON"
+                ) from error
             if not isinstance(event, dict) or event.get("schemaVersion") != 1:
                 raise LocalPresenterOutputError("Presenter progress event has an invalid schema")
             if event.get("sequence") != index or event.get("stage") not in allowed_stages:
@@ -837,14 +845,23 @@ class LocalPresenterMediaClient:
                 or isinstance(raw_progress, bool)
                 or not previous_progress <= float(raw_progress) <= 1
             ):
-                raise LocalPresenterOutputError("Presenter progress must be monotonic from zero to one")
+                raise LocalPresenterOutputError(
+                    "Presenter progress must be monotonic from zero to one"
+                )
             message = event.get("message")
-            if not isinstance(message, str) or not message or len(message) > 512 or "\x00" in message:
+            if (
+                not isinstance(message, str)
+                or not message
+                or len(message) > 512
+                or "\x00" in message
+            ):
                 raise LocalPresenterOutputError("Presenter progress message is invalid")
             previous_progress = float(raw_progress)
             events.append(cast(dict[str, object], event))
         if events[-1]["stage"] != "complete" or previous_progress != 1:
-            raise LocalPresenterOutputError("Presenter progress ledger has no completed terminal event")
+            raise LocalPresenterOutputError(
+                "Presenter progress ledger has no completed terminal event"
+            )
         return tuple(events)
 
     def _build_generated_media(
@@ -864,7 +881,8 @@ class LocalPresenterMediaClient:
         duration_value = probe.get("durationSeconds", 0.0)
         duration_seconds = (
             float(duration_value)
-            if isinstance(duration_value, (int, float, str)) and not isinstance(duration_value, bool)
+            if isinstance(duration_value, (int, float, str))
+            and not isinstance(duration_value, bool)
             else 0.0
         )
         return GeneratedMedia(
@@ -1390,9 +1408,7 @@ def _config_worker_contract(value: object, root: Path) -> PresenterWorkerContrac
     if not isinstance(value, dict):
         raise LocalPresenterPolicyError("workerContract must be an object")
     files_value = value.get("files")
-    if not isinstance(files_value, list) or not all(
-        isinstance(item, dict) for item in files_value
-    ):
+    if not isinstance(files_value, list) or not all(isinstance(item, dict) for item in files_value):
         raise LocalPresenterPolicyError("workerContract.files must be a list")
     try:
         return PresenterWorkerContract(
@@ -1652,6 +1668,7 @@ def _stop_process(process: subprocess.Popen[bytes]) -> None:
                 shell=False,
                 timeout=5,
                 check=False,
+                creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
             )
         elif os.name != "nt" and callable(kill_group := getattr(os, "killpg", None)):
             kill_group(process.pid, signal.SIGTERM)

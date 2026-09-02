@@ -20,6 +20,7 @@ from alystria.project.database import transaction
 from alystria.project.models import utc_now
 from alystria.project_customization import validate_customization
 from alystria.providers import parse_routing_policy
+from alystria.research import EducationalProvider
 from alystria.security.files import detect_mime
 from alystria.sources import (
     DOCLING_SUFFIXES,
@@ -164,6 +165,7 @@ class GenerationCoordinator:
         *,
         media_client: GenerationMediaClient | None = None,
         renderer_client: RendererClient | None = None,
+        educational_provider: EducationalProvider | None = None,
     ) -> None:
         self.store = store
         self.runtime = runtime or SQLiteWorkflowRuntime(store.connection)
@@ -172,6 +174,7 @@ class GenerationCoordinator:
             self.runtime,
             media_client=media_client,
             renderer_client=renderer_client,
+            educational_provider=educational_provider,
         )
         self._media_cancel = getattr(self.workflow.media_client, "cancel", None)
         self._media_reset_cancellation = getattr(
@@ -703,9 +706,7 @@ def request_from_canonical_fixture(fixture_id: str) -> GenerationRequest:
     for candidate in candidates:
         if candidate.is_file():
             return request_from_fixture(candidate)
-    raise FileNotFoundError(
-        f"The bundled canonical fixture is unavailable: {fixture_id}"
-    )
+    raise FileNotFoundError(f"The bundled canonical fixture is unavailable: {fixture_id}")
 
 
 def request_from_desktop(
@@ -780,9 +781,7 @@ def request_from_desktop(
     ).lower()
     routing_value = snapshot.get("providerRoutingPolicy")
     routing_policy = (
-        parse_routing_policy(routing_value).to_dict()
-        if isinstance(routing_value, dict)
-        else None
+        parse_routing_policy(routing_value).to_dict() if isinstance(routing_value, dict) else None
     )
     if starter_audio_root is None:
         configured_starter_root = os.environ.get("ALYSTRIA_STARTER_AUDIO_ROOT")
@@ -796,9 +795,7 @@ def request_from_desktop(
     )
     customization_value = snapshot.get("customization")
     customization = (
-        validate_customization(customization_value)
-        if customization_value is not None
-        else None
+        validate_customization(customization_value) if customization_value is not None else None
     )
     if starter_visual_root is None:
         configured_visual_root = os.environ.get("ALYSTRIA_STARTER_VISUAL_ROOT")
@@ -828,8 +825,7 @@ def request_from_desktop(
     }
     presenter_mode = (
         "auto"
-        if customization is None
-        or bool(visual_customization.get("presenter", {}).get("enabled"))
+        if customization is None or bool(visual_customization.get("presenter", {}).get("enabled"))
         else "off"
     )
     canonical_fixture_value = snapshot.get("canonicalFixtureId")
@@ -929,8 +925,7 @@ def _source_from_desktop_record(
         content=content,
         locator=locator,
         media_type=media_type,
-        license_id=_optional_string(item.get("licenseId"))
-        or _optional_string(item.get("license")),
+        license_id=_optional_string(item.get("licenseId")) or _optional_string(item.get("license")),
         creator=_optional_string(item.get("creator")),
         artifact_hash=artifact_hash,
         locator_metadata=locator_metadata,

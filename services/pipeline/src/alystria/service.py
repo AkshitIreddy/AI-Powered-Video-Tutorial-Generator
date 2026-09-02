@@ -30,6 +30,7 @@ from .generation import (
     RendererOptions,
     RendererRuntimeError,
     RuntimeGenerationMediaClient,
+    StructuredWritingEducationalProvider,
     create_production_renderer_client,
     default_local_media_client,
     load_local_presenter_media_client,
@@ -47,7 +48,7 @@ from .native_controls import NativeControlCoordinator, native_job_receipt
 from .project import ProjectHistory, ProjectStore, export_project, import_project
 from .project_assets import import_project_asset, select_presenter_profile
 from .project_customization import save_project_customization
-from .providers import ProviderRuntimeFactory, parse_routing_policy
+from .providers import Capability, ProviderRuntimeFactory, parse_routing_policy
 from .security.files import ImportLimits, validate_file
 
 if TYPE_CHECKING:
@@ -57,9 +58,7 @@ MAX_DESKTOP_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_DESKTOP_SOURCE_BASE64_CHARS = ((MAX_DESKTOP_SOURCE_BYTES + 2) // 3) * 4
 MAX_DESKTOP_SNAPSHOT_BYTES = 1024 * 1024
 SOURCE_PRIVACY_CLASSES = frozenset({"public", "project_local", "sensitive", "restricted"})
-SOURCE_RIGHTS_STATUSES = frozenset(
-    {"owned", "licensed", "public_domain", "fair_use", "unknown"}
-)
+SOURCE_RIGHTS_STATUSES = frozenset({"owned", "licensed", "public_domain", "fair_use", "unknown"})
 
 
 class PipelineService:
@@ -270,7 +269,10 @@ class PipelineService:
 
     def project_revisions(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         with self._open(params) as store:
-            return [revision.to_dict() for revision in store.list_revisions(limit=int(params.get("limit", 100)))]
+            return [
+                revision.to_dict()
+                for revision in store.list_revisions(limit=int(params.get("limit", 100)))
+            ]
 
     def project_revise(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._open(params) as store:
@@ -284,15 +286,22 @@ class PipelineService:
 
     def project_approve(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._open(params) as store:
-            return store.approve(name=_required_string(params, "name"), message=str(params.get("message", "Approved snapshot"))).to_dict()
+            return store.approve(
+                name=_required_string(params, "name"),
+                message=str(params.get("message", "Approved snapshot")),
+            ).to_dict()
 
     def project_restore(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._open(params) as store:
-            return store.restore(_required_string(params, "revisionId"), message=_optional_string(params, "message")).to_dict()
+            return store.restore(
+                _required_string(params, "revisionId"), message=_optional_string(params, "message")
+            ).to_dict()
 
     def project_backup(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._open(params) as store:
-            destination = None if params.get("destination") is None else Path(str(params["destination"]))
+            destination = (
+                None if params.get("destination") is None else Path(str(params["destination"]))
+            )
             return {"path": str(store.backup(destination))}
 
     def project_export(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -501,7 +510,9 @@ class PipelineService:
                 priority=int(params.get("priority", 0)),
                 max_attempts=int(params.get("maxAttempts", 3)),
                 estimated_cost_micros=int(params.get("estimatedCostMicros", 0)),
-                budget_micros=None if params.get("budgetMicros") is None else int(params["budgetMicros"]),
+                budget_micros=None
+                if params.get("budgetMicros") is None
+                else int(params["budgetMicros"]),
             ).to_dict()
 
     def job_enqueue_mock_generation(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -513,17 +524,25 @@ class PipelineService:
                 language=str(params.get("language", "en")),
                 duration_minutes=int(params.get("durationMinutes", 5)),
                 seed=int(params.get("seed", 0)),
-                budget_micros=None if params.get("budgetMicros") is None else int(params["budgetMicros"]),
+                budget_micros=None
+                if params.get("budgetMicros") is None
+                else int(params["budgetMicros"]),
             )
 
     def job_get(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._open(params) as store:
-            return SQLiteWorkflowRuntime(store.connection).get_job(_required_string(params, "jobId")).to_dict()
+            return (
+                SQLiteWorkflowRuntime(store.connection)
+                .get_job(_required_string(params, "jobId"))
+                .to_dict()
+            )
 
     def job_list(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         with self._open(params) as store:
             state_values = params.get("states")
-            states = None if state_values is None else [JobState(str(value)) for value in state_values]
+            states = (
+                None if state_values is None else [JobState(str(value)) for value in state_values]
+            )
             return [
                 job.to_dict()
                 for job in SQLiteWorkflowRuntime(store.connection).list_jobs(
@@ -546,11 +565,19 @@ class PipelineService:
 
     def job_cancel(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._open(params) as store:
-            return SQLiteWorkflowRuntime(store.connection).cancel(_required_string(params, "jobId")).to_dict()
+            return (
+                SQLiteWorkflowRuntime(store.connection)
+                .cancel(_required_string(params, "jobId"))
+                .to_dict()
+            )
 
     def job_retry(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._open(params) as store:
-            return SQLiteWorkflowRuntime(store.connection).retry(_required_string(params, "jobId")).to_dict()
+            return (
+                SQLiteWorkflowRuntime(store.connection)
+                .retry(_required_string(params, "jobId"))
+                .to_dict()
+            )
 
     def job_run_pending(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         with self._open(params) as store:
@@ -576,7 +603,11 @@ class PipelineService:
 
     def job_usage(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._open(params) as store:
-            return SQLiteWorkflowRuntime(store.connection).usage_summary(_required_string(params, "jobId")).to_dict()
+            return (
+                SQLiteWorkflowRuntime(store.connection)
+                .usage_summary(_required_string(params, "jobId"))
+                .to_dict()
+            )
 
     def dependency_invalidate(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._open(params) as store:
@@ -823,6 +854,7 @@ def _enqueue_generation_coordinator(
     """Build task keys without hashing/probing the renderer on an RPC thread."""
 
     media_client = default_local_media_client()
+    educational_provider = None
     head = store.head_revision()
     routing_value = None if head is None else head.snapshot.get("providerRoutingPolicy")
     if isinstance(routing_value, dict):
@@ -830,15 +862,22 @@ def _enqueue_generation_coordinator(
             raise ValueError(
                 "Project provider routing requires an authenticated credential runtime"
             )
-        media_client = RuntimeGenerationMediaClient(
-            provider_runtime_factory.build(parse_routing_policy(routing_value))
-        )
+        provider_runtime = provider_runtime_factory.build(parse_routing_policy(routing_value))
+        media_client = RuntimeGenerationMediaClient(provider_runtime)
+        if any(
+            route.capability is Capability.LLM_STRUCTURED
+            for route in provider_runtime.policy.routes
+        ):
+            educational_provider = StructuredWritingEducationalProvider.from_runtime(
+                provider_runtime
+            )
     media_client = _configured_local_presenter(store, media_client)
     return GenerationCoordinator(
         store,
         runtime,
         media_client=media_client,
         renderer_client=_queued_renderer_identity(),
+        educational_provider=educational_provider,
     )
 
 
@@ -894,6 +933,7 @@ def _production_generation_coordinator(
 
     renderer = _production_renderer_client(store)
     media_client = default_local_media_client()
+    educational_provider = None
     head = store.head_revision()
     routing_value = None if head is None else head.snapshot.get("providerRoutingPolicy")
     if isinstance(routing_value, dict):
@@ -903,12 +943,20 @@ def _production_generation_coordinator(
             )
         provider_runtime = provider_runtime_factory.build(parse_routing_policy(routing_value))
         media_client = RuntimeGenerationMediaClient(provider_runtime)
+        if any(
+            route.capability is Capability.LLM_STRUCTURED
+            for route in provider_runtime.policy.routes
+        ):
+            educational_provider = StructuredWritingEducationalProvider.from_runtime(
+                provider_runtime
+            )
     media_client = _configured_local_presenter(store, media_client)
     return GenerationCoordinator(
         store,
         runtime,
         media_client=media_client,
         renderer_client=renderer,
+        educational_provider=educational_provider,
     )
 
 
@@ -1015,9 +1063,7 @@ def _production_renderer_client(store: ProjectStore) -> RendererClient:
         ) from error
 
 
-def _renderer_environment_integer(
-    name: str, *, default: int, minimum: int, maximum: int
-) -> int:
+def _renderer_environment_integer(name: str, *, default: int, minimum: int, maximum: int) -> int:
     raw = os.environ.get(name)
     if raw is None:
         return default
@@ -1030,9 +1076,7 @@ def _renderer_environment_integer(
     return value
 
 
-def _native_control_for_job(
-    store: ProjectStore, job_id: str
-) -> NativeControlCoordinator | None:
+def _native_control_for_job(store: ProjectStore, job_id: str) -> NativeControlCoordinator | None:
     runtime = SQLiteWorkflowRuntime(store.connection)
     try:
         job = runtime.get_job(job_id)

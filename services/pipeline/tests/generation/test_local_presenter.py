@@ -96,7 +96,7 @@ class FakePresenterRunner:
                     assert job["gpuLease"]["leaseId"] == "test-lease"
                 progress = Path(job["progress"]["path"])
                 progress.write_text(
-                    '\n'.join(
+                    "\n".join(
                         (
                             json.dumps(
                                 {
@@ -219,9 +219,7 @@ def _runtime(root: Path, *, managed: bool = True) -> tuple[LocalPresenterRuntime
         ),
         unsafe_test_only_acknowledged=not managed,
         minimum_output_bytes=32,
-        encoder_policy=(
-            PresenterEncoderPolicy(ffmpeg, _digest(ffmpeg)) if managed else None
-        ),
+        encoder_policy=(PresenterEncoderPolicy(ffmpeg, _digest(ffmpeg)) if managed else None),
         worker_contract=(
             PresenterWorkerContract(
                 "alystria.musetalk.worker.v1",
@@ -320,8 +318,7 @@ def test_presenter_environment_uses_project_contained_home_roots(
 def test_presenter_environment_path_normalizes_windows_extended_prefixes() -> None:
     assert _subprocess_environment_path(Path(r"\\?\C:\sandbox\home")) == r"C:\sandbox\home"
     assert (
-        _subprocess_environment_path(Path(r"\\?\UNC\server\share\home"))
-        == r"\\server\share\home"
+        _subprocess_environment_path(Path(r"\\?\UNC\server\share\home")) == r"\\server\share\home"
     )
 
 
@@ -357,6 +354,28 @@ def test_managed_worker_returns_ffprobe_validated_video_generated_media(tmp_path
         assert len(runner.calls) == 3
         assert "lavfi" in runner.calls[0]
         assert all("scene/unsafe name" not in item for call in runner.calls for item in call)
+    finally:
+        store.close()
+
+
+def test_managed_worker_accepts_magic_validated_mp3_narration(tmp_path: Path) -> None:
+    store, portrait_hash, _ = _store_with_inputs(tmp_path)
+    narration = store.add_artifact_bytes(
+        b"ID3\x04\x00\x00\x00\x00\x00\x00" + bytes(128),
+        media_type="audio/mpeg",
+        original_name="narration.mp3",
+        metadata={"rightsStatus": "owned"},
+    )
+    runtime, worker, ffprobe = _runtime(tmp_path / "runtime")
+    runner = FakePresenterRunner(worker, ffprobe)
+    try:
+        media = _client(store, runtime, portrait_hash, runner).create_presenter(
+            {"id": "scene-1"}, narration_hash=narration.hash, seed=42
+        )
+        worker_call = next(call for call in runner.calls if Path(call[0]) == worker.resolve())
+        staged_audio = Path(worker_call[worker_call.index("--audio") + 1])
+        assert staged_audio.suffix == ".mp3"
+        assert media.media_type == "video/mp4"
     finally:
         store.close()
 
@@ -605,9 +624,7 @@ def test_managed_musetalk_config_loads_brokered_encoder_policy(tmp_path: Path) -
                 "executionPolicy": "managed-verified",
                 "networkPolicy": "supervisor-deny",
                 "minimumOutputBytes": 32,
-                "profiles": [
-                    {"profileId": "default", "portraitArtifactHash": portrait_hash}
-                ],
+                "profiles": [{"profileId": "default", "portraitArtifactHash": portrait_hash}],
                 "defaultProfileId": "default",
             }
         ),
@@ -688,9 +705,9 @@ def test_exact_hash_worker_contract_rejects_changed_model_file(tmp_path: Path) -
     weights.write_bytes(b"tampered")
     try:
         with pytest.raises(LocalPresenterRuntimeError, match="SHA-256 changed"):
-            _client(store, runtime, portrait_hash, FakePresenterRunner(worker, ffprobe)).create_presenter(
-                {"id": "scene-1"}, narration_hash=narration_hash, seed=1
-            )
+            _client(
+                store, runtime, portrait_hash, FakePresenterRunner(worker, ffprobe)
+            ).create_presenter({"id": "scene-1"}, narration_hash=narration_hash, seed=1)
     finally:
         store.close()
 
@@ -701,12 +718,8 @@ def test_promoted_delivery_is_recovered_without_rerunning_worker(tmp_path: Path)
     runner = FakePresenterRunner(worker, ffprobe)
     client = _client(store, runtime, portrait_hash, runner)
     try:
-        first = client.create_presenter(
-            {"id": "scene-1"}, narration_hash=narration_hash, seed=9
-        )
-        second = client.create_presenter(
-            {"id": "scene-1"}, narration_hash=narration_hash, seed=9
-        )
+        first = client.create_presenter({"id": "scene-1"}, narration_hash=narration_hash, seed=9)
+        second = client.create_presenter({"id": "scene-1"}, narration_hash=narration_hash, seed=9)
         worker_calls = [call for call in runner.calls if Path(call[0]) == worker.resolve()]
         assert len(worker_calls) == 1
         assert first.content == second.content
@@ -828,9 +841,7 @@ def test_pinned_worker_validates_contract_and_emits_progress(tmp_path: Path) -> 
             {
                 "schemaVersion": 1,
                 "root": str(source_root),
-                "files": [
-                    {"relativePath": source_file.name, "sha256": _digest(source_file)}
-                ],
+                "files": [{"relativePath": source_file.name, "sha256": _digest(source_file)}],
             }
         ),
         encoding="utf-8",
@@ -952,9 +963,7 @@ def test_cross_connection_job_cancellation_reaches_presenter_client(tmp_path: Pa
             (presenter_job_id,),
         )
         with pytest.raises(LocalPresenterCancelledError, match="cancelled"):
-            client.create_presenter(
-                {"id": "scene-1"}, narration_hash=narration_hash, seed=1
-            )
+            client.create_presenter({"id": "scene-1"}, narration_hash=narration_hash, seed=1)
     finally:
         observer.close()
         store.close()
@@ -1003,7 +1012,10 @@ def test_musetalk_adapter_replaces_upstream_shell_mux_with_fixed_argv(
         "import os\n"
         "from pathlib import Path\n"
         "from musetalk.utils import preprocessing\n"
+        "def get_image(image, face, face_box, mode='raw', fp=None):\n"
+        "    return image\n"
         "def main(args):\n"
+        "    assert args.parsing_mode == 'raw'\n"
         "    assert (Path.cwd() / 'models' / 'dwpose' / "
         "'dw-ll_ucoco_384.pth').is_file()\n"
         "    assert Path(preprocessing.config_file).is_file()\n"
@@ -1039,13 +1051,9 @@ def test_musetalk_adapter_replaces_upstream_shell_mux_with_fixed_argv(
         "face-detection-weights": models / "face-detection" / "s3fd-619a316812.pth",
         "face-landmark-weights": models / "dwpose" / "dw-ll_ucoco_384.pth",
         "face-parse-weights": models / "face-parse-bisent" / "79999_iter.pth",
-        "face-resnet-weights": models
-        / "face-parse-bisent"
-        / "resnet18-5c106cde.pth",
+        "face-resnet-weights": models / "face-parse-bisent" / "resnet18-5c106cde.pth",
         "vae-config": models / "sd-vae-ft-mse" / "config.json",
-        "vae-weights": models
-        / "sd-vae-ft-mse"
-        / "diffusion_pytorch_model.safetensors",
+        "vae-weights": models / "sd-vae-ft-mse" / "diffusion_pytorch_model.safetensors",
     }
     model_config.parent.mkdir(parents=True)
     whisper_config.parent.mkdir(parents=True)
@@ -1102,8 +1110,7 @@ def test_musetalk_adapter_replaces_upstream_shell_mux_with_fixed_argv(
             },
             "workerContract": {
                 "files": [
-                    {"role": role, "path": str(path)}
-                    for role, path in contract_files.items()
+                    {"role": role, "path": str(path)} for role, path in contract_files.items()
                 ]
             },
         },

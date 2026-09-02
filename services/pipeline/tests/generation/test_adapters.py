@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, field
 
 import pytest
@@ -24,8 +25,8 @@ from alystria.generation import (
     WindowsFallbackMediaClient,
     default_local_media_client,
 )
-from alystria.generation.adapters import _media_name
-from alystria.providers import ProviderRuntimeFactory, parse_routing_policy
+from alystria.generation.adapters import RouterMediaClient, _measure_mp3_frames, _media_name
+from alystria.providers import MediaAsset, MediaOutput, ProviderRuntimeFactory, parse_routing_policy
 
 
 def _capabilities(*, available: bool = True) -> WindowsSpeechCapabilities:
@@ -85,6 +86,39 @@ def _scene() -> dict[str, object]:
         "title": "Binary search",
         "narration": "Binary search halves the remaining interval.",
     }
+
+
+def _mp3_frames(count: int) -> bytes:
+    # MPEG-1 Layer III, 128 kbps, 44.1 kHz, no padding: 417 bytes/frame.
+    return b"ID3\x04\x00\x00\x00\x00\x00\x00" + (b"\xff\xfb\x90\x64" + bytes(413)) * count
+
+
+def test_provider_mp3_duration_comes_from_complete_audio_frames() -> None:
+    content = _mp3_frames(100)
+
+    assert _measure_mp3_frames(content) == (2_612, 44_100)
+
+    generated = RouterMediaClient._media(
+        MediaOutput(
+            (
+                MediaAsset(
+                    data_base64=base64.b64encode(content).decode(),
+                    media_type="audio/mpeg",
+                    duration_seconds=0.5,
+                ),
+            )
+        ),
+        "narration.wav",
+        "elevenlabs",
+        "eleven_multilingual_v2",
+        0,
+        {},
+    )
+
+    assert generated.original_name == "narration.mp3"
+    assert generated.metadata["durationMs"] == 2_612
+    assert generated.metadata["sampleRateHz"] == 44_100
+    assert generated.metadata["durationSource"] == "mpeg-audio-frames"
 
 
 def _hybrid_media_policy(*, speech_model: str = WINDOWS_SPEECH_MODEL) -> dict[str, object]:

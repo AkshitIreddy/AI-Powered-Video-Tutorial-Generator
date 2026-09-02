@@ -205,6 +205,47 @@ def _run(argv: tuple[str, ...], *, cwd: Path) -> None:
         raise RuntimeError(f"Presenter FFmpeg failed with code {result.returncode}: {detail}")
 
 
+def _identity_preserving_get_image(
+    image: Any,
+    face: Any,
+    face_box: list[int],
+    *,
+    upstream_get_image: Callable[..., Any],
+    mode: str,
+    fp: Any,
+) -> Any:
+    """Limit MuseTalk replacement pixels to a feathered lip aperture.
+
+    MuseTalk's semantic ``raw`` mask still classifies facial hair as face skin,
+    so a conventional lower-face composite can erase moustaches and beards.
+    Keep its colour-matched composite only around the moving lips and retain
+    the source portrait everywhere else.  The proportions are relative to the
+    detected face box and therefore remain resolution independent.
+    """
+
+    import cv2
+    import numpy as np
+
+    composite = upstream_get_image(image, face, face_box, mode=mode, fp=fp)
+    x1, y1, x2, y2 = (int(value) for value in face_box)
+    width = max(1, x2 - x1)
+    height = max(1, y2 - y1)
+    center = (x1 + width // 2, y1 + round(height * 0.715))
+    axes = (max(2, round(width * 0.26)), max(2, round(height * 0.075)))
+    mask = np.zeros(image.shape[:2], dtype=np.uint8)
+    cv2.ellipse(mask, center, axes, 0, 0, 360, 255, -1, lineType=cv2.LINE_AA)
+    feather = max(3, round(min(width, height) * 0.018))
+    if feather % 2 == 0:
+        feather += 1
+    mask = cv2.GaussianBlur(mask, (feather, feather), 0)
+    alpha = mask.astype(np.float32)[..., None] / 255.0
+    restored = (
+        composite.astype(np.float32) * alpha
+        + image.astype(np.float32) * (1.0 - alpha)
+    )
+    return np.clip(restored, 0, 255).astype(np.uint8)
+
+
 def run_presenter_job(
     job: dict[str, Any], emit_progress: Callable[[str, float, str], None]
 ) -> int:
@@ -398,6 +439,17 @@ def run_presenter_job(
         module.os = os_proxy
         module.subprocess = SimpleNamespace(run=safe_ffmpeg)
         module.fast_check_ffmpeg = lambda: True
+        upstream_get_image = module.get_image
+        module.get_image = lambda image, face, face_box, mode="raw", fp=None: (
+            _identity_preserving_get_image(
+                image,
+                face,
+                face_box,
+                upstream_get_image=upstream_get_image,
+                mode=mode,
+                fp=fp,
+            )
+        )
 
         def upstream_print(*values: object, **kwargs: Any) -> None:
             nonlocal upstream_failure
@@ -428,7 +480,13 @@ def run_presenter_job(
             use_saved_coord=False,
             saved_coord=False,
             use_float16=True,
-            parsing_mode="jaw",
+            # MuseTalk's expanded ``jaw`` segmentation deliberately dilates
+            # skin across the lower face. That erases identity details the
+            # upstream project already calls out (notably moustaches and
+            # beard edges). ``raw`` keeps the original semantic face mask, so
+            # pixels classified outside the actual talking region survive the
+            # composite while the lips remain animated.
+            parsing_mode="raw",
             left_cheek_width=90,
             right_cheek_width=90,
             version="v15",

@@ -24,7 +24,11 @@ from alystria.generation import (
     request_from_desktop,
     request_from_fixture,
 )
-from alystria.generation.workflow import _presenter_direction, _presenter_fit
+from alystria.generation.workflow import (
+    _presenter_direction,
+    _presenter_fit,
+    _presenters_for_render,
+)
 from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
 from alystria.qa import Finding, QualityGate, Severity
@@ -653,11 +657,77 @@ def test_renderer_client_receives_immutable_complete_request(tmp_path: Path) -> 
         assert all("artifactHash" in item for item in sent["assets"])
         assert sent["scenes"][0]["type"] == "presenter-slide"
         assert sent["presenters"]
+        assert len(sent["presenters"]) == 1
         assert sent["presenters"][0]["sceneId"] == sent["scenes"][0]["id"]
         assert sent["presenters"][0]["activeDurationTicks"] == min(
             sent["scenes"][0]["durationTicks"],
             sent["narration"][0]["durationMs"] * 240,
         )
+    finally:
+        store.close()
+
+
+def test_presenter_on_generates_only_for_compatible_scene_layouts(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
+    renderer = RecordingRenderer()
+    coordinator = GenerationCoordinator(store, renderer_client=renderer)
+    try:
+        generation_id = coordinator.start(
+            replace(request(), presenter_mode="on")
+        ).generation_id
+        coordinator.run_pending()
+        coordinator.approve(generation_id)
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        sent = renderer.requests[0]
+        presenter_scene_ids = {
+            scene["id"]
+            for scene in sent["scenes"]
+            if scene["type"] in {"presenter", "presenter-slide", "presenter-with-slide"}
+        }
+        assert {item["sceneId"] for item in sent["presenters"]} == presenter_scene_ids
+        assert len(sent["presenters"]) == 1
+    finally:
+        store.close()
+
+
+def test_render_compatibility_ignores_only_known_non_presenter_bindings() -> None:
+    scenes = [
+        {"id": "intro", "type": "presenter-slide"},
+        {"id": "diagram", "type": "diagram"},
+    ]
+    bindings = [
+        {"sceneId": "intro", "artifactHash": "a" * 64},
+        {"sceneId": "diagram", "artifactHash": "b" * 64},
+        {"sceneId": "unknown", "artifactHash": "c" * 64},
+    ]
+    assert _presenters_for_render(scenes, bindings) == [bindings[0], bindings[2]]
+
+
+def test_render_compatibility_clamps_legacy_binding_to_probed_video_duration(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
+    try:
+        artifact = store.add_artifact_bytes(
+            b"presenter-fixture",
+            media_type="video/mp4",
+            original_name="presenter.mp4",
+            metadata={"probe": {"durationSeconds": 1.25}},
+        )
+        bindings = [
+            {
+                "sceneId": "intro",
+                "artifactHash": artifact.hash,
+                "activeDurationTicks": 2 * 240_000,
+            }
+        ]
+        result = _presenters_for_render(
+            [{"id": "intro", "type": "presenter-slide"}],
+            bindings,
+            store=store,
+        )
+        assert result[0]["activeDurationTicks"] == 300_000
     finally:
         store.close()
 

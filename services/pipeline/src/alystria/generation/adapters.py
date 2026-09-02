@@ -17,6 +17,7 @@ from alystria.audio import (
     WindowsSpeechAudio,
     WindowsSpeechCapabilities,
     WindowsSpeechUnavailableError,
+    measure_wav,
 )
 from alystria.audio import SpeechRequest as AudioSpeechRequest
 from alystria.audio.wav import WavFixtureSpec, generate_sine_wav
@@ -422,24 +423,27 @@ class RouterMediaClient:
         asset = value.assets[0]
         if asset.data_base64 is None:
             raise ValueError("URI-only provider output requires the guarded media-fetch worker")
+        content = base64.b64decode(asset.data_base64, validate=True)
+        media_type = asset.media_type or "application/octet-stream"
         declared_license = asset.license.strip() if isinstance(asset.license, str) else ""
         rights_verified = bool(
-            declared_license
-            and declared_license.casefold() not in {"unknown", "unverified"}
+            declared_license and declared_license.casefold() not in {"unknown", "unverified"}
         )
+        metadata: dict[str, Any] = {
+            "origin": "generated",
+            "rightsStatus": "verified" if rights_verified else "unknown",
+            "licenseId": declared_license or "UNKNOWN",
+            "attribution": asset.attribution,
+            "sourceUri": asset.source_url,
+        }
+        metadata.update(_measured_audio_metadata(content, media_type, asset.duration_seconds))
         return GeneratedMedia(
-            base64.b64decode(asset.data_base64, validate=True),
-            asset.media_type or "application/octet-stream",
+            content,
+            media_type,
             _media_name(name, asset.media_type),
             provider_id,
             model,
-            {
-                "origin": "generated",
-                "rightsStatus": "verified" if rights_verified else "unknown",
-                "licenseId": declared_license or "UNKNOWN",
-                "attribution": asset.attribution,
-                "sourceUri": asset.source_url,
-            },
+            metadata,
             actual_cost_micros,
             dict(usage_units),
         )
@@ -458,6 +462,126 @@ def _media_name(name: str, media_type: str | None) -> str:
         return name
     stem = name.rsplit(".", 1)[0] if "." in name else name
     return f"{stem}{suffix}"
+
+
+def _measured_audio_metadata(
+    content: bytes, media_type: str, provider_duration_seconds: float | None
+) -> dict[str, Any]:
+    """Measure provider audio bytes so timeline trims never use text estimates."""
+
+    normalized = media_type.casefold()
+    if normalized in {"audio/wav", "audio/x-wav"}:
+        measurement = measure_wav(content)
+        return {
+            "durationMs": round(measurement.duration_ms),
+            "sampleRateHz": measurement.sample_rate_hz,
+            "channels": measurement.channels,
+            "durationSource": "decoded-audio-frames",
+        }
+    if normalized == "audio/mpeg":
+        duration_ms, sample_rate_hz = _measure_mp3_frames(content)
+        return {
+            "durationMs": duration_ms,
+            "sampleRateHz": sample_rate_hz,
+            "durationSource": "mpeg-audio-frames",
+        }
+    if (
+        provider_duration_seconds is not None
+        and provider_duration_seconds > 0
+        and provider_duration_seconds < 86_400
+    ):
+        return {
+            "durationMs": round(provider_duration_seconds * 1_000),
+            "durationSource": "provider-metadata",
+        }
+    return {}
+
+
+def _measure_mp3_frames(content: bytes) -> tuple[int, int]:
+    """Return exact MPEG Layer III frame duration and sample rate.
+
+    Duration is the sum of decoded samples rather than a bitrate/filesize
+    estimate, so CBR, VBR, encoder delay, and long-form ElevenLabs responses
+    receive the same authoritative timeline treatment.
+    """
+
+    if len(content) < 4:
+        raise ValueError("Provider MP3 response is too short")
+    offset = _id3v2_end(content)
+    search_limit = min(len(content) - 4, offset + 64 * 1024)
+    while offset <= search_limit and _mp3_frame(content, offset) is None:
+        offset += 1
+    frames = 0
+    duration_seconds = 0.0
+    sample_rate_hz: int | None = None
+    while offset + 4 <= len(content):
+        parsed = _mp3_frame(content, offset)
+        if parsed is None:
+            trailing = content[offset:]
+            if trailing.startswith(b"TAG") and len(trailing) >= 128:
+                break
+            if not trailing.strip(b"\x00"):
+                break
+            raise ValueError("Provider MP3 response contains an invalid frame sequence")
+        frame_bytes, frame_samples, frame_sample_rate = parsed
+        if offset + frame_bytes > len(content):
+            raise ValueError("Provider MP3 response ends inside an audio frame")
+        if sample_rate_hz is None:
+            sample_rate_hz = frame_sample_rate
+        elif sample_rate_hz != frame_sample_rate:
+            raise ValueError("Provider MP3 response changes sample rate mid-stream")
+        duration_seconds += frame_samples / frame_sample_rate
+        frames += 1
+        offset += frame_bytes
+    if frames < 2 or sample_rate_hz is None:
+        raise ValueError("Provider MP3 response has no complete audio frame sequence")
+    return round(duration_seconds * 1_000), sample_rate_hz
+
+
+def _id3v2_end(content: bytes) -> int:
+    if not content.startswith(b"ID3"):
+        return 0
+    if len(content) < 10 or any(value & 0x80 for value in content[6:10]):
+        raise ValueError("Provider MP3 response has an invalid ID3 header")
+    tag_size = sum(
+        value << shift
+        for value, shift in zip(content[6:10], (21, 14, 7, 0), strict=True)
+    )
+    footer_size = 10 if content[5] & 0x10 else 0
+    end = 10 + tag_size + footer_size
+    if end > len(content):
+        raise ValueError("Provider MP3 response ends inside its ID3 tag")
+    return end
+
+
+def _mp3_frame(content: bytes, offset: int) -> tuple[int, int, int] | None:
+    if offset + 4 > len(content):
+        return None
+    header = int.from_bytes(content[offset : offset + 4], "big")
+    if header & 0xFFE00000 != 0xFFE00000:
+        return None
+    version = (header >> 19) & 0b11
+    layer = (header >> 17) & 0b11
+    bitrate_index = (header >> 12) & 0b1111
+    sample_rate_index = (header >> 10) & 0b11
+    padding = (header >> 9) & 1
+    if version == 0b01 or layer != 0b01 or bitrate_index in {0, 15} or sample_rate_index == 3:
+        return None
+    base_sample_rate = (44_100, 48_000, 32_000)[sample_rate_index]
+    sample_rate = base_sample_rate if version == 0b11 else base_sample_rate // (2 if version == 0b10 else 4)
+    if version == 0b11:
+        bitrate_kbps = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)[
+            bitrate_index
+        ]
+        samples = 1_152
+        frame_bytes = 144_000 * bitrate_kbps // sample_rate + padding
+    else:
+        bitrate_kbps = (0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160)[
+            bitrate_index
+        ]
+        samples = 576
+        frame_bytes = 72_000 * bitrate_kbps // sample_rate + padding
+    return frame_bytes, samples, sample_rate
 
 
 class RuntimeGenerationMediaClient:
@@ -485,6 +609,7 @@ class RuntimeGenerationMediaClient:
         self.model_revision = f"{image_route.model}+{speech_route.model}"
         self._image_model = image_route.model
         self._speech_model = speech_route.model
+        self._speech_provider_ids = speech_route.provider_ids
         self._voice = speech_route.voice or "default"
         self._local_narration: WindowsNarrationAdapter | None = None
         if "local-runtime" in speech_route.provider_ids:
@@ -525,15 +650,19 @@ class RuntimeGenerationMediaClient:
             self._local_narration = adapter
 
     def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
-        is_nvidia_flux_klein = (
-            self._image_model == "black-forest-labs/flux.2-klein-4b"
-        )
+        is_nvidia_flux_klein = self._image_model == "black-forest-labs/flux.2-klein-4b"
         # This explicitly audited NVIDIA preview endpoint accepts only its
         # documented square shape. The scene renderer places the returned asset
         # within the authored landscape composition; no provider/model fallback.
         result = self.client.generate(
             ImageRequest(
-                prompt=str(scene.get("visualIntent") or scene["title"]),
+                prompt=(
+                    str(scene.get("visualIntent") or scene["title"]).strip()
+                    + "\n\nCreate a clean, text-free educational supporting illustration. "
+                    "Do not render letters, numbers, equations, captions, interface text, "
+                    "logos, watermarks, signatures, or pseudo-text. Reserve generous negative "
+                    "space for Alystria's native typography and diagrams."
+                ),
                 model=self._image_model,
                 aspect_ratio="1:1" if is_nvidia_flux_klein else "16:9",
                 size="1024x1024" if is_nvidia_flux_klein else None,
@@ -590,6 +719,7 @@ class RuntimeGenerationMediaClient:
                 model=self._speech_model,
                 voice=self._voice,
                 locale=locale,
+                speed=0.86 if self._speech_provider_ids == ("elevenlabs",) else 1.0,
             ),
             idempotency_key=self._idempotency("speech", scene, seed),
         )

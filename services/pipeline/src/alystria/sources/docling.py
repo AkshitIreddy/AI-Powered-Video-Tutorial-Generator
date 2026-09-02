@@ -44,10 +44,7 @@ DOCLING_SUFFIXES = frozenset(
     }
 )
 
-_WORKER_CODE = (
-    "from alystria.sources.docling import worker_main; "
-    "raise SystemExit(worker_main())"
-)
+_WORKER_CODE = "from alystria.sources.docling import worker_main; raise SystemExit(worker_main())"
 _RESULT_OVERHEAD_BYTES = 64 * 1024
 _PRESERVED_ENVIRONMENT = frozenset(
     {
@@ -111,9 +108,7 @@ class _WorkerResult:
 
 def _safe_environment(package_root: Path) -> dict[str, str]:
     environment = {
-        key: value
-        for key, value in os.environ.items()
-        if key.upper() in _PRESERVED_ENVIRONMENT
+        key: value for key, value in os.environ.items() if key.upper() in _PRESERVED_ENVIRONMENT
     }
     environment.update(
         {
@@ -178,9 +173,7 @@ def _convert_document(
     if not isinstance(text, str):
         raise DoclingExtractionError("Docling returned non-text document content")
     if len(text) > max_chars:
-        raise DoclingExtractionError(
-            "Docling extraction exceeds the configured character limit"
-        )
+        raise DoclingExtractionError("Docling extraction exceeds the configured character limit")
     attributes: dict[str, object] = {
         "extractor": "docling",
         "extractor_version": docling_version,
@@ -249,7 +242,9 @@ class DoclingExtractor(DocumentExtractor):
         if not source.is_file():
             raise DoclingExtractionError("Docling input must be a regular non-symbolic-link file")
         if source.suffix.lower() not in DOCLING_SUFFIXES:
-            raise DoclingExtractionError(f"Docling does not accept {source.suffix or '(none)'} files")
+            raise DoclingExtractionError(
+                f"Docling does not accept {source.suffix or '(none)'} files"
+            )
         executable = self.python_executable.resolve(strict=True)
         package_root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory(prefix="alystria-docling-") as directory:
@@ -277,6 +272,7 @@ class DoclingExtractor(DocumentExtractor):
                     encoding="utf-8",
                     errors="replace",
                     timeout=self.timeout_seconds,
+                    creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
                 )
             except subprocess.TimeoutExpired as exc:
                 raise DoclingExtractionError(
@@ -328,16 +324,22 @@ class DoclingExtractor(DocumentExtractor):
         ):
             raise DoclingExtractionError("Docling worker returned an invalid success result")
         if len(text) > max_chars:
-            raise DoclingExtractionError("Docling extraction exceeds the configured character limit")
+            raise DoclingExtractionError(
+                "Docling extraction exceeds the configured character limit"
+            )
         clean_attributes: dict[str, object] = {}
         for key, value in attributes.items():
-            if not isinstance(key, str) or not isinstance(value, str | int | float | bool | type(None)):
+            if not isinstance(key, str) or not isinstance(
+                value, str | int | float | bool | type(None)
+            ):
                 raise DoclingExtractionError("Docling worker returned invalid extraction metadata")
             clean_attributes[key] = value
         return FileExtractionResult(text, media_type, clean_attributes)
 
 
-def docling_extractors(extractor: DocumentExtractor | None = None) -> Mapping[str, DocumentExtractor]:
+def docling_extractors(
+    extractor: DocumentExtractor | None = None,
+) -> Mapping[str, DocumentExtractor]:
     """Return a suffix map suitable for :class:`FileLoader`.
 
     Creating this mapping does not import or initialize Docling.  If the optional

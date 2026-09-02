@@ -140,7 +140,14 @@ fn default_setup() -> LocalModelSetup {
                 ("writing".into(), route("openai", "choose at generation")),
                 ("research".into(), route("openai", "choose at generation")),
                 ("images".into(), route("openai", "gpt-image-2")),
-                ("voice".into(), route("elevenlabs", "choose a voice")),
+                (
+                    "voice".into(),
+                    voice_route(
+                        "elevenlabs",
+                        "eleven_multilingual_v2",
+                        "Xb7hH8MSUJpSbSDYk0k2",
+                    ),
+                ),
                 (
                     "transcription".into(),
                     route("openai", "choose at generation"),
@@ -165,6 +172,13 @@ fn route(provider_id: &str, model_id: &str) -> ProfileRoute {
         install_fingerprint: None,
         voice_id: None,
         presenter_profile_id: None,
+    }
+}
+
+fn voice_route(provider_id: &str, model_id: &str, voice_id: &str) -> ProfileRoute {
+    ProfileRoute {
+        voice_id: Some(voice_id.into()),
+        ..route(provider_id, model_id)
     }
 }
 
