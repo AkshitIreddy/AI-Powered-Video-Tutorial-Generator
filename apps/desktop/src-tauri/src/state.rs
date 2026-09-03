@@ -137,10 +137,66 @@ impl PortableLayout {
 }
 
 fn portable_layout_override() -> Result<Option<PortableLayout>, CommandError> {
-    std::env::var_os("ALYSTRIA_PORTABLE_ROOT")
+    let explicit = std::env::var_os("ALYSTRIA_PORTABLE_ROOT")
         .map(PathBuf::from)
         .map(|root| PortableLayout::from_root(&root))
+        .transpose()?;
+    if explicit.is_some() {
+        return Ok(explicit);
+    }
+    if !cfg!(any(debug_assertions, feature = "portable-debug-runtime")) {
+        return Ok(None);
+    }
+    let executable = std::env::current_exe().map_err(|_| CommandError::io("portable executable discovery"))?;
+    portable_root_from_executable(&executable)
+        .map(|root| PortableLayout::from_root(&root))
         .transpose()
+}
+
+/// Bootstrap the portable process before Tauri creates WebView2 or any worker
+/// threads. Packaged test builds discover their sibling manifest themselves, so
+/// the executable remains the only launch entry point and no Python/console
+/// wrapper is required.
+pub(crate) fn prepare_portable_process_environment() -> Result<(), CommandError> {
+    let Some(layout) = portable_layout_override()? else {
+        return Ok(());
+    };
+    let mut environment = layout.worker_environment();
+    environment.insert(
+        "ALYSTRIA_PIPELINE_WORKER".into(),
+        layout.runtimes.join("alystria-pipeline.exe").into_os_string(),
+    );
+    environment.insert(
+        "ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH".into(),
+        layout.models.join("presenter-runtime.json").into_os_string(),
+    );
+    environment.insert(
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS".into(),
+        "--remote-debugging-port=9333".into(),
+    );
+
+    // SAFETY: this runs synchronously at the very beginning of `run`, before
+    // Tauri, WebView2, the worker supervisor, or any application thread starts.
+    for (key, value) in environment {
+        unsafe { std::env::set_var(key, value) };
+    }
+    Ok(())
+}
+
+fn portable_root_from_executable(executable: &Path) -> Option<PathBuf> {
+    let app_directory = executable.parent()?;
+    if app_directory.file_name()?.to_string_lossy() != "App" {
+        return None;
+    }
+    let root = app_directory.parent()?;
+    let manifest_path = root.join("test-area-manifest.json");
+    let manifest: serde_json::Value = serde_json::from_slice(&fs::read(manifest_path).ok()?).ok()?;
+    if manifest.get("kind")?.as_str()? != "ai-video-tutorial-generator-portable-debug-test-area"
+        || manifest.pointer("/desktop/path")?.as_str()? != "App\\AI Video Tutorial Generator.exe"
+    {
+        return None;
+    }
+    Some(root.to_path_buf())
 }
 
 fn validate_existing_portable_directory(root: &Path, path: &Path) -> Result<(), CommandError> {
@@ -565,6 +621,23 @@ mod tests {
         ] {
             fs::create_dir_all(root.join(directory)).unwrap();
         }
+    }
+
+    #[test]
+    fn packaged_test_executable_discovers_its_portable_root_without_a_launcher() {
+        let temporary = TempDir::new().unwrap();
+        create_portable_layout(temporary.path());
+        let executable = temporary.path().join("App/AI Video Tutorial Generator.exe");
+        fs::write(&executable, b"test executable").unwrap();
+        fs::write(
+            temporary.path().join("test-area-manifest.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "kind": "ai-video-tutorial-generator-portable-debug-test-area",
+                "desktop": { "path": "App\\AI Video Tutorial Generator.exe" }
+            })).unwrap(),
+        ).unwrap();
+
+        assert_eq!(portable_root_from_executable(&executable), Some(temporary.path().to_path_buf()));
     }
 
     #[test]

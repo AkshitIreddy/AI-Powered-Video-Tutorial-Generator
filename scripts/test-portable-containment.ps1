@@ -69,6 +69,7 @@ try {
     }
 
     $PackagerSource = Get-Content -LiteralPath $Packager -Raw
+    $DesktopStateSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\apps\desktop\src-tauri\src\state.rs") -Raw
     foreach ($Variable in @(
         "ALYSTRIA_PORTABLE_ROOT",
         "ALYSTRIA_APP_DATA_DIR",
@@ -91,22 +92,30 @@ try {
         "PLAYWRIGHT_BROWSERS_PATH",
         "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD"
     )) {
-        if ($PackagerSource -notmatch [Regex]::Escape("`"$Variable`"")) {
-            throw "Portable launcher is missing the $Variable redirect."
+        if ($DesktopStateSource -notmatch [Regex]::Escape("`"$Variable`"")) {
+            throw "Portable runtime is missing the $Variable redirect."
         }
     }
     foreach ($RequiredText in @(
         '"AI Video Tutorial Generator Test Sandbox"',
-        'Start AI Video Tutorial Generator Hidden.pyw',
-        'subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS',
-        'startup_info.wShowWindow = subprocess.SW_HIDE',
-        '[str(portable_root / "App" / "AI Video Tutorial Generator.exe")]',
+        'launch = "App\AI Video Tutorial Generator.exe"',
+        'no console or script launcher is included',
+        '$LegacyLauncherPath = Join-Path $Destination "Start AI Video Tutorial Generator Hidden.pyw"',
         'Windows Credential Manager stores provider secret values outside the sandbox',
         'Models\presenter-runtime.json plus its exact model and environment attestations',
-        'launcherSha256'
+        'The GUI executable discovers this signed-path sibling manifest'
     )) {
         if (-not $PackagerSource.Contains($RequiredText)) {
             throw "Portable packager is missing required containment text: $RequiredText"
+        }
+    }
+    foreach ($ForbiddenText in @(
+        'from __future__ import annotations',
+        'subprocess.Popen(',
+        'launcherSha256 ='
+    )) {
+        if ($PackagerSource.Contains($ForbiddenText)) {
+            throw "Portable packager still contains a script-launcher implementation: $ForbiddenText"
         }
     }
     if ($PackagerSource.Contains('Get-ChildItem -LiteralPath $RuntimeDirectory -File -Recurse')) {

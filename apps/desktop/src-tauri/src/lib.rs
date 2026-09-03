@@ -15,7 +15,7 @@ mod types;
 mod validation;
 
 use commands::*;
-use state::AppState;
+use state::{AppState, prepare_portable_process_environment};
 use std::ffi::OsStr;
 use tauri::Manager;
 
@@ -26,6 +26,9 @@ fn should_show_main_window(headless_acceptance: Option<&OsStr>) -> bool {
 }
 
 pub fn run() {
+    prepare_portable_process_environment().unwrap_or_else(|error| {
+        panic!("{}: {}", error.code, error.message);
+    });
     tauri::Builder::default()
         .setup(|app| {
             let state = AppState::initialize(app.handle()).map_err(|error| {
@@ -36,7 +39,11 @@ pub fn run() {
             {
                 let window = app
                     .get_webview_window("main")
-                    .ok_or_else(|| std::io::Error::other("Alystria main window was not created"))?;
+                    .ok_or_else(|| {
+                        std::io::Error::other(
+                            "AI Video Tutorial Generator main window was not created",
+                        )
+                    })?;
                 window.show()?;
             }
             Ok(())
@@ -83,7 +90,7 @@ pub fn run() {
             catalog_discover
         ])
         .run(tauri::generate_context!())
-        .expect("Alystria Studio desktop runtime failed");
+        .expect("AI Video Tutorial Generator desktop runtime failed");
 }
 
 #[tauri::command]

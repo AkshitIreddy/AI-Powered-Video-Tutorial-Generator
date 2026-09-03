@@ -41,43 +41,12 @@ def main() -> int:
     stdout_path = logs / "packaged-headless-smoke.stdout.log"
     stderr_path = logs / "packaged-headless-smoke.stderr.log"
 
-    app_data = portable / "App Data"
-    cache = portable / "Cache"
-    temporary = portable / "Temp"
     environment = os.environ.copy()
-    environment.update(
-        {
-            "ALYSTRIA_HEADLESS_ACCEPTANCE": "1",
-            "ALYSTRIA_PORTABLE_ROOT": str(portable),
-            "ALYSTRIA_APP_DATA_DIR": str(app_data),
-            "ALYSTRIA_RUNTIME_DIR": str(portable / "Runtime"),
-            "ALYSTRIA_MODELS_DIR": str(portable / "Models"),
-            "ALYSTRIA_PROJECTS_DIR": str(portable / "Projects"),
-            "ALYSTRIA_EXPORTS_DIR": str(portable / "Exports"),
-            "ALYSTRIA_LOGS_DIR": str(logs),
-            "ALYSTRIA_CACHE_DIR": str(cache),
-            "ALYSTRIA_TEMP_DIR": str(temporary),
-            "ALYSTRIA_PIPELINE_WORKER": str(
-                portable / "Runtime" / "alystria-pipeline.exe"
-            ),
-            "ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH": str(
-                portable / "Models" / "presenter-runtime.json"
-            ),
-            "WEBVIEW2_USER_DATA_FOLDER": str(app_data / "WebView2"),
-            "TEMP": str(temporary),
-            "TMP": str(temporary),
-            "TMPDIR": str(temporary),
-            "APPDATA": str(app_data / "Roaming"),
-            "LOCALAPPDATA": str(app_data / "Local"),
-            "USERPROFILE": str(app_data / "User Profile"),
-            "XDG_CACHE_HOME": str(cache / "XDG"),
-            "HF_HOME": str(cache / "HuggingFace"),
-            "TORCH_HOME": str(cache / "Torch"),
-            "PYTHONPYCACHEPREFIX": str(cache / "PythonBytecode"),
-            "PLAYWRIGHT_BROWSERS_PATH": "0",
-            "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
-        }
-    )
+    # Deliberately provide no portable path redirects here. The packaged GUI
+    # executable must discover its sibling manifest and bootstrap WebView2,
+    # state, caches, models, and workers by itself. This flag only suppresses
+    # the main window for automated acceptance.
+    environment["ALYSTRIA_HEADLESS_ACCEPTANCE"] = "1"
     startup = subprocess.STARTUPINFO()
     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startup.wShowWindow = subprocess.SW_HIDE

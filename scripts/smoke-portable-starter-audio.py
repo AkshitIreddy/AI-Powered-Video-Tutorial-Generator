@@ -113,7 +113,7 @@ def main() -> int:
     test_area = arguments.test_area.resolve(strict=True)
     manifest_path = test_area / "test-area-manifest.json"
     manifest = _load_json(manifest_path, maximum_bytes=1024 * 1024)
-    if manifest.get("kind") != "alystria-studio-portable-debug-test-area":
+    if manifest.get("kind") != "ai-video-tutorial-generator-portable-debug-test-area":
         raise ValueError("Not an Alystria portable debug test area")
     audio_record = manifest.get("starterAudio")
     if not isinstance(audio_record, dict):
