@@ -107,7 +107,11 @@ import papercutCelia from "./assets/presenters/papercut-celia-v1.webp";
 import retroFelix from "./assets/presenters/retro-orbit-felix-v1.webp";
 import vectorAvery from "./assets/presenters/vector-avery-v1.webp";
 import watercolorElisabeth from "./assets/presenters/watercolor-elisabeth-v1.webp";
-import educatorMaya from "./assets/presenters/educator-maya-v1.webp";
+import educatorMaya from "./assets/presenters/educator-maya-v2.webp";
+import animeHana from "./assets/presenters/anime-hana-v1.webp";
+import animeKenji from "./assets/presenters/anime-kenji-v1.webp";
+import cartoonCamille from "./assets/presenters/cartoon-camille-v1.webp";
+import cartoonElias from "./assets/presenters/cartoon-elias-v1.webp";
 import softwareDaniel from "./assets/presenters/software-daniel-v1.webp";
 import sciencePriya from "./assets/presenters/science-priya-v1.webp";
 import languageSofia from "./assets/presenters/language-sofia-v1.webp";
@@ -214,6 +218,7 @@ import type {
   StudioAssetReference,
   StudioMode,
   ToastMessage,
+  TutorialMode,
   Workspace,
 } from "./types";
 import { usePersistentState } from "./usePersistentState";
@@ -403,6 +408,12 @@ const DEFAULT_CANVAS_CUSTOMIZATION: CanvasCustomization = {
     scale: 72,
     crop: "portrait",
     frame: "soft",
+    idleAnimation: true,
+    blink: true,
+    breathing: true,
+    restMouth: "closed",
+    voiceDirection: "Neutral adult teaching voice · clear, conversational, medium pace",
+    preferredVoiceId: null,
   },
   audio: {
     musicAssetId: null,
@@ -412,7 +423,7 @@ const DEFAULT_CANVAS_CUSTOMIZATION: CanvasCustomization = {
     narrationDucking: 72,
   },
   assets: [
-    starterAsset("presenter-portrait.educator-maya-v1", "presenter", "Maya · mathematics educator", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "e8366f39fb96b09deafe280d62849f85c06634a709072d96513948b98de87002", 38202, "image/webp"),
+    starterAsset("presenter-portrait.educator-maya-v2", "presenter", "Maya · mathematics educator", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "15d33bfa90ec87899c949eb8a79aa9ddc83659e960769843f5bab2933de4ee02", 99766, "image/webp"),
     starterAsset("presenter-portrait.software-daniel-v1", "presenter", "Daniel · software instructor", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "1d255bf5667329819cb7783d799a32adf2185efe643436e1e3e2d7651bc597ce", 32826, "image/webp"),
     starterAsset("presenter-portrait.science-priya-v1", "presenter", "Priya · science educator", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "19721ae4c93b76b372eb9d4cf1b26974b345e9677f26a638c465cafdd1185ea3", 36586, "image/webp"),
     starterAsset("presenter-portrait.language-sofia-v1", "presenter", "Sofia · language tutor", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "75c5d75b054a3a5bcbfc21bb9ba3c333f9159fd2920a3013ec26fd9ef54fbea1", 44438, "image/webp"),
@@ -438,6 +449,10 @@ const DEFAULT_CANVAS_CUSTOMIZATION: CanvasCustomization = {
     starterAsset("presenter-portrait.vector-avery-v1", "presenter", "Avery · vector editorial", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
     starterAsset("presenter-portrait.cartoon-oliver-v1", "presenter", "Oliver · drawn classroom", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
     starterAsset("presenter-portrait.charcoal-marta-v1", "presenter", "Marta · charcoal", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED"),
+    starterAsset("presenter-portrait.anime-hana-v1", "presenter", "Hana · anime mathematics tutor", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "26d63abe834a25eaa6be5c9d771c0568e53f161235ae103cf3bdbce2d96312e8", 109414, "image/webp"),
+    starterAsset("presenter-portrait.anime-kenji-v1", "presenter", "Kenji · anime coding mentor", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "52746b517c6d01a6397a5e6e3d9ec34e48575a8752b6d968cb2a2189ef125f92", 124942, "image/webp"),
+    starterAsset("presenter-portrait.cartoon-camille-v1", "presenter", "Camille · cartoon physics maker", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "22af5557ee1b924e3d33a61a15ef5c2e5f112522ec2389b862194b61382c2a19", 315578, "image/webp"),
+    starterAsset("presenter-portrait.cartoon-elias-v1", "presenter", "Elias · cartoon design historian", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "fa43c1c968f97a6d164981b6229e24661d6fa429fabdb49955c7f80c8413551d", 201138, "image/webp"),
     starterAsset("background.academic-evidence-paper-v1", "background", "Academic evidence paper", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "1ba1306b0eb2dc4af7d0c04b7e7785ed27febf2a12922c91110770c13dc155ca", 2001277, "image/png"),
     starterAsset("background.modern-tech-signal-v1", "background", "Modern signal", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "49e8abe6ba85052c6f74c022b468ebd983460600912f3e77b4b0fd301fc3a66d", 1268644, "image/png"),
     starterAsset("background.playful-paper-cut-v1", "background", "Playful paper cut", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "52f98ff2927c5f73d4518e25d70a9d93e42044e4b3363bcccd06a2f0a5471806", 1892657, "image/png"),
@@ -464,8 +479,16 @@ const PALETTE_PRESETS: Array<{ id: CanvasCustomization["paletteId"]; name: strin
   { id: "signal", name: "Signal room", colors: { paper: "#F5F6FA", ink: "#121725", accent: "#D14862", evidence: "#176E97" } },
 ];
 
-const STARTER_PRESENTER_PREVIEWS: Record<string, { src: string; focalPoint: string }> = {
-  "presenter-portrait.educator-maya-v1": { src: educatorMaya, focalPoint: "50% 20%" },
+interface PresenterPersona {
+  readonly src: string;
+  readonly focalPoint: string;
+  readonly voiceDirection?: string;
+  readonly elevenLabsVoiceId?: string;
+  readonly idleReady?: boolean;
+}
+
+const STARTER_PRESENTER_PREVIEWS: Record<string, PresenterPersona> = {
+  "presenter-portrait.educator-maya-v2": { src: educatorMaya, focalPoint: "50% 20%", voiceDirection: "Warm, assured adult mathematics educator · clear medium pace", elevenLabsVoiceId: "Xb7hH8MSUJpSbSDYk0k2", idleReady: true },
   "presenter-portrait.software-daniel-v1": { src: softwareDaniel, focalPoint: "50% 20%" },
   "presenter-portrait.science-priya-v1": { src: sciencePriya, focalPoint: "50% 20%" },
   "presenter-portrait.language-sofia-v1": { src: languageSofia, focalPoint: "50% 20%" },
@@ -491,7 +514,22 @@ const STARTER_PRESENTER_PREVIEWS: Record<string, { src: string; focalPoint: stri
   "presenter-portrait.vector-avery-v1": { src: vectorAvery, focalPoint: "50% 20%" },
   "presenter-portrait.cartoon-oliver-v1": { src: cartoonOliver, focalPoint: "50% 20%" },
   "presenter-portrait.charcoal-marta-v1": { src: charcoalMarta, focalPoint: "50% 20%" },
+  "presenter-portrait.anime-hana-v1": { src: animeHana, focalPoint: "50% 19%", voiceDirection: "Warm adult science tutor · patient, bright, never childlike", idleReady: true },
+  "presenter-portrait.anime-kenji-v1": { src: animeKenji, focalPoint: "50% 19%", voiceDirection: "Calm adult coding mentor · precise, conversational, lightly energetic", idleReady: true },
+  "presenter-portrait.cartoon-camille-v1": { src: cartoonCamille, focalPoint: "50% 18%", voiceDirection: "Energetic adult physics maker · curious and articulate", idleReady: true },
+  "presenter-portrait.cartoon-elias-v1": { src: cartoonElias, focalPoint: "50% 18%", voiceDirection: "Friendly adult design historian · measured and story-led", idleReady: true },
 };
+
+function presenterVoiceMatch(assetId: string | null, label?: string): Pick<CanvasCustomization["presenter"], "voiceDirection" | "preferredVoiceId"> {
+  const persona = assetId ? STARTER_PRESENTER_PREVIEWS[assetId] : undefined;
+  if (persona?.voiceDirection) return { voiceDirection: persona.voiceDirection, preferredVoiceId: persona.elevenLabsVoiceId ?? null };
+  const role = (label ?? "").toLocaleLowerCase("en-US");
+  if (/software|coding|tech|engineer/.test(role)) return { voiceDirection: "Adult technical educator · precise, calm, conversational", preferredVoiceId: null };
+  if (/young-learner|playful|story/.test(role)) return { voiceDirection: "Warm adult primary educator · animated but never childlike", preferredVoiceId: null };
+  if (/history|documentary|lecturer/.test(role)) return { voiceDirection: "Adult lecturer · measured, grounded, story-led", preferredVoiceId: null };
+  if (/science|mathematics|academic/.test(role)) return { voiceDirection: "Adult subject educator · warm, assured, medium pace", preferredVoiceId: null };
+  return { voiceDirection: "Neutral adult teaching voice · clear, conversational, medium pace", preferredVoiceId: null };
+}
 
 const STARTER_BACKGROUND_PREVIEWS: Record<string, string> = {
   "background.academic-evidence-paper-v1": academicEvidenceBackground,
@@ -559,7 +597,7 @@ const GUIDED_TOUR_STEPS = [
   { id: "models", target: "[aria-label='Models & providers']", title: "Every capability has its own model route", description: "Search local and hosted catalogs, compare compatibility and licenses, then choose writer, visual review, image, voice, presenter, lip-sync and upscale models independently.", placement: "right" as const },
   { id: "templates", target: "[aria-label='Templates']", title: "Choose an authored visual grammar", description: "Templates define pacing and scene structure. Designed slides remain editable; illustrated slides keep authoritative text on deterministic layers.", placement: "right" as const },
   { id: "jobs", target: ".jobs-button", title: "Background work stays accountable", description: "Every download, generation and render appears here only after you start it, with origin, progress, resource use and cancellation controls.", placement: "bottom" as const },
-  { id: "profile", target: ".profile-button", title: "Your profile and presenter gallery", description: "Choose from the 20 supplied visual styles or configure your own portrait. Presenter identity, voice and consent remain explicit project choices.", placement: "right" as const },
+  { id: "profile", target: ".profile-button", title: "Your profile and presenter gallery", description: "Choose from 30 supplied educator styles or configure your own portrait. Presenter identity, voice, idle motion and consent remain explicit project choices.", placement: "right" as const },
   { id: "editor", target: ".command-trigger", title: "Edit the result, not just the prompt", description: "Open a project to refine slides, transcript, presenter, audio and timeline. AI changes arrive as previewable, reversible proposals before export.", placement: "bottom" as const },
 ] as const;
 
@@ -2351,10 +2389,14 @@ function DesignInspector({ project, customization, onChange, onNotify, onPreview
         <p className="inspector-note">Every upload stores its filename, SHA-256, creator, license, attribution, and export status—never just a loose file path.</p>
       </InspectorSection>
       <InspectorSection title="Presenter">
-        <div className="presenter-grid">{[...Object.keys(STARTER_PRESENTER_PREVIEWS), ...customization.assets.filter((asset) => asset.kind === "presenter" && asset.source === "user-upload").map((asset) => asset.id)].map((id) => { const asset = customization.assets.find((item) => item.id === id); return <button key={id} aria-label={asset?.label ?? id} className={customization.presenter.assetId === id ? "active" : ""} onClick={() => updatePresenter({ assetId: id, placement: "picture-in-picture" })}><PresenterPortrait assetId={id} /><span>{asset?.label}</span></button>; })}</div>
+        <div className="presenter-grid">{[...Object.keys(STARTER_PRESENTER_PREVIEWS), ...customization.assets.filter((asset) => asset.kind === "presenter" && asset.source === "user-upload").map((asset) => asset.id)].map((id) => { const asset = customization.assets.find((item) => item.id === id); const voiceMatch = presenterVoiceMatch(id, asset?.label); return <button key={id} aria-label={asset?.label ?? id} className={customization.presenter.assetId === id ? "active" : ""} onClick={() => updatePresenter({ assetId: id, placement: "picture-in-picture", ...voiceMatch })}><PresenterPortrait assetId={id} /><span><strong>{asset?.label}</strong><small>{STARTER_PRESENTER_PREVIEWS[id]?.idleReady ? "Front-facing · idle-ready" : "Presenter style"}</small></span></button>; })}</div>
         <div className="presenter-upload-identity"><span>Uploaded portrait identity</span><div className="rights-selector two"><button className={presenterIdentity === "synthetic" ? "active" : ""} onClick={() => setPresenterIdentity("synthetic")}>Fictional / generated</button><button className={presenterIdentity === "realPerson" ? "active" : ""} onClick={() => setPresenterIdentity("realPerson")}>Real person</button></div><label>Presenter name<input value={presenterName} onChange={(event) => setPresenterName(event.target.value)} /></label>{presenterIdentity === "synthetic" ? <label className="mini-toggle"><input type="checkbox" checked={syntheticAttested} onChange={(event) => setSyntheticAttested(event.target.checked)} /><span><strong>I attest this identity is fictional or generated</strong><small>Required before local lip-sync or presenter animation.</small></span></label> : <div className="consent-fields"><label>Person shown<input value={consentSubject} onChange={(event) => { setConsentSubject(event.target.value); if (consentAuthority === "selfConsent") setConsentAttestor(event.target.value); }} /></label><label>Consent authority<select value={consentAuthority} onChange={(event) => { const authority = event.target.value as typeof consentAuthority; setConsentAuthority(authority); if (authority === "selfConsent") setConsentAttestor(consentSubject); }}><option value="selfConsent">Self-consent</option><option value="parentOrGuardian">Parent or guardian</option><option value="authorizedRepresentative">Authorized representative</option></select></label><label>Authorized distribution<select value={presenterDistributionScope} onChange={(event) => setPresenterDistributionScope(event.target.value as typeof presenterDistributionScope)}><option value="privatePreview">Private preview only</option><option value="publicNonCommercial">Public, non-commercial</option><option value="publicCommercial">Public and commercial</option></select></label><label>Consent attested by<input value={consentAttestor} readOnly={consentAuthority === "selfConsent"} onChange={(event) => setConsentAttestor(event.target.value)} /></label><label className="mini-toggle"><input type="checkbox" checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} /><span><strong>Portrait animation and the selected distribution scope are authorized</strong><small>Synthetic-media disclosure stays required. Revocation remains attached to this profile.</small></span></label></div>}</div>
         <AssetUpload label="Upload your presenter picture" accept="image/png,image/jpeg,image/webp" onFile={(file) => { void acceptAsset(file, "presenter"); }} />
         <label>Presenter layout<select value={customization.presenter.placement} onChange={(event) => updatePresenter({ placement: event.target.value as CanvasCustomization["presenter"]["placement"] })}><option value="off">Off</option><option value="picture-in-picture">Picture in picture</option><option value="split">Split stage</option><option value="full-frame">Full frame</option></select></label>
+        <div className="presenter-voice-match" role="note"><Mic2 size={16} /><span><strong>Voice matched to the presenter persona</strong><small>{customization.presenter.voiceDirection}{customization.presenter.preferredVoiceId ? " · curated ElevenLabs voice attached" : " · provider voice chosen at generation"}</small></span></div>
+        <label className="mini-toggle"><input type="checkbox" checked={customization.presenter.idleAnimation} onChange={(event) => updatePresenter({ idleAnimation: event.target.checked, blink: event.target.checked, breathing: event.target.checked })} /><span><strong>Natural idle motion</strong><small>Generate quiet breathing and irregular blinks between spoken phrases.</small></span></label>
+        <div className="compact-row"><label className="mini-toggle"><input type="checkbox" checked={customization.presenter.blink} disabled={!customization.presenter.idleAnimation} onChange={(event) => updatePresenter({ blink: event.target.checked })} /><span><strong>Blinking</strong><small>Seeded, non-looping cadence</small></span></label><label className="mini-toggle"><input type="checkbox" checked={customization.presenter.breathing} disabled={!customization.presenter.idleAnimation} onChange={(event) => updatePresenter({ breathing: event.target.checked })} /><span><strong>Breathing</strong><small>Subtle torso motion only</small></span></label></div>
+        <p className="inspector-note"><strong>Rest-mouth guard:</strong> supplied idle portraits use closed lips. Speech animation owns mouth opening only while aligned narration is active.</p>
         <div className="compact-row"><label>Side<select value={customization.presenter.side} onChange={(event) => updatePresenter({ side: event.target.value as "left" | "right" })}><option value="left">Left</option><option value="right">Right</option></select></label><label>Crop<select value={customization.presenter.crop} onChange={(event) => updatePresenter({ crop: event.target.value as CanvasCustomization["presenter"]["crop"] })}><option value="portrait">Portrait safe</option><option value="contain">Contain</option><option value="cover">Fill</option></select></label></div>
         <div className="range-field"><label><span>Presenter scale</span><output>{customization.presenter.scale}%</output></label><input aria-label="Presenter scale" type="range" min="28" max="100" value={customization.presenter.scale} onChange={(event) => updatePresenter({ scale: Number(event.target.value) })} /></div>
       </InspectorSection>
@@ -2495,7 +2537,9 @@ function SceneArtwork({ scene, compact = false }: { scene: Scene; compact?: bool
     {scene.visual === "thread" && <><div className="art-kicker">THE FASTER WAY TO MULTIPLY</div><div className="art-headline">One product<br /><em>disappears.</em></div><div className="art-thread"><i /><i /><i /><i /></div><div className="art-footnote">Karatsuba · divide and conquer</div></>}
     {scene.visual === "split" && <><div className="art-kicker">SPLIT THE PROBLEM</div><div className="number-split"><span>12<small>a</small></span><i>·100 +</i><span>34<small>b</small></span><b>×</b><span>56<small>c</small></span><i>·100 +</i><span>78<small>d</small></span></div><div className="split-brace left" /><div className="split-brace right" /><div className="art-caption">high half <b>→</b> low half</div></>}
     {scene.visual === "formula" && <><div className="art-kicker">THE THREE-PRODUCT INSIGHT</div><div className="formula-stack"><span><small>z₂</small> ac</span><span className="formula-middle"><small>z₁</small> (a+b)(c+d) − ac − bd</span><span><small>z₀</small> bd</span></div><div className="formula-result"><i />3 multiplications, exactly</div></>}
+    {scene.visual === "whiteboard" && <><div className="art-kicker">DRAW WITH THE EXPLANATION</div><div className="whiteboard-preview"><svg viewBox="0 0 640 300"><path d="M58 74 C128 68 184 72 234 74" /><path d="M235 78 C310 108 346 158 406 194" /><path d="M235 78 C304 54 352 42 414 44" /><path className="accent" d="M62 240 C188 246 366 232 562 240" /></svg><span className="board-label input">1234</span><span className="board-label high">12 × 100</span><span className="board-label low">+ 34</span><i className="pencil-cursor" /></div><div className="trace-pill">narration-timed strokes</div></>}
     {scene.visual === "code" && <><div className="art-kicker">TRACE THE RECURSION</div><div className="code-window"><div><i /><i /><i /></div><pre><span>function</span> karatsuba(x, y) {'{'}{"\n"}  <b>if</b> (small) <em>return</em> x * y;{"\n"}  z2 = karatsuba(a, c);{"\n"}  z0 = karatsuba(b, d);{"\n"}  z1 = karatsuba(a+b, c+d);{"\n"}{'}'}</pre></div><div className="trace-pill">call depth · 03</div></>}
+    {scene.visual === "live-code" && <><div className="art-kicker">CODE AS THE PRESENTER SPEAKS</div><div className="code-window live-code-window"><div><i /><i /><i /></div><pre><span>def</span> karatsuba(x, y):{"\n"}  <b>if</b> x &lt; 10 or y &lt; 10:{"\n"}    <em>return</em> x * y<span className="typing-cursor">▌</span>{"\n"}  high, low = split(x)</pre></div><div className="trace-pill">type · explain · run · verify</div></>}
     {scene.visual === "summary" && <><div className="art-kicker">THE THREAD, COMPLETE</div><div className="summary-flow"><span>split</span><i /><span>three products</span><i /><span>recover middle</span><i /><span>combine</span></div><div className="summary-equation">T(n) = 3T(n/2) + O(n)</div></>}
   </div>;
 }
@@ -2511,13 +2555,29 @@ const TEMPLATE_SCENE_LABELS: Readonly<Record<string, readonly string[]>> = {
   "young-learner-story": ["Meet the question", "Enter the story world", "Spot the pattern", "Try the first move", "See why it works", "Make a prediction", "Correct a misconception", "Try a new example", "Mini challenge", "Bring the idea home"],
 };
 
-function createTemplateSceneScaffold(templateId: string, projectId: string, totalMinutes: number): Scene[] {
+const TUTORIAL_MODE_LABELS: Readonly<Record<TutorialMode, string>> = {
+  "visual-explanation": "Visual explanation",
+  "whiteboard-lesson": "Whiteboard lesson",
+  "live-coding": "Live coding walkthrough",
+  "presenter-slides": "Presenter with slides",
+  "worked-derivation": "Worked derivation",
+  "hybrid-teaching": "Hybrid board + code + presenter",
+};
+
+function createTemplateSceneScaffold(templateId: string, projectId: string, totalMinutes: number, tutorialMode: TutorialMode): Scene[] {
   const labels = TEMPLATE_SCENE_LABELS[templateId] ?? TEMPLATE_SCENE_LABELS["explain-hard-idea"]!;
   const duration = Math.max(12, Math.round((totalMinutes * 60) / labels.length));
   return labels.map((title, index) => {
     const reference = completeExampleProject.scenes[index % completeExampleProject.scenes.length]!;
+    const modeTreatment: Pick<Scene, "kind" | "visual"> | undefined = index === 0 || index === labels.length - 1 ? undefined
+      : tutorialMode === "whiteboard-lesson" ? { kind: "whiteboard", visual: "whiteboard" }
+      : tutorialMode === "live-coding" ? { kind: "live-code", visual: "live-code" }
+      : tutorialMode === "worked-derivation" ? { kind: "worked-example", visual: "formula" }
+      : tutorialMode === "hybrid-teaching" ? index % 3 === 1 ? { kind: "whiteboard", visual: "whiteboard" } : index % 3 === 2 ? { kind: "live-code", visual: "live-code" } : { kind: "diagram", visual: "split" }
+      : undefined;
     return {
       ...reference,
+      ...modeTreatment,
       id: `${projectId}-scene-${index + 1}`,
       index: index + 1,
       title,
@@ -2540,6 +2600,7 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
   const [locale, setLocale] = useState<ProjectRecord["locale"]>("English");
   const [grounding, setGrounding] = useState("Grounded");
   const [quality, setQuality] = useState("Standard");
+  const [tutorialMode, setTutorialMode] = useState<TutorialMode>("visual-explanation");
   const [creating, setCreating] = useState(false);
   const [sourceFiles, setSourceFiles] = useState<File[]>([]);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -2611,13 +2672,14 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
         ...DEFAULT_CANVAS_CUSTOMIZATION.presenter,
         assetId: selectedPresenterAssetId,
         placement: "picture-in-picture" as const,
+        ...presenterVoiceMatch(selectedPresenterAssetId, DEFAULT_CANVAS_CUSTOMIZATION.assets.find((asset) => asset.id === selectedPresenterAssetId)?.label),
       },
     } : undefined;
     setCreating(true);
     setCreateError(null);
     try {
       await onCreate(
-        { ...completeExampleProject, id, title: projectTitle, topic: normalizedTopic, description: `${selectedTemplate.name}: a ${grounding.toLowerCase()} tutorial for ${audience.toLowerCase()}.`, audience, locale, duration: durationMinutes, progress: 8, status: "Planning", updatedAt: "just now", templateId: selectedTemplate.id, theme: selectedTemplate.name, scenes: createTemplateSceneScaffold(selectedTemplate.id, id, durationMinutes), sources: [], ...(canonicalFixtureId ? { canonicalFixtureId } : {}), ...(presenterCustomization ? { customization: presenterCustomization } : {}) },
+        { ...completeExampleProject, id, title: projectTitle, topic: normalizedTopic, description: `${selectedTemplate.name}: a ${grounding.toLowerCase()} ${TUTORIAL_MODE_LABELS[tutorialMode].toLowerCase()} for ${audience.toLowerCase()}.`, audience, locale, duration: durationMinutes, progress: 8, status: "Planning", updatedAt: "just now", templateId: selectedTemplate.id, tutorialMode, theme: selectedTemplate.name, scenes: createTemplateSceneScaffold(selectedTemplate.id, id, durationMinutes, tutorialMode), sources: [], ...(canonicalFixtureId ? { canonicalFixtureId } : {}), ...(presenterCustomization ? { customization: presenterCustomization } : {}) },
         {
           grounding: grounding.toLowerCase() as GroundingMode,
           quality: quality.toLowerCase() as QualityPreset,
@@ -2639,11 +2701,11 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
     <div className="wizard-body">
       {step === 1 && <div className="wizard-template-selection"><img src={TEMPLATE_PREVIEWS[selectedTemplate.id]} alt="" /><span><small>Selected learning arc</small><strong>{selectedTemplate.name}</strong><em>{selectedTemplate.scenes} editable scenes · {selectedTemplate.category}</em></span></div>}
       {step === 1 && <div className="wizard-step"><span className="section-kicker">Start with the hard part</span><h2 id="wizard-title">What should become clear?</h2><p>Describe the idea, skill, or question in plain language. You can add documents and URLs after this step.</p><label className="large-input"><WandSparkles size={21} /><textarea autoFocus rows={4} placeholder="e.g. Explain why Karatsuba multiplication needs only three recursive products…" value={topic} onChange={(event) => setTopic(event.target.value)} /></label><div className="prompt-suggestions"><button onClick={() => setTopic("Explain why Karatsuba multiplication needs only three recursive products")}>Karatsuba multiplication</button><button onClick={() => setTopic("Teach binary search through loop invariants and an execution trace")}>Binary search invariants</button><button onClick={() => setTopic("Derive the central limit theorem visually")}>Visual derivation</button></div><div className="source-drop"><Upload size={20} /><span><strong>Add source material</strong><small>{sourceFiles.length ? `${sourceFiles.length} selected · imported privately before generation` : "PDF, DOCX, EPUB, Markdown, or text · 8 MiB each · optional"}</small></span><input ref={sourceInputRef} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => setSourceFiles(Array.from(event.target.files ?? []))} /><button onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? "Change files" : "Choose files"}</button></div>{sourceFiles.length > 0 && <div className="selected-source-list" aria-label="Selected source files">{sourceFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><FileCheck2 size={14} /> {file.name} <small>{formatBytes(file.size)}</small></span>)}</div>}</div>}
-      {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>{PRODUCT_NAME} changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="1">About 1 minute (quick draft)</option><option value="3">About 3 minutes (inspection draft)</option><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="12">About 12 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option><option value="custom">Custom length…</option></select></label>{duration === "custom" && <label><span>Exact duration in minutes</span><input aria-label="Exact duration in minutes" type="number" min="1" max="180" step="1" inputMode="numeric" value={exactDuration} onChange={(event) => setExactDuration(event.target.value)} /><small>Choose any whole number from 1 to 180 minutes.</small></label>}<label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Format</span><select><option>Visual explanation</option><option>Code walkthrough</option><option>Presenter with slides</option><option>Worked derivation</option></select></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>{PRODUCT_NAME} will assume basic algebra, introduce divide and conquer before asymptotic analysis, and surface common misconceptions.</p></div></div></div>}
+      {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>{PRODUCT_NAME} changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="1">About 1 minute (quick draft)</option><option value="3">About 3 minutes (inspection draft)</option><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="12">About 12 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option><option value="custom">Custom length…</option></select></label>{duration === "custom" && <label><span>Exact duration in minutes</span><input aria-label="Exact duration in minutes" type="number" min="1" max="180" step="1" inputMode="numeric" value={exactDuration} onChange={(event) => setExactDuration(event.target.value)} /><small>Choose any whole number from 1 to 180 minutes.</small></label>}<label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Tutorial method</span><select aria-label="Tutorial method" value={tutorialMode} onChange={(event) => setTutorialMode(event.target.value as TutorialMode)}>{Object.entries(TUTORIAL_MODE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>Board strokes and code edits are timed to narration and remain editable.</small></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>{TUTORIAL_MODE_LABELS[tutorialMode]} · {PRODUCT_NAME} will align every visual action to narration, preserve a static accessible alternative, and surface common misconceptions.</p></div></div></div>}
       {step === 3 && <div className="wizard-step"><span className="section-kicker">Lock the trust boundary</span><h2>How should {PRODUCT_NAME} research?</h2><p>No cloud call happens until its provider, data class, retention policy, and cost are approved.</p><div className="choice-cards">{([
         { name: "Creative", detail: "Use the prompt as the source of truth", icon: Sparkles }, { name: "Grounded", detail: "Connect verifiable claims to reliable evidence", icon: ShieldCheck }, { name: "Strict", detail: "Block every unsupported external claim", icon: Lock },
       ] satisfies Array<{ name: string; detail: string; icon: LucideIcon }>).map(({ name, detail, icon: Icon }) => <button key={name} className={grounding === name ? "active" : ""} onClick={() => setGrounding(name)}><span><Icon size={20} /></span><strong>{name}</strong><small>{detail}</small>{grounding === name && <CheckCircle2 size={17} />}</button>)}</div><div className="privacy-selection"><Lock size={18} /><div><strong>Private sources remain local</strong><p>Imported documents start as Local only. Reclassifying them always requires an explicit decision.</p></div><span className="toggle-on"><i /></span></div></div>}
-      {step === 4 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration === "custom" ? exactDuration : duration} minutes</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} private file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Privacy</dt><dd>{routingReview?.privacy ?? "Pending review"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
+      {step === 4 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration === "custom" ? exactDuration : duration} minutes</dd></div><div><dt>Method</dt><dd>{TUTORIAL_MODE_LABELS[tutorialMode]}</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} private file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Privacy</dt><dd>{routingReview?.privacy ?? "Pending review"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
         <section className="routing-review" aria-labelledby="routing-review-title">
           <div className="routing-review-heading"><div><span className="section-kicker">Project provider policy</span><h3 id="routing-review-title">Name every route before work starts.</h3></div><span className={`routing-readiness ${routingReview?.policy ? "ready" : "attention"}`}>{routingLoading ? "Loading" : routingReview?.policy ? <><CheckCircle2 size={13} /> Ready</> : <><CircleAlert size={13} /> Review needed</>}</span></div>
           <div className="routing-review-controls"><label><span>Creation profile</span><select aria-label="Creation profile" value={selectedProfile?.id ?? ""} disabled={routingLoading || !setup} onChange={(event) => { setSelectedProfileId(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }}>{setup?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><label><span>Content class</span><select aria-label="Content class" value={effectiveClassification} disabled={sourceFiles.length > 0} onChange={(event) => { setDataClassification(event.target.value as "public" | "project"); setRoutingApproval(false); setRoutingReviewedAt(null); }}><option value="project">Project content</option><option value="public">Public / synthetic</option></select></label><label><span>Hard budget</span><span className="currency-input"><b>$</b><input aria-label="Hard budget in cents" type="number" min="0" max="100000" value={hardLimitMinorUnits} onChange={(event) => { setHardLimitMinorUnits(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }} /><em>cents</em></span></label></div>

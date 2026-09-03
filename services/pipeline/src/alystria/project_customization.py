@@ -191,10 +191,17 @@ def _validate_presenter(value: Any) -> dict[str, Any]:
     _exact_keys(
         presenter,
         required={"assetId", "placement", "side", "scale", "crop", "frame"},
-        optional=set(),
+        optional={
+            "idleAnimation",
+            "blink",
+            "breathing",
+            "restMouth",
+            "voiceDirection",
+            "preferredVoiceId",
+        },
         label="presenter",
     )
-    return {
+    result = {
         "assetId": _nullable_identifier(presenter.get("assetId"), "presenter.assetId"),
         "placement": _enum(
             presenter, "placement", {"off", "picture-in-picture", "split", "full-frame"}
@@ -204,6 +211,23 @@ def _validate_presenter(value: Any) -> dict[str, Any]:
         "crop": _enum(presenter, "crop", {"contain", "cover", "portrait"}),
         "frame": _enum(presenter, "frame", {"none", "soft", "keyline"}),
     }
+    if "idleAnimation" in presenter:
+        result["idleAnimation"] = _boolean(presenter, "idleAnimation")
+    if "blink" in presenter:
+        result["blink"] = _boolean(presenter, "blink")
+    if "breathing" in presenter:
+        result["breathing"] = _boolean(presenter, "breathing")
+    if "restMouth" in presenter:
+        result["restMouth"] = _enum(presenter, "restMouth", {"closed"})
+    if "voiceDirection" in presenter:
+        result["voiceDirection"] = _printable(
+            presenter.get("voiceDirection"), "presenter.voiceDirection", 240
+        )
+    if "preferredVoiceId" in presenter:
+        result["preferredVoiceId"] = _nullable_identifier(
+            presenter.get("preferredVoiceId"), "presenter.preferredVoiceId"
+        )
+    return result
 
 
 def _validate_audio(value: Any) -> dict[str, Any]:

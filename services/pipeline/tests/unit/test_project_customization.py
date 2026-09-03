@@ -66,6 +66,28 @@ def _customization() -> dict[str, Any]:
     }
 
 
+def test_presenter_idle_and_voice_pairing_are_validated_without_paths() -> None:
+    customization = _customization()
+    customization["presenter"].update(
+        {
+            "idleAnimation": True,
+            "blink": True,
+            "breathing": True,
+            "restMouth": "closed",
+            "voiceDirection": "Warm adult mathematics educator, clear medium pace",
+            "preferredVoiceId": "Xb7hH8MSUJpSbSDYk0k2",
+        }
+    )
+    from alystria.project_customization import validate_customization
+
+    validated = validate_customization(customization)
+    assert validated["presenter"]["idleAnimation"] is True
+    assert validated["presenter"]["blink"] is True
+    assert validated["presenter"]["breathing"] is True
+    assert validated["presenter"]["restMouth"] == "closed"
+    assert validated["presenter"]["preferredVoiceId"] == "Xb7hH8MSUJpSbSDYk0k2"
+
+
 def _project(tmp_path: Path) -> tuple[Path, str, str]:
     root = tmp_path / "Customization Project"
     project_id = str(uuid.uuid4())

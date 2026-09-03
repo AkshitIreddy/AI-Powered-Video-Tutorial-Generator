@@ -235,6 +235,58 @@ describe("provider routing review", () => {
     });
     expect(matched.errors).not.toContain(expect.stringMatching(/compatible narration voice/i));
   });
+
+  it("guards Maya against a masculine local voice and surfaces a cloud override", () => {
+    const mayaProfile: ModelProfile = {
+      ...profile,
+      routes: {
+        ...profile.routes,
+        voice: {
+          providerId: "local-runtime",
+          modelId: "System.Speech.Synthesis",
+          modelRevision: "windows-11-10.0.26200",
+          installFingerprint: "7".repeat(64),
+          voiceId: "Microsoft David Desktop",
+        },
+        lipSync: {
+          providerId: "local-runtime",
+          modelId: "local/musetalk-1.5",
+          modelRevision: "musetalk-1.5-pinned",
+          installFingerprint: "8".repeat(64),
+          presenterProfileId: "presenter-portrait.educator-maya-v2",
+        },
+      },
+    };
+    const localReview = buildProviderRoutingReview({
+      profile: mayaProfile,
+      secretRefs: secrets,
+      dataClassification: "public",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "creative",
+      reviewedAt: "2026-08-29T12:00:00.000Z",
+    });
+    expect(localReview.errors).toContain("Maya · mathematics educator needs a compatible narration voice; choose Microsoft Zira Desktop instead of Microsoft David Desktop.");
+
+    const cloudReview = buildProviderRoutingReview({
+      profile: {
+        ...mayaProfile,
+        routes: {
+          ...mayaProfile.routes,
+          voice: { providerId: "elevenlabs", modelId: "eleven_multilingual_v2", voiceId: "custom-voice" },
+        },
+      },
+      secretRefs: secrets,
+      dataClassification: "public",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "creative",
+      reviewedAt: "2026-08-29T12:00:00.000Z",
+    });
+    expect(cloudReview.warnings.join(" | ")).toMatch(/curated ElevenLabs pairing/);
+  });
 });
 
 function secret(providerId: string): ProviderSecretRef {

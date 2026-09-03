@@ -14,7 +14,7 @@ export const completedOnboarding = {
     providerIds: [],
     modelIds: ["local/qwen3.5-9b-gguf", "local/kokoro", "local/whisper-large-v3-turbo", "local/musetalk-1.5"],
     hardwareReviewed: true,
-    profile: { displayName: "Akshit", portraitAssetId: "presenter-portrait.educator-maya-v1" },
+    profile: { displayName: "Akshit", portraitAssetId: "presenter-portrait.educator-maya-v2" },
   },
   revision: 9,
   updatedAt: "2026-09-02T00:00:00.000Z",

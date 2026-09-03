@@ -3,7 +3,8 @@ export type Workspace = "plan" | "storyboard" | "studio" | "review" | "export";
 export type StudioMode = "guided" | "studio";
 export type ProjectStatus = "Planning" | "Ready to review" | "Rendering" | "Complete";
 export type JobStatus = "running" | "queued" | "complete" | "attention";
-export type SceneKind = "title" | "definition" | "diagram" | "worked-example" | "comparison" | "code" | "recap";
+export type SceneKind = "title" | "definition" | "diagram" | "whiteboard" | "worked-example" | "comparison" | "code" | "live-code" | "recap";
+export type TutorialMode = "visual-explanation" | "whiteboard-lesson" | "live-coding" | "presenter-slides" | "worked-derivation" | "hybrid-teaching";
 
 export interface Scene {
   id: string;
@@ -14,7 +15,7 @@ export interface Scene {
   narration: string;
   objective: string;
   status: "approved" | "draft" | "attention";
-  visual: "thread" | "split" | "formula" | "code" | "summary";
+  visual: "thread" | "split" | "formula" | "whiteboard" | "code" | "live-code" | "summary";
   citations: number;
   locked: boolean;
 }
@@ -101,6 +102,12 @@ export interface CanvasCustomization {
     scale: number;
     crop: "contain" | "cover" | "portrait";
     frame: "none" | "soft" | "keyline";
+    idleAnimation?: boolean;
+    blink?: boolean;
+    breathing?: boolean;
+    restMouth?: "closed";
+    voiceDirection?: string;
+    preferredVoiceId?: string | null;
   };
   audio: {
     musicAssetId: string | null;
@@ -161,6 +168,8 @@ export interface ProjectRecord {
   privacy: "Local only" | "Approved cloud";
   /** Stable authored structure selected when the project was created. */
   templateId?: string;
+  /** Primary generation language; individual scenes may deliberately mix modes. */
+  tutorialMode?: TutorialMode;
   scenes: Scene[];
   sources: SourceRecord[];
   /** Closed product fixture selected from an explicit flagship tutorial brief. */

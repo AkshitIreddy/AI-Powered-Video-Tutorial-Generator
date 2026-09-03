@@ -35,11 +35,42 @@ const curatedStarterPresenterVoices: Record<string, {
   readonly label: string;
   readonly recommendedWindowsVoiceId: string;
   readonly incompatibleWindowsVoiceIds: readonly string[];
+  readonly recommendedElevenLabsVoiceId?: string;
 }> = {
+  "presenter-portrait.educator-maya-v2": {
+    label: "Maya · mathematics educator",
+    recommendedWindowsVoiceId: "Microsoft Zira Desktop",
+    incompatibleWindowsVoiceIds: ["Microsoft David Desktop"],
+    recommendedElevenLabsVoiceId: "Xb7hH8MSUJpSbSDYk0k2",
+  },
   "presenter-portrait.mathematics-arjun-v1": {
     label: "Arjun · mathematics",
     recommendedWindowsVoiceId: "Microsoft David Desktop",
     incompatibleWindowsVoiceIds: ["Microsoft Zira Desktop"],
+  },
+  "presenter-portrait.anime-hana-v1": {
+    label: "Hana · anime science tutor",
+    recommendedWindowsVoiceId: "Microsoft Zira Desktop",
+    incompatibleWindowsVoiceIds: ["Microsoft David Desktop"],
+    recommendedElevenLabsVoiceId: "Xb7hH8MSUJpSbSDYk0k2",
+  },
+  "presenter-portrait.anime-kenji-v1": {
+    label: "Kenji · anime coding mentor",
+    recommendedWindowsVoiceId: "Microsoft David Desktop",
+    incompatibleWindowsVoiceIds: ["Microsoft Zira Desktop"],
+    recommendedElevenLabsVoiceId: "nPczCjzI2devNBz1zQrb",
+  },
+  "presenter-portrait.cartoon-camille-v1": {
+    label: "Camille · cartoon physics maker",
+    recommendedWindowsVoiceId: "Microsoft Zira Desktop",
+    incompatibleWindowsVoiceIds: ["Microsoft David Desktop"],
+    recommendedElevenLabsVoiceId: "Xb7hH8MSUJpSbSDYk0k2",
+  },
+  "presenter-portrait.cartoon-elias-v1": {
+    label: "Elias · cartoon design historian",
+    recommendedWindowsVoiceId: "Microsoft David Desktop",
+    incompatibleWindowsVoiceIds: ["Microsoft Zira Desktop"],
+    recommendedElevenLabsVoiceId: "onwK4e9ZLuTAKqWW03F9",
   },
 };
 
@@ -169,6 +200,14 @@ export function buildProviderRoutingReview(input: {
     && curatedPairing.incompatibleWindowsVoiceIds.some((voiceId) => voiceId.localeCompare(narrationRoute.voiceId!, undefined, { sensitivity: "accent" }) === 0)
   ) {
     errors.push(`${curatedPairing.label} needs a compatible narration voice; choose ${curatedPairing.recommendedWindowsVoiceId} instead of ${narrationRoute.voiceId}.`);
+  }
+  if (
+    curatedPairing?.recommendedElevenLabsVoiceId
+    && narrationRoute?.providerId === "elevenlabs"
+    && narrationRoute.voiceId?.trim()
+    && narrationRoute.voiceId.trim() !== curatedPairing.recommendedElevenLabsVoiceId
+  ) {
+    warnings.push(`${curatedPairing.label} has a curated ElevenLabs pairing (${curatedPairing.recommendedElevenLabsVoiceId}); the selected override remains available for creative control.`);
   }
   if (!input.approvalChecked) {
     errors.push("Review and approve the named providers, retention boundary, and hard budget.");
