@@ -1072,6 +1072,28 @@ def test_renderer_stages_real_presenter_video_only_for_presenter_scene(tmp_path:
         store.close()
 
 
+def test_renderer_preserves_native_whiteboard_and_live_code_kinds(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Native Tutorial Modes", name="Native Tutorial Modes")
+    pins = runtime_pins(tmp_path)
+    runner = FakeRendererRunner(pins)
+    try:
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        request = render_request(first.hash, second.hash)
+        request["scenes"][0]["type"] = "whiteboard"
+        request["scenes"][1]["type"] = "live-code"
+
+        SubprocessRendererClient(store, pins, runner=runner).render(request)
+
+        assert runner.render_manifest is not None
+        assert [scene["kind"] for scene in runner.render_manifest["scenes"]] == [
+            "whiteboard",
+            "live-code",
+        ]
+    finally:
+        store.close()
+
+
 def test_renderer_skips_explicit_nonvideo_presenter_placeholder(tmp_path: Path) -> None:
     store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
     pins = runtime_pins(tmp_path)
