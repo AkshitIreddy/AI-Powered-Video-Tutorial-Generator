@@ -121,6 +121,37 @@ def test_provider_mp3_duration_comes_from_complete_audio_frames() -> None:
     assert generated.metadata["durationSource"] == "mpeg-audio-frames"
 
 
+def test_router_media_preserves_only_provider_neutral_alignment_metadata() -> None:
+    content = _mp3_frames(10)
+    words = [{"word": "Hello", "startMs": 0, "endMs": 200}]
+    generated = RouterMediaClient._media(
+        MediaOutput(
+            (
+                MediaAsset(
+                    data_base64=base64.b64encode(content).decode(),
+                    media_type="audio/mpeg",
+                ),
+            ),
+            metadata={
+                "wordTimings": words,
+                "alignmentSource": "provider-native",
+                "alignmentEngine": "generic-provider-clock",
+                "providerSecret": "must-not-cross-boundary",
+            },
+        ),
+        "narration.wav",
+        "any-speech-provider",
+        "any-speech-model",
+        0,
+        {},
+    )
+
+    assert generated.metadata["wordTimings"] == words
+    assert generated.metadata["alignmentSource"] == "provider-native"
+    assert generated.metadata["alignmentEngine"] == "generic-provider-clock"
+    assert "providerSecret" not in generated.metadata
+
+
 def _hybrid_media_policy(*, speech_model: str = WINDOWS_SPEECH_MODEL) -> dict[str, object]:
     return {
         "version": 1,

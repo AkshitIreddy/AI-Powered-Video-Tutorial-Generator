@@ -436,6 +436,20 @@ class RouterMediaClient:
             "attribution": asset.attribution,
             "sourceUri": asset.source_url,
         }
+        # Timestamp-bearing providers and independently selected aligners may
+        # attach a provider-neutral timing envelope. Keep it inert here; the
+        # workflow performs strict bounds, coverage, and monotonicity checks
+        # before any timing reaches captions or renderer actions.
+        if isinstance(value.metadata, dict):
+            for key in (
+                "wordTimings",
+                "alignment",
+                "alignmentSource",
+                "alignmentEngine",
+            ):
+                candidate = value.metadata.get(key)
+                if candidate is not None:
+                    metadata[key] = candidate
         metadata.update(_measured_audio_metadata(content, media_type, asset.duration_seconds))
         return GeneratedMedia(
             content,

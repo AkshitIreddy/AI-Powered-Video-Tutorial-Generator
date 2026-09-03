@@ -322,6 +322,15 @@ def render_request(first_hash: str, second_hash: str) -> dict[str, Any]:
                 "artifactHash": first_hash,
                 "mediaType": "audio/wav",
                 "durationMs": 900,
+                "words": [
+                    {"token": "Split", "start_ms": 100, "end_ms": 300},
+                    {"token": "input", "start_ms": 350, "end_ms": 800},
+                ],
+                "alignment": {
+                    "source": "forced-alignment",
+                    "engine": "selected-aligner",
+                    "alignedTokenRatio": 1.0,
+                },
             },
             {
                 "sceneId": "scene_close",
@@ -449,6 +458,15 @@ def test_subprocess_renderer_translates_materializes_invokes_and_cleans(tmp_path
             "position": "bottom",
         }
         assert manifest["scenes"][1]["captions"][0]["endTick"] == 240_000
+        assert manifest["scenes"][0]["narrationTiming"] == {
+            "schemaVersion": 1,
+            "source": "forced-alignment",
+            "alignedTokenRatio": 1.0,
+            "words": [
+                {"token": "Split", "startTick": 24_000, "endTick": 72_000},
+                {"token": "input", "startTick": 84_000, "endTick": 192_000},
+            ],
+        }
         assert manifest["audioInputs"][0]["startTick"] == 0
         assert manifest["audioInputs"][0]["endTick"] == 216_000
         assert manifest["audioInputs"][1]["startTick"] == 240_000

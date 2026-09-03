@@ -962,6 +962,41 @@ function assetReference(scene: ResolvedScene, role: "primary" | "secondary" | "p
     : { id: fallbackId, alt: fallbackAlt, fit: "contain" as const };
 }
 
+interface NarrationActionWindow {
+  readonly startTick: number;
+  readonly endTick: number;
+  readonly anchor: string;
+}
+
+function narrationActionWindows(scene: ResolvedScene, count: number): readonly NarrationActionWindow[] {
+  if (count <= 0) return [];
+  const words = scene.narrationTiming?.words;
+  if (words && words.length >= count) {
+    return Array.from({ length: count }, (_, index) => {
+      const firstIndex = Math.floor(index * words.length / count);
+      const exclusiveEnd = Math.max(firstIndex + 1, Math.floor((index + 1) * words.length / count));
+      const windowWords = words.slice(firstIndex, exclusiveEnd);
+      return {
+        startTick: windowWords[0]!.startTick,
+        endTick: windowWords[windowWords.length - 1]!.endTick,
+        anchor: windowWords.map((word) => word.token).join(" "),
+      };
+    });
+  }
+
+  // Every speech model remains usable when it supplies no timing at all.
+  // Reserve a small visual lead-in/tail, then spread actions deterministically
+  // across the actual scene duration rather than assuming a fixed scene size.
+  const start = Math.min(scene.durationTicks - 1, Math.min(240_000, Math.floor(scene.durationTicks * 0.08)));
+  const end = Math.max(start + 1, Math.min(scene.durationTicks, Math.ceil(scene.durationTicks * 0.92)));
+  const span = end - start;
+  return Array.from({ length: count }, (_, index) => {
+    const windowStart = start + Math.floor(index * span / count);
+    const windowEnd = Math.max(windowStart + 1, start + Math.floor((index + 1) * span / count));
+    return { startTick: windowStart, endTick: windowEnd, anchor: "" };
+  });
+}
+
 /**
  * Deterministically upgrades the intentionally narrow renderer wire record to
  * the built-in semantic scene DSL. The bridge derives display-only data from
@@ -1175,6 +1210,7 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
       break;
     case "whiteboard": {
       const boardLines = lines.slice(0, 4);
+      const actionWindows = narrationActionWindows(scene, boardLines.length);
       content = {
         kind,
         ...common,
@@ -1183,12 +1219,24 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
         strokes: boardLines.map((_, index) => ({
           id: child(`stroke-${index + 1}`),
           points: [{ x: 0.1, y: 0.2 + index * 0.18 }, { x: 0.28, y: 0.205 + index * 0.18 }, { x: 0.72, y: 0.2 + index * 0.18 }],
-          startTick: 240_000 + index * 360_000,
-          endTick: 480_000 + index * 360_000,
+          startTick: actionWindows[index]!.startTick,
+          endTick: Math.max(
+            actionWindows[index]!.startTick + 1,
+            Math.round(actionWindows[index]!.startTick + (actionWindows[index]!.endTick - actionWindows[index]!.startTick) * 0.72),
+          ),
           tool: "pencil" as const,
           color: index % 2 === 0 ? "primary" as const : "secondary" as const,
         })),
-        labels: boardLines.map((text, index) => ({ id: child(`label-${index + 1}`), text, x: 0.12, y: 0.18 + index * 0.18, startTick: 480_000 + index * 360_000 })),
+        labels: boardLines.map((text, index) => ({
+          id: child(`label-${index + 1}`),
+          text,
+          x: 0.12,
+          y: 0.18 + index * 0.18,
+          startTick: Math.max(
+            actionWindows[index]!.startTick + 1,
+            Math.round(actionWindows[index]!.startTick + (actionWindows[index]!.endTick - actionWindows[index]!.startTick) * 0.72),
+          ),
+        })),
       };
       break;
     }
@@ -1200,16 +1248,23 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
       {
       const resolvedLines = (semantic?.code.length ? semantic.code.map((unit) => unitText(unit) ?? authoredInformationLabel(unit)) : lines)
         .map((text, index) => ({ id: child(`line-${index + 1}`), text, highlight: index === 0 }));
+      const actionWindows = narrationActionWindows(scene, resolvedLines.length);
       content = {
         kind,
         ...common,
         language: kind === "terminal" ? "text" : optionalMetadataString(scene, "language") ?? "text",
         filename: kind === "terminal" ? "Tutorial console" : "lesson.txt",
         lines: resolvedLines,
-        ...(kind === "live-code" ? { actions: resolvedLines.flatMap((line, index) => [
-          { id: child(`type-${index + 1}`), type: "type" as const, lineId: line.id, startTick: 240_000 + index * 360_000, endTick: 480_000 + index * 360_000 },
-          { id: child(`explain-${index + 1}`), type: "explain" as const, lineId: line.id, startTick: 480_000 + index * 360_000, endTick: 600_000 + index * 360_000 },
-        ]) } : {}),
+        ...(kind === "live-code" ? { actions: resolvedLines.flatMap((line, index) => {
+          const window = actionWindows[index]!;
+          const typeEnd = Math.max(window.startTick + 1, Math.round(window.startTick + (window.endTick - window.startTick) * 0.68));
+          const explainStart = Math.min(typeEnd, Math.max(window.startTick, window.endTick - 1));
+          const narrationAnchor = window.anchor || undefined;
+          return [
+            { id: child(`type-${index + 1}`), type: "type" as const, lineId: line.id, startTick: window.startTick, endTick: typeEnd, ...(narrationAnchor ? { narrationAnchor } : {}) },
+            { id: child(`explain-${index + 1}`), type: "explain" as const, lineId: line.id, startTick: explainStart, endTick: window.endTick, ...(narrationAnchor ? { narrationAnchor } : {}) },
+          ];
+        }) } : {}),
       };
       break;
       }

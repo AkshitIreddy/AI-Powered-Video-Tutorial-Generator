@@ -560,6 +560,8 @@ class SubprocessRendererClient:
             scene = _required_mapping(scene_value, f"scene {index}")
             scene_id = _required_string(scene, "id")
             duration_ticks = _required_int(scene, "durationTicks", minimum=1)
+            narration = narration_by_scene.get(scene_id)
+            narration_timing = _scene_narration_timing(narration, duration_ticks)
             kind = _scene_kind(scene.get("type", scene.get("kind", "bullets")))
             cues_value = caption_map.get(scene_id, [])
             if not isinstance(cues_value, list):
@@ -608,9 +610,13 @@ class SubprocessRendererClient:
                         or f"An explanatory {kind.replace('-', ' ')} scene titled {_required_string(scene, 'title')}"
                     ),
                     "metadata": scene_metadata,
+                    **(
+                        {"narrationTiming": narration_timing}
+                        if narration_timing is not None
+                        else {}
+                    ),
                 }
             )
-            narration = narration_by_scene.get(scene_id)
             if narration is not None:
                 digest = _required_string(narration, "artifactHash").lower()
                 if not SHA256_PATTERN.fullmatch(digest) or not self.store.cas.verify(digest):
@@ -2391,6 +2397,65 @@ def _scene_captions(cues: list[object], scene_id: str, duration_ticks: int) -> l
             }
         )
     return sorted(result, key=lambda item: (int(item["startTick"]), str(item["id"])))
+
+
+def _scene_narration_timing(
+    narration: Mapping[str, Any] | None,
+    duration_ticks: int,
+) -> dict[str, Any] | None:
+    """Translate provider-neutral millisecond cues into scene-local ticks."""
+
+    if narration is None:
+        return None
+    words_value = narration.get("words")
+    if not isinstance(words_value, list) or not 0 < len(words_value) <= 4_096:
+        return None
+    alignment_value = narration.get("alignment")
+    alignment = alignment_value if isinstance(alignment_value, Mapping) else {}
+    source = alignment.get("source", "duration-proportional")
+    if source not in {
+        "provider-native",
+        "forced-alignment",
+        "duration-proportional",
+    }:
+        raise ValueError("Narration timing has an unsupported alignment source")
+    ratio_value = alignment.get("alignedTokenRatio", 1.0)
+    if (
+        not isinstance(ratio_value, (int, float))
+        or isinstance(ratio_value, bool)
+        or not 0 <= float(ratio_value) <= 1
+    ):
+        raise ValueError("Narration timing alignedTokenRatio must be in [0, 1]")
+
+    words: list[dict[str, Any]] = []
+    previous_start_tick = -1
+    for index, value in enumerate(words_value):
+        word = _required_mapping(value, f"narration word {index}")
+        token = _required_string(word, "token")[:200]
+        start_ms = _required_int(word, "start_ms", minimum=0)
+        end_ms = _required_int(word, "end_ms", minimum=1)
+        start_tick = start_ms * TICKS_PER_MILLISECOND
+        end_tick = end_ms * TICKS_PER_MILLISECOND
+        if (
+            start_tick < previous_start_tick
+            or start_tick >= duration_ticks
+            or end_tick <= start_tick
+        ):
+            raise ValueError("Narration word timings must be sorted inside the scene")
+        words.append(
+            {
+                "token": token,
+                "startTick": start_tick,
+                "endTick": min(duration_ticks, end_tick),
+            }
+        )
+        previous_start_tick = start_tick
+    return {
+        "schemaVersion": 1,
+        "source": source,
+        "alignedTokenRatio": float(ratio_value),
+        "words": words,
+    }
 
 
 def _render_target(value: Mapping[str, Any]) -> dict[str, Any]:

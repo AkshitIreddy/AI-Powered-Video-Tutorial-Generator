@@ -28,6 +28,7 @@ from alystria.generation.workflow import (
     _presenter_direction,
     _presenter_fit,
     _presenters_for_render,
+    _provider_neutral_word_timings,
 )
 from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
@@ -57,6 +58,55 @@ def request(*, faults: int = 0) -> GenerationRequest:
         repairable_faults=faults,
         metadata={"testOnlyInjectQaFaults": True} if faults else {},
     )
+
+
+def test_word_timing_normalization_supports_native_forced_and_fallback_routes() -> None:
+    native_words, native_alignment = _provider_neutral_word_timings(
+        "Every model works",
+        duration_ms=900,
+        metadata={
+            "wordTimings": [
+                {"word": "Every", "startMs": 20, "endMs": 220},
+                {"word": "model", "startMs": 250, "endMs": 500},
+                {"word": "works", "startMs": 540, "endMs": 860},
+            ],
+            "alignmentEngine": "provider-word-clock",
+        },
+    )
+    assert [word.token for word in native_words] == ["Every", "model", "works"]
+    assert native_alignment == {
+        "schemaVersion": 1,
+        "status": "COMPLETE",
+        "source": "provider-native",
+        "engine": "provider-word-clock",
+        "alignedTokenRatio": 1.0,
+    }
+
+    _, forced_alignment = _provider_neutral_word_timings(
+        "Every model works",
+        duration_ms=900,
+        metadata={
+            "alignment": {
+                "source": "forced-alignment",
+                "engine": "selected-local-aligner",
+                "words": [
+                    {"token": "Every", "start_ms": 20, "end_ms": 220},
+                    {"token": "model", "start_ms": 250, "end_ms": 500},
+                    {"token": "works", "start_ms": 540, "end_ms": 860},
+                ],
+            }
+        },
+    )
+    assert forced_alignment["source"] == "forced-alignment"
+    assert forced_alignment["engine"] == "selected-local-aligner"
+
+    fallback_words, fallback_alignment = _provider_neutral_word_timings(
+        "Every model works",
+        duration_ms=900,
+        metadata={"wordTimings": [{"word": "bad", "startMs": 900, "endMs": 901}]},
+    )
+    assert fallback_alignment["source"] == "duration-proportional"
+    assert fallback_words[-1].end_ms == 900
 
 
 def open_coordinator(tmp_path: Path) -> tuple[ProjectStore, GenerationCoordinator]:

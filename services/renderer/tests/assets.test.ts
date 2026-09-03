@@ -62,6 +62,34 @@ test("visual manifest requires absolute, hash-matched, referenced bitmap inputs"
   );
 });
 
+test("manifest accepts provider-free timing and rejects malformed word ranges", () => {
+  const base = fixtureManifest();
+  const scene = {
+    ...base.scenes[0]!,
+    durationTicks: 1_200_000,
+    narrationTiming: {
+      schemaVersion: 1 as const,
+      source: "provider-native" as const,
+      alignedTokenRatio: 1,
+      words: [{ token: "Portable", startTick: 24_000, endTick: 180_000 }],
+    },
+  };
+  assert.doesNotThrow(() => assertRenderManifest({ ...base, scenes: [scene] }));
+  assert.throws(
+    () => assertRenderManifest({
+      ...base,
+      scenes: [{
+        ...scene,
+        narrationTiming: {
+          ...scene.narrationTiming,
+          words: [{ token: "Broken", startTick: 1_100_000, endTick: 1_300_000 }],
+        },
+      }],
+    }),
+    /narration word 0 has an invalid range/,
+  );
+});
+
 test("attempt loader enforces containment, exact SHA-256, size, and image magic", async () => {
   const root = await mkdtemp(join(tmpdir(), "alystria-visual-assets-"));
   try {

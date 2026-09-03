@@ -32,6 +32,60 @@ test("frame renderer prepares immutable scene compilation once across frames", (
   assert.equal(first.contentHash, repeated.contentHash);
 });
 
+test("teaching actions follow normalized narration timing without provider coupling", () => {
+  const base = fixtureManifest().scenes[0]!;
+  const timedScene = {
+    ...base,
+    durationTicks: 1_200_000,
+    narrationTiming: {
+      schemaVersion: 1 as const,
+      source: "forced-alignment" as const,
+      alignedTokenRatio: 1,
+      words: [
+        { token: "First", startTick: 120_000, endTick: 240_000 },
+        { token: "idea", startTick: 250_000, endTick: 360_000 },
+        { token: "Second", startTick: 600_000, endTick: 720_000 },
+        { token: "idea", startTick: 740_000, endTick: 900_000 },
+      ],
+    },
+    content: {
+      title: "Narration-led teaching",
+      items: ["Explain the first idea", "Explain the second idea"],
+    },
+  };
+
+  const whiteboard = resolveBuiltinSceneSpec({ ...timedScene, kind: "whiteboard" });
+  assert.equal(whiteboard?.content.kind, "whiteboard");
+  if (whiteboard?.content.kind !== "whiteboard") throw new Error("expected whiteboard");
+  assert.equal(whiteboard.content.strokes[0]?.startTick, 120_000);
+  assert.equal(whiteboard.content.strokes[1]?.startTick, 600_000);
+  assert.equal(whiteboard.content.labels?.[1]?.startTick, 816_000);
+
+  const liveCode = resolveBuiltinSceneSpec({ ...timedScene, kind: "live-code" });
+  assert.equal(liveCode?.content.kind, "live-code");
+  if (liveCode?.content.kind !== "live-code") throw new Error("expected live code");
+  assert.equal(liveCode.content.actions?.[0]?.startTick, 120_000);
+  assert.equal(liveCode.content.actions?.[0]?.narrationAnchor, "First idea");
+  assert.equal(liveCode.content.actions?.[2]?.startTick, 600_000);
+  assert.equal(liveCode.content.actions?.[2]?.narrationAnchor, "Second idea");
+});
+
+test("teaching actions span scene duration when a speech model has no timestamps", () => {
+  const base = fixtureManifest().scenes[0]!;
+  const spec = resolveBuiltinSceneSpec({
+    ...base,
+    id: "untimed-local-voice",
+    kind: "live-code",
+    durationTicks: 2_400_000,
+    content: { title: "Portable fallback", items: ["line one", "line two"] },
+  });
+  assert.equal(spec?.content.kind, "live-code");
+  if (spec?.content.kind !== "live-code") throw new Error("expected live code");
+  assert.equal(spec.content.actions?.[0]?.startTick, 192_000);
+  assert.equal(spec.content.actions?.[2]?.startTick, 1_200_000);
+  assert.equal(spec.content.actions?.[3]?.endTick, 2_208_000);
+});
+
 test("production defaults resolve every built-in kind through SceneView", () => {
   const base = fixtureManifest();
   const renderer = new FrameRenderer({ verifyRepeatability: true });

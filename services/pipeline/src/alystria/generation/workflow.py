@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import itertools
 import json
 import re
+from collections.abc import Mapping
 from contextlib import nullcontext
 from dataclasses import asdict, replace
 from typing import Any
@@ -948,8 +950,10 @@ class GenerationWorkflow:
                 media.metadata.get("durationMs", unscaled_word_timings[-1].end_ms),
                 "narration durationMs",
             )
-            word_timings = _deterministic_word_timings(
-                str(scene["narration"]), duration_ms=duration_ms
+            word_timings, alignment = _provider_neutral_word_timings(
+                str(scene["narration"]),
+                duration_ms=duration_ms,
+                metadata=media.metadata,
             )
             narration.append(
                 {
@@ -959,6 +963,7 @@ class GenerationWorkflow:
                     "durationMs": duration_ms,
                     "sampleRateHz": media.metadata.get("sampleRateHz", 48_000),
                     "words": [asdict(word) for word in word_timings],
+                    "alignment": alignment,
                 }
             )
             links.append(
@@ -2701,3 +2706,105 @@ def _deterministic_word_timings(
         ]
         timings[-1] = replace(timings[-1], end_ms=duration_ms)
     return tuple(timings)
+
+
+def _provider_neutral_word_timings(
+    text: str,
+    *,
+    duration_ms: int,
+    metadata: Mapping[str, Any],
+) -> tuple[tuple[WordTiming, ...], dict[str, Any]]:
+    """Normalize every TTS/alignment route into one renderer-safe timeline.
+
+    A speech provider may return native word timing, or an independently
+    selected aligner may attach forced-alignment timing.  Both use the same
+    bounded metadata shape.  Routes without either capability retain full
+    functionality through deterministic duration-proportional timing.
+    Provider identifiers never enter the renderer contract.
+    """
+
+    alignment_value = metadata.get("alignment")
+    alignment = alignment_value if isinstance(alignment_value, Mapping) else {}
+    raw_words = metadata.get("wordTimings", alignment.get("words"))
+    source_hint = metadata.get("alignmentSource", alignment.get("source"))
+    engine_hint = metadata.get("alignmentEngine", alignment.get("engine"))
+    if isinstance(raw_words, list) and 0 < len(raw_words) <= 4_096:
+        parsed: list[WordTiming] = []
+        try:
+            for raw in raw_words:
+                if not isinstance(raw, Mapping):
+                    raise ValueError("word timing must be an object")
+                token = raw.get("token", raw.get("word"))
+                start = raw.get("startMs", raw.get("start_ms"))
+                end = raw.get("endMs", raw.get("end_ms"))
+                confidence = raw.get("confidence")
+                if not isinstance(token, str) or not token.strip():
+                    raise ValueError("word timing token is missing")
+                if (
+                    not isinstance(start, int)
+                    or isinstance(start, bool)
+                    or not isinstance(end, int)
+                    or isinstance(end, bool)
+                    or start < 0
+                    or end <= start
+                    or end > duration_ms
+                ):
+                    raise ValueError("word timing range is outside narration")
+                if confidence is not None and (
+                    not isinstance(confidence, (int, float))
+                    or isinstance(confidence, bool)
+                    or not 0 <= float(confidence) <= 1
+                ):
+                    raise ValueError("word timing confidence is invalid")
+                parsed.append(
+                    WordTiming(
+                        token.strip(),
+                        start,
+                        end,
+                        confidence=None if confidence is None else float(confidence),
+                    )
+                )
+            # AlignmentResult applies the same monotonic ordering invariant,
+            # but keep this helper independent from provider SDK structures.
+            if any(
+                current.start_ms < previous.start_ms
+                for previous, current in itertools.pairwise(parsed)
+            ):
+                raise ValueError("word timings are not monotonic")
+            expected_tokens = [
+                match.group()
+                for match in re.finditer(r"\b[\w'-]+\b", text, re.UNICODE)
+            ]
+            aligned_ratio = min(1.0, len(parsed) / max(1, len(expected_tokens)))
+            if aligned_ratio < 0.5:
+                raise ValueError("word timing coverage is too low")
+            source = (
+                "forced-alignment"
+                if source_hint == "forced-alignment"
+                else "provider-native"
+            )
+            engine = (
+                str(engine_hint).strip()[:120]
+                if isinstance(engine_hint, str) and engine_hint.strip()
+                else "native-word-timing"
+            )
+            return tuple(parsed), {
+                "schemaVersion": 1,
+                "status": "COMPLETE" if aligned_ratio >= 0.98 else "PARTIAL",
+                "source": source,
+                "engine": engine,
+                "alignedTokenRatio": aligned_ratio,
+            }
+        except (TypeError, ValueError):
+            # Untrusted provider metadata cannot break a route that still has
+            # valid audio. Fall through to the deterministic portable path.
+            pass
+
+    fallback = _deterministic_word_timings(text, duration_ms=duration_ms)
+    return fallback, {
+        "schemaVersion": 1,
+        "status": "COMPLETE",
+        "source": "duration-proportional",
+        "engine": "duration-proportional-v1",
+        "alignedTokenRatio": 1.0,
+    }

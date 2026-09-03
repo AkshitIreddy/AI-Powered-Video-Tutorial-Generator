@@ -61,6 +61,19 @@ export interface SceneContent {
   readonly items?: readonly string[];
 }
 
+export interface NarrationWordTiming {
+  readonly token: string;
+  readonly startTick: number;
+  readonly endTick: number;
+}
+
+export interface NarrationTiming {
+  readonly schemaVersion: 1;
+  readonly source: "provider-native" | "forced-alignment" | "duration-proportional";
+  readonly alignedTokenRatio: number;
+  readonly words: readonly NarrationWordTiming[];
+}
+
 export interface ResolvedScene {
   readonly id: string;
   readonly kind: string;
@@ -68,6 +81,8 @@ export interface ResolvedScene {
   readonly seed: string;
   readonly content: SceneContent;
   readonly captions?: readonly CaptionCue[];
+  /** Provider-free narration cues used by captions and authored scene motion. */
+  readonly narrationTiming?: NarrationTiming;
   readonly accessibilityDescription?: string;
   /** Semantic, hash-bound image references used by this scene. */
   readonly visualAssets?: readonly SceneVisualAssetReference[];
@@ -255,6 +270,33 @@ export function assertResolvedScene(scene: ResolvedScene): void {
     if (cue.startTick < captionStart) throw new RangeError(`Scene ${scene.id} captions must be sorted by startTick`);
     captionStart = cue.startTick;
     captionIds.add(cue.id);
+  }
+  if (scene.narrationTiming !== undefined) {
+    const timing = scene.narrationTiming;
+    const timingSources = new Set(["provider-native", "forced-alignment", "duration-proportional"]);
+    if (timing.schemaVersion !== 1 || !timingSources.has(timing.source)) {
+      throw new TypeError(`Scene ${scene.id} narration timing has an unsupported source`);
+    }
+    if (!Number.isFinite(timing.alignedTokenRatio) || timing.alignedTokenRatio < 0 || timing.alignedTokenRatio > 1) {
+      throw new RangeError(`Scene ${scene.id} narration timing alignedTokenRatio must be in [0, 1]`);
+    }
+    if (timing.words.length === 0 || timing.words.length > 4_096) {
+      throw new RangeError(`Scene ${scene.id} narration timing needs between 1 and 4096 words`);
+    }
+    let wordStart = -1;
+    for (const [index, word] of timing.words.entries()) {
+      if (!word.token.trim() || word.token.length > 200) {
+        throw new TypeError(`Scene ${scene.id} narration word ${index} needs a bounded token`);
+      }
+      if (!Number.isSafeInteger(word.startTick) || !Number.isSafeInteger(word.endTick)
+        || word.startTick < 0 || word.endTick <= word.startTick || word.endTick > scene.durationTicks) {
+        throw new RangeError(`Scene ${scene.id} narration word ${index} has an invalid range`);
+      }
+      if (word.startTick < wordStart) {
+        throw new RangeError(`Scene ${scene.id} narration words must be sorted by startTick`);
+      }
+      wordStart = word.startTick;
+    }
   }
   const visualIds = new Set<string>();
   const visualRoles = new Set<SceneVisualAssetRole>(["background", "primary", "secondary", "presenter-portrait"]);
