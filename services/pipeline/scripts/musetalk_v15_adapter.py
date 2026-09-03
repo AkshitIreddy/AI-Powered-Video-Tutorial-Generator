@@ -95,6 +95,29 @@ def _fixed_argv_matches(
     return True
 
 
+def _upstream_output_paths(
+    result_root: Path, portrait_path: str, audio_path: str
+) -> tuple[Path, Path, Path, Path]:
+    """Mirror MuseTalk's basename-derived output contract exactly.
+
+    WebP portraits are normalized to ``portrait-normalized.png`` before the
+    pinned upstream entrypoint sees them.  Deriving these paths from the
+    effective inputs keeps the shell interception contract aligned with that
+    compatibility conversion instead of silently assuming ``portrait.webp``.
+    """
+
+    version_root = result_root / "v15"
+    portrait_stem = Path(portrait_path).stem
+    audio_stem = Path(audio_path).stem
+    output_stem = f"{portrait_stem}_{audio_stem}"
+    return (
+        version_root,
+        version_root / f"temp_{output_stem}.mp4",
+        version_root / "presenter.mp4",
+        version_root / output_stem / "%08d.png",
+    )
+
+
 def _contract_files(job: dict[str, Any]) -> dict[str, Path]:
     contract = job.get("workerContract")
     if not isinstance(contract, dict) or not isinstance(contract.get("files"), list):
@@ -313,10 +336,9 @@ def run_presenter_job(
     if ALLOWED_CODEC_ARGUMENTS.get(encoder) != codec_arguments:
         _fail("Presenter encoder arguments do not match the allowlisted selection")
     ffmpeg = Path(_library_path(Path(str(encoding["ffmpegPath"]))))
-    version_root = result_root / "v15"
-    silent_video = version_root / "temp_portrait_narration.mp4"
-    generated_output = version_root / "presenter.mp4"
-    frames = version_root / "portrait_narration" / "%08d.png"
+    version_root, silent_video, generated_output, frames = _upstream_output_paths(
+        result_root, portrait_path, audio_path
+    )
     intercepted = 0
 
     def safe_ffmpeg(argv: Any, **_: Any) -> subprocess.CompletedProcess[bytes]:
@@ -423,11 +445,11 @@ def run_presenter_job(
         first = (
             "ffmpeg -y -v warning -r 25 -f image2 -i "
             f"{frames.parent}/%08d.png -vcodec libx264 -vf format=yuv420p -crf 18 "
-            f"{silent_video.parent}/temp_portrait_narration.mp4"
+            f"{silent_video}"
         )
         second = (
             f"ffmpeg -y -v warning -i {audio_path} -i "
-            f"{silent_video.parent}/temp_portrait_narration.mp4 {generated_output}"
+            f"{silent_video} {generated_output}"
         )
         if command == first:
             safe_ffmpeg(

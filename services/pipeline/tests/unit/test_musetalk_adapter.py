@@ -68,3 +68,20 @@ def test_webp_portrait_is_normalized_inside_attempt_workspace(
     assert normalized == workspace / "portrait-normalized.png"
     assert portrait.read_bytes() == b"verified-webp-input"
     assert normalized.read_bytes().startswith(b"\x89PNG")
+
+
+def test_output_contract_tracks_the_effective_normalized_portrait_name(
+    tmp_path: Path,
+) -> None:
+    adapter = _adapter_module()
+
+    version_root, silent_video, generated_output, frames = adapter._upstream_output_paths(
+        tmp_path / "musetalk-results",
+        str(tmp_path / "portrait-normalized.png"),
+        str(tmp_path / "narration.mp3"),
+    )
+
+    assert version_root == tmp_path / "musetalk-results" / "v15"
+    assert silent_video == version_root / "temp_portrait-normalized_narration.mp4"
+    assert generated_output == version_root / "presenter.mp4"
+    assert frames == version_root / "portrait-normalized_narration" / "%08d.png"
