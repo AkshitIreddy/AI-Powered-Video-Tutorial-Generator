@@ -26,6 +26,7 @@ import {
   TraceRenderer,
   UiDemoRenderer,
   VariableStateRenderer,
+  WhiteboardRenderer,
   WorkedExampleRenderer,
 } from "./renderers.js";
 import type {
@@ -65,7 +66,9 @@ const BUILTIN_DEFINITIONS: readonly SceneDefinition<any>[] = [
   definition({ kind: "formula", displayName: "Formula", category: "explanation", description: "Presents a formula with semantic visual hierarchy.", renderer: FormulaRenderer }),
   definition({ kind: "derivation", displayName: "Derivation", category: "explanation", description: "Reveals verified mathematical steps and reasons.", renderer: FormulaRenderer, defaultChoreography: (spec) => listReveal(spec, spec.content.kind === "derivation" ? (spec.content.steps ?? []).map((step) => step.id) : []) }),
   definition({ kind: "graph", displayName: "Function graph", category: "data", description: "Plots mathematical series on deterministic SVG axes.", renderer: GraphRenderer }),
+  definition({ kind: "whiteboard", displayName: "Animated whiteboard", category: "explanation", description: "Replays narration-timed pencil, marker, or chalk strokes on a deterministic board.", renderer: WhiteboardRenderer }),
   definition({ kind: "code", displayName: "Code", category: "code", description: "Displays syntax-classed inert source code.", renderer: CodeRenderer }),
+  definition({ kind: "live-code", displayName: "Live coding", category: "code", description: "Replays narration-timed semantic typing, highlighting, explanation, and run events.", renderer: CodeRenderer }),
   definition({ kind: "walkthrough", displayName: "Code walkthrough", category: "code", description: "Steps through annotated code without executing it in the renderer.", renderer: CodeRenderer, defaultChoreography: (spec) => listReveal(spec, spec.content.kind === "walkthrough" ? spec.content.lines.map((line) => line.id) : []) }),
   definition({ kind: "diff", displayName: "Code diff", category: "code", description: "Shows a readable before/after patch.", renderer: CodeRenderer }),
   definition({ kind: "file-tree", displayName: "File tree", category: "code", description: "Explains a repository or document hierarchy.", renderer: FileTreeRenderer }),
@@ -118,6 +121,21 @@ function lintCommon(content: SceneContent): readonly Diagnostic[] {
     case "diagram":
       if (content.nodes.length === 0) diagnostics.push({ code: "scene.diagram.empty", severity: "error", message: "Diagrams require at least one node.", path: "content.nodes" });
       for (const edge of content.edges) if (!content.nodes.some((node) => node.id === edge.from) || !content.nodes.some((node) => node.id === edge.to)) diagnostics.push({ code: "scene.diagram.edge.orphan", severity: "error", message: `Edge ${edge.id} references a missing node.`, path: "content.edges" });
+      break;
+    case "whiteboard":
+      if (content.strokes.length === 0) diagnostics.push({ code: "scene.whiteboard.empty", severity: "error", message: "Whiteboard scenes require at least one timed stroke.", path: "content.strokes" });
+      for (const stroke of content.strokes) {
+        if (stroke.points.length < 2) diagnostics.push({ code: "scene.whiteboard.stroke.short", severity: "error", message: `Stroke ${stroke.id} needs at least two points.`, path: "content.strokes" });
+        if (stroke.endTick <= stroke.startTick) diagnostics.push({ code: "scene.whiteboard.stroke.timing", severity: "error", message: `Stroke ${stroke.id} must end after it starts.`, path: "content.strokes" });
+        if (stroke.points.some((point) => point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1)) diagnostics.push({ code: "scene.whiteboard.stroke.bounds", severity: "error", message: `Stroke ${stroke.id} leaves the board-safe normalized bounds.`, path: "content.strokes" });
+      }
+      break;
+    case "live-code":
+      if (!content.actions?.some((action) => action.type === "type")) diagnostics.push({ code: "scene.live-code.actions.missing", severity: "error", message: "Live-code scenes require at least one timed typing action.", path: "content.actions" });
+      for (const action of content.actions ?? []) {
+        if (action.endTick <= action.startTick) diagnostics.push({ code: "scene.live-code.action.timing", severity: "error", message: `Action ${action.id} must end after it starts.`, path: "content.actions" });
+        if (action.lineId && !content.lines.some((line) => line.id === action.lineId)) diagnostics.push({ code: "scene.live-code.action.line", severity: "error", message: `Action ${action.id} references missing line ${action.lineId}.`, path: "content.actions" });
+      }
       break;
     case "chart": case "graph":
       if (content.series.length === 0 || content.series.every((series) => series.values.length === 0)) diagnostics.push({ code: "scene.data.empty", severity: "error", message: "Data scenes require at least one value.", path: "content.series" });

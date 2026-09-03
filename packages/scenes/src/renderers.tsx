@@ -50,6 +50,7 @@ import type {
   TraceContent,
   UiDemoContent,
   VariableStateContent,
+  WhiteboardContent,
   WorkedExampleContent,
   QuizContent,
 } from "./types.js";
@@ -297,6 +298,40 @@ export function ComparisonRenderer(props: SceneRendererProps<ComparisonContent>)
   const theme = props.theme ?? PRECISION_THEME;
   const content = props.scene.spec.content;
   const body = bodyRect(props);
+  if (content.curveComparison) {
+    const curve = content.curveComparison;
+    const plot: Rect = { x: body.x + body.width * 0.08, y: body.y + body.height * 0.09, width: body.width * 0.84, height: body.height * 0.68 };
+    const maxN = 64;
+    const maxY = Math.pow(maxN, Math.max(curve.firstExponent, curve.secondExponent));
+    const points = (exponent: number) => Array.from({ length: 33 }, (_, index) => {
+      const n = 1 + (index / 32) * (maxN - 1);
+      return `${(plot.x + (index / 32) * plot.width).toFixed(2)},${(plot.y + plot.height - (Math.pow(n, exponent) / maxY) * plot.height).toFixed(2)}`;
+    }).join(" ");
+    const verdict = content.verdict ?? `${curve.secondLabel} grows more slowly as n increases`;
+    return withFrame(props, (
+      <g id="body" data-semantic-role="visual" data-comparison-mode="growth-curves">
+        <rect x={plot.x} y={plot.y} width={plot.width} height={plot.height} rx={props.scene.metrics.unit * 0.8} fill={shade(theme.primary, 0.42)} filter={`url(#shadow-${safeId(props.scene.spec.id)})`} />
+        {[0.25, 0.5, 0.75].map((fraction) => <g key={fraction} opacity="0.3">
+          <line x1={plot.x} x2={plot.x + plot.width} y1={plot.y + plot.height * fraction} y2={plot.y + plot.height * fraction} stroke={theme.surface} strokeWidth="1.5" />
+          <line y1={plot.y} y2={plot.y + plot.height} x1={plot.x + plot.width * fraction} x2={plot.x + plot.width * fraction} stroke={theme.surface} strokeWidth="1.5" />
+        </g>)}
+        <line x1={plot.x} x2={plot.x} y1={plot.y} y2={plot.y + plot.height} stroke={theme.surface} strokeWidth="4" />
+        <line x1={plot.x} x2={plot.x + plot.width} y1={plot.y + plot.height} y2={plot.y + plot.height} stroke={theme.surface} strokeWidth="4" />
+        <polyline data-growth-curve="first" points={points(curve.firstExponent)} fill="none" stroke={theme.warning} strokeWidth={Math.max(6, props.scene.metrics.unit * 0.55)} strokeLinecap="round" strokeLinejoin="round" />
+        <polyline data-growth-curve="second" points={points(curve.secondExponent)} fill="none" stroke={theme.accent} strokeWidth={Math.max(6, props.scene.metrics.unit * 0.55)} strokeLinecap="round" strokeLinejoin="round" />
+        <g transform={`translate(${plot.x + plot.width * 0.06} ${plot.y + props.scene.metrics.gutter * 0.48})`}>
+          <line x1="0" x2={props.scene.metrics.unit * 2.6} y1="0" y2="0" stroke={theme.warning} strokeWidth="7" strokeLinecap="round" />
+          <text x={props.scene.metrics.unit * 3.2} y={legible(props.scene.metrics.smallSize) * 0.34} fill={theme.surface} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="820">{curve.firstLabel}</text>
+          <line x1={props.scene.metrics.unit * 15} x2={props.scene.metrics.unit * 17.6} y1="0" y2="0" stroke={theme.accent} strokeWidth="7" strokeLinecap="round" />
+          <text x={props.scene.metrics.unit * 18.2} y={legible(props.scene.metrics.smallSize) * 0.34} fill={theme.surface} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="820">{curve.secondLabel}</text>
+        </g>
+        <text x={plot.x + plot.width / 2} y={plot.y + plot.height + legible(props.scene.metrics.bodySize) * 1.7} textAnchor="middle" fill={theme.mutedInk} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="760">{curve.xLabel ?? "INPUT SIZE n"}</text>
+        <text x={plot.x - props.scene.metrics.gutter * 0.8} y={plot.y + plot.height / 2} textAnchor="middle" fill={theme.mutedInk} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="760" transform={`rotate(-90 ${plot.x - props.scene.metrics.gutter * 0.8} ${plot.y + plot.height / 2})`}>{curve.yLabel ?? "RELATIVE WORK"}</text>
+        <ReadabilitySurface scene={props.scene} rect={{ x: body.x + body.width * 0.12, y: body.y + body.height * 0.86, width: body.width * 0.76, height: body.height * 0.12 }} theme={theme} opacity={0.965} role="comparison-verdict" />
+        <WrappedText text={verdict} rect={{ x: body.x + body.width * 0.16, y: body.y + body.height * 0.885, width: body.width * 0.68, height: body.height * 0.075 }} theme={theme} fill={theme.ink} fontFamily={theme.fontDisplay} fontSize={legible(props.scene.metrics.subtitleSize * 0.78)} fontWeight="790" textAnchor="middle" maxLines={2} lineHeight={1.02} />
+      </g>
+    ));
+  }
   const isWide = props.scene.metrics.columns === 2;
   const [first, second] = isWide
     ? splitColumns({ x: body.x, y: body.y + body.height * 0.08, width: body.width, height: body.height * 0.72 }, props.scene.metrics.unit * 1.4)
@@ -350,6 +385,7 @@ export function DiagramRenderer(props: SceneRendererProps<DiagramContent>) {
   return withFrame(props, (
     <g id="body" data-semantic-role="visual">
       <defs><marker id={`arrow-${safeId(props.scene.spec.id)}`} markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill={theme.accent} /></marker></defs>
+      {isHorizontal ? <rect data-diagram-stage="true" data-layout-x={body.x} data-layout-y={body.y + body.height * 0.28} data-layout-width={body.width} data-layout-height={body.height * 0.49} x={body.x} y={body.y + body.height * 0.28} width={body.width} height={body.height * 0.49} fill="none" stroke="none" /> : null}
       <path d={isHorizontal
         ? `M ${body.x} ${body.y + body.height * 0.28} H ${body.x + body.width} V ${body.y + body.height * 0.77} H ${body.x} Z`
         : `M ${body.x + body.width * 0.16} ${body.y} H ${body.x + body.width * 0.84} V ${body.y + body.height} H ${body.x + body.width * 0.16} Z`}
@@ -383,7 +419,7 @@ export function DiagramRenderer(props: SceneRendererProps<DiagramContent>) {
           width: legible(props.scene.metrics.smallSize) * 2.55,
           height: legible(props.scene.metrics.smallSize) * 1.62,
         };
-        return <g key={node.id} id={node.id} data-signal-stage={index + 1} style={animationStyle(props.scene.choreography, node.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>
+        return <g key={node.id} id={node.id} data-signal-stage={index + 1} data-layout-x={rect.x} data-layout-y={rect.y} data-layout-width={rect.width} data-layout-height={rect.height} style={animationStyle(props.scene.choreography, node.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>
           <path d={`M ${rect.x} ${rect.y + rect.height * 0.12} L ${rect.x + rect.width * 0.1} ${rect.y} H ${rect.x + rect.width} V ${rect.y + rect.height * 0.88} L ${rect.x + rect.width * 0.9} ${rect.y + rect.height} H ${rect.x} Z`} fill={fill} stroke={endpoint ? color : tint(color, 0.3)} strokeWidth={endpoint ? 0 : Math.max(3, props.scene.metrics.unit * 0.3)} filter={`url(#shadow-${safeId(props.scene.spec.id)})`} />
           <rect x={rect.x} y={rect.y} width={Math.max(7, props.scene.metrics.unit * 0.62)} height={rect.height} fill={index === nodes.length - 1 ? theme.accent : color} />
           <g data-contrast-surface="diagram-stage-number">
@@ -405,9 +441,10 @@ function layoutSignalFlow(count: number, rect: Rect, direction: "left-to-right" 
     const gap = Math.max(40, rect.width * 0.04);
     const width = (rect.width - gap * (count - 1)) / count;
     const height = rect.height * 0.48;
+    const baselineY = rect.y + rect.height * 0.29;
     return Array.from({ length: count }, (_, index) => ({
       x: rect.x + index * (width + gap),
-      y: rect.y + rect.height * (index % 2 === 0 ? 0.29 : 0.34),
+      y: baselineY,
       width,
       height,
     }));
@@ -552,6 +589,52 @@ function Plot({ sceneProps: props, series, xLabel, yLabel, domain, fillArea = fa
   );
 }
 
+function whiteboardPath(points: readonly { readonly x: number; readonly y: number }[], board: Rect): string {
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${board.x + point.x * board.width} ${board.y + point.y * board.height}`).join(" ");
+}
+
+function whiteboardPathLength(points: readonly { readonly x: number; readonly y: number }[], board: Rect): number {
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1]!;
+    const current = points[index]!;
+    total += Math.hypot((current.x - previous.x) * board.width, (current.y - previous.y) * board.height);
+  }
+  return Math.max(1, total);
+}
+
+export function WhiteboardRenderer(props: SceneRendererProps<WhiteboardContent>) {
+  const theme = props.theme ?? PRECISION_THEME;
+  const body = insetRect(bodyRect(props), props.scene.metrics.gutter * 0.18);
+  const content = props.scene.spec.content;
+  const style = content.boardStyle ?? "whiteboard";
+  const boardFill = style === "chalkboard" ? "#173C35" : style === "paper" ? "#FFF9E9" : "#FCFDFB";
+  const boardInk = style === "chalkboard" ? "#F3F0D2" : "#202530";
+  const palette = { ink: boardInk, primary: theme.primary, secondary: theme.secondary, warning: theme.warning } as const;
+  const rail = Math.max(16, props.scene.metrics.unit * 1.3);
+  const board = { x: body.x, y: body.y, width: body.width, height: body.height - rail };
+  return withFrame(props, (
+    <g id="body" data-semantic-role="visual" data-tutorial-mode="whiteboard" data-board-style={style}>
+      <rect x={board.x} y={board.y} width={board.width} height={board.height} rx={Math.max(4, props.scene.metrics.unit * 0.45)} fill={boardFill} stroke={style === "chalkboard" ? "#0D2A25" : "#CDD2D4"} strokeWidth={Math.max(3, props.scene.metrics.unit * 0.26)} filter={`url(#shadow-${safeId(props.scene.spec.id)})`} />
+      {style === "paper" ? Array.from({ length: 9 }, (_, index) => <line key={index} x1={board.x + props.scene.metrics.gutter * 0.5} x2={board.x + board.width - props.scene.metrics.gutter * 0.5} y1={board.y + board.height * ((index + 1) / 10)} y2={board.y + board.height * ((index + 1) / 10)} stroke="#D7DDE6" strokeWidth="2" opacity="0.62" />) : null}
+      {content.strokes.map((stroke) => {
+        const rawProgress = (props.frame.tick - stroke.startTick) / Math.max(1, stroke.endTick - stroke.startTick);
+        const progress = props.frame.reducedMotion ? (props.frame.tick >= stroke.startTick ? 1 : 0) : clamp(rawProgress, 0, 1);
+        const length = whiteboardPathLength(stroke.points, board);
+        const width = Math.max(3, props.scene.metrics.unit * (stroke.width ?? (stroke.tool === "pencil" ? 0.26 : 0.42)));
+        return <path key={stroke.id} id={stroke.id} data-whiteboard-stroke="true" data-draw-progress={progress.toFixed(4)} d={whiteboardPath(stroke.points, board)} fill="none" stroke={palette[stroke.color ?? "ink"]} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={length} strokeDashoffset={length * (1 - progress)} opacity={stroke.tool === "pencil" ? 0.84 : 0.96} />;
+      })}
+      {(content.labels ?? []).map((label) => {
+        const visible = props.frame.tick >= label.startTick;
+        return <text key={label.id} id={label.id} data-whiteboard-label="true" x={board.x + label.x * board.width} y={board.y + label.y * board.height} fill={palette[label.color ?? "ink"]} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * 0.9)} fontWeight="720" opacity={visible ? 1 : 0}>{label.text}</text>;
+      })}
+      <rect x={body.x} y={board.y + board.height} width={body.width} height={rail} rx={rail * 0.22} fill={style === "chalkboard" ? "#A9794E" : "#D5D8D8"} />
+      <rect x={body.x + body.width * 0.73} y={board.y + board.height - props.scene.metrics.unit * 0.42} width={body.width * 0.12} height={props.scene.metrics.unit * 0.58} rx={props.scene.metrics.unit * 0.2} fill={theme.primary} opacity="0.9" />
+      <rect x={body.x + body.width * 0.86} y={board.y + board.height - props.scene.metrics.unit * 0.42} width={body.width * 0.08} height={props.scene.metrics.unit * 0.58} rx={props.scene.metrics.unit * 0.2} fill={theme.warning} opacity="0.9" />
+    </g>
+  ));
+}
+
 export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
   const theme = props.theme ?? PRECISION_THEME;
   const body = bodyRect(props);
@@ -562,11 +645,13 @@ export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
   const lensRect: Rect | undefined = isWide ? { x: body.x + body.width * 0.72, y: body.y, width: body.width * 0.28, height: body.height } : undefined;
   const headerHeight = Math.max(52, props.scene.metrics.bodySize * 2.5);
   const lineHeight = Math.min(props.scene.metrics.bodySize * 1.72, (codeRect.height - headerHeight - props.scene.metrics.unit * 2) / Math.max(1, lines.length));
-  const activeIndex = Math.max(0, lines.findIndex((line) => line.highlight));
+  const activeAction = content.actions?.find((action) => props.frame.tick >= action.startTick && props.frame.tick <= action.endTick);
+  const actionLineIndex = activeAction?.lineId ? lines.findIndex((line) => line.id === activeAction.lineId) : -1;
+  const activeIndex = Math.max(0, actionLineIndex >= 0 ? actionLineIndex : lines.findIndex((line) => line.highlight));
   const activeLine = lines[activeIndex] ?? lines[0];
   const functionName = lines.find((line) => /\b(def|function|fn)\b/u.test(line.text))?.text.match(/(?:def|function|fn)\s+([A-Za-z_][\w]*)/u)?.[1] ?? content.filename ?? "program";
   return withFrame(props, (
-    <g id="body" data-semantic-role="code">
+    <g id="body" data-semantic-role="code" data-tutorial-mode={content.kind === "live-code" ? "live-code" : undefined}>
       <path d={`M ${codeRect.x} ${codeRect.y} H ${codeRect.x + codeRect.width} V ${codeRect.y + codeRect.height} H ${codeRect.x + props.scene.metrics.unit * 1.2} L ${codeRect.x} ${codeRect.y + codeRect.height - props.scene.metrics.unit * 1.2} Z`} fill={theme.codeBackground} filter={`url(#soft-shadow-${safeId(props.scene.spec.id)})`} />
       <rect x={codeRect.x} y={codeRect.y} width={codeRect.width} height={headerHeight} fill="#252A3D" />
       <rect x={codeRect.x} y={codeRect.y} width={Math.max(8, props.scene.metrics.unit * 0.8)} height={headerHeight} fill={theme.primary} />
@@ -577,12 +662,22 @@ export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
         const y = codeRect.y + headerHeight + lineHeight * (index + 0.78);
         const color = line.tokenClass === "keyword" ? "#B7A5FF" : line.tokenClass === "string" ? "#9DE2C7" : line.tokenClass === "number" ? "#F4C56A" : line.tokenClass === "comment" ? "#798097" : line.tokenClass === "function" ? "#82C6F2" : theme.codeInk;
         const diffTone = content.kind === "diff" ? (line.text.startsWith("+") ? theme.secondary : line.text.startsWith("-") ? theme.critical : undefined) : undefined;
-        return <g key={line.id} id={line.id} style={animationStyle(props.scene.choreography, line.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>{line.highlight || diffTone ? <g><rect x={codeRect.x + props.scene.metrics.bodySize * 0.2} y={y - lineHeight * 0.72} width={codeRect.width - props.scene.metrics.bodySize * 0.4} height={lineHeight} fill={diffTone ?? theme.primary} opacity="0.22" /><rect x={codeRect.x} y={y - lineHeight * 0.72} width={Math.max(7, props.scene.metrics.unit * 0.7)} height={lineHeight} fill={diffTone ?? theme.accent} /></g> : null}<text x={codeRect.x + props.scene.metrics.bodySize * 0.95} y={y} textAnchor="end" fill="#949BB1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)}>{index + 1}</text><text x={codeRect.x + props.scene.metrics.bodySize * 1.85} y={y} fill={color} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * 0.92)} xmlSpace="preserve">{truncate(line.text.replace(/\t/g, "  "), props.scene.metrics.profile === "portrait" ? 52 : isWide ? 62 : 92)}</text>{line.annotation ? <text x={codeRect.x + codeRect.width - props.scene.metrics.gutter} y={y} textAnchor="end" fill="#F4C56A" fontFamily={theme.fontBody} fontSize={legible(props.scene.metrics.smallSize)}>{truncate(line.annotation, 28)}</text> : null}</g>;
+        const typeAction = content.kind === "live-code" ? content.actions?.find((action) => action.type === "type" && action.lineId === line.id) : undefined;
+        const typeProgress = typeAction
+          ? props.frame.reducedMotion
+            ? (props.frame.tick >= typeAction.startTick ? 1 : 0)
+            : clamp((props.frame.tick - typeAction.startTick) / Math.max(1, typeAction.endTick - typeAction.startTick), 0, 1)
+          : 1;
+        const normalizedText = line.text.replace(/\t/g, "  ");
+        const visibleText = typeAction ? normalizedText.slice(0, Math.round(normalizedText.length * typeProgress)) : normalizedText;
+        const actionHighlight = content.actions?.some((action) => action.type === "highlight" && action.lineId === line.id && props.frame.tick >= action.startTick && props.frame.tick <= action.endTick);
+        const typingNow = Boolean(typeAction && typeProgress > 0 && typeProgress < 1 && !props.frame.reducedMotion);
+        return <g key={line.id} id={line.id} data-code-line={index + 1} data-typing-progress={typeAction ? typeProgress.toFixed(4) : undefined} style={animationStyle(props.scene.choreography, line.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>{line.highlight || actionHighlight || diffTone ? <g><rect x={codeRect.x + props.scene.metrics.bodySize * 0.2} y={y - lineHeight * 0.72} width={codeRect.width - props.scene.metrics.bodySize * 0.4} height={lineHeight} fill={diffTone ?? theme.primary} opacity="0.22" /><rect x={codeRect.x} y={y - lineHeight * 0.72} width={Math.max(7, props.scene.metrics.unit * 0.7)} height={lineHeight} fill={diffTone ?? theme.accent} /></g> : null}<text x={codeRect.x + props.scene.metrics.bodySize * 0.95} y={y} textAnchor="end" fill="#949BB1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)}>{index + 1}</text><text x={codeRect.x + props.scene.metrics.bodySize * 1.85} y={y} fill={color} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * 0.92)} xmlSpace="preserve">{truncate(visibleText, props.scene.metrics.profile === "portrait" ? 52 : isWide ? 62 : 92)}{typingNow ? <tspan fill={theme.accent}>▌</tspan> : null}</text>{line.annotation ? <text x={codeRect.x + codeRect.width - props.scene.metrics.gutter} y={y} textAnchor="end" fill="#F4C56A" fontFamily={theme.fontBody} fontSize={legible(props.scene.metrics.smallSize)}>{truncate(line.annotation, 28)}</text> : null}</g>;
       })}
       {lensRect ? <g data-code-lens="execution">
         <path d={`M ${lensRect.x} ${lensRect.y} H ${lensRect.x + lensRect.width} V ${lensRect.y + lensRect.height} H ${lensRect.x} L ${lensRect.x + props.scene.metrics.unit * 1.2} ${lensRect.y + lensRect.height * 0.5} Z`} fill={shade(theme.primary, 0.28)} />
         <path d={`M ${lensRect.x} ${lensRect.y} H ${lensRect.x + lensRect.width} V ${lensRect.y + lensRect.height} H ${lensRect.x} L ${lensRect.x + props.scene.metrics.unit * 1.2} ${lensRect.y + lensRect.height * 0.5} Z`} fill={`url(#micro-grid-${safeId(props.scene.spec.id)})`} opacity="0.62" />
-        <text x={lensRect.x + props.scene.metrics.gutter} y={lensRect.y + legible(props.scene.metrics.smallSize) * 1.3} fill={theme.accent} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="820" letterSpacing={1.8}>EXECUTION LENS</text>
+        <text x={lensRect.x + props.scene.metrics.gutter} y={lensRect.y + legible(props.scene.metrics.smallSize) * 1.3} fill={theme.accent} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="820" letterSpacing={1.8}>{content.kind === "live-code" ? "LIVE CODE TIMELINE" : "EXECUTION LENS"}</text>
         <text x={lensRect.x + props.scene.metrics.gutter} y={lensRect.y + lensRect.height * 0.33} fill={theme.surface} fontFamily={theme.fontDisplay} fontSize={props.scene.metrics.titleSize * 2.25} fontWeight="830" letterSpacing={-2}>L{activeIndex + 1}</text>
         <WrappedText text={activeLine?.text.trim() || "Follow the active statement"} rect={{ x: lensRect.x + props.scene.metrics.gutter, y: lensRect.y + lensRect.height * 0.38, width: lensRect.width - props.scene.metrics.gutter * 2, height: lensRect.height * 0.18 }} theme={theme} fill="#E3E6F1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="650" maxLines={4} />
         <line x1={lensRect.x + props.scene.metrics.gutter} x2={lensRect.x + lensRect.width - props.scene.metrics.gutter} y1={lensRect.y + lensRect.height * 0.64} y2={lensRect.y + lensRect.height * 0.64} stroke={theme.accent} strokeWidth={Math.max(3, props.scene.metrics.unit * 0.34)} />
@@ -845,10 +940,33 @@ function PresenterPortraitStage({ props, rect, mediaRect }: { readonly props: Sc
   const nameMaxChars = Math.max(12, Math.floor((rect.width - props.scene.metrics.gutter * 1.4) / (nameFontSize * 0.56)));
   const nameLines = wrapText(name, nameMaxChars);
   const nameLineHeight = nameFontSize * 1.08;
+  const idle = content.idleMotion;
+  const elapsedSeconds = props.frame.tick / 240_000;
+  const breathingScale = idle?.enabled && idle.breathing && !props.frame.reducedMotion
+    ? 1 + Math.sin((elapsedSeconds / 4.8) * Math.PI * 2) * 0.0035
+    : 1;
+  const blinkCycle = (elapsedSeconds + 1.35) % 4.7;
+  const blinkPhase = idle?.enabled && idle.blink && !props.frame.reducedMotion && blinkCycle < 0.12
+    ? Math.max(0, Math.min(1, Math.abs(blinkCycle - 0.06) / 0.06))
+    : 1;
+  const mediaCenterX = mediaRect.x + mediaRect.width / 2;
+  const mediaCenterY = mediaRect.y + mediaRect.height * 0.78;
   return <g data-presenter-stage="portrait" data-stage-x={Math.round(rect.x)} data-stage-y={Math.round(rect.y)} data-stage-width={Math.round(rect.width)} data-stage-height={Math.round(rect.height)}>
     <path d={`M ${rect.x} ${rect.y} H ${rect.x + rect.width} V ${rect.y + rect.height} H ${rect.x + props.scene.metrics.unit * 1.2} L ${rect.x} ${rect.y + rect.height - props.scene.metrics.unit * 1.2} Z`} fill={`url(#ink-field-${safeId(props.scene.spec.id)})`} filter={`url(#soft-shadow-${safeId(props.scene.spec.id)})`} />
     <path d={`M ${rect.x} ${rect.y} H ${rect.x + rect.width} V ${rect.y + rect.height} H ${rect.x + props.scene.metrics.unit * 1.2} L ${rect.x} ${rect.y + rect.height - props.scene.metrics.unit * 1.2} Z`} fill={`url(#micro-grid-${safeId(props.scene.spec.id)})`} opacity="0.58" />
-    <g data-presenter-media="true" data-media-x={Math.round(mediaRect.x)} data-media-y={Math.round(mediaRect.y)} data-media-width={Math.round(mediaRect.width)} data-media-height={Math.round(mediaRect.height)}>
+    <g
+      data-presenter-media="true"
+      data-media-x={Math.round(mediaRect.x)}
+      data-media-y={Math.round(mediaRect.y)}
+      data-media-width={Math.round(mediaRect.width)}
+      data-media-height={Math.round(mediaRect.height)}
+      data-idle-animation={idle?.enabled ? "enabled" : "disabled"}
+      data-idle-blink={idle?.blink ? "enabled" : "disabled"}
+      data-idle-blink-phase={blinkPhase.toFixed(4)}
+      data-idle-breathing={idle?.breathing ? "enabled" : "disabled"}
+      data-rest-mouth={idle?.restMouth ?? "closed"}
+      transform={`translate(${mediaCenterX} ${mediaCenterY}) scale(${breathingScale}) translate(${-mediaCenterX} ${-mediaCenterY})`}
+    >
       {content.portrait ? <AssetFrame asset={content.portrait} rect={mediaRect} resolveAsset={props.resolveAsset} theme={theme} label="" /> : <FictionalPresenterSilhouette rect={mediaRect} theme={theme} />}
     </g>
     <path d={`M ${rect.x} ${rect.y + rect.height * 0.74} H ${rect.x + rect.width} V ${rect.y + rect.height} H ${rect.x + props.scene.metrics.unit * 1.2} L ${rect.x} ${rect.y + rect.height - props.scene.metrics.unit * 1.2} Z`} fill={theme.codeBackground} opacity="0.97" />

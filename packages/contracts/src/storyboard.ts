@@ -37,9 +37,10 @@ export interface TimelineEvent { id: EntityId; label: string; dateLabel: string;
 export interface TimelineVisual { kind: "timeline"; events: TimelineEvent[]; orientation: "horizontal" | "vertical" }
 export interface MathExpression { id: EntityId; latex: string; spokenText?: string; justification?: string; verified?: boolean }
 export interface MathVisual { kind: "formula" | "derivation" | "graph"; expressions: MathExpression[]; graphSpec?: JsonValue }
+export interface WhiteboardVisual { kind: "whiteboard"; boardStyle: "whiteboard" | "paper" | "chalkboard"; strokeTimeline: JsonValue; finalBoardDescription: string }
 export interface CodeHighlight { startLine: number; endLine: number; label: string }
 export interface CodeVisual {
-  kind: "code" | "code-walkthrough" | "diff" | "file-tree" | "terminal" | "execution-trace" | "variable-state";
+  kind: "code" | "live-code" | "code-walkthrough" | "diff" | "file-tree" | "terminal" | "execution-trace" | "variable-state";
   language: string; content: string; fileName?: string; highlights?: CodeHighlight[]; traceArtifactId?: EntityId; executionAllowed?: boolean;
 }
 export interface DataVisual { kind: "chart" | "table" | "map"; title: string; data: JsonValue; encoding: JsonValue; sourceClaimIds?: EntityId[]; mapProjection?: string }
@@ -53,7 +54,7 @@ export interface PresenterVisual { kind: "presenter" | "presenter-with-slide"; p
 export interface InstructionVisual { kind: "worked-example" | "quiz"; prompt: string; steps: string[]; choices?: string[]; answer?: string; explanation?: string }
 export interface SourcesVisual { kind: "sources"; sourceVersionIds: EntityId[]; style: "bibliography" | "cards" | "compact" }
 
-export type VisualContent = TextVisual | ComparisonVisual | DiagramVisual | TimelineVisual | MathVisual | CodeVisual | DataVisual | MediaVisual | SimulationVisual | PresenterVisual | InstructionVisual | SourcesVisual;
+export type VisualContent = TextVisual | ComparisonVisual | DiagramVisual | TimelineVisual | MathVisual | WhiteboardVisual | CodeVisual | DataVisual | MediaVisual | SimulationVisual | PresenterVisual | InstructionVisual | SourcesVisual;
 
 export interface Scene {
   id: EntityId; sectionId: EntityId; title: string; objectiveIds: EntityId[]; prerequisiteIds: EntityId[]; visual: VisualContent;
@@ -79,8 +80,8 @@ export interface RenderManifest {
 
 /** Stable list used by editors, renderers, and plugin collision checks. */
 export const BUILT_IN_SCENE_KINDS = [
-  "title", "section-intro", "definition", "bullets", "comparison", "diagram", "timeline", "formula", "derivation", "graph", "code",
-  "code-walkthrough", "diff", "file-tree", "terminal", "execution-trace", "variable-state", "chart", "table", "map", "image-focus",
+  "title", "section-intro", "definition", "bullets", "comparison", "diagram", "timeline", "formula", "derivation", "graph", "whiteboard", "code",
+  "live-code", "code-walkthrough", "diff", "file-tree", "terminal", "execution-trace", "variable-state", "chart", "table", "map", "image-focus",
   "image-comparison", "highlighted-document", "ui-demonstration", "screen-recording", "simulation", "presenter", "presenter-with-slide", "quote",
   "question", "worked-example", "quiz", "recap", "summary", "sources", "outro",
 ] as const satisfies readonly VisualContent["kind"][];

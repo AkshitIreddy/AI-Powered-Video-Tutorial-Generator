@@ -63,6 +63,75 @@ describe("built-in scene catalog", () => {
     expect(compileScene(specimenFor("diagram"), landscape).contentHash).toBe(scene.contentHash);
   });
 
+  it("keeps every horizontal diagram node on one shared baseline", () => {
+    const scene = compileScene(specimenFor("diagram"), landscape);
+    const markup = renderToStaticMarkup(createElement(SceneView, {
+      scene,
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 2, reducedMotion: true },
+    }));
+    const nodeYValues = [...markup.matchAll(/data-signal-stage="\d+" data-layout-x="[^"]+" data-layout-y="([^"]+)"/g)]
+      .map((match) => Number(match[1]));
+    const stageMatch = markup.match(/data-diagram-stage="true" data-layout-x="([^"]+)" data-layout-y="([^"]+)" data-layout-width="([^"]+)" data-layout-height="([^"]+)"/);
+    const nodeRects = [...markup.matchAll(/data-signal-stage="\d+" data-layout-x="([^"]+)" data-layout-y="([^"]+)" data-layout-width="([^"]+)" data-layout-height="([^"]+)"/g)]
+      .map((match) => ({ x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]) }));
+
+    expect(nodeYValues).toHaveLength(scene.spec.content.kind === "diagram" ? scene.spec.content.nodes.length : 0);
+    expect(new Set(nodeYValues).size).toBe(1);
+    expect(stageMatch).not.toBeNull();
+    const stage = { x: Number(stageMatch![1]), y: Number(stageMatch![2]), width: Number(stageMatch![3]), height: Number(stageMatch![4]) };
+    for (const node of nodeRects) {
+      expect(node.x).toBeGreaterThanOrEqual(stage.x);
+      expect(node.y).toBeGreaterThanOrEqual(stage.y);
+      expect(node.x + node.width).toBeLessThanOrEqual(stage.x + stage.width);
+      expect(node.y + node.height).toBeLessThanOrEqual(stage.y + stage.height);
+    }
+  });
+
+  it("renders an authored complexity comparison as measured growth curves", () => {
+    const spec = specimenFor("comparison");
+    if (spec.content.kind !== "comparison") throw new Error("Expected comparison specimen");
+    const scene = compileScene({
+      ...spec,
+      content: {
+        ...spec.content,
+        curveComparison: {
+          firstLabel: "Schoolbook O(n²)",
+          firstExponent: 2,
+          secondLabel: "Karatsuba O(n¹·⁵⁸⁵)",
+          secondExponent: Math.log2(3),
+        },
+      },
+    }, landscape);
+    const markup = renderToStaticMarkup(createElement(SceneView, {
+      scene,
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 2, reducedMotion: true },
+    }));
+    expect(markup).toContain('data-comparison-mode="growth-curves"');
+    expect(markup).toContain('data-growth-curve="first"');
+    expect(markup).toContain('data-growth-curve="second"');
+    expect(markup).toContain("Karatsuba O(n¹·⁵⁸⁵)");
+  });
+
+  it("replays whiteboard strokes and live-code typing from the frame clock", () => {
+    const renderAt = (kind: "whiteboard" | "live-code", tick: number, reducedMotion = false) => renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(specimenFor(kind), landscape),
+      frame: { tick, reducedMotion },
+    }));
+
+    const boardEarly = renderAt("whiteboard", TIMEBASE_TICKS_PER_SECOND * 1.5);
+    const boardLate = renderAt("whiteboard", TIMEBASE_TICKS_PER_SECOND * 5.5);
+    expect(boardEarly).toContain('data-tutorial-mode="whiteboard"');
+    expect(boardEarly).toContain('data-draw-progress="0.5000"');
+    expect(boardLate).toContain('data-draw-progress="1.0000"');
+
+    const codeEarly = renderAt("live-code", TIMEBASE_TICKS_PER_SECOND * 1.5);
+    const codeLate = renderAt("live-code", TIMEBASE_TICKS_PER_SECOND * 7);
+    expect(codeEarly).toContain('data-tutorial-mode="live-code"');
+    expect(codeEarly).toContain('data-typing-progress="0.5000"');
+    expect(codeEarly).toContain("▌");
+    expect(codeLate).toContain('data-typing-progress="1.0000"');
+  });
+
   it("reflows targets instead of cropping a landscape scene", () => {
     const spec = specimenFor("comparison");
     const wide = compileScene(spec, landscape);
@@ -153,6 +222,33 @@ describe("built-in scene catalog", () => {
     expect(insight).not.toBeNull();
     expect(stage).not.toBeNull();
     expect(Number(insight?.[1]) + Number(insight?.[2])).toBeLessThanOrEqual(Number(stage?.[1]));
+  });
+
+  it("publishes deterministic presenter breathing and blink cues while keeping a closed rest mouth", () => {
+    const spec = specimenFor("presenter-slide");
+    if (spec.content.kind !== "presenter-slide") throw new Error("Expected presenter-slide specimen");
+    const scene = compileScene({
+      ...spec,
+      content: {
+        ...spec.content,
+        idleMotion: { enabled: true, blink: true, breathing: true, restMouth: "closed" },
+      },
+    }, landscape);
+    const animated = renderToStaticMarkup(createElement(SceneView, {
+      scene,
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 2, reducedMotion: false },
+    }));
+    const reduced = renderToStaticMarkup(createElement(SceneView, {
+      scene,
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 2, reducedMotion: true },
+    }));
+
+    expect(animated).toContain('data-idle-animation="enabled"');
+    expect(animated).toContain('data-idle-blink="enabled"');
+    expect(animated).toContain('data-idle-breathing="enabled"');
+    expect(animated).toContain('data-rest-mouth="closed"');
+    expect(animated).not.toContain('scale(1) translate');
+    expect(reduced).toContain('scale(1) translate');
   });
 
   it("reserves collision-free presenter sequence columns and keeps the portrait inside its stage", () => {
@@ -249,6 +345,18 @@ describe("preflight diagnostics", () => {
     const quiz = specimenFor("quiz");
     const badQuiz = { ...quiz, content: { ...quiz.content, kind: "quiz" as const, options: [{ id: "only", label: "One" }] } };
     expect(preflightScene(badQuiz, landscape).diagnostics.some((item) => item.code === "scene.quiz.options.few")).toBe(true);
+  });
+
+  it("rejects whiteboard strokes outside the board and stale live-code line references", () => {
+    const board = specimenFor("whiteboard");
+    if (board.content.kind !== "whiteboard") throw new Error("Expected whiteboard specimen");
+    const badBoard = { ...board, content: { ...board.content, strokes: [{ ...board.content.strokes[0]!, points: [{ x: -0.1, y: 0.2 }, { x: 0.5, y: 0.5 }] }] } };
+    expect(preflightScene(badBoard, landscape).diagnostics.some((item) => item.code === "scene.whiteboard.stroke.bounds")).toBe(true);
+
+    const code = specimenFor("live-code");
+    if (code.content.kind !== "live-code") throw new Error("Expected live-code specimen");
+    const badCode = { ...code, content: { ...code.content, actions: [{ id: "stale", type: "type" as const, lineId: "line.missing", startTick: 1, endTick: 2 }] } };
+    expect(preflightScene(badCode, landscape).diagnostics.some((item) => item.code === "scene.live-code.action.line")).toBe(true);
   });
 });
 

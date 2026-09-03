@@ -403,6 +403,7 @@ function geometryCount(
     case "geometry.text-intersection": return observation.geometryTextIntersectionCount;
     case "geometry.outside-frame": return observation.geometryOutsideFrameCount;
     case "geometry.outside-safe-area": return observation.geometryOutsideSafeAreaCount;
+    case "geometry.parent-overflow": return observation.geometryFindings.filter((finding) => finding.code === code).length;
     case "geometry.container-overflow": return observation.geometryContainerOverflowCount;
     case "geometry.line-limit": return observation.geometryLineLimitCount;
   }

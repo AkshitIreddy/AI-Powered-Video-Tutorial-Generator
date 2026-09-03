@@ -223,6 +223,8 @@ test("complexity comparisons render two real recurrences instead of generic nume
   assert.equal(spec.content.right.countLabel, "recursive products");
   assert.deepEqual(spec.content.right.items, ["T(n)=4T(n/2)+O(n) → O(n²)"]);
   assert.equal(spec.content.verdict, "Three recursive products replace four as input size grows");
+  assert.equal(spec.content.curveComparison?.firstExponent, 2);
+  assert.equal(spec.content.curveComparison?.secondExponent, Math.log2(3));
 });
 
 test("semantic recaps do not repeat shorter on-screen aliases", () => {

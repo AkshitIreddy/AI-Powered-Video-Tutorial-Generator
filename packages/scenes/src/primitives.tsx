@@ -159,7 +159,7 @@ function compositionFamily(scene: CompiledScene): string {
   if (["graph", "chart", "table", "map"].includes(kind)) return "data-canvas";
   if (["diagram", "timeline", "simulation", "variable-state", "execution-trace"].includes(kind)) return "diagram";
   if (["image-focus", "image-comparison", "document-focus", "screen-recording", "sources"].includes(kind)) return "evidence";
-  if (["worked-example", "formula", "derivation", "code", "walkthrough", "diff", "terminal", "file-tree"].includes(kind)) return "worked-example";
+  if (["worked-example", "formula", "derivation", "whiteboard", "code", "live-code", "walkthrough", "diff", "terminal", "file-tree"].includes(kind)) return "worked-example";
   if (["comparison", "image-comparison"].includes(kind)) return "split-evidence";
   if (["question", "quiz"].includes(kind)) return "question";
   if (["presenter", "presenter-slide"].includes(kind)) return "presenter";
@@ -222,7 +222,7 @@ export function SceneHeader({ scene, frame, theme = PRECISION_THEME, title, eyeb
         data-layout-box="header.eyebrow"
         data-layout-role="eyebrow"
         data-layout-essential="true"
-        x={align === "center" ? eyebrowSlot.x + eyebrowSlot.width / 2 : eyebrowSlot.x}
+        x={align === "center" ? eyebrowSlot.x + eyebrowSlot.width / 2 : eyebrowSlot.x + 2}
         y={eyebrowSlot.y + legible(scene.metrics.smallSize * 0.88)}
         textAnchor={textAnchor}
         fill={theme.primary}

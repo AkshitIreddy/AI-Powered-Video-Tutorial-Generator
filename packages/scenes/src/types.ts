@@ -13,7 +13,9 @@ export const BUILTIN_SCENE_KINDS = [
   "formula",
   "derivation",
   "graph",
+  "whiteboard",
   "code",
+  "live-code",
   "walkthrough",
   "diff",
   "file-tree",
@@ -159,6 +161,36 @@ export interface CodeLine {
   readonly annotation?: string;
 }
 
+export interface WhiteboardStroke {
+  readonly id: string;
+  /** Board-relative points in the inclusive 0..1 range. */
+  readonly points: readonly { readonly x: number; readonly y: number }[];
+  readonly startTick: number;
+  readonly endTick: number;
+  readonly color?: "ink" | "primary" | "secondary" | "warning";
+  readonly width?: number;
+  readonly tool?: "pencil" | "marker" | "chalk";
+}
+
+export interface WhiteboardLabel {
+  readonly id: string;
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly startTick: number;
+  readonly color?: "ink" | "primary" | "secondary" | "warning";
+}
+
+export interface CodeTimelineAction {
+  readonly id: string;
+  readonly type: "type" | "highlight" | "run" | "explain";
+  readonly lineId?: string;
+  readonly startTick: number;
+  readonly endTick: number;
+  readonly output?: string;
+  readonly narrationAnchor?: string;
+}
+
 export interface AssetReference {
   readonly id: string;
   readonly sha256?: string;
@@ -218,6 +250,14 @@ export interface ComparisonContent extends TitledContent {
   readonly left: { readonly label: string; readonly items: readonly string[]; readonly count?: number; readonly countLabel?: string };
   readonly right: { readonly label: string; readonly items: readonly string[]; readonly count?: number; readonly countLabel?: string };
   readonly verdict?: string;
+  readonly curveComparison?: {
+    readonly firstLabel: string;
+    readonly firstExponent: number;
+    readonly secondLabel: string;
+    readonly secondExponent: number;
+    readonly xLabel?: string;
+    readonly yLabel?: string;
+  };
 }
 
 export interface DiagramContent extends TitledContent {
@@ -247,13 +287,22 @@ export interface GraphContent extends TitledContent {
   readonly domain?: { readonly x: readonly [number, number]; readonly y: readonly [number, number] };
 }
 
+export interface WhiteboardContent extends TitledContent {
+  readonly kind: "whiteboard";
+  readonly boardStyle?: "whiteboard" | "paper" | "chalkboard";
+  readonly strokes: readonly WhiteboardStroke[];
+  readonly labels?: readonly WhiteboardLabel[];
+  readonly finalBoardDescription: string;
+}
+
 export interface CodeContent extends TitledContent {
-  readonly kind: "code" | "walkthrough" | "diff" | "terminal";
+  readonly kind: "code" | "live-code" | "walkthrough" | "diff" | "terminal";
   readonly language?: string;
   readonly filename?: string;
   readonly lines: readonly CodeLine[];
   readonly step?: number;
   readonly totalSteps?: number;
+  readonly actions?: readonly CodeTimelineAction[];
 }
 
 export interface FileTreeContent extends TitledContent {
@@ -332,6 +381,12 @@ export interface PresenterContent extends TitledContent {
   readonly slideItems?: readonly TextItem[];
   readonly disclosure?: string;
   readonly placement?: "full" | "picture-in-picture" | "split-left" | "split-right";
+  readonly idleMotion?: {
+    readonly enabled: boolean;
+    readonly blink: boolean;
+    readonly breathing: boolean;
+    readonly restMouth: "closed";
+  };
 }
 
 export interface QuoteContent extends TitledContent {
@@ -384,6 +439,7 @@ export type BuiltinSceneContent =
   | TimelineContent
   | FormulaContent
   | GraphContent
+  | WhiteboardContent
   | CodeContent
   | FileTreeContent
   | TraceContent

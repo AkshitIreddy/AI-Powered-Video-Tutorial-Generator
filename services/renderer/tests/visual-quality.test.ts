@@ -208,6 +208,45 @@ test("structural geometry rejects the kicker-title overlap reproduced in the rej
   assert.ok(snapshot.findings.some((finding) => finding.code === "geometry.text-intersection"));
 });
 
+test("structural geometry rejects a diagram node that leaves its parent stage", () => {
+  const snapshot = analyzeStructuralGeometry(
+    { x: 0, y: 0, width: 1280, height: 720 },
+    { x: 64, y: 36, width: 1152, height: 648 },
+    [{
+      id: "node.2",
+      kind: "container",
+      role: "diagram-node",
+      text: "middle node",
+      essential: true,
+      rect: { x: 420, y: 310, width: 300, height: 260 },
+      fontSize: null,
+      lineCount: 0,
+      declaredMaxLines: null,
+      plannedRect: { x: 80, y: 280, width: 1120, height: 250 },
+      overflowPolicy: "re-layout",
+    }],
+  );
+  assert.ok(snapshot.findings.some((finding) => finding.code === "geometry.parent-overflow"));
+});
+
+test("horizontal diagram nodes stay inside the declared stage in Chromium", {
+  skip: canRunChromiumContrastTest ? false : `Chromium not available at ${chromiumPath}`,
+}, async () => {
+  const rendered = new SceneViewStaticAdapter().renderSpec(specimenFor("diagram"), fixtureTarget({ width: 1280, height: 720 }), 480_000);
+  const browser = await chromium.launch({ executablePath: chromiumPath, headless: true, args: ["--disable-background-networking", "--disable-gpu", "--disable-gpu-compositing", "--no-first-run"] });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+  const page = await context.newPage();
+  try {
+    await page.setContent(rendered.html, { waitUntil: "load" });
+    await page.evaluate(async () => { await document.fonts.ready; });
+    const snapshot = await inspectStructuralGeometry(page, { width: 1280, height: 720 });
+    assert.deepEqual(snapshot.findings.filter((finding) => finding.code === "geometry.parent-overflow"), []);
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+});
+
 test("constraint-layout header keeps real Chromium kicker and title boxes disjoint", {
   skip: canRunChromiumContrastTest ? false : `Chromium not available at ${chromiumPath}`,
 }, async () => {

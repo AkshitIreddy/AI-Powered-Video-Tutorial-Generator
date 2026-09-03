@@ -108,7 +108,7 @@ function createSemanticRegions(spec: SceneSpec, layout: ReturnType<typeof create
   ];
   const body = base.find((region) => region.id === "body");
   if (!body) return base;
-  const role = spec.content.kind === "code" || spec.content.kind === "walkthrough" || spec.content.kind === "diff" || spec.content.kind === "file-tree" || spec.content.kind === "terminal" || spec.content.kind === "execution-trace" || spec.content.kind === "variable-state" ? "code"
+  const role = spec.content.kind === "code" || spec.content.kind === "live-code" || spec.content.kind === "walkthrough" || spec.content.kind === "diff" || spec.content.kind === "file-tree" || spec.content.kind === "terminal" || spec.content.kind === "execution-trace" || spec.content.kind === "variable-state" ? "code"
     : spec.content.kind === "chart" || spec.content.kind === "graph" || spec.content.kind === "table" || spec.content.kind === "map" || spec.content.kind === "simulation" ? "data"
     : spec.content.kind === "presenter" || spec.content.kind === "presenter-slide" ? "presenter"
     : spec.content.kind === "sources" ? "source"

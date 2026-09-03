@@ -523,7 +523,7 @@ function displayInformationUnits(scene: ResolvedScene): readonly string[] {
     : scene.content.body
       ? scene.content.body.split(SENTENCE_END)
       : [scene.content.title];
-  const codeLike = new Set(["code", "walkthrough", "diff", "terminal", "formula", "derivation"]);
+  const codeLike = new Set(["code", "live-code", "walkthrough", "diff", "terminal", "formula", "derivation"]);
   const maximum = codeLike.has(scene.kind) ? 88 : 46;
   const unique: string[] = [];
   const seen = new Set<string>();
@@ -543,7 +543,7 @@ function sceneIntent(kind: BuiltinSceneKind): VisualSemanticIntent {
   if (kind === "definition") return "define";
   if (kind === "comparison" || kind === "image-comparison" || kind === "diff") return "compare";
   if (kind === "variable-state" || kind === "simulation") return "transform";
-  if (["code", "walkthrough", "terminal", "execution-trace", "ui-demo", "screen-recording", "worked-example"].includes(kind)) return "demonstrate";
+  if (["whiteboard", "code", "live-code", "walkthrough", "terminal", "execution-trace", "ui-demo", "screen-recording", "worked-example"].includes(kind)) return "demonstrate";
   if (["formula", "derivation", "graph", "chart", "table"].includes(kind)) return "prove";
   if (kind === "question" || kind === "quiz") return "question";
   if (kind === "recap" || kind === "summary" || kind === "sources") return "recap";
@@ -558,7 +558,7 @@ function primaryComposition(kind: BuiltinSceneKind): VisualCompositionFamily {
   if (["graph", "chart", "table", "simulation"].includes(kind)) return "data_canvas";
   if (["comparison", "image-comparison", "diff"].includes(kind)) return "split_evidence";
   if (["document-focus", "sources", "screen-recording", "ui-demo"].includes(kind)) return "document_focus";
-  if (["worked-example", "formula", "derivation", "code", "walkthrough", "terminal"].includes(kind)) return "worked_example";
+  if (["whiteboard", "worked-example", "formula", "derivation", "code", "live-code", "walkthrough", "terminal"].includes(kind)) return "worked_example";
   if (kind === "image-focus") return "full_bleed";
   if (["definition", "question", "quote"].includes(kind)) return "object_stage";
   return "editorial_type";
@@ -594,7 +594,7 @@ function motionFor(intent: VisualSemanticIntent): VisualMotionIntent {
 }
 
 function metaphorFor(kind: BuiltinSceneKind, intent: VisualSemanticIntent): string {
-  if (["execution-trace", "walkthrough", "worked-example"].includes(kind)) return "a retained state transformed one justified step at a time";
+  if (["execution-trace", "live-code", "walkthrough", "worked-example"].includes(kind)) return "a retained state transformed one justified step at a time";
   if (kind === "comparison" || kind === "diff") return "two aligned states sharing one measurement axis";
   if (kind === "diagram") return "relationships carried by a continuous explanatory path";
   if (kind === "formula" || kind === "derivation") return "one expression preserving identity through each transformation";
@@ -1081,6 +1081,14 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
             countLabel: "recursive products",
           },
           verdict: "Three recursive products replace four as input size grows",
+          curveComparison: {
+            firstLabel: "Schoolbook O(n²)",
+            firstExponent: 2,
+            secondLabel: "Karatsuba O(n¹·⁵⁸⁵)",
+            secondExponent: Math.log2(3),
+            xLabel: "INPUT SIZE n",
+            yLabel: "RELATIVE MULTIPLICATIONS",
+          },
         };
       } else if (semantic?.comparisons.length && semantic.comparisons.filter((unit) => unit.value !== undefined).length >= 2) {
         const measures = semantic.comparisons.filter((unit) => unit.value !== undefined).slice(0, 2);
@@ -1165,19 +1173,46 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
     case "graph":
       content = { kind, ...common, series: dataSeries, xLabel: "Step", yLabel: "Relative emphasis" };
       break;
+    case "whiteboard": {
+      const boardLines = lines.slice(0, 4);
+      content = {
+        kind,
+        ...common,
+        boardStyle: "whiteboard",
+        finalBoardDescription: boardLines.join(". "),
+        strokes: boardLines.map((_, index) => ({
+          id: child(`stroke-${index + 1}`),
+          points: [{ x: 0.1, y: 0.2 + index * 0.18 }, { x: 0.28, y: 0.205 + index * 0.18 }, { x: 0.72, y: 0.2 + index * 0.18 }],
+          startTick: 240_000 + index * 360_000,
+          endTick: 480_000 + index * 360_000,
+          tool: "pencil" as const,
+          color: index % 2 === 0 ? "primary" as const : "secondary" as const,
+        })),
+        labels: boardLines.map((text, index) => ({ id: child(`label-${index + 1}`), text, x: 0.12, y: 0.18 + index * 0.18, startTick: 480_000 + index * 360_000 })),
+      };
+      break;
+    }
     case "code":
+    case "live-code":
     case "walkthrough":
     case "diff":
     case "terminal":
+      {
+      const resolvedLines = (semantic?.code.length ? semantic.code.map((unit) => unitText(unit) ?? authoredInformationLabel(unit)) : lines)
+        .map((text, index) => ({ id: child(`line-${index + 1}`), text, highlight: index === 0 }));
       content = {
         kind,
         ...common,
         language: kind === "terminal" ? "text" : optionalMetadataString(scene, "language") ?? "text",
         filename: kind === "terminal" ? "Tutorial console" : "lesson.txt",
-        lines: (semantic?.code.length ? semantic.code.map((unit) => unitText(unit) ?? authoredInformationLabel(unit)) : lines)
-          .map((text, index) => ({ id: child(`line-${index + 1}`), text, highlight: index === 0 })),
+        lines: resolvedLines,
+        ...(kind === "live-code" ? { actions: resolvedLines.flatMap((line, index) => [
+          { id: child(`type-${index + 1}`), type: "type" as const, lineId: line.id, startTick: 240_000 + index * 360_000, endTick: 480_000 + index * 360_000 },
+          { id: child(`explain-${index + 1}`), type: "explain" as const, lineId: line.id, startTick: 480_000 + index * 360_000, endTick: 600_000 + index * 360_000 },
+        ]) } : {}),
       };
       break;
+      }
     case "file-tree":
       content = {
         kind,
@@ -1278,12 +1313,18 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
       content = {
         kind,
         ...common,
-        presenterName: optionalMetadataString(scene, "presenterName") ?? "Alystria Guide",
+        presenterName: optionalMetadataString(scene, "presenterName") ?? "AI Video Tutorial Guide",
         portrait: assetReference(scene, "presenter-portrait", "presenter-placeholder", "Presenter portrait"),
         talkingPoint: semantic?.target ? `Target ${scalarText(semantic.target)}` : visualDirectiveLabel(scene.content.body ?? lines[0]!),
         ...(kind === "presenter-slide" ? { slideItems: questionLead ? [questionLead, ...presenterItems.slice(0, 3)] : presenterItems } : {}),
         disclosure: optionalMetadataString(scene, "presenterDisclosure") ?? "Synthetic presenter",
         placement,
+        idleMotion: {
+          enabled: true,
+          blink: true,
+          breathing: true,
+          restMouth: "closed",
+        },
       };
       break;
     }
@@ -1319,11 +1360,15 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
             : (unitText(semantic.answer) ?? targetAwareInformationLabel(stateUnits.at(-1)!, semantic)),
         };
       } else {
+        const answerLine = lines.find((line) => /(?:succeeds?|found|complete)/iu.test(line))
+          ?? lines.find((line) => /(?:answer|result|therefore|thus|=)/iu.test(line))
+          ?? lines.at(-1)!;
+        const proceduralLines = lines.filter((line) => line !== answerLine);
         content = {
           kind,
           ...common,
           problem: compactDisplayLabel(scene.content.title, 96),
-          steps: lines.slice(0, 4).map((text, index) => ({
+          steps: (proceduralLines.length ? proceduralLines : lines).slice(0, 4).map((text, index) => ({
             id: child(`worked-step-${index + 1}`),
             // The worked-example renderer has two deliberate lines per row.
             // Keep the visual explanation complete instead of pre-truncating it
@@ -1332,9 +1377,7 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
             ...(index === 0 ? { emphasis: "primary" as const } : {}),
           })),
           answer: compactInstruction(
-            lines.find((line) => /(?:succeeds?|found|complete)/iu.test(line))
-              ?? lines.find((line) => /(?:answer|result|therefore|thus|=)/iu.test(line))
-              ?? lines.at(-1)!,
+            answerLine,
             112,
           ),
         };

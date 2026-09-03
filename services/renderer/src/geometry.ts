@@ -35,6 +35,7 @@ export interface StructuralGeometryFinding {
     | "geometry.text-intersection"
     | "geometry.outside-frame"
     | "geometry.outside-safe-area"
+    | "geometry.parent-overflow"
     | "geometry.container-overflow"
     | "geometry.line-limit";
   readonly elementIds: readonly string[];
@@ -122,9 +123,11 @@ export function analyzeStructuralGeometry(
     if (element.kind === "container" && element.plannedRect && !contains(element.plannedRect, element.rect, epsilon)) {
       findings.push(finding(
         "error",
-        "geometry.container-overflow",
+        element.role === "diagram-node" ? "geometry.parent-overflow" : "geometry.container-overflow",
         [element.id],
-        `${element.role} ${element.id} exceeds its planned box; ${element.overflowPolicy ?? "recompose"} is required.`,
+        element.role === "diagram-node"
+          ? `Diagram node ${element.id} leaves its parent stage; re-layout is required.`
+          : `${element.role} ${element.id} exceeds its planned box; ${element.overflowPolicy ?? "recompose"} is required.`,
         [element.rect, element.plannedRect],
       ));
     }
@@ -226,7 +229,23 @@ export async function inspectStructuralGeometry(
           overflowPolicy: element.getAttribute("data-layout-overflow-policy"),
         };
       });
-    return [...textElements, ...containers];
+    const diagramStage = document.querySelector("[data-diagram-stage='true']");
+    const diagramNodes = diagramStage ? Array.from(document.querySelectorAll("[data-signal-stage][data-layout-x][data-layout-y][data-layout-width][data-layout-height]"))
+      .filter(visible)
+      .map((element, index): RenderedGeometryElement => ({
+        id: element.id || `diagram-node.${index}`,
+        kind: "container",
+        role: "diagram-node",
+        text: (element.textContent ?? "").replace(/\s+/gu, " ").trim(),
+        essential: true,
+        rect: rectOf(element),
+        fontSize: null,
+        lineCount: 0,
+        declaredMaxLines: null,
+        plannedRect: rectOf(diagramStage),
+        overflowPolicy: "re-layout",
+      })) : [];
+    return [...textElements, ...containers, ...diagramNodes];
   }, { width: options.width, height: options.height });
   return analyzeStructuralGeometry(
     { x: 0, y: 0, width: options.width, height: options.height },
