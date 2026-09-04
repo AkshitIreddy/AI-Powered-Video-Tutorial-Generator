@@ -129,6 +129,10 @@ function lintCommon(content: SceneContent): readonly Diagnostic[] {
         if (stroke.endTick <= stroke.startTick) diagnostics.push({ code: "scene.whiteboard.stroke.timing", severity: "error", message: `Stroke ${stroke.id} must end after it starts.`, path: "content.strokes" });
         if (stroke.points.some((point) => point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1)) diagnostics.push({ code: "scene.whiteboard.stroke.bounds", severity: "error", message: `Stroke ${stroke.id} leaves the board-safe normalized bounds.`, path: "content.strokes" });
       }
+      for (const label of content.labels ?? []) {
+        if (label.x < 0 || label.x > 1 || label.y < 0 || label.y > 1) diagnostics.push({ code: "scene.whiteboard.label.bounds", severity: "error", message: `Label ${label.id} leaves the board-safe normalized bounds.`, path: "content.labels" });
+        if (label.endTick !== undefined && label.endTick <= label.startTick) diagnostics.push({ code: "scene.whiteboard.label.timing", severity: "error", message: `Label ${label.id} must finish after it starts.`, path: "content.labels" });
+      }
       break;
     case "live-code":
       if (!content.actions?.some((action) => action.type === "type")) diagnostics.push({ code: "scene.live-code.actions.missing", severity: "error", message: "Live-code scenes require at least one timed typing action.", path: "content.actions" });

@@ -123,6 +123,7 @@ describe("built-in scene catalog", () => {
     expect(boardEarly).toContain('data-tutorial-mode="whiteboard"');
     expect(boardEarly).toContain('data-draw-progress="0.5000"');
     expect(boardLate).toContain('data-draw-progress="1.0000"');
+    expect(boardLate).toContain('data-whiteboard-label="true"');
 
     const codeEarly = renderAt("live-code", TIMEBASE_TICKS_PER_SECOND * 1.5);
     const codeLate = renderAt("live-code", TIMEBASE_TICKS_PER_SECOND * 7);

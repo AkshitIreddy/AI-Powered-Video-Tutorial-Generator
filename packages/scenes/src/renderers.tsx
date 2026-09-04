@@ -613,6 +613,12 @@ export function WhiteboardRenderer(props: SceneRendererProps<WhiteboardContent>)
   const palette = { ink: boardInk, primary: theme.primary, secondary: theme.secondary, warning: theme.warning } as const;
   const rail = Math.max(16, props.scene.metrics.unit * 1.3);
   const board = { x: body.x, y: body.y, width: body.width, height: body.height - rail };
+  const labels = content.labels ?? [];
+  const writingLabel = labels.find((label) => (
+    label.endTick !== undefined
+    && props.frame.tick >= label.startTick
+    && props.frame.tick < label.endTick
+  ));
   return withFrame(props, (
     <g id="body" data-semantic-role="visual" data-tutorial-mode="whiteboard" data-board-style={style}>
       <rect x={board.x} y={board.y} width={board.width} height={board.height} rx={Math.max(4, props.scene.metrics.unit * 0.45)} fill={boardFill} stroke={style === "chalkboard" ? "#0D2A25" : "#CDD2D4"} strokeWidth={Math.max(3, props.scene.metrics.unit * 0.26)} filter={`url(#shadow-${safeId(props.scene.spec.id)})`} />
@@ -624,10 +630,30 @@ export function WhiteboardRenderer(props: SceneRendererProps<WhiteboardContent>)
         const width = Math.max(3, props.scene.metrics.unit * (stroke.width ?? (stroke.tool === "pencil" ? 0.26 : 0.42)));
         return <path key={stroke.id} id={stroke.id} data-whiteboard-stroke="true" data-draw-progress={progress.toFixed(4)} d={whiteboardPath(stroke.points, board)} fill="none" stroke={palette[stroke.color ?? "ink"]} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={length} strokeDashoffset={length * (1 - progress)} opacity={stroke.tool === "pencil" ? 0.84 : 0.96} />;
       })}
-      {(content.labels ?? []).map((label) => {
-        const visible = props.frame.tick >= label.startTick;
-        return <text key={label.id} id={label.id} data-whiteboard-label="true" x={board.x + label.x * board.width} y={board.y + label.y * board.height} fill={palette[label.color ?? "ink"]} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * 0.9)} fontWeight="720" opacity={visible ? 1 : 0}>{label.text}</text>;
+      {labels.map((label) => {
+        const rawProgress = label.endTick === undefined
+          ? (props.frame.tick >= label.startTick ? 1 : 0)
+          : (props.frame.tick - label.startTick) / Math.max(1, label.endTick - label.startTick);
+        const progress = props.frame.reducedMotion ? (props.frame.tick >= label.startTick ? 1 : 0) : clamp(rawProgress, 0, 1);
+        const x = board.x + label.x * board.width;
+        const y = board.y + label.y * board.height;
+        const availableWidth = Math.max(1, board.width * (0.96 - label.x));
+        const clipId = `${safeId(props.scene.spec.id)}-${safeId(label.id)}-write`;
+        const scale = label.fontScale ?? (content.layout === "derivation" ? 0.78 : 0.9);
+        return <g key={label.id} data-whiteboard-label-group="true">
+          <defs><clipPath id={clipId}><rect x={x - 2} y={y - props.scene.metrics.bodySize * 1.3} width={availableWidth * progress + 4} height={props.scene.metrics.bodySize * 1.8} /></clipPath></defs>
+          <text id={label.id} data-whiteboard-label="true" data-write-progress={progress.toFixed(4)} x={x} y={y} fill={palette[label.color ?? "ink"]} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * scale)} fontWeight={label.emphasis === "result" ? "850" : "720"} opacity={progress > 0 ? 1 : 0} clipPath={`url(#${clipId})`}>{label.text}</text>
+        </g>;
       })}
+      {content.showWritingTool && writingLabel ? (() => {
+        const progress = clamp((props.frame.tick - writingLabel.startTick) / Math.max(1, writingLabel.endTick! - writingLabel.startTick), 0, 1);
+        const x = board.x + (writingLabel.x + (0.96 - writingLabel.x) * progress) * board.width;
+        const y = board.y + writingLabel.y * board.height - props.scene.metrics.unit * 0.4;
+        return <g data-whiteboard-writing-tool="true" transform={`translate(${x} ${y}) rotate(-38)`}>
+          <rect x={-props.scene.metrics.unit * 0.12} y={-props.scene.metrics.unit * 1.25} width={props.scene.metrics.unit * 0.24} height={props.scene.metrics.unit * 1.18} rx={props.scene.metrics.unit * 0.08} fill={theme.primary} />
+          <path d={`M ${-props.scene.metrics.unit * 0.12} 0 L 0 ${props.scene.metrics.unit * 0.32} L ${props.scene.metrics.unit * 0.12} 0 Z`} fill="#D8B27C" />
+        </g>;
+      })() : null}
       <rect x={body.x} y={board.y + board.height} width={body.width} height={rail} rx={rail * 0.22} fill={style === "chalkboard" ? "#A9794E" : "#D5D8D8"} />
       <rect x={body.x + body.width * 0.73} y={board.y + board.height - props.scene.metrics.unit * 0.42} width={body.width * 0.12} height={props.scene.metrics.unit * 0.58} rx={props.scene.metrics.unit * 0.2} fill={theme.primary} opacity="0.9" />
       <rect x={body.x + body.width * 0.86} y={board.y + board.height - props.scene.metrics.unit * 0.42} width={body.width * 0.08} height={props.scene.metrics.unit * 0.58} rx={props.scene.metrics.unit * 0.2} fill={theme.warning} opacity="0.9" />

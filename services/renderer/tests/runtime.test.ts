@@ -57,9 +57,10 @@ test("teaching actions follow normalized narration timing without provider coupl
   const whiteboard = resolveBuiltinSceneSpec({ ...timedScene, kind: "whiteboard" });
   assert.equal(whiteboard?.content.kind, "whiteboard");
   if (whiteboard?.content.kind !== "whiteboard") throw new Error("expected whiteboard");
-  assert.equal(whiteboard.content.strokes[0]?.startTick, 120_000);
-  assert.equal(whiteboard.content.strokes[1]?.startTick, 600_000);
-  assert.equal(whiteboard.content.labels?.[1]?.startTick, 816_000);
+  assert.equal(whiteboard.content.strokes[0]?.startTick, 302_400);
+  assert.equal(whiteboard.content.strokes[1]?.startTick, 828_000);
+  assert.equal(whiteboard.content.labels?.[0]?.startTick, 120_000);
+  assert.equal(whiteboard.content.labels?.[1]?.endTick, 816_000);
 
   const liveCode = resolveBuiltinSceneSpec({ ...timedScene, kind: "live-code" });
   assert.equal(liveCode?.content.kind, "live-code");

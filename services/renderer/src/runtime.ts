@@ -1209,33 +1209,35 @@ export function resolveBuiltinSceneSpec(scene: ResolvedScene, suppliedBeat?: Vis
       content = { kind, ...common, series: dataSeries, xLabel: "Step", yLabel: "Relative emphasis" };
       break;
     case "whiteboard": {
-      const boardLines = lines.slice(0, 4);
+      const boardLines = lines.slice(0, 6);
       const actionWindows = narrationActionWindows(scene, boardLines.length);
+      const derivation = boardLines.some((line) => /[=+\-×÷√²³∑]|\^\d/.test(line));
+      const rowStep = boardLines.length > 4 ? 0.13 : 0.18;
+      const firstRow = boardLines.length > 4 ? 0.13 : 0.18;
       content = {
         kind,
         ...common,
         boardStyle: "whiteboard",
+        layout: derivation ? "derivation" : "notes",
+        showWritingTool: true,
         finalBoardDescription: boardLines.join(". "),
         strokes: boardLines.map((_, index) => ({
           id: child(`stroke-${index + 1}`),
-          points: [{ x: 0.1, y: 0.2 + index * 0.18 }, { x: 0.28, y: 0.205 + index * 0.18 }, { x: 0.72, y: 0.2 + index * 0.18 }],
-          startTick: actionWindows[index]!.startTick,
-          endTick: Math.max(
-            actionWindows[index]!.startTick + 1,
-            Math.round(actionWindows[index]!.startTick + (actionWindows[index]!.endTick - actionWindows[index]!.startTick) * 0.72),
-          ),
+          points: [{ x: 0.1, y: firstRow + 0.025 + index * rowStep }, { x: 0.32, y: firstRow + 0.03 + index * rowStep }, { x: index === boardLines.length - 1 ? 0.82 : 0.68, y: firstRow + 0.025 + index * rowStep }],
+          startTick: Math.max(actionWindows[index]!.startTick + 1, Math.round(actionWindows[index]!.startTick + (actionWindows[index]!.endTick - actionWindows[index]!.startTick) * 0.76)),
+          endTick: actionWindows[index]!.endTick,
           tool: "pencil" as const,
-          color: index % 2 === 0 ? "primary" as const : "secondary" as const,
+          color: index === boardLines.length - 1 ? "primary" as const : index % 2 === 0 ? "ink" as const : "secondary" as const,
         })),
         labels: boardLines.map((text, index) => ({
           id: child(`label-${index + 1}`),
           text,
           x: 0.12,
-          y: 0.18 + index * 0.18,
-          startTick: Math.max(
-            actionWindows[index]!.startTick + 1,
-            Math.round(actionWindows[index]!.startTick + (actionWindows[index]!.endTick - actionWindows[index]!.startTick) * 0.72),
-          ),
+          y: firstRow + index * rowStep,
+          startTick: actionWindows[index]!.startTick,
+          endTick: Math.max(actionWindows[index]!.startTick + 1, Math.round(actionWindows[index]!.startTick + (actionWindows[index]!.endTick - actionWindows[index]!.startTick) * 0.72)),
+          fontScale: boardLines.length > 4 ? 0.72 : 0.86,
+          ...(index === boardLines.length - 1 ? { color: "primary" as const, emphasis: "result" as const } : {}),
         })),
       };
       break;

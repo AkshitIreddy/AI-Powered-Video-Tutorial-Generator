@@ -178,7 +178,11 @@ export interface WhiteboardLabel {
   readonly x: number;
   readonly y: number;
   readonly startTick: number;
+  /** When present, reveal the label left-to-right like live handwriting. */
+  readonly endTick?: number;
   readonly color?: "ink" | "primary" | "secondary" | "warning";
+  readonly fontScale?: number;
+  readonly emphasis?: "normal" | "result";
 }
 
 export interface CodeTimelineAction {
@@ -290,6 +294,8 @@ export interface GraphContent extends TitledContent {
 export interface WhiteboardContent extends TitledContent {
   readonly kind: "whiteboard";
   readonly boardStyle?: "whiteboard" | "paper" | "chalkboard";
+  readonly layout?: "notes" | "derivation";
+  readonly showWritingTool?: boolean;
   readonly strokes: readonly WhiteboardStroke[];
   readonly labels?: readonly WhiteboardLabel[];
   readonly finalBoardDescription: string;
