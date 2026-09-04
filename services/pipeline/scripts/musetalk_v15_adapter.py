@@ -336,7 +336,7 @@ def run_presenter_job(
     if ALLOWED_CODEC_ARGUMENTS.get(encoder) != codec_arguments:
         _fail("Presenter encoder arguments do not match the allowlisted selection")
     ffmpeg = Path(_library_path(Path(str(encoding["ffmpegPath"]))))
-    version_root, silent_video, generated_output, frames = _upstream_output_paths(
+    _version_root, silent_video, generated_output, frames = _upstream_output_paths(
         result_root, portrait_path, audio_path
     )
     intercepted = 0
@@ -445,11 +445,11 @@ def run_presenter_job(
         first = (
             "ffmpeg -y -v warning -r 25 -f image2 -i "
             f"{frames.parent}/%08d.png -vcodec libx264 -vf format=yuv420p -crf 18 "
-            f"{silent_video}"
+            f"{silent_video.parent}/{silent_video.name}"
         )
         second = (
             f"ffmpeg -y -v warning -i {audio_path} -i "
-            f"{silent_video} {generated_output}"
+            f"{silent_video.parent}/{silent_video.name} {generated_output}"
         )
         if command == first:
             safe_ffmpeg(
@@ -468,7 +468,10 @@ def run_presenter_job(
                 ]
             )
             return 0
-        _fail("MuseTalk attempted an unexpected shell command")
+        _fail(
+            "MuseTalk attempted an unexpected shell command: "
+            f"received={command!r}; first={first!r}; second={second!r}"
+        )
 
     emit_progress("inference", 0.15, "Running pinned MuseTalk 1.5 inference")
     original_cwd = Path.cwd()
