@@ -27,7 +27,7 @@ test("FFV1 plan is lossless, intra-only, and color tagged", () => {
   assert.ok(plan.args.includes("-map_metadata"));
 });
 
-test("presenter plan trims, places, and losslessly composites local clips", () => {
+test("presenter plan trims, places, and losslessly composites local clips without faking idle motion", () => {
   const plan = planPresenterComposite("base.mkv", [{
     id: "guide",
     path: "presenter.mp4",
@@ -49,7 +49,8 @@ test("presenter plan trims, places, and losslessly composites local clips", () =
   assert.match(filter, /trim=start=1\.250000:duration=3\.000000/);
   assert.match(filter, /setpts=PTS-STARTPTS\+2\.000000\/TB/);
   assert.match(filter, /scale=480:540:force_original_aspect_ratio=increase/);
-  assert.match(filter, /1\.014\+0\.003\*sin/);
+  assert.doesNotMatch(filter, /eval=frame/);
+  assert.doesNotMatch(filter, /sin\(2\*PI\*t/);
   assert.match(filter, /overlay=x=120:y=80/);
   assert.ok(plan.args.includes("ffv1"));
   assert.equal(plan.expectedOutputs[0], "composite.mkv");

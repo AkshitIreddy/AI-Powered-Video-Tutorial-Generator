@@ -161,11 +161,8 @@ export function planPresenterComposite(
     const fit = layer.fit === "cover"
       ? `scale=${layer.width}:${layer.height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${layer.width}:${layer.height}`
       : `scale=${layer.width}:${layer.height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${layer.width}:${layer.height}:(ow-iw)/2:(oh-ih)/2:color=0xF7F8FC`;
-    const fallbackIdle = layer.motionProfile === "lip-sync-only"
-      ? `,scale=w='trunc(iw*(1.014+0.003*sin(2*PI*t/4.8))/2)*2':h='trunc(ih*(1.014+0.005*sin(2*PI*t/4.8+0.7))/2)*2':eval=frame:flags=lanczos,crop=${layer.width}:${layer.height}:x='(in_w-out_w)/2+0.0015*out_w*sin(2*PI*t/7.3)':y='(in_h-out_h)/2+0.0025*out_h*sin(2*PI*t/4.8+0.7)'`
-      : "";
     filters.push(
-      `[${input}:v]trim=start=${sourceStart}:duration=${duration},setpts=PTS-STARTPTS+${timelineStart}/TB,fps=${frameRateArgument(target.frameRate)},${fit}${fallbackIdle},setsar=1[${prepared}]`,
+      `[${input}:v]trim=start=${sourceStart}:duration=${duration},setpts=PTS-STARTPTS+${timelineStart}/TB,fps=${frameRateArgument(target.frameRate)},${fit},setsar=1[${prepared}]`,
       `[${base}][${prepared}]overlay=x=${layer.x}:y=${layer.y}:eof_action=pass:repeatlast=0:shortest=0:enable='between(t,${timelineStart},${timelineEnd})'[${composed}]`,
     );
     base = composed;
