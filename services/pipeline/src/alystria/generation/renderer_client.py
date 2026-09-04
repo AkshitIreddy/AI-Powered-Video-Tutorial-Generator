@@ -1195,6 +1195,7 @@ class SubprocessRendererClient:
                 "sceneId": scene_id,
                 "placement": _presenter_placement(presenter),
                 "fit": _presenter_fit(presenter),
+                "motionProfile": _presenter_motion_profile(presenter),
             }
             source_start = presenter.get("sourceStartTick")
             if source_start is not None:
@@ -2075,6 +2076,13 @@ def _presenter_fit(value: Mapping[str, Any]) -> str:
     raw = value.get("fit", "cover")
     if not isinstance(raw, str) or raw not in {"cover", "contain"}:
         raise ValueError("Presenter fit must be cover or contain")
+    return raw
+
+
+def _presenter_motion_profile(value: Mapping[str, Any]) -> str:
+    raw = value.get("motionProfile", "native-idle")
+    if not isinstance(raw, str) or raw not in {"lip-sync-only", "native-idle"}:
+        raise ValueError("Presenter motionProfile must be lip-sync-only or native-idle")
     return raw
 
 

@@ -92,6 +92,7 @@ ALLOWED_MUSE_TALK_FILE_ROLES = frozenset(
 )
 MAX_PROGRESS_BYTES = 1024 * 1024
 MAX_PROGRESS_EVENTS = 10_000
+PRESENTER_MOTION_PROFILES = frozenset({"lip-sync-only", "native-idle"})
 
 
 class LocalPresenterError(RuntimeError):
@@ -330,6 +331,7 @@ class LocalPresenterRuntime:
     argument_template: tuple[str, ...]
     model_id: str = "musetalk"
     model_revision: str = "unverified"
+    motion_profile: str = "lip-sync-only"
     execution_policy: PresenterExecutionPolicy = PresenterExecutionPolicy.MANAGED_VERIFIED
     network_policy: PresenterNetworkPolicy = PresenterNetworkPolicy.SUPERVISOR_DENY
     unsafe_test_only_acknowledged: bool = False
@@ -346,6 +348,8 @@ class LocalPresenterRuntime:
     def __post_init__(self) -> None:
         if not self.model_id.strip() or not self.model_revision.strip():
             raise ValueError("Local presenter model identity cannot be blank")
+        if self.motion_profile not in PRESENTER_MOTION_PROFILES:
+            raise ValueError("Local presenter motion profile must be lip-sync-only or native-idle")
         if self.timeout_seconds <= 0 or self.probe_timeout_seconds <= 0:
             raise ValueError("Local presenter timeouts must be positive")
         if not 32 <= self.minimum_output_bytes <= self.maximum_output_bytes:
@@ -529,6 +533,7 @@ class LocalPresenterMediaClient:
                 else "unsafe-test-only"
             ),
             "modelRevision": self.runtime.model_revision,
+            "motionProfile": self.runtime.motion_profile,
             "runtimeFingerprint": self._runtime_fingerprint(),
             "encoderSelection": (
                 encoder_selection.as_manifest() if encoder_selection is not None else None
@@ -898,6 +903,9 @@ class LocalPresenterMediaClient:
                 "synthetic": True,
                 "disclosureRequired": True,
                 "provider": "local-presenter",
+                # The renderer adds its subtle fallback only when the selected
+                # provider declares that it produces speech motion alone.
+                "motionProfile": self.runtime.motion_profile,
                 "modelId": self.runtime.model_id,
                 "modelRevision": self.runtime.model_revision,
                 "presenterProfileId": profile.profile_id,
@@ -1376,6 +1384,7 @@ def load_local_presenter_media_client(
             argument_template=tuple(arguments),
             model_id=_config_string(value, "modelId"),
             model_revision=_config_string(value, "modelRevision"),
+            motion_profile=str(value.get("motionProfile", "lip-sync-only")),
             execution_policy=PresenterExecutionPolicy(_config_string(value, "executionPolicy")),
             network_policy=PresenterNetworkPolicy(_config_string(value, "networkPolicy")),
             unsafe_test_only_acknowledged=value.get("unsafeTestOnlyAcknowledged") is True,

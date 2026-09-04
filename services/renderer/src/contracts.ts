@@ -183,6 +183,7 @@ export interface AudioInput {
 }
 
 export type PresenterVideoPlacement = "full" | "picture-in-picture" | "split-left" | "split-right";
+export type PresenterMotionProfile = "lip-sync-only" | "native-idle";
 
 export interface PresenterVideoInput {
   readonly id: string;
@@ -203,6 +204,8 @@ export interface PresenterVideoInput {
   readonly activeDurationTicks?: number;
   readonly placement: PresenterVideoPlacement;
   readonly fit?: "cover" | "contain";
+  /** Prevents fallback idle motion from being stacked onto a provider that already animates pose. */
+  readonly motionProfile?: PresenterMotionProfile;
 }
 
 export interface FrameContext {
@@ -463,6 +466,7 @@ export function assertRenderManifest(manifest: RenderManifest): void {
   const presenterIds = new Set<string>();
   const presenterSceneIds = new Set<string>();
   const presenterPlacements = new Set<PresenterVideoPlacement>(["full", "picture-in-picture", "split-left", "split-right"]);
+  const presenterMotionProfiles = new Set<PresenterMotionProfile>(["lip-sync-only", "native-idle"]);
   for (const [index, input] of (manifest.presenterVideos ?? []).entries()) {
     if (!input.id.trim() || presenterIds.has(input.id)) {
       throw new TypeError(`Presenter video ${index} id must be unique and non-empty`);
@@ -486,6 +490,9 @@ export function assertRenderManifest(manifest: RenderManifest): void {
     }
     if (!presenterPlacements.has(input.placement)) {
       throw new TypeError(`Presenter video ${input.id} has unsupported placement ${String(input.placement)}`);
+    }
+    if (input.motionProfile !== undefined && !presenterMotionProfiles.has(input.motionProfile)) {
+      throw new TypeError(`Presenter video ${input.id} has unsupported motionProfile ${input.motionProfile}`);
     }
     if (input.fit !== undefined && input.fit !== "cover" && input.fit !== "contain") {
       throw new TypeError(`Presenter video ${input.id} has unsupported fit ${String(input.fit)}`);

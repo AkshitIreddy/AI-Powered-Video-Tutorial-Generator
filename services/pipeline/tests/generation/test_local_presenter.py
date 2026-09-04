@@ -339,6 +339,7 @@ def test_managed_worker_returns_ffprobe_validated_video_generated_media(tmp_path
         assert media.actual_cost_micros == 0
         assert media.usage_units == {"seconds": 2.5}
         assert media.metadata["executionPolicy"] == "managed-verified"
+        assert media.metadata["motionProfile"] == "lip-sync-only"
         assert media.metadata["networkPolicy"] == "supervisor-deny"
         assert media.metadata["unsafeTestOnly"] is False
         assert media.metadata["validationLevel"] == "ffprobe"
@@ -497,6 +498,7 @@ def test_json_config_loader_preserves_explicit_unsafe_policy(tmp_path: Path) -> 
                 ],
                 "modelId": "musetalk",
                 "modelRevision": "local-test",
+                "motionProfile": "native-idle",
                 "executionPolicy": "unsafe-test-only",
                 "networkPolicy": "not-enforced",
                 "unsafeTestOnlyAcknowledged": True,
@@ -518,6 +520,7 @@ def test_json_config_loader_preserves_explicit_unsafe_policy(tmp_path: Path) -> 
             store, DeterministicMediaClient(), config, runner=runner
         ).create_presenter({"id": "scene-1"}, narration_hash=narration_hash, seed=3)
         assert media.metadata["unsafeTestOnly"] is True
+        assert media.metadata["motionProfile"] == "native-idle"
     finally:
         store.close()
 

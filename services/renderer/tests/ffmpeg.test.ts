@@ -38,6 +38,7 @@ test("presenter plan trims, places, and losslessly composites local clips", () =
     durationTicks: secondsToTicks(3),
     placement: "picture-in-picture",
     fit: "cover",
+    motionProfile: "lip-sync-only",
     x: 120,
     y: 80,
     width: 480,
@@ -48,6 +49,7 @@ test("presenter plan trims, places, and losslessly composites local clips", () =
   assert.match(filter, /trim=start=1\.250000:duration=3\.000000/);
   assert.match(filter, /setpts=PTS-STARTPTS\+2\.000000\/TB/);
   assert.match(filter, /scale=480:540:force_original_aspect_ratio=increase/);
+  assert.match(filter, /1\.014\+0\.003\*sin/);
   assert.match(filter, /overlay=x=120:y=80/);
   assert.ok(plan.args.includes("ffv1"));
   assert.equal(plan.expectedOutputs[0], "composite.mkv");

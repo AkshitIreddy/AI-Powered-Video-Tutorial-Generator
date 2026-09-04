@@ -29,6 +29,7 @@ export interface PresenterCompositeLayer extends PresenterRect {
   readonly durationTicks: number;
   readonly fit: "cover" | "contain";
   readonly placement: PresenterVideoPlacement;
+  readonly motionProfile: "lip-sync-only" | "native-idle";
 }
 
 function even(value: number, minimum = 2): number {
@@ -168,6 +169,7 @@ export function resolvePresenterCompositeLayers(
       durationTicks: overlapEndTick - overlapStartTick,
       fit: input.fit ?? "cover",
       placement: input.placement,
+      motionProfile: input.motionProfile ?? "native-idle",
     }];
   });
 }

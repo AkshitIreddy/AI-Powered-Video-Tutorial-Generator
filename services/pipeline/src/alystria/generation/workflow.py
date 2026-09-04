@@ -1153,6 +1153,7 @@ class GenerationWorkflow:
                     "syntheticDisclosureRequired": True,
                     "direction": asdict(direction),
                     "fit": _presenter_fit(scene),
+                    "motionProfile": str(media.metadata.get("motionProfile", "native-idle")),
                 }
             )
             links.append(

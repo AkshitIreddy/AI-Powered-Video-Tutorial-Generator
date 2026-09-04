@@ -25,6 +25,7 @@ function presenterManifest() {
       sourceStartTick: secondsToTicks(0.5),
       placement: "split-left" as const,
       fit: "cover" as const,
+      motionProfile: "lip-sync-only" as const,
     }],
   };
 }
@@ -56,6 +57,10 @@ test("presenter bindings require a local hashed clip and a presenter scene", () 
     ...manifest,
     presenterVideos: [{ ...manifest.presenterVideos[0]!, activeDurationTicks: secondsToTicks(5) }],
   }), /activeDurationTicks cannot exceed scene guide duration/);
+  assert.throws(() => assertRenderManifest({
+    ...manifest,
+    presenterVideos: [{ ...manifest.presenterVideos[0]!, motionProfile: "unsupported" as never }],
+  }), /unsupported motionProfile/);
 });
 
 test("presenter layers map selected timeline and source offsets exactly", () => {
@@ -72,6 +77,7 @@ test("presenter layers map selected timeline and source offsets exactly", () => 
     durationTicks: secondsToTicks(2),
     fit: "cover",
     placement: "split-left",
+    motionProfile: "lip-sync-only",
     x: 78,
     y: 162,
     width: 672,

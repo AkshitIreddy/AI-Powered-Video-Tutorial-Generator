@@ -40,6 +40,7 @@ test("real FFmpeg presenter composite produces decodable pixels", { skip: !(ffmp
       durationTicks: secondsToTicks(1),
       placement: "picture-in-picture",
       fit: "cover",
+      motionProfile: "native-idle",
       x: 420,
       y: 48,
       width: 192,

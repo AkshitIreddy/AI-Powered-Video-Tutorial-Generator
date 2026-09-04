@@ -1065,6 +1065,7 @@ def test_renderer_stages_real_presenter_video_only_for_presenter_scene(tmp_path:
                 "activeDurationTicks": 23_224 * 240,
                 "placement": "picture-in-picture",
                 "fit": "cover",
+                "motionProfile": "native-idle",
             }
         ]
         assert not Path(videos[0]["path"]).exists()
