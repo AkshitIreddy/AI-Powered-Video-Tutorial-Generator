@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create three compact, real AI Video Tutorial Generator showcase videos.
+"""Create compact, real AI Video Tutorial Generator showcase videos.
 
 The showcase deliberately exercises three different native rendering paths:
 an identity-preserving local presenter, narration-timed whiteboard drawing, and
@@ -368,6 +368,110 @@ def demo_catalog() -> tuple[Demo, ...]:
         ),
     )
 
+    math_whiteboard = Demo(
+        slug="04-whiteboard-quadratic-formula",
+        title="Complex whiteboard — Deriving the quadratic formula",
+        description="A narration-paced algebra derivation written line by line, followed by a worked check.",
+        scenes=(
+            {
+                "id": "quadratic-complete-square",
+                "type": "whiteboard",
+                "title": "Complete the square",
+                "narration": (
+                    "Start with a x squared plus b x plus c equals zero. Divide every term by a, then "
+                    "move c over a to the right. To complete the square, add b over two a, squared, "
+                    "to both sides. The entire left side now factors as x plus b over two a, squared."
+                ),
+                "visualIntent": "Write each algebraic transformation only when it is explained.",
+                "onScreenText": [
+                    "ax² + bx + c = 0",
+                    "x² + (b/a)x + c/a = 0",
+                    "x² + (b/a)x = -c/a",
+                    "Add (b/2a)² to both sides",
+                    "x² + (b/a)x + (b/2a)² = -c/a + (b/2a)²",
+                    "(x + b/2a)² = (b² - 4ac) / 4a²",
+                ],
+                "visualBeat": beat(
+                    "demonstrate", "worked_example", "complete-square", "quadratic-derivation",
+                    [
+                        unit("line1", "formula", text="ax² + bx + c = 0"),
+                        unit("line2", "formula", text="x² + (b/a)x + c/a = 0"),
+                        unit("line3", "formula", text="x² + (b/a)x = -c/a"),
+                        unit("line4", "principle", text="Add (b/2a)² to both sides"),
+                        unit("line5", "formula", text="x² + (b/a)x + (b/2a)² = -c/a + (b/2a)²"),
+                        unit("line6", "result", text="(x + b/2a)² = (b² - 4ac) / 4a²"),
+                    ],
+                    ["reveal-primary", "trace-relationship", "emphasize-result"],
+                    title="Complete the square", support="Every line preserves equality",
+                ),
+            },
+            {
+                "id": "quadratic-isolate-x",
+                "type": "whiteboard",
+                "title": "Isolate x",
+                "narration": (
+                    "Take the square root of both sides, remembering both the positive and negative roots. "
+                    "Then subtract b over two a. Combining the two fractions gives the quadratic formula. "
+                    "The expression under the radical is the discriminant, which tells us how many real roots exist."
+                ),
+                "visualIntent": "Continue the derivation and box the final general solution.",
+                "onScreenText": [
+                    "Take the square root of both sides",
+                    "x + b/2a = ±√(b² - 4ac) / 2a",
+                    "x = -b/2a ± √(b² - 4ac) / 2a",
+                    "x = (-b ± √(b² - 4ac)) / 2a",
+                    "Discriminant: Δ = b² - 4ac",
+                    "Final: x = (-b ± √Δ) / 2a",
+                ],
+                "visualBeat": beat(
+                    "resolve", "worked_example", "quadratic-formula", "quadratic-derivation",
+                    [
+                        unit("line1", "principle", text="Take the square root of both sides"),
+                        unit("line2", "formula", text="x + b/2a = ±√(b² - 4ac) / 2a"),
+                        unit("line3", "formula", text="x = -b/2a ± √(b² - 4ac) / 2a"),
+                        unit("line4", "formula", text="x = (-b ± √(b² - 4ac)) / 2a"),
+                        unit("line5", "principle", text="Discriminant: Δ = b² - 4ac"),
+                        unit("line6", "answer", text="Final: x = (-b ± √Δ) / 2a"),
+                    ],
+                    ["reveal-primary", "resolve-answer", "emphasize-result"],
+                    title="Isolate x", support="The plus-minus keeps both roots",
+                ),
+            },
+            {
+                "id": "quadratic-worked-check",
+                "type": "whiteboard",
+                "title": "Check it on a real equation",
+                "narration": (
+                    "For two x squared plus three x minus two equals zero, a is two, b is three, and c is negative two. "
+                    "The discriminant is nine plus sixteen, which is twenty five. Substituting gives negative three "
+                    "plus or minus five, over four, so the two roots are one half and negative two."
+                ),
+                "visualIntent": "Substitute values, simplify the discriminant, and underline both roots.",
+                "onScreenText": [
+                    "2x² + 3x - 2 = 0",
+                    "a = 2, b = 3, c = -2",
+                    "Δ = 3² - 4(2)(-2)",
+                    "Δ = 9 + 16 = 25",
+                    "x = (-3 ± √25) / 4",
+                    "x = 1/2  or  x = -2",
+                ],
+                "visualBeat": beat(
+                    "resolve", "worked_example", "roots-one-half-negative-two", "quadratic-derivation",
+                    [
+                        unit("line1", "formula", text="2x² + 3x - 2 = 0"),
+                        unit("line2", "quantity", text="a = 2, b = 3, c = -2"),
+                        unit("line3", "formula", text="Δ = 3² - 4(2)(-2)"),
+                        unit("line4", "state", text="Δ = 9 + 16 = 25"),
+                        unit("line5", "formula", text="x = (-3 ± √25) / 4"),
+                        unit("line6", "answer", text="x = 1/2  or  x = -2"),
+                    ],
+                    ["trace-relationship", "resolve-answer", "emphasize-result"],
+                    title="Check it on a real equation", support="Two exact real roots",
+                ),
+            },
+        ),
+    )
+
     coding = Demo(
         slug="03-live-code-checkout",
         title="Live coding — Checkout totals",
@@ -439,7 +543,7 @@ def demo_catalog() -> tuple[Demo, ...]:
             },
         ),
     )
-    return presenter, whiteboard, coding
+    return presenter, whiteboard, coding, math_whiteboard
 
 
 def prepare_presenter_config(
@@ -756,6 +860,9 @@ def create_demo(
                             "placement": "picture_in_picture",
                             "fit": "cover",
                         },
+                        "motionProfile": str(
+                            generated_presenter.metadata.get("motionProfile", "lip-sync-only")
+                        ),
                     }
                 )
 
@@ -897,6 +1004,10 @@ Primary evidence and implementation references:
 - https://tech.ebu.ch/fr/publications/r128
 - https://support.google.com/youtube/answer/1722171?hl=en
 - https://arxiv.org/abs/2303.00747
+- https://ojs.aaai.org/index.php/AAAI/article/view/33186
+- https://github.com/KlingAIResearch/LivePortrait
+- https://github.com/antgroup/echomimic_v2
+- https://link.springer.com/article/10.1186/s40561-023-00258-6
 """
     (output / "research-ledger.md").write_text(text, encoding="utf-8")
 
@@ -927,7 +1038,7 @@ def main() -> int:
 
         # API-backed narration and CPU renderer work happen before the one GPU demo.
         demos = demo_catalog()
-        for demo in (demos[1], demos[2], demos[0]):
+        for demo in sorted(demos, key=lambda item: item.presenter_scene_id is not None):
             report_path = output / demo.slug / "showcase-report.json"
             if options.resume and report_path.is_file():
                 reports.append(json.loads(report_path.read_text(encoding="utf-8")))
@@ -954,7 +1065,7 @@ def main() -> int:
                 {
                     "schemaVersion": 1,
                     "product": "AI Video Tutorial Generator",
-                    "created": "2026-09-03",
+                    "created": "2026-09-04",
                     "demos": reports,
                 },
                 indent=2,
