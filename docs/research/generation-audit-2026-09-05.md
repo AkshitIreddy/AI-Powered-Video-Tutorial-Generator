@@ -75,6 +75,33 @@ The updated Windows CPU proof used an actual 48 kHz stock System.Speech WAV for 
 
 The first portable restart after the pin change exposed a queue-lifecycle defect: aligner configuration was validated while the desktop executor assembled every handler, before SQLite claimed a job. A stale pin therefore appeared only in supervisor diagnostics while `generation.ingest_research` remained queued with zero attempts. Optional aligner loading is now deferred until an untimed narration stage actually requests alignment. Unrelated import, editor, visual-search, and pre-approval work remains available; if narration needs an invalid runtime, the claimed narration attempt ends in a durable `TASK_FAILED` receipt with `ForcedAlignmentError` and its successors remain blocked. A focused regression reproduces an invalid worker pin and verifies this terminal state rather than a silent queue.
 
+### Native provider corrections after full-script attempts
+
+A separate, authorized one-call public Groq 120B diagnostic isolated the script
+failure. Its five-section response was valid JSON, but
+`$.sections[4].informationUnits[1].role` contained `tip`, outside the strict
+role enum. Both the projected and original schema rejected exactly that path.
+The error response supplied no token or cost accounting; the diagnostic records
+unknown billing and does not retry or alter an existing project. Evidence:
+`E:\temp\Alystria Groq Script Diagnostic\20260905-175917\diagnostic.json`.
+Commit `4a92331` derives the allowed vocabulary from the actual schema and
+includes it explicitly in script and narration-rewrite instructions. The strict
+schema remains unchanged. This is a targeted prompt correction, not a guarantee
+that Groq will obey its documented strict mode in every response.
+
+The first native NVIDIA writing attempt returned content but failed the
+workflow's accounting check: the adapter left actual cost unknown despite its
+fixed no-charge hosted Developer Preview contract. Commit `46c991d` supplies
+the explicit preview billing basis and zero-dollar cost. When NVIDIA omits
+token telemetry, the durable ledger records one request with unknown token
+counts instead of inventing zero tokens. Known token counts remain recorded
+normally; other providers do not receive this exemption. Twenty-three adapter
+and durable-ledger tests pass, including a zero-budget preview request and
+rejection of a generic free-route exemption. NVIDIA's [current documentation](https://docs.api.nvidia.com/nim/docs/run-anywhere)
+describes Developer Program access to hosted prototyping endpoints as free;
+model access and quota availability remain separate checks. The previous failed
+native receipt remains preserved and does not become a successful run.
+
 ### Authored whiteboard and live-code behavior
 
 The structured education schema now permits `whiteboard` and `live_code` scene types and tells the writer when to choose them. The compiler rejects strokes, labels, and code actions outside the scene duration. Live-code rendering uses the active authored action, including run output and narration anchors, instead of hard-coded call/split/return decorations.
