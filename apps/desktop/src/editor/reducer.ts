@@ -6,6 +6,7 @@ import {
   insertClip,
   liftClips,
   moveClip,
+  reorderClip,
   removeKeyframe,
   rippleDeleteClips,
   snapFrame,
@@ -13,6 +14,7 @@ import {
   trimClip,
   updateClip,
   updateKeyframe,
+  updateLinkedTranscript,
 } from "./operations";
 import { applyProposalToCopy } from "./proposals";
 import { rateAsNumber } from "./timecode";
@@ -160,6 +162,10 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       const edit = moveClip(state.project, action.clipId, action.trackId, action.startFrame, { enabled: action.snap ?? state.view.snappingEnabled, thresholdFrames: state.view.snapThresholdFrames, playheadFrame: state.transport.playheadFrame });
       return edit.changed ? commitProject(state, edit.project, "Move clip", "edit", edit.announcement) : { ...state, announcement: edit.announcement };
     }
+    case "REORDER_CLIP": {
+      const edit = reorderClip(state.project, action.clipId, action.direction);
+      return edit.changed ? commitProject(state, edit.project, "Reorder clip", "edit", edit.announcement) : { ...state, announcement: edit.announcement };
+    }
     case "SPLIT_SELECTED": {
       const frame = action.frame ?? state.transport.playheadFrame;
       let project = state.project;
@@ -214,7 +220,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       return edit.changed ? commitProject(state, edit.project, "Remove keyframe", "inspector", edit.announcement) : { ...state, announcement: edit.announcement };
     }
     case "SET_TRANSCRIPT": {
-      const edit = updateClip(state.project, action.clipId, { text: action.text, ...(action.speaker !== undefined ? { speaker: action.speaker } : {}) });
+      const edit = updateLinkedTranscript(state.project, action.clipId, action.text, action.speaker);
       return edit.changed ? commitProject(state, edit.project, "Edit transcript", "transcript", edit.announcement) : { ...state, announcement: edit.announcement };
     }
     case "ADD_PROPOSALS": {

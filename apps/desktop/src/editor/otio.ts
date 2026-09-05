@@ -113,6 +113,12 @@ function frameFromRational(value: OtioLikeRationalTime, projectRate: number): nu
   return Math.round(value.value * projectRate / value.rate);
 }
 
+function inferMediaKind(targetUrl: string | undefined, trackKind: TrackKind): EditorMediaAsset["kind"] {
+  if (trackKind === "narration" || trackKind === "music" || trackKind === "sfx") return "audio";
+  if (targetUrl && /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/iu.test(targetUrl)) return "image";
+  return "video";
+}
+
 function importGenericOtio(timeline: OtioLikeTimeline): EditorProject {
   const globalRate = timeline.global_start_time.rate > 0 ? timeline.global_start_time.rate : 30;
   const now = typeof timeline.metadata.createdAt === "string" ? timeline.metadata.createdAt : "1970-01-01T00:00:00.000Z";
@@ -139,7 +145,28 @@ function importGenericOtio(timeline: OtioLikeTimeline): EditorProject {
         ? child.media_reference.metadata.alystria_asset as unknown as EditorMediaAsset
         : null;
       if (importedAsset?.id) assets.set(importedAsset.id, importedAsset);
-      const assetId = typeof child.media_reference.metadata.alystria_asset_id === "string" ? child.media_reference.metadata.alystria_asset_id : importedAsset?.id ?? null;
+      const declaredAssetId = typeof child.media_reference.metadata.alystria_asset_id === "string" ? child.media_reference.metadata.alystria_asset_id : null;
+      const targetUrl = child.media_reference.OTIO_SCHEMA === "ExternalReference.1" ? child.media_reference.target_url : undefined;
+      const assetId = declaredAssetId ?? importedAsset?.id ?? (targetUrl ? `otio-asset-${trackIndex}-${clips.length}` : null);
+      if (assetId && !assets.has(assetId)) {
+        const availableDuration = child.media_reference.available_range
+          ? frameFromRational(child.media_reference.available_range.duration, globalRate)
+          : null;
+        assets.set(assetId, {
+          id: assetId,
+          name: child.name || `Media ${clips.length + 1}`,
+          kind: inferMediaKind(targetUrl, kind),
+          status: "pending",
+          durationFrames: availableDuration && availableDuration > 0 ? availableDuration : null,
+          ...(targetUrl ? { uri: targetUrl } : {}),
+          provenance: { origin: "unknown", createdAt: now },
+          metadata: {
+            importedFromOtio: true,
+            requiresMediaProbe: true,
+            ...(targetUrl ? {} : { missingReference: true }),
+          },
+        });
+      }
       const timelineStart = asFiniteNumber(child.metadata.alystria_timeline_start_frame, cursor);
       const clip: EditorClip = embeddedClip ? structuredClone(embeddedClip) : {
         id: `otio-clip-${trackIndex}-${clips.length}`,
@@ -189,17 +216,39 @@ export function assertValidEditorProject(value: unknown): EditorProject {
     throw new EditorProjectFormatError("Project tracks, assets, receipts, and markers must be arrays.");
   }
   const project = value as unknown as EditorProject;
+  const allowedKinds = new Set<TrackKind>(["slides", "presenter", "titles", "captions", "narration", "music", "sfx"]);
   const trackIds = new Set<string>();
   const clipIds = new Set<string>();
+  const assetIds = new Set<string>();
+  for (const asset of project.assets) {
+    if (!asset.id || assetIds.has(asset.id)) throw new EditorProjectFormatError(`Duplicate or missing asset ID: ${asset.id || "(empty)"}.`);
+    assetIds.add(asset.id);
+  }
   for (const track of project.tracks) {
     if (!track.id || trackIds.has(track.id)) throw new EditorProjectFormatError(`Duplicate or missing track ID: ${track.id || "(empty)"}.`);
+    if (!allowedKinds.has(track.kind)) throw new EditorProjectFormatError(`Track ${track.id} has unsupported kind ${String(track.kind)}.`);
     trackIds.add(track.id);
     if (!Array.isArray(track.clips)) throw new EditorProjectFormatError(`Track ${track.id} has no clip array.`);
-    for (const clip of track.clips) {
+    let priorEnd = 0;
+    for (const clip of sortClips(track.clips)) {
       if (!clip.id || clipIds.has(clip.id)) throw new EditorProjectFormatError(`Duplicate or missing clip ID: ${clip.id || "(empty)"}.`);
-      if (clip.timelineRange.startFrame < 0 || clip.timelineRange.durationFrames <= 0 || clip.sourceRange.startFrame < 0 || clip.sourceRange.durationFrames <= 0) {
+      if (clip.trackId !== track.id || clip.kind !== track.kind) throw new EditorProjectFormatError(`Clip ${clip.id} does not match its containing track.`);
+      if (![clip.timelineRange.startFrame, clip.timelineRange.durationFrames, clip.sourceRange.startFrame, clip.sourceRange.durationFrames].every(Number.isFinite) || clip.timelineRange.startFrame < 0 || clip.timelineRange.durationFrames <= 0 || clip.sourceRange.startFrame < 0 || clip.sourceRange.durationFrames <= 0) {
         throw new EditorProjectFormatError(`Clip ${clip.id} contains an invalid frame range.`);
       }
+      const playbackRate = clip.playbackRate ?? 1;
+      if (!Number.isFinite(playbackRate) || playbackRate < 0.25 || playbackRate > 4) throw new EditorProjectFormatError(`Clip ${clip.id} has an unsupported playback rate.`);
+      const expectedSourceDuration = Math.max(1, Math.round(clip.timelineRange.durationFrames * playbackRate));
+      if (Math.abs(clip.sourceRange.durationFrames - expectedSourceDuration) > 1) throw new EditorProjectFormatError(`Clip ${clip.id} has inconsistent source timing for its playback rate.`);
+      if (clip.timelineRange.startFrame < priorEnd) throw new EditorProjectFormatError(`Track ${track.id} contains overlapping clips without a transition model.`);
+      if (clip.assetId && !assetIds.has(clip.assetId)) throw new EditorProjectFormatError(`Clip ${clip.id} refers to missing asset ${clip.assetId}.`);
+      const clipEnd = clip.timelineRange.startFrame + clip.timelineRange.durationFrames;
+      if (!Array.isArray(clip.keyframes) || clip.keyframes.some((keyframe) => !Number.isFinite(keyframe.frame) || !Number.isFinite(keyframe.value) || keyframe.frame < clip.timelineRange.startFrame || keyframe.frame >= clipEnd)) throw new EditorProjectFormatError(`Clip ${clip.id} contains an invalid keyframe.`);
+      const asset = clip.assetId ? project.assets.find((candidate) => candidate.id === clip.assetId) : undefined;
+      if (asset?.durationFrames !== null && asset?.durationFrames !== undefined && clip.sourceRange.startFrame + clip.sourceRange.durationFrames > asset.durationFrames) {
+        throw new EditorProjectFormatError(`Clip ${clip.id} exceeds available media ${asset.id}.`);
+      }
+      priorEnd = clipEnd;
       clipIds.add(clip.id);
     }
   }

@@ -6,6 +6,7 @@ function describeOperation(operation: EditOperation): string {
     case "insert-clip": return `Insert “${operation.clip.name}” on track ${operation.trackId} at frame ${operation.clip.timelineRange.startFrame}.`;
     case "remove-clips": return `${operation.ripple ? "Ripple delete" : "Lift"} ${operation.clipIds.length} clip${operation.clipIds.length === 1 ? "" : "s"}.`;
     case "move-clip": return `Move clip ${operation.clipId} to ${operation.trackId} at frame ${operation.startFrame}${operation.snap ? " with snapping" : ""}.`;
+    case "reorder-clip": return `Move clip ${operation.clipId} ${operation.direction} in sequence.`;
     case "trim-clip": return `Trim the ${operation.edge} of clip ${operation.clipId} to frame ${operation.frame}.`;
     case "split-clip": return `Split clip ${operation.clipId} at frame ${operation.frame}.`;
     case "update-clip": return `Update ${Object.keys(operation.patch).join(", ") || "properties"} on clip ${operation.clipId}.`;
@@ -20,6 +21,7 @@ function affectedClipIds(operations: readonly EditOperation[]): string[] {
       case "insert-clip": return [operation.clip.id];
       case "remove-clips": return operation.clipIds;
       case "move-clip":
+      case "reorder-clip":
       case "trim-clip":
       case "split-clip":
       case "update-clip":
@@ -37,6 +39,7 @@ function affectedTrackIds(project: EditorProject, operations: readonly EditOpera
       case "move-clip": return [operation.trackId];
       case "remove-clips": return project.tracks.filter((track) => track.clips.some((clip) => operation.clipIds.includes(clip.id))).map((track) => track.id);
       case "trim-clip":
+      case "reorder-clip":
       case "split-clip":
       case "update-clip":
       case "set-transcript": return project.tracks.filter((track) => track.clips.some((clip) => clip.id === operation.clipId)).map((track) => track.id);

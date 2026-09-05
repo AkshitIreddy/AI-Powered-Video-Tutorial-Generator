@@ -1,11 +1,13 @@
 import { useEffect, useId, useReducer, useRef, useState, type KeyboardEvent } from "react";
 import "./editor.css";
+import { BrowserMediaImportController, createBrowserClipFromAsset, downloadEditorProject, downloadOtioTimeline } from "./browserBridge";
 import { EditorCanvas, EditorInspector, MediaBin, ProposalPanel, TranscriptPanel } from "./EditorPanels";
 import { EditorTimeline } from "./EditorTimeline";
 import { createEditorState } from "./model";
 import { exportOtioLike, parseEditorProject, parseOtioLike } from "./otio";
 import { editorReducer } from "./reducer";
 import { formatTimecode, nominalFramesPerSecond, parseTimecode } from "./timecode";
+import type { EditorWaveformPreview } from "./waveform";
 import type { EditProposal, EditorClip, EditorImportBatch, EditorMediaAsset, EditorProject, OtioLikeTimeline } from "./types";
 
 export interface AdvancedVideoEditorProps {
@@ -16,10 +18,20 @@ export interface AdvancedVideoEditorProps {
   onCreateClipFromAsset?: (asset: EditorMediaAsset, trackId: string, startFrame: number) => EditorClip | null;
   onExportProject?: (project: EditorProject) => void | Promise<void>;
   onExportOtio?: (timeline: OtioLikeTimeline, project: EditorProject) => void | Promise<void>;
+  onRenderTimeline?: (project: EditorProject) => Promise<{ message?: string; outputPath?: string; warnings?: readonly string[] }>;
+  onResolveWaveform?: (asset: EditorMediaAsset) => Promise<EditorWaveformPreview>;
   onCreateProjectCopy?: (copy: EditorProject) => void | Promise<void>;
   allowProjectFileImport?: boolean;
   className?: string;
   editorLabel?: string;
+}
+
+function waveformAssets(project: EditorProject): EditorMediaAsset[] {
+  const ids = new Set(project.tracks.flatMap((track) => track.clips.flatMap((clip) => {
+    const carriesAudio = track.kind === "narration" || track.kind === "music" || track.kind === "sfx" || clip.metadata.includeSourceAudio === true;
+    return carriesAudio && clip.enabled && clip.assetId ? [clip.assetId] : [];
+  })));
+  return project.assets.filter((asset) => ids.has(asset.id) && asset.status === "ready" && (asset.kind === "audio" || asset.kind === "video") && Boolean(asset.hash));
 }
 
 function isTextEditingTarget(target: EventTarget | null): boolean {
@@ -45,6 +57,8 @@ export function AdvancedVideoEditor({
   onCreateClipFromAsset,
   onExportProject,
   onExportOtio,
+  onRenderTimeline,
+  onResolveWaveform,
   onCreateProjectCopy,
   allowProjectFileImport = true,
   className = "",
@@ -52,18 +66,54 @@ export function AdvancedVideoEditor({
 }: AdvancedVideoEditorProps) {
   const [state, dispatch] = useReducer(editorReducer, undefined, () => createEditorState(project, proposals));
   const [projectImportError, setProjectImportError] = useState("");
+  const [renderStatus, setRenderStatus] = useState("");
+  const [rendering, setRendering] = useState(false);
+  const [waveforms, setWaveforms] = useState<Record<string, EditorWaveformPreview>>({});
   const projectInputRef = useRef<HTMLInputElement>(null);
-  const initialRevision = useRef(true);
+  const onProjectChangeRef = useRef(onProjectChange);
+  const onResolveWaveformRef = useRef(onResolveWaveform);
+  const latestProjectRef = useRef(state.project);
+  const deliveredRevision = useRef(state.revision);
   const deliveredCopyId = useRef<string | null>(null);
   const statusId = useId();
+  const browserImport = useRef<BrowserMediaImportController | null>(null);
+  if (!browserImport.current) browserImport.current = new BrowserMediaImportController(state.project.frameRate);
+  const effectiveImportMedia = onImportMedia ?? ((files: readonly File[]) => browserImport.current!.importFiles(files));
+  const effectiveCreateClip = onCreateClipFromAsset ?? ((asset: EditorMediaAsset, trackId: string, startFrame: number) => createBrowserClipFromAsset(asset, trackId, startFrame, state.project.frameRate));
 
   useEffect(() => {
-    if (initialRevision.current) {
-      initialRevision.current = false;
-      return;
-    }
-    onProjectChange?.(state.project, state.revision);
-  }, [onProjectChange, state.project, state.revision]);
+    onProjectChangeRef.current = onProjectChange;
+  }, [onProjectChange]);
+
+  useEffect(() => {
+    onResolveWaveformRef.current = onResolveWaveform;
+  }, [onResolveWaveform]);
+
+  latestProjectRef.current = state.project;
+  const waveformKey = waveformAssets(state.project).map((asset) => `${asset.id}:${asset.hash}`).sort().join("|");
+  useEffect(() => {
+    const resolve = onResolveWaveformRef.current;
+    const assets = waveformAssets(latestProjectRef.current);
+    const activeIds = new Set(assets.map((asset) => asset.id));
+    setWaveforms((current) => Object.fromEntries(Object.entries(current).filter(([id]) => activeIds.has(id))));
+    if (!resolve) return;
+    let cancelled = false;
+    void Promise.allSettled(assets.map(async (asset) => ({ assetId: asset.id, preview: await resolve(asset) }))).then((results) => {
+      if (cancelled) return;
+      setWaveforms((current) => {
+        const next = { ...current };
+        for (const result of results) if (result.status === "fulfilled") next[result.value.assetId] = result.value.preview;
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [waveformKey]);
+
+  useEffect(() => {
+    if (deliveredRevision.current === state.revision) return;
+    deliveredRevision.current = state.revision;
+    onProjectChangeRef.current?.(state.project, state.revision);
+  }, [state.project, state.revision]);
 
   useEffect(() => {
     const copy = state.lastCreatedCopy;
@@ -77,6 +127,8 @@ export function AdvancedVideoEditor({
     const timer = window.setInterval(() => dispatch({ type: "TRANSPORT_TICK", elapsedSeconds: 0.1 }), 100);
     return () => window.clearInterval(timer);
   }, [state.transport.status]);
+
+  useEffect(() => () => browserImport.current?.dispose(), []);
 
   const importProjectFile = async (file: File | undefined) => {
     if (!file) return;
@@ -94,6 +146,20 @@ export function AdvancedVideoEditor({
       setProjectImportError(error instanceof Error ? error.message : "The project could not be imported.");
     } finally {
       if (projectInputRef.current) projectInputRef.current.value = "";
+    }
+  };
+
+  const renderTimeline = async () => {
+    if (!onRenderTimeline || rendering) return;
+    setRendering(true);
+    setRenderStatus("Rendering the edited timeline…");
+    try {
+      const receipt = await onRenderTimeline(state.project);
+      setRenderStatus(`${receipt.outputPath ? `Timeline rendered to ${receipt.outputPath}` : receipt.message ?? "Timeline render queued."}${receipt.warnings?.length ? ` · ${receipt.warnings.join(" ")}` : ""}`);
+    } catch (error) {
+      setRenderStatus(error instanceof Error ? error.message : "The edited timeline could not be rendered.");
+    } finally {
+      setRendering(false);
     }
   };
 
@@ -144,7 +210,7 @@ export function AdvancedVideoEditor({
   };
 
   const panel = state.view.activePanel === "media"
-    ? <MediaBin state={state} dispatch={dispatch} onImportFiles={onImportMedia} onCreateClipFromAsset={onCreateClipFromAsset} />
+    ? <MediaBin state={state} dispatch={dispatch} onImportFiles={effectiveImportMedia} onCreateClipFromAsset={effectiveCreateClip} />
     : state.view.activePanel === "transcript"
       ? <TranscriptPanel state={state} dispatch={dispatch} />
       : <ProposalPanel state={state} dispatch={dispatch} />;
@@ -160,8 +226,9 @@ export function AdvancedVideoEditor({
         </div>
         <div className="aly-editor-shell__project-actions" role="group" aria-label="Project import and export">
           {allowProjectFileImport ? <><input ref={projectInputRef} className="aly-editor-shell__project-input" type="file" accept="application/json,.json,.otio" aria-label="Import editor project file" onChange={(event) => void importProjectFile(event.target.files?.[0])} /><button type="button" onClick={() => projectInputRef.current?.click()}>Import project</button></> : null}
-          <button type="button" disabled={!onExportProject} onClick={() => void onExportProject?.(state.project)}>Export project JSON</button>
-          <button type="button" disabled={!onExportOtio} onClick={() => void onExportOtio?.(exportOtioLike(state.project), state.project)}>Export OTIO-like</button>
+          <button type="button" onClick={() => void (onExportProject ? onExportProject(state.project) : downloadEditorProject(state.project))}>Export project JSON</button>
+          <button type="button" onClick={() => { const timeline = exportOtioLike(state.project); void (onExportOtio ? onExportOtio(timeline, state.project) : downloadOtioTimeline(timeline, state.project)); }}>Export OTIO</button>
+          {onRenderTimeline ? <button type="button" disabled={rendering} onClick={() => void renderTimeline()}>{rendering ? "Rendering…" : "Render timeline"}</button> : null}
         </div>
       </header>
       {projectImportError ? <div className="aly-editor-shell__import-error" role="alert">{projectImportError}</div> : null}
@@ -191,8 +258,8 @@ export function AdvancedVideoEditor({
         </main>
         <aside className="aly-editor-shell__right-panel"><EditorInspector state={state} dispatch={dispatch} /></aside>
       </div>
-      <EditorTimeline state={state} dispatch={dispatch} />
-      <div id={statusId} className="aly-editor-shell__status" role="status" aria-live="polite">{state.announcement}</div>
+      <EditorTimeline state={state} dispatch={dispatch} waveforms={waveforms} />
+      <div id={statusId} className="aly-editor-shell__status" role="status" aria-live="polite">{renderStatus || state.announcement}</div>
     </div>
   );
 }

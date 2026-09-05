@@ -142,6 +142,12 @@
 .aly-editor-canvas-toolbar button[aria-pressed="true"] { color: white; border-color: rgba(124, 108, 255, 0.52); background: rgba(124, 108, 255, 0.16); }
 .aly-editor-canvas-stage { position: relative; align-self: center; width: min(100%, 880px); max-height: 55vh; margin: auto; border: 1px solid var(--aly-editor-line-strong); border-radius: 8px; box-shadow: 0 22px 55px rgba(0, 0, 0, 0.42); overflow: hidden; }
 .aly-editor-canvas-stage__media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.aly-editor-canvas-stage__media--presenter { z-index: 2; inset: auto 3% 3% auto; width: 28%; height: 58%; border-radius: 12px; object-fit: cover; transform-origin: bottom right; }
+.aly-editor-canvas-stage__audio { display: none; }
+.aly-editor-canvas-stage__slide { position: absolute; inset: 8%; display: grid; align-content: center; justify-items: center; gap: 9px; padding: 8%; border: 1px solid rgba(255, 255, 255, .12); border-radius: 16px; background: radial-gradient(circle at 50% 10%, rgba(124, 108, 255, .2), transparent 48%), rgba(255, 255, 255, .035); text-align: center; }
+.aly-editor-canvas-stage__slide span { color: var(--aly-editor-accent-bright); font-size: 10px; font-weight: 760; letter-spacing: .12em; text-transform: uppercase; }
+.aly-editor-canvas-stage__slide strong { font-size: clamp(18px, 3vw, 42px); letter-spacing: -.025em; }
+.aly-editor-canvas-stage__slide small { max-width: 46ch; color: var(--aly-editor-muted); font-size: clamp(10px, 1.2vw, 16px); line-height: 1.45; }
 .aly-editor-canvas-stage__text { position: absolute; z-index: 2; left: 7%; right: 7%; bottom: 8%; padding: 0.5em 0.7em; color: #fff; font-size: clamp(14px, 2.2vw, 34px); font-weight: 750; line-height: 1.12; text-align: center; text-shadow: 0 2px 12px #000; }
 .aly-editor-canvas-stage__text--captions { bottom: 5%; border-radius: 0.35em; background: rgba(0, 0, 0, 0.68); font-size: clamp(12px, 1.5vw, 23px); }
 .aly-editor-canvas-stage__empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: var(--aly-editor-muted); background: linear-gradient(145deg, rgba(255, 255, 255, 0.025), transparent); font-size: 12px; text-align: center; }
@@ -245,7 +251,9 @@
 .aly-editor-clip--selected { border-color: #fff; box-shadow: 0 0 0 2px var(--aly-editor-accent), 0 5px 14px rgba(0, 0, 0, 0.3); }
 .aly-editor-clip--locked { filter: saturate(0.5); }
 .aly-editor-clip__edge { background: rgba(255, 255, 255, 0.16); }
-.aly-editor-clip__copy { min-width: 0; padding: 5px 6px; }
+.aly-editor-clip__waveform { position: absolute; inset: 0 4px; overflow: hidden; opacity: .62; pointer-events: none; }
+.aly-editor-clip__waveform img { position: absolute; top: 0; height: 100%; max-width: none; object-fit: fill; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, .35)); }
+.aly-editor-clip__copy { position: relative; z-index: 1; min-width: 0; padding: 5px 6px; text-shadow: 0 1px 2px rgba(0, 0, 0, .75); }
 .aly-editor-clip__copy strong,
 .aly-editor-clip__copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aly-editor-clip__copy strong { font-size: 9px; }

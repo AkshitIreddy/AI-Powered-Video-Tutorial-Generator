@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyEditOperation,
   applyEditOperations,
   createEditorState,
   editorReducer,
@@ -7,6 +8,7 @@ import {
   findClip,
   liftClips,
   moveClip,
+  reorderClip,
   rippleDeleteClips,
   splitClip,
   trimClip,
@@ -14,6 +16,12 @@ import {
 import { makeProposal, makeSampleProject } from "./fixtures";
 
 describe("timeline operations", () => {
+  it("retimes a clip by changing its source playback speed without losing source bounds", () => {
+    const project = makeSampleProject();
+    const changed = applyEditOperation(project, { type: "update-clip", clipId: "presenter-a", patch: { playbackRate: 2 } });
+    expect(changed.changed).toBe(true);
+    expect(findClip(changed.project, "presenter-a")?.clip).toMatchObject({ playbackRate: 2, timelineRange: { durationFrames: 90 }, sourceRange: { durationFrames: 180 } });
+  });
   it("splits and trims clips while preserving source continuity", () => {
     const project = makeSampleProject();
     const split = splitClip(project, "slide-a", 45, "slide-a-right");
@@ -37,6 +45,17 @@ describe("timeline operations", () => {
     expect(findClip(moved.project, "slide-b")?.clip.timelineRange.startFrame).toBe(90);
   });
 
+  it("blocks cross-role moves and media trims beyond available source", () => {
+    const project = makeSampleProject();
+    const wrongTrack = moveClip(project, "caption-a", "track-slides", 0, { enabled: false, thresholdFrames: 0 });
+    expect(wrongTrack.changed).toBe(false);
+    expect(wrongTrack.announcement).toMatch(/caption.*slides/i);
+
+    const overrun = trimClip(project, "presenter-a", "end", 240);
+    expect(overrun.changed).toBe(false);
+    expect(overrun.announcement).toMatch(/source ends at frame 180/i);
+  });
+
   it("distinguishes lift, ripple delete, and extract", () => {
     const project = makeSampleProject();
     const lifted = liftClips(project, ["slide-a"]);
@@ -48,7 +67,41 @@ describe("timeline operations", () => {
     const extracted = extractRange(project, { startFrame: 60, durationFrames: 30 });
     expect(findClip(extracted.project, "slide-a")?.clip.timelineRange.durationFrames).toBe(60);
     expect(findClip(extracted.project, "slide-b")?.clip.timelineRange.startFrame).toBe(60);
-    expect(findClip(extracted.project, "presenter-a")?.clip.timelineRange.durationFrames).toBe(150);
+    expect(findClip(extracted.project, "presenter-a")?.clip).toMatchObject({
+      timelineRange: { startFrame: 0, durationFrames: 60 },
+      sourceRange: { startFrame: 0, durationFrames: 60 },
+    });
+    expect(findClip(extracted.project, "presenter-a-extract-60-90")?.clip).toMatchObject({
+      timelineRange: { startFrame: 60, durationFrames: 90 },
+      sourceRange: { startFrame: 90, durationFrames: 90 },
+    });
+  });
+
+  it("extracts the middle of spanning media without losing source continuity", () => {
+    const project = makeSampleProject();
+    const presenter = findClip(project, "presenter-a")!.clip;
+    presenter.keyframes = [{ id: "later", property: "opacity", frame: 120, value: 0.5, interpolation: "linear" }];
+    project.markers = [
+      { id: "inside", frame: 70, label: "Removed", kind: "comment" },
+      { id: "after", frame: 120, label: "Keep", kind: "chapter" },
+    ];
+
+    const extracted = extractRange(project, { startFrame: 60, durationFrames: 30 });
+    expect(findClip(extracted.project, "presenter-a-extract-60-90")?.clip.keyframes[0]?.frame).toBe(90);
+    expect(extracted.project.markers).toEqual([{ id: "after", frame: 90, label: "Keep", kind: "chapter" }]);
+  });
+
+  it("reorders linked scene clips together across slide, caption, and narration tracks", () => {
+    const project = makeSampleProject();
+    for (const id of ["slide-a", "caption-a"]) findClip(project, id)!.clip.linkedGroupId = "scene-a";
+    for (const id of ["slide-b", "caption-b"]) findClip(project, id)!.clip.linkedGroupId = "scene-b";
+
+    const reordered = reorderClip(project, "slide-b", "previous");
+    expect(reordered.changed).toBe(true);
+    expect(findClip(reordered.project, "slide-b")?.clip.timelineRange.startFrame).toBe(0);
+    expect(findClip(reordered.project, "caption-b")?.clip.timelineRange.startFrame).toBe(0);
+    expect(findClip(reordered.project, "slide-a")?.clip.timelineRange.startFrame).toBe(90);
+    expect(findClip(reordered.project, "caption-a")?.clip.timelineRange.startFrame).toBe(90);
   });
 
   it("applies ordered edit operations without mutating the input", () => {
@@ -86,6 +139,18 @@ describe("editor reducer history", () => {
     });
     expect(state.project.assets.find((asset) => asset.id === "asset-new")?.status).toBe("pending");
     expect(state.project.importReceipts.find((receipt) => receipt.id === "receipt-new")?.status).toBe("pending");
+  });
+
+  it("keeps linked caption and narration text synchronized in one undoable edit", () => {
+    const project = makeSampleProject();
+    findClip(project, "caption-a")!.clip.linkedGroupId = "scene-a";
+    findClip(project, "narration-a")!.clip.linkedGroupId = "scene-a";
+    let state = createEditorState(project);
+    state = editorReducer(state, { type: "SET_TRANSCRIPT", clipId: "caption-a", text: "A corrected teaching line.", speaker: "Tutor" });
+    expect(findClip(state.project, "caption-a")?.clip.text).toBe("A corrected teaching line.");
+    expect(findClip(state.project, "narration-a")?.clip.text).toBe("A corrected teaching line.");
+    state = editorReducer(state, { type: "UNDO" });
+    expect(findClip(state.project, "caption-a")?.clip.text).toBe("Start with the question.");
   });
 
   it("previews without mutation, applies proposals reversibly, and rejects reversibly", () => {

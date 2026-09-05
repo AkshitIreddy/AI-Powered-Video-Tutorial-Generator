@@ -132,6 +132,8 @@ export interface EditorClip {
   transcriptConfidence?: number;
   transform: ClipTransform;
   opacity: number;
+  /** Source playback multiplier. Omitted legacy documents are interpreted as 1. */
+  playbackRate?: number;
   audio: ClipAudio;
   textStyle?: TextStyle;
   keyframes: EditorKeyframe[];
@@ -229,12 +231,13 @@ export interface ProposalPolicyImpact {
   warnings: string[];
 }
 
-export type ClipPatch = Partial<Pick<EditorClip, "name" | "enabled" | "locked" | "text" | "speaker" | "opacity" | "transform" | "audio" | "textStyle" | "metadata">>;
+export type ClipPatch = Partial<Pick<EditorClip, "name" | "enabled" | "locked" | "text" | "speaker" | "opacity" | "playbackRate" | "transform" | "audio" | "textStyle" | "metadata">>;
 
 export type EditOperation =
   | { type: "insert-clip"; trackId: string; clip: EditorClip }
   | { type: "remove-clips"; clipIds: string[]; ripple: boolean }
   | { type: "move-clip"; clipId: string; trackId: string; startFrame: number; snap?: boolean }
+  | { type: "reorder-clip"; clipId: string; direction: "previous" | "next" }
   | { type: "trim-clip"; clipId: string; edge: "start" | "end"; frame: number }
   | { type: "split-clip"; clipId: string; frame: number; rightClipId: string }
   | { type: "update-clip"; clipId: string; patch: ClipPatch }
@@ -319,6 +322,7 @@ export type EditorAction =
   | { type: "UPDATE_IMPORT_RECEIPT"; receipt: ImportReceipt; asset?: EditorMediaAsset }
   | { type: "INSERT_CLIP"; trackId: string; clip: EditorClip }
   | { type: "MOVE_CLIP"; clipId: string; trackId: string; startFrame: number; snap?: boolean }
+  | { type: "REORDER_CLIP"; clipId: string; direction: "previous" | "next" }
   | { type: "SPLIT_SELECTED"; frame?: number; idFactory?: () => string }
   | { type: "TRIM_CLIP"; clipId: string; edge: "start" | "end"; frame: number }
   | { type: "LIFT_SELECTED" }

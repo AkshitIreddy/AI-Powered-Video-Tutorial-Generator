@@ -58,12 +58,13 @@ export function createEmptyEditorProject({
   };
 }
 
-export function defaultClipValues(): Pick<EditorClip, "enabled" | "locked" | "transform" | "opacity" | "audio" | "keyframes" | "metadata"> {
+export function defaultClipValues(): Pick<EditorClip, "enabled" | "locked" | "transform" | "opacity" | "playbackRate" | "audio" | "keyframes" | "metadata"> {
   return {
     enabled: true,
     locked: false,
     transform: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, anchorX: 0.5, anchorY: 0.5 },
     opacity: 1,
+    playbackRate: 1,
     audio: { volumeDb: 0, pan: 0, muted: false, fadeInFrames: 0, fadeOutFrames: 0 },
     keyframes: [],
     metadata: {},
@@ -100,6 +101,7 @@ export function normalizeEditorProject(project: EditorProject): EditorProject {
           durationFrames: Math.max(1, Math.floor(clip.sourceRange.durationFrames)),
         },
         opacity: Math.min(1, Math.max(0, clip.opacity)),
+        playbackRate: clip.playbackRate ?? 1,
       }))),
     })),
     ...trackKinds.filter((kind) => !existingKinds.has(kind)).map((kind) => createTrack(kind, project.tracks.length + trackKinds.indexOf(kind))),

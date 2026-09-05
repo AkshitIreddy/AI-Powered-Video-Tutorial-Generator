@@ -1,10 +1,12 @@
 import { formatTimecode, framesToSeconds } from "./timecode";
 import type { CSSProperties, Dispatch } from "react";
 import type { EditorAction, EditorClip, EditorState, EditorTrack } from "./types";
+import type { EditorWaveformPreview } from "./waveform";
 
 export interface EditorTimelineProps {
   state: EditorState;
   dispatch: Dispatch<EditorAction>;
+  waveforms?: Readonly<Record<string, EditorWaveformPreview>>;
 }
 
 type TimelineScrollStyle = CSSProperties & { "--aly-editor-timeline-width": string };
@@ -28,11 +30,12 @@ function TrackControls({ track, dispatch }: { track: EditorTrack; dispatch: Disp
   );
 }
 
-function TimelineClip({ clip, state, dispatch }: { clip: EditorClip; state: EditorState; dispatch: Dispatch<EditorAction> }) {
+function TimelineClip({ clip, state, dispatch, waveform }: { clip: EditorClip; state: EditorState; dispatch: Dispatch<EditorAction>; waveform?: EditorWaveformPreview }) {
   const duration = Math.max(1, state.project.durationFrames);
   const left = clip.timelineRange.startFrame / duration * 100;
   const width = Math.max(0.5, clip.timelineRange.durationFrames / duration * 100);
   const selected = state.selection.clipIds.includes(clip.id);
+  const waveformFits = waveform && clip.sourceRange.startFrame + clip.sourceRange.durationFrames <= waveform.durationFrames;
   return (
     <button
       type="button"
@@ -45,6 +48,7 @@ function TimelineClip({ clip, state, dispatch }: { clip: EditorClip; state: Edit
       onDoubleClick={() => dispatch({ type: "SET_PLAYHEAD", frame: clip.timelineRange.startFrame })}
     >
       <span className="aly-editor-clip__edge aly-editor-clip__edge--start" aria-hidden="true" />
+      {waveformFits ? <span className="aly-editor-clip__waveform" aria-hidden="true" data-testid={`waveform-${clip.id}`}><img src={waveform.url} alt="" draggable={false} style={{ left: `${-clip.sourceRange.startFrame / clip.sourceRange.durationFrames * 100}%`, width: `${waveform.durationFrames / clip.sourceRange.durationFrames * 100}%` }} /></span> : null}
       <span className="aly-editor-clip__copy">
         <strong>{clip.name}</strong>
         <span>{clip.text || `${framesToSeconds(clip.timelineRange.durationFrames, state.project.frameRate).toFixed(1)}s`}</span>
@@ -59,7 +63,7 @@ function TimelineClip({ clip, state, dispatch }: { clip: EditorClip; state: Edit
   );
 }
 
-export function EditorTimeline({ state, dispatch }: EditorTimelineProps) {
+export function EditorTimeline({ state, dispatch, waveforms = {} }: EditorTimelineProps) {
   const duration = Math.max(1, state.project.durationFrames);
   const fps = state.project.frameRate.numerator / state.project.frameRate.denominator;
   const seconds = Math.max(1, Math.ceil(duration / fps));
@@ -72,13 +76,14 @@ export function EditorTimeline({ state, dispatch }: EditorTimelineProps) {
       <div className="aly-editor-timeline__toolbar">
         <div className="aly-editor-timeline__edit-tools" role="group" aria-label="Timeline edit tools">
           <button type="button" onClick={() => dispatch({ type: "SPLIT_SELECTED" })}>Split</button>
+          <button type="button" disabled={state.selection.clipIds.length !== 1} onClick={() => dispatch({ type: "REORDER_CLIP", clipId: state.selection.clipIds[0]!, direction: "previous" })}>Earlier</button>
+          <button type="button" disabled={state.selection.clipIds.length !== 1} onClick={() => dispatch({ type: "REORDER_CLIP", clipId: state.selection.clipIds[0]!, direction: "next" })}>Later</button>
           <button type="button" onClick={() => dispatch({ type: "LIFT_SELECTED" })}>Lift</button>
           <button type="button" onClick={() => dispatch({ type: "RIPPLE_DELETE_SELECTED" })}>Ripple delete</button>
           <button type="button" onClick={() => dispatch({ type: "EXTRACT_SELECTED_RANGE" })}>Extract range</button>
         </div>
         <div className="aly-editor-timeline__mode-tools" role="group" aria-label="Timeline modes">
           <button type="button" aria-pressed={state.view.snappingEnabled} onClick={() => dispatch({ type: "TOGGLE_SNAPPING" })}>Snap</button>
-          <button type="button" aria-pressed={state.view.rippleEnabled} onClick={() => dispatch({ type: "TOGGLE_RIPPLE" })}>Ripple mode</button>
           <label className="aly-editor-timeline__zoom">Zoom
             <input type="range" min="12" max="240" value={state.view.pixelsPerSecond} onChange={(event) => dispatch({ type: "SET_ZOOM", pixelsPerSecond: Number(event.target.value) })} />
           </label>
@@ -102,7 +107,7 @@ export function EditorTimeline({ state, dispatch }: EditorTimelineProps) {
                 const rect = event.currentTarget.getBoundingClientRect();
                 dispatch({ type: "SET_PLAYHEAD", frame: Math.round((event.clientX - rect.left) / rect.width * duration), snap: true });
               }}>
-                {track.clips.map((clip) => <TimelineClip key={clip.id} clip={clip} state={state} dispatch={dispatch} />)}
+                {track.clips.map((clip) => <TimelineClip key={clip.id} clip={clip} state={state} dispatch={dispatch} {...(clip.assetId && waveforms[clip.assetId] ? { waveform: waveforms[clip.assetId] } : {})} />)}
                 {!track.clips.length ? <span className="aly-editor-track__empty">Empty {track.name.toLowerCase()} track</span> : null}
               </div>
             </div>
