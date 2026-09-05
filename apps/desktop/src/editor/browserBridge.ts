@@ -207,6 +207,10 @@ export function createBrowserClipFromAsset(asset: EditorMediaAsset, trackId: str
   const kind = trackId.replace(/^track-/u, "") as TrackKind;
   if (!compatibleAssetKinds[kind]?.includes(asset.kind) || asset.status !== "ready" || (!asset.previewUrl && !asset.uri)) return null;
   const durationFrames = asset.durationFrames ?? secondsToFrames(asset.kind === "image" ? 5 : 3, frameRate);
+  const metadata: EditorClip["metadata"] = {
+    ...(asset.metadata.browserSessionOnly === true ? { browserSessionOnly: true } : {}),
+    ...(asset.kind === "video" ? { includeSourceAudio: true } : {}),
+  };
   return {
     id: `clip-${asset.id}-${Math.max(0, Math.round(startFrame))}`,
     trackId,
@@ -216,6 +220,6 @@ export function createBrowserClipFromAsset(asset: EditorMediaAsset, trackId: str
     timelineRange: { startFrame: Math.max(0, Math.round(startFrame)), durationFrames },
     sourceRange: { startFrame: 0, durationFrames },
     ...defaultClipValues(),
-    metadata: { browserSessionOnly: true },
+    metadata,
   };
 }

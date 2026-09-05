@@ -6,6 +6,7 @@ import {
   parseEditorProject,
   prepareEditorProjectForPersistence,
 } from "..";
+import type { EditorMediaAsset } from "../types";
 import { makeSampleProject } from "./fixtures";
 
 describe("browser editor bridge", () => {
@@ -45,6 +46,35 @@ describe("browser editor bridge", () => {
     const image = project.assets.find((asset) => asset.kind === "image")!;
     expect(createBrowserClipFromAsset(image, "track-slides", 30, project.frameRate)).toMatchObject({ kind: "slides", timelineRange: { startFrame: 30 } });
     expect(createBrowserClipFromAsset(image, "track-music", 30, project.frameRate)).toBeNull();
+  });
+
+  it("preserves video source audio without misclassifying durable imports as browser-only", () => {
+    const project = makeSampleProject();
+    const durableVideo: EditorMediaAsset = {
+      id: "asset-native-video",
+      name: "Native lesson.webm",
+      kind: "video",
+      status: "ready",
+      durationFrames: 90,
+      uri: "asset://localhost/project-cas/native-lesson.webm",
+      mimeType: "video/webm",
+      hash: "a".repeat(64),
+      provenance: { origin: "user-import", createdAt: "2026-09-05T12:00:00.000Z", humanApproved: true },
+      metadata: { nativeArtifactId: "artifact-native-video", exportEligible: true },
+    };
+
+    const durableClip = createBrowserClipFromAsset(durableVideo, "track-slides", 0, project.frameRate);
+    expect(durableClip?.metadata).toEqual({ includeSourceAudio: true });
+    expect(durableClip?.metadata).not.toHaveProperty("browserSessionOnly");
+
+    const browserClip = createBrowserClipFromAsset({
+      ...durableVideo,
+      id: "asset-browser-video",
+      uri: "blob:browser-video",
+      previewUrl: "blob:browser-video",
+      metadata: { browserSessionOnly: true, requiresNativeProjectImportForPersistence: true },
+    }, "track-slides", 0, project.frameRate);
+    expect(browserClip?.metadata).toEqual({ browserSessionOnly: true, includeSourceAudio: true });
   });
 
   it("downloads a parseable project document instead of reporting a toast-only export", () => {
