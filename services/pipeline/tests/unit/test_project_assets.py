@@ -45,6 +45,12 @@ def _valid_test_font() -> bytes:
 
 def test_desktop_worker_exposes_only_typed_asset_operations() -> None:
     assert "asset.import" in ALLOWED_METHODS
+    assert "asset.resolve" in ALLOWED_METHODS
+    assert "editor.bindings.get" in ALLOWED_METHODS
+    assert "editor.waveform.get" in ALLOWED_METHODS
+    assert "editor.timeline.export" in ALLOWED_METHODS
+    assert "control.acceptVisualCandidate" in ALLOWED_METHODS
+    assert "control.searchVisualCandidates" in ALLOWED_METHODS
     assert "presenter.profile.select" in ALLOWED_METHODS
     assert "filesystem.read" not in ALLOWED_METHODS
 

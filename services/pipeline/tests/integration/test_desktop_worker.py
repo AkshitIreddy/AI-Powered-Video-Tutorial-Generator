@@ -227,6 +227,30 @@ def test_real_worker_handshake_authentication_ping_and_shutdown() -> None:
         worker.shutdown()
 
 
+def test_real_worker_transport_exposes_native_media_bridge_methods() -> None:
+    """Keep the authenticated process allowlist aligned with the typed Tauri bridge.
+
+    The service-level tests exercise each operation with valid project state. This
+    test crosses the real worker process and socket boundary so a missing transport
+    allowlist entry cannot turn a compiled desktop command into METHOD_NOT_ALLOWED.
+    """
+
+    methods = (
+        "asset.resolve",
+        "editor.bindings.get",
+        "editor.waveform.get",
+        "editor.timeline.export",
+        "control.searchVisualCandidates",
+        "control.acceptVisualCandidate",
+        "control.rejectVisualCandidate",
+    )
+    with running_worker() as worker:
+        for method in methods:
+            response = worker.call(method, {})
+            assert response["ok"] is False
+            assert response["error"]["code"] != "METHOD_NOT_ALLOWED", method
+
+
 def test_real_worker_persists_provider_routing_policy_from_desktop_shape(
     tmp_path: Path,
 ) -> None:
