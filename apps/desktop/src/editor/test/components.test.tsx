@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { AdvancedVideoEditor, defaultClipValues } from "..";
+import { AdvancedVideoEditor, createEditorProjectFromAlystriaProject, defaultClipValues } from "..";
 import { makeProposal, makeSampleProject } from "./fixtures";
 
 describe("AdvancedVideoEditor", () => {
@@ -53,6 +53,31 @@ describe("AdvancedVideoEditor", () => {
     expect(screen.getByTestId("editor-preview-slide")).toHaveTextContent("Opening slide");
     expect(screen.getAllByText("Why does this work?").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Start with the question.").length).toBeGreaterThan(0);
+  });
+
+  it("renders only the active verified caption cue and no duplicate composite title", () => {
+    const project = createEditorProjectFromAlystriaProject({
+      id: "caption-preview-project",
+      title: "Caption preview",
+      duration: 0.1,
+      scenes: [{ id: "scene-1", title: "Title already in composite", kind: "title", duration: 6, narration: "First cue. Second cue." }],
+    }, {
+      now: "2026-09-05T12:00:00Z",
+      mediaBindings: {
+        renders: [{ sceneId: "scene-1", artifactHash: "d".repeat(64), mediaType: "video/webm", durationTicks: 1_440_000, sourceStartTicks: 0, captionsBurnedIntoPixels: false }],
+        captions: [
+          { sceneId: "scene-1", id: "cue-1", startTicks: 0, endTicks: 240_000, text: "First cue." },
+          { sceneId: "scene-1", id: "cue-2", startTicks: 240_000, endTicks: 480_000, text: "Second cue." },
+        ],
+        assets: [], narration: [], presenters: [],
+      },
+    });
+
+    render(<AdvancedVideoEditor project={project} />);
+
+    expect(screen.getByTestId("editor-preview-caption")).toHaveTextContent("First cue.");
+    expect(screen.queryByTestId("editor-preview-title")).not.toBeInTheDocument();
+    expect(screen.queryByText("First cue. Second cue.")).not.toBeInTheDocument();
   });
 
   it("edits export-backed text placement, size, color, and explicit line breaks", async () => {

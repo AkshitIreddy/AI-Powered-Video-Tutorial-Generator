@@ -318,25 +318,35 @@ export function reorderClip(project: EditorProject, clipId: string, direction: "
   if (!match || match.track.locked || match.clip.locked) return result(project, false, "The clip could not be reordered because it is missing or locked.");
   const ordered = sortClips(match.track.clips);
   const selectedIndex = ordered.findIndex((clip) => clip.id === clipId);
-  const adjacentIndex = direction === "previous" ? selectedIndex - 1 : selectedIndex + 1;
-  const adjacent = ordered[adjacentIndex];
+  const selectedGroup = match.clip.linkedGroupId;
+  const adjacent = direction === "previous"
+    ? ordered.slice(0, selectedIndex).reverse().find((clip) => !selectedGroup || clip.linkedGroupId !== selectedGroup)
+    : ordered.slice(selectedIndex + 1).find((clip) => !selectedGroup || clip.linkedGroupId !== selectedGroup);
   if (!adjacent) return result(project, false, `${match.clip.name} is already ${direction === "previous" ? "first" : "last"}.`);
 
-  const selectedGroup = match.clip.linkedGroupId;
   const adjacentGroup = adjacent.linkedGroupId;
   if (selectedGroup && adjacentGroup) {
     const affected = project.tracks.flatMap((track) => track.clips.filter((clip) => clip.linkedGroupId === selectedGroup || clip.linkedGroupId === adjacentGroup).map((clip) => ({ track, clip })));
     if (affected.some(({ track, clip }) => track.locked || clip.locked)) return result(project, false, "The linked scene could not be reordered because one of its clips or tracks is locked.");
-    const firstStart = Math.min(match.clip.timelineRange.startFrame, adjacent.timelineRange.startFrame);
-    const selectedFirst = direction === "previous";
-    const selectedStart = selectedFirst ? firstStart : firstStart + adjacent.timelineRange.durationFrames;
-    const adjacentStart = selectedFirst ? firstStart + match.clip.timelineRange.durationFrames : firstStart;
+    const selectedClips = affected.filter(({ clip }) => clip.linkedGroupId === selectedGroup).map(({ clip }) => clip);
+    const adjacentClips = affected.filter(({ clip }) => clip.linkedGroupId === adjacentGroup).map(({ clip }) => clip);
+    const selectedGroupStart = Math.min(...selectedClips.map((clip) => clip.timelineRange.startFrame));
+    const selectedGroupEnd = Math.max(...selectedClips.map((clip) => clip.timelineRange.startFrame + clip.timelineRange.durationFrames));
+    const adjacentGroupStart = Math.min(...adjacentClips.map((clip) => clip.timelineRange.startFrame));
+    const adjacentGroupEnd = Math.max(...adjacentClips.map((clip) => clip.timelineRange.startFrame + clip.timelineRange.durationFrames));
+    const selectedSpan = selectedGroupEnd - selectedGroupStart;
+    const adjacentSpan = adjacentGroupEnd - adjacentGroupStart;
+    const firstStart = Math.min(selectedGroupStart, adjacentGroupStart);
+    const selectedTarget = direction === "previous" ? firstStart : firstStart + adjacentSpan;
+    const adjacentTarget = direction === "previous" ? firstStart + selectedSpan : firstStart;
+    const selectedDelta = selectedTarget - selectedGroupStart;
+    const adjacentDelta = adjacentTarget - adjacentGroupStart;
     const tracks = project.tracks.map((track) => ({
       ...track,
       clips: sortClips(track.clips.map((clip) => clip.linkedGroupId === selectedGroup
-        ? { ...clip, timelineRange: { ...clip.timelineRange, startFrame: selectedStart }, keyframes: shiftKeyframes(clip.keyframes, selectedStart - clip.timelineRange.startFrame) }
+        ? { ...clip, timelineRange: { ...clip.timelineRange, startFrame: clip.timelineRange.startFrame + selectedDelta }, keyframes: shiftKeyframes(clip.keyframes, selectedDelta) }
         : clip.linkedGroupId === adjacentGroup
-          ? { ...clip, timelineRange: { ...clip.timelineRange, startFrame: adjacentStart }, keyframes: shiftKeyframes(clip.keyframes, adjacentStart - clip.timelineRange.startFrame) }
+          ? { ...clip, timelineRange: { ...clip.timelineRange, startFrame: clip.timelineRange.startFrame + adjacentDelta }, keyframes: shiftKeyframes(clip.keyframes, adjacentDelta) }
           : clip)),
     }));
     return result({ ...project, tracks }, true, `${match.clip.name} moved ${direction} with its linked scene clips.`);
@@ -391,7 +401,17 @@ export function updateLinkedTranscript(project: EditorProject, clipId: string, t
   const match = findClip(project, clipId);
   if (!match) return result(project, false, "Transcript cue not found.");
   const linkedGroupId = match.clip.linkedGroupId;
-  const targets = linkedGroupId
+  const captionCueId = typeof match.clip.metadata.alystriaCaptionCueId === "string"
+    ? match.clip.metadata.alystriaCaptionCueId
+    : null;
+  const captionSceneId = typeof match.clip.metadata.alystriaSceneId === "string"
+    ? match.clip.metadata.alystriaSceneId
+    : null;
+  const targets = captionCueId
+    ? project.tracks.flatMap((track) => track.clips).filter((clip) => clip.metadata.alystriaCaptionCueId === captionCueId
+      && (linkedGroupId ? clip.linkedGroupId === linkedGroupId : clip.metadata.alystriaSceneId === captionSceneId)
+      && (clip.kind === "captions" || clip.kind === "narration"))
+    : linkedGroupId
     ? project.tracks.flatMap((track) => track.clips).filter((clip) => clip.linkedGroupId === linkedGroupId && (clip.kind === "captions" || clip.kind === "narration"))
     : [match.clip];
   let current = project;

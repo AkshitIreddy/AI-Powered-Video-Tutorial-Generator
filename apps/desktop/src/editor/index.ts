@@ -15,7 +15,7 @@ export {
 } from "./browserBridge";
 export type { EditorDownloadReceipt, EditorSessionPersistence, EditorStorage } from "./browserBridge";
 export { createEditorProjectFromAlystriaProject, mergeAlystriaMediaBindings } from "./alystriaAdapter";
-export type { AlystriaEditorMediaBinding, AlystriaEditorMediaBindings, AlystriaProjectAdapterOptions, AlystriaProjectRecordLike, AlystriaSceneLike, AlystriaStudioAssetLike } from "./alystriaAdapter";
+export type { AlystriaEditorCaptionBinding, AlystriaEditorMediaBinding, AlystriaEditorMediaBindings, AlystriaProjectAdapterOptions, AlystriaProjectRecordLike, AlystriaSceneLike, AlystriaStudioAssetLike } from "./alystriaAdapter";
 export {
   addKeyframe,
   applyEditOperation,

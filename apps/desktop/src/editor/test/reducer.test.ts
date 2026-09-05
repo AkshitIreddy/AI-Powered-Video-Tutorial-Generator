@@ -95,13 +95,21 @@ describe("timeline operations", () => {
     const project = makeSampleProject();
     for (const id of ["slide-a", "caption-a"]) findClip(project, id)!.clip.linkedGroupId = "scene-a";
     for (const id of ["slide-b", "caption-b"]) findClip(project, id)!.clip.linkedGroupId = "scene-b";
+    findClip(project, "caption-a")!.clip.timelineRange = { startFrame: 15, durationFrames: 30 };
+    findClip(project, "caption-b")!.clip.timelineRange = { startFrame: 105, durationFrames: 30 };
+    project.tracks.find((track) => track.kind === "captions")!.clips.push({
+      ...structuredClone(findClip(project, "caption-a")!.clip),
+      id: "caption-a-second",
+      timelineRange: { startFrame: 50, durationFrames: 20 },
+    });
 
     const reordered = reorderClip(project, "slide-b", "previous");
     expect(reordered.changed).toBe(true);
     expect(findClip(reordered.project, "slide-b")?.clip.timelineRange.startFrame).toBe(0);
-    expect(findClip(reordered.project, "caption-b")?.clip.timelineRange.startFrame).toBe(0);
+    expect(findClip(reordered.project, "caption-b")?.clip.timelineRange.startFrame).toBe(15);
     expect(findClip(reordered.project, "slide-a")?.clip.timelineRange.startFrame).toBe(90);
-    expect(findClip(reordered.project, "caption-a")?.clip.timelineRange.startFrame).toBe(90);
+    expect(findClip(reordered.project, "caption-a")?.clip.timelineRange.startFrame).toBe(105);
+    expect(findClip(reordered.project, "caption-a-second")?.clip.timelineRange.startFrame).toBe(140);
   });
 
   it("applies ordered edit operations without mutating the input", () => {
@@ -151,6 +159,34 @@ describe("editor reducer history", () => {
     expect(findClip(state.project, "narration-a")?.clip.text).toBe("A corrected teaching line.");
     state = editorReducer(state, { type: "UNDO" });
     expect(findClip(state.project, "caption-a")?.clip.text).toBe("Start with the question.");
+  });
+
+  it("edits one timed caption cue without replacing every cue in its scene", () => {
+    const project = makeSampleProject();
+    findClip(project, "caption-a")!.clip.linkedGroupId = "scene-a";
+    findClip(project, "caption-b")!.clip.linkedGroupId = "scene-a";
+    findClip(project, "narration-a")!.clip.linkedGroupId = "scene-a";
+    findClip(project, "caption-a")!.clip.metadata.alystriaCaptionCueId = "cue-a";
+    findClip(project, "caption-b")!.clip.metadata.alystriaCaptionCueId = "cue-b";
+    project.tracks.find((track) => track.kind === "captions")!.clips.push({
+      ...structuredClone(findClip(project, "caption-b")!.clip),
+      id: "caption-other-scene-same-cue-id",
+      linkedGroupId: "scene-b",
+      metadata: { alystriaCaptionCueId: "cue-a", alystriaSceneId: "other-scene" },
+      text: "A cue with the same provider ID in another scene.",
+    });
+
+    const state = editorReducer(createEditorState(project), {
+      type: "SET_TRANSCRIPT",
+      clipId: "caption-a",
+      text: "Only this timed cue changes.",
+      speaker: "Tutor",
+    });
+
+    expect(findClip(state.project, "caption-a")?.clip.text).toBe("Only this timed cue changes.");
+    expect(findClip(state.project, "caption-b")?.clip.text).toBe("Then reveal the mechanism.");
+    expect(findClip(state.project, "narration-a")?.clip.text).toBe("Start with the question. Then reveal the mechanism.");
+    expect(findClip(state.project, "caption-other-scene-same-cue-id")?.clip.text).toBe("A cue with the same provider ID in another scene.");
   });
 
   it("previews without mutation, applies proposals reversibly, and rejects reversibly", () => {

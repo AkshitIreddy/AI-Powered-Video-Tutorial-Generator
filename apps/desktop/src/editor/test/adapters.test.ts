@@ -101,7 +101,8 @@ describe("Alystria ProjectRecord adapter", () => {
     }, { now: "2026-09-02T13:00:00Z", frameRate: { numerator: 30, denominator: 1 } });
 
     expect(project.tracks.find((track) => track.kind === "slides")?.clips).toHaveLength(2);
-    expect(project.tracks.find((track) => track.kind === "captions")?.clips[0]?.text).toBe("Begin with a question.");
+    expect(project.tracks.find((track) => track.kind === "captions")?.clips).toHaveLength(0);
+    expect(project.tracks.find((track) => track.kind === "narration")?.clips[0]?.text).toBe("Begin with a question.");
     expect(project.tracks.find((track) => track.kind === "presenter")?.clips[0]?.assetId).toBe("presenter-ref");
     expect(project.assets.map((asset) => asset.status)).toEqual(["pending", "pending"]);
     expect(project.assets.every((asset) => asset.uri === undefined)).toBe(true);
@@ -201,6 +202,117 @@ describe("Alystria ProjectRecord adapter", () => {
     expect(project.tracks.find((track) => track.kind === "presenter")?.clips).toHaveLength(0);
   });
 
+  it("uses verified scene-local caption cues instead of a whole-scene narration overlay", () => {
+    const project = createEditorProjectFromAlystriaProject({
+      id: "caption-project",
+      title: "Timed captions",
+      duration: 0.2,
+      scenes: [{ id: "scene-1", title: "Rendered title", kind: "title", duration: 12, narration: "This complete narration must not become one caption." }],
+    }, {
+      now: "2026-09-05T12:00:00Z",
+      frameRate: { numerator: 30, denominator: 1 },
+      mediaBindings: {
+        renders: [{ sceneId: "scene-1", artifactHash: "d".repeat(64), mediaType: "video/webm", durationTicks: 2_880_000, sourceStartTicks: 4_800_000, captionsBurnedIntoPixels: false }],
+        captions: [
+          { sceneId: "scene-1", id: "cue-1", startTicks: 120_000, endTicks: 360_000, text: "This complete narration" },
+          { sceneId: "scene-1", id: "cue-2", startTicks: 480_000, endTicks: 720_000, text: "must not become one caption." },
+        ],
+        assets: [], narration: [], presenters: [],
+      },
+    });
+
+    expect(project.tracks.find((track) => track.kind === "titles")?.clips).toHaveLength(0);
+    expect(project.tracks.find((track) => track.kind === "captions")?.clips).toEqual([
+      expect.objectContaining({
+        id: "caption-cue-scene-1-cue-1",
+        text: "This complete narration",
+        enabled: true,
+        timelineRange: { startFrame: 15, durationFrames: 30 },
+        metadata: expect.objectContaining({ alystriaSceneLocalStartTicks: 120_000, alystriaSceneLocalEndTicks: 360_000, captionsBurnedIntoPixels: false }),
+      }),
+      expect.objectContaining({
+        id: "caption-cue-scene-1-cue-2",
+        text: "must not become one caption.",
+        enabled: true,
+        timelineRange: { startFrame: 60, durationFrames: 30 },
+      }),
+    ]);
+  });
+
+  it("suppresses verified burned-in captions and keeps unknown historic delivery cues disabled for review", () => {
+    const record = {
+      id: "caption-policy-project",
+      title: "Caption policy",
+      duration: 0.1,
+      scenes: [{ id: "scene-1", title: "Rendered title", kind: "title", duration: 6, narration: "A timed line." }],
+    } as const;
+    const media = (captionsBurnedIntoPixels: boolean | null) => ({
+      renders: [{ sceneId: "scene-1", artifactHash: "d".repeat(64), mediaType: "video/webm", durationTicks: 1_440_000, sourceStartTicks: 0, captionsBurnedIntoPixels }],
+      captions: [{ sceneId: "scene-1", id: "cue-1", startTicks: 0, endTicks: 240_000, text: "A timed line." }],
+      assets: [], narration: [], presenters: [],
+    });
+
+    const burned = createEditorProjectFromAlystriaProject(record, { now: "2026-09-05T12:00:00Z", mediaBindings: media(true) });
+    expect(burned.tracks.find((track) => track.kind === "captions")?.clips).toHaveLength(0);
+    expect(burned.tracks.find((track) => track.kind === "titles")?.clips).toHaveLength(0);
+
+    const unknown = createEditorProjectFromAlystriaProject(record, { now: "2026-09-05T12:00:00Z", mediaBindings: media(null) });
+    expect(unknown.tracks.find((track) => track.kind === "captions")?.clips[0]).toMatchObject({
+      enabled: false,
+      text: "A timed line.",
+      metadata: { captionReviewRequired: true, captionsBurnedIntoPixels: null },
+    });
+
+    const verifiedNotBurned = mergeAlystriaMediaBindings(unknown, media(false), "2026-09-05T12:01:00Z");
+    expect(verifiedNotBurned.tracks.find((track) => track.kind === "captions")?.clips).toEqual([
+      expect.objectContaining({
+        id: "caption-cue-scene-1-cue-1",
+        enabled: true,
+        metadata: expect.objectContaining({ captionReviewRequired: false, captionsBurnedIntoPixels: false }),
+      }),
+    ]);
+  });
+
+  it("migrates only provably untouched legacy overlays when a composite binding arrives", () => {
+    const saved = createEditorProjectFromAlystriaProject({
+      id: "legacy-caption-project",
+      title: "Legacy captions",
+      duration: 0.1,
+      scenes: [{ id: "scene-1", title: "Legacy title", kind: "title", duration: 6, narration: "First cue. Second cue." }],
+    }, { now: "2026-09-05T10:00:00Z", frameRate: { numerator: 30, denominator: 1 } });
+    const slide = saved.tracks.find((track) => track.kind === "slides")!.clips[0]!;
+    saved.tracks.find((track) => track.kind === "captions")!.clips.push({
+      ...structuredClone(saved.tracks.find((track) => track.kind === "titles")!.clips[0]!),
+      id: "caption-scene-1",
+      trackId: "track-captions",
+      kind: "captions",
+      name: "Legacy title caption",
+      text: "First cue. Second cue.",
+      timelineRange: { ...slide.timelineRange },
+      sourceRange: { ...slide.sourceRange },
+      metadata: { ...slide.metadata },
+    });
+    const bindings = {
+      renders: [{ sceneId: "scene-1", artifactHash: "d".repeat(64), mediaType: "video/webm", durationTicks: 1_440_000, sourceStartTicks: 0, captionsBurnedIntoPixels: true }],
+      captions: [
+        { sceneId: "scene-1", id: "cue-1", startTicks: 0, endTicks: 120_000, text: "First cue." },
+        { sceneId: "scene-1", id: "cue-2", startTicks: 120_000, endTicks: 240_000, text: "Second cue." },
+      ],
+      assets: [], narration: [], presenters: [],
+    } as const;
+
+    const migrated = mergeAlystriaMediaBindings(saved, bindings, "2026-09-05T12:00:00Z");
+    expect(migrated.tracks.find((track) => track.kind === "captions")?.clips).toHaveLength(0);
+    expect(migrated.tracks.find((track) => track.kind === "titles")?.clips).toHaveLength(0);
+
+    const edited = structuredClone(saved);
+    edited.tracks.find((track) => track.kind === "captions")!.clips[0]!.text = "My corrected caption.";
+    edited.tracks.find((track) => track.kind === "titles")!.clips[0]!.text = "My corrected title";
+    const preserved = mergeAlystriaMediaBindings(edited, bindings, "2026-09-05T12:00:00Z");
+    expect(preserved.tracks.find((track) => track.kind === "captions")?.clips[0]?.text).toBe("My corrected caption.");
+    expect(preserved.tracks.find((track) => track.kind === "titles")?.clips[0]?.text).toBe("My corrected title");
+  });
+
   it("attaches late render bindings to placeholders without rebuilding saved user edits", () => {
     const saved = createEditorProjectFromAlystriaProject({
       id: "record-project",
@@ -219,7 +331,11 @@ describe("Alystria ProjectRecord adapter", () => {
     slide.transform.x = 84;
 
     const merged = mergeAlystriaMediaBindings(saved, {
-      renders: [{ sceneId: "scene-1", artifactHash: "d".repeat(64), mediaType: "video/webm", durationTicks: 2_880_000, sourceStartTicks: 4_800_000 }],
+      renders: [{ sceneId: "scene-1", artifactHash: "d".repeat(64), mediaType: "video/webm", durationTicks: 2_880_000, sourceStartTicks: 4_800_000, captionsBurnedIntoPixels: false }],
+      captions: [
+        { sceneId: "scene-1", id: "cue-1", startTicks: 0, endTicks: 480_000, text: "First timed cue." },
+        { sceneId: "scene-1", id: "cue-2", startTicks: 480_000, endTicks: 960_000, text: "Second timed cue." },
+      ],
       assets: [], narration: [], presenters: [],
     }, "2026-09-05T12:00:00Z");
     const mergedSlide = merged.tracks.find((track) => track.kind === "slides")!.clips[0]!;
@@ -233,5 +349,9 @@ describe("Alystria ProjectRecord adapter", () => {
     });
     expect(merged.tracks.find((track) => track.kind === "narration")!.clips[0]).toMatchObject({ enabled: false, metadata: { representedByCompositeRender: true } });
     expect(merged.tracks.find((track) => track.kind === "music")!.clips[0]).toMatchObject({ enabled: false, metadata: { representedByCompositeRender: true } });
+    expect(merged.tracks.find((track) => track.kind === "captions")!.clips).toEqual([
+      expect.objectContaining({ text: "First timed cue.", timelineRange: { startFrame: 45, durationFrames: 30 } }),
+      expect.objectContaining({ text: "Second timed cue.", timelineRange: { startFrame: 75, durationFrames: 60 } }),
+    ]);
   });
 });

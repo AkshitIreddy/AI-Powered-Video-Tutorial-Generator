@@ -74,6 +74,15 @@ export interface AlystriaEditorMediaBinding {
   durationMs?: number;
   sourceStartTicks?: number;
   exportEligible?: boolean;
+  captionsBurnedIntoPixels?: boolean | null;
+}
+
+export interface AlystriaEditorCaptionBinding {
+  sceneId: string;
+  id: string;
+  startTicks: number;
+  endTicks: number;
+  text: string;
 }
 
 export interface AlystriaEditorMediaBindings {
@@ -81,6 +90,7 @@ export interface AlystriaEditorMediaBindings {
   narration: readonly AlystriaEditorMediaBinding[];
   presenters: readonly AlystriaEditorMediaBinding[];
   renders?: readonly AlystriaEditorMediaBinding[];
+  captions?: readonly AlystriaEditorCaptionBinding[];
 }
 
 function bindingAsset(role: "visual" | "render" | "narration" | "presenter", binding: AlystriaEditorMediaBinding, now: string, frameRate: FrameRate): EditorMediaAsset {
@@ -157,6 +167,7 @@ function makeClip({
   text,
   linkedGroupId,
   locked = false,
+  enabled = true,
   metadata = {},
 }: {
   id: string;
@@ -170,6 +181,7 @@ function makeClip({
   text?: string;
   linkedGroupId?: string;
   locked?: boolean;
+  enabled?: boolean;
   metadata?: EditorClip["metadata"];
 }): EditorClip {
   return {
@@ -181,6 +193,7 @@ function makeClip({
     timelineRange: { startFrame, durationFrames },
     sourceRange: { startFrame: sourceStartFrame, durationFrames },
     ...defaultClipValues(),
+    enabled,
     locked,
     ...(linkedGroupId ? { linkedGroupId } : {}),
     ...(text !== undefined ? { text } : {}),
@@ -188,11 +201,95 @@ function makeClip({
   };
 }
 
+function normalizedCaptionText(value: string | undefined): string {
+  return (value ?? "").trim().replace(/\s+/gu, " ");
+}
+
+function sceneCaptionBindings(
+  bindings: AlystriaEditorMediaBindings | undefined,
+  sceneId: string,
+): readonly AlystriaEditorCaptionBinding[] {
+  return (bindings?.captions ?? [])
+    .filter((cue) => cue.sceneId === sceneId
+      && cue.id.trim().length > 0
+      && cue.text.trim().length > 0
+      && Number.isSafeInteger(cue.startTicks)
+      && Number.isSafeInteger(cue.endTicks)
+      && cue.startTicks >= 0
+      && cue.endTicks > cue.startTicks)
+    .sort((left, right) => left.startTicks - right.startTicks || left.endTicks - right.endTicks || left.id.localeCompare(right.id));
+}
+
+function captionClipId(sceneId: string, cueId: string): string {
+  return `caption-cue-${sceneId}-${cueId}`;
+}
+
+function makeSceneCaptionClips({
+  cues,
+  sceneId,
+  sceneStartFrame,
+  sceneVisibleSourceStartFrame = 0,
+  sceneVisibleSourceDurationFrames,
+  playbackRate = 1,
+  frameRate,
+  trackId,
+  linkedGroupId,
+  locked,
+  enabled,
+  burnedIntoPixels,
+}: {
+  cues: readonly AlystriaEditorCaptionBinding[];
+  sceneId: string;
+  sceneStartFrame: number;
+  sceneVisibleSourceStartFrame?: number;
+  sceneVisibleSourceDurationFrames: number;
+  playbackRate?: number;
+  frameRate: FrameRate;
+  trackId: string;
+  linkedGroupId: string;
+  locked: boolean | undefined;
+  enabled: boolean;
+  burnedIntoPixels: boolean | null | undefined;
+}): EditorClip[] {
+  return cues.flatMap((cue, index) => {
+    const cueStartFrame = Math.max(0, secondsToFrames(cue.startTicks / 240_000, frameRate));
+    const cueEndFrame = Math.max(cueStartFrame + 1, secondsToFrames(cue.endTicks / 240_000, frameRate));
+    const visibleEndFrame = sceneVisibleSourceStartFrame + sceneVisibleSourceDurationFrames;
+    const localStartFrame = Math.max(cueStartFrame, sceneVisibleSourceStartFrame);
+    const localEndFrame = Math.min(cueEndFrame, visibleEndFrame);
+    if (localEndFrame <= localStartFrame) return [];
+    const timelineOffset = Math.round((localStartFrame - sceneVisibleSourceStartFrame) / playbackRate);
+    const timelineDuration = Math.max(1, Math.round((localEndFrame - localStartFrame) / playbackRate));
+    return [makeClip({
+      id: captionClipId(sceneId, cue.id),
+      trackId,
+      kind: "captions",
+      name: `Caption ${index + 1}`,
+      startFrame: sceneStartFrame + timelineOffset,
+      durationFrames: timelineDuration,
+      linkedGroupId,
+      text: cue.text.trim(),
+      locked: locked ?? false,
+      enabled,
+      metadata: {
+        alystriaSceneId: sceneId,
+        alystriaCaptionCueId: cue.id,
+        alystriaGeneratedCaptionCue: true,
+        alystriaOriginalText: cue.text.trim(),
+        alystriaSceneLocalStartTicks: cue.startTicks,
+        alystriaSceneLocalEndTicks: cue.endTicks,
+        captionsBurnedIntoPixels: burnedIntoPixels ?? null,
+        captionReviewRequired: burnedIntoPixels === null || burnedIntoPixels === undefined,
+      },
+    })];
+  });
+}
+
 export function createEditorProjectFromAlystriaProject(
   record: AlystriaProjectRecordLike,
   options: AlystriaProjectAdapterOptions,
 ): EditorProject {
-  if (!record.id || !record.title || !Array.isArray(record.scenes)) throw new Error("Alystria project ID, title, and scenes are required.");
+  if (!record.id || !record.title || !Array.isArray(record.scenes)) throw new Error("Project ID, title, and scenes are required.");
   const frameRate = options.frameRate ?? { numerator: 30, denominator: 1 };
   const project = createEmptyEditorProject({ id: record.nativeProjectId ?? record.id, name: record.title, now: options.now, frameRate, width: options.width ?? 1920, height: options.height ?? 1080 });
   const track = (kind: TrackKind) => project.tracks.find((candidate) => candidate.kind === kind)!;
@@ -229,10 +326,25 @@ export function createEditorProjectFromAlystriaProject(
     const renderDuration = renderBinding?.durationTicks === undefined ? durationFrames : Math.min(durationFrames, Math.max(1, secondsToFrames(renderBinding.durationTicks / 240_000, frameRate)));
     const sourceStartFrame = renderBinding?.sourceStartTicks === undefined ? 0 : Math.max(0, secondsToFrames(renderBinding.sourceStartTicks / 240_000, frameRate));
     track("slides").clips.push(makeClip({ id: `scene-${scene.id}`, trackId: track("slides").id, kind: "slides", name: scene.title, startFrame: cursor, durationFrames: renderAsset ? renderDuration : durationFrames, sourceStartFrame, assetId: visualAsset?.id ?? null, linkedGroupId, locked: scene.locked, metadata: { ...sceneMetadata, authoredStructureOnly: !visualAsset, ...(renderAsset ? { includeSourceAudio: true, preservedCompositeRender: true } : {}) } }));
-    track("captions").clips.push(makeClip({ id: `caption-${scene.id}`, trackId: track("captions").id, kind: "captions", name: `${scene.title} caption`, startFrame: cursor, durationFrames, linkedGroupId, text: scene.narration, locked: scene.locked, metadata: sceneMetadata }));
+    const cues = sceneCaptionBindings(bindings, scene.id);
+    const burnedIntoPixels = renderBinding?.captionsBurnedIntoPixels;
+    if (cues.length && burnedIntoPixels !== true) {
+      track("captions").clips.push(...makeSceneCaptionClips({
+        cues,
+        sceneId: scene.id,
+        sceneStartFrame: cursor,
+        sceneVisibleSourceDurationFrames: renderAsset ? renderDuration : durationFrames,
+        frameRate,
+        trackId: track("captions").id,
+        linkedGroupId,
+        locked: scene.locked,
+        enabled: !renderAsset || burnedIntoPixels === false,
+        burnedIntoPixels: renderAsset ? burnedIntoPixels : false,
+      }));
+    }
     if (!renderAsset) track("narration").clips.push(makeClip({ id: `narration-${scene.id}`, trackId: track("narration").id, kind: "narration", name: `${scene.title} narration`, startFrame: cursor, durationFrames: narrationDuration, assetId: narrationAsset?.id ?? null, linkedGroupId, text: scene.narration, locked: scene.locked, metadata: { ...sceneMetadata, scriptOnly: !narrationAsset, playableMediaRequired: !narrationAsset } }));
     if (!renderAsset && presenterAsset) track("presenter").clips.push(makeClip({ id: `presenter-${scene.id}`, trackId: track("presenter").id, kind: "presenter", name: `${scene.title} presenter`, startFrame: cursor, durationFrames: presenterDuration, assetId: presenterAsset.id, linkedGroupId, locked: scene.locked, metadata: sceneMetadata }));
-    if (scene.kind === "title") track("titles").clips.push(makeClip({ id: `title-${scene.id}`, trackId: track("titles").id, kind: "titles", name: scene.title, startFrame: cursor, durationFrames: Math.min(durationFrames, secondsToFrames(6, frameRate)), linkedGroupId, text: scene.title, locked: scene.locked, metadata: sceneMetadata }));
+    if (!renderAsset && scene.kind === "title") track("titles").clips.push(makeClip({ id: `title-${scene.id}`, trackId: track("titles").id, kind: "titles", name: scene.title, startFrame: cursor, durationFrames: Math.min(durationFrames, secondsToFrames(6, frameRate)), linkedGroupId, text: scene.title, locked: scene.locked, metadata: { ...sceneMetadata, alystriaGeneratedSceneTitle: true, alystriaOriginalText: scene.title } }));
     cursor += durationFrames;
   }
 
@@ -275,6 +387,116 @@ function canReplaceProjectDerivedMedia(clip: EditorClip, assets: readonly Editor
   if (clip.assetId === null) return clip.metadata.authoredStructureOnly === true || clip.metadata.scriptOnly === true || clip.metadata.playableMediaRequired === true;
   const current = assets.find((asset) => asset.id === clip.assetId);
   return Boolean(current && (current.metadata.generatedRole !== undefined || (current.status !== "ready" && current.provenance.origin === "project-derived")));
+}
+
+function hasDefaultTransform(clip: EditorClip): boolean {
+  return clip.transform.x === 0
+    && clip.transform.y === 0
+    && clip.transform.scaleX === 1
+    && clip.transform.scaleY === 1
+    && clip.transform.rotation === 0
+    && clip.transform.anchorX === 0.5
+    && clip.transform.anchorY === 0.5
+    && clip.opacity === 1
+    && clip.keyframes.length === 0;
+}
+
+function isUnmodifiedGeneratedSceneTitle(
+  clip: EditorClip,
+  slide: EditorClip,
+  frameRate: FrameRate,
+): boolean {
+  const sceneId = String(slide.metadata.alystriaSceneId ?? "");
+  return clip.id === `title-${sceneId}`
+    && clip.metadata.authoredStructureOnly === true
+    && clip.text === clip.name
+    && clip.textStyle === undefined
+    && clip.enabled
+    && hasDefaultTransform(clip)
+    && clip.timelineRange.startFrame === slide.timelineRange.startFrame
+    && clip.timelineRange.durationFrames === Math.min(slide.timelineRange.durationFrames, secondsToFrames(6, frameRate));
+}
+
+function isUnmodifiedLegacySceneCaption(
+  clip: EditorClip,
+  slide: EditorClip,
+  cues: readonly AlystriaEditorCaptionBinding[],
+): boolean {
+  const sceneId = String(slide.metadata.alystriaSceneId ?? "");
+  const cueText = normalizedCaptionText(cues.map((cue) => cue.text).join(" "));
+  return cueText.length > 0
+    && clip.id === `caption-${sceneId}`
+    && clip.metadata.authoredStructureOnly === true
+    && clip.metadata.alystriaCaptionCueId === undefined
+    && normalizedCaptionText(clip.text) === cueText
+    && clip.textStyle === undefined
+    && clip.enabled
+    && hasDefaultTransform(clip)
+    && clip.timelineRange.startFrame === slide.timelineRange.startFrame
+    && clip.timelineRange.durationFrames === slide.timelineRange.durationFrames;
+}
+
+function isUnmodifiedReviewCue(clip: EditorClip): boolean {
+  return clip.metadata.alystriaGeneratedCaptionCue === true
+    && clip.metadata.captionReviewRequired === true
+    && clip.enabled === false
+    && clip.text === clip.metadata.alystriaOriginalText
+    && clip.textStyle === undefined
+    && hasDefaultTransform(clip);
+}
+
+function reconcileBoundSceneText(
+  project: EditorProject,
+  bindings: AlystriaEditorMediaBindings,
+): void {
+  const captionTrack = project.tracks.find((track) => track.kind === "captions");
+  const titleTrack = project.tracks.find((track) => track.kind === "titles");
+  const slideTrack = project.tracks.find((track) => track.kind === "slides");
+  if (!captionTrack || !titleTrack || !slideTrack) return;
+
+  const sceneIds = new Set([
+    ...(bindings.renders ?? []).map((binding) => binding.sceneId),
+    ...(bindings.captions ?? []).map((binding) => binding.sceneId),
+  ]);
+  for (const sceneId of sceneIds) {
+    const slide = slideTrack.clips.find((clip) => clip.metadata.alystriaSceneId === sceneId);
+    if (!slide) continue;
+    const render = bindings.renders?.find((binding) => binding.sceneId === sceneId);
+    const cues = sceneCaptionBindings(bindings, sceneId);
+
+    captionTrack.clips = captionTrack.clips.filter((clip) => {
+      if (clip.metadata.alystriaSceneId !== sceneId) return true;
+      if (isUnmodifiedLegacySceneCaption(clip, slide, cues)) return false;
+      if ((render?.captionsBurnedIntoPixels === true || render?.captionsBurnedIntoPixels === false) && isUnmodifiedReviewCue(clip)) return false;
+      return true;
+    });
+    if (render) {
+      titleTrack.clips = titleTrack.clips.filter((clip) => clip.metadata.alystriaSceneId !== sceneId
+        || !isUnmodifiedGeneratedSceneTitle(clip, slide, project.frameRate));
+    }
+
+    if (!cues.length || render?.captionsBurnedIntoPixels === true) continue;
+    const existingIds = new Set(captionTrack.clips.map((clip) => clip.id));
+    const renderBaseFrame = render?.sourceStartTicks === undefined
+      ? 0
+      : Math.max(0, secondsToFrames(render.sourceStartTicks / 240_000, project.frameRate));
+    const sceneSourceStartFrame = Math.max(0, slide.sourceRange.startFrame - renderBaseFrame);
+    const generated = makeSceneCaptionClips({
+      cues,
+      sceneId,
+      sceneStartFrame: slide.timelineRange.startFrame,
+      sceneVisibleSourceStartFrame: sceneSourceStartFrame,
+      sceneVisibleSourceDurationFrames: slide.sourceRange.durationFrames,
+      playbackRate: slide.playbackRate ?? 1,
+      frameRate: project.frameRate,
+      trackId: captionTrack.id,
+      linkedGroupId: slide.linkedGroupId ?? `alystria-scene-${sceneId}`,
+      locked: slide.locked,
+      enabled: !render || render.captionsBurnedIntoPixels === false,
+      burnedIntoPixels: render ? render.captionsBurnedIntoPixels : false,
+    });
+    captionTrack.clips.push(...generated.filter((clip) => !existingIds.has(clip.id)));
+  }
 }
 
 /**
@@ -349,6 +571,7 @@ export function mergeAlystriaMediaBindings(
       });
     }
   }
+  reconcileBoundSceneText(project, bindings);
   project.updatedAt = now;
   return normalizeEditorProject(project);
 }
