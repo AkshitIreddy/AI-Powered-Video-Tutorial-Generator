@@ -102,7 +102,7 @@ const traceFrames = (prefix, trace) => trace.steps.map((step, index) => ({
 
 const authoredScenes = [
   {
-    spec: makeSpec("proof.binary.title", 8, { kind: "title", eyebrow: "ALGORITHMS · VERIFIED WALKTHROUGH", title: "Binary search keeps one promise", subtitle: "Trace the invariant, complete Python, and two tested outcomes", author: "Alystria authored teaching proof", module: "Search · O(log n)" }, "Title card introducing a verified binary search lesson."),
+    spec: makeSpec("proof.binary.title", 8, { kind: "title", eyebrow: "ALGORITHMS · VERIFIED WALKTHROUGH", title: "Binary search keeps one promise", subtitle: "Trace the invariant, complete Python, and two tested outcomes", author: "AI Video Tutorial Generator", module: "Search · O(log n)" }, "Title card introducing a verified binary search lesson."),
     caption: "Binary search is fast because every comparison preserves one exact promise about where the target can still be.",
   },
   {
