@@ -471,6 +471,7 @@ class ProviderTextClient:
             result.value,
             result.usage,
             result.raw_id,
+            result.correction_attempts,
         )
 
 

@@ -29,6 +29,7 @@ from alystria.generation import (
     request_from_fixture,
 )
 from alystria.generation.coordinator import _prepare_narration_pacing_reapproval
+from alystria.generation.education_provider import StructuredWritingEducationalProvider
 from alystria.generation.forced_alignment import AlignmentInput
 from alystria.generation.workflow import (
     _caption_alignment_quality_gate,
@@ -42,7 +43,16 @@ from alystria.jobs import JobContext, JobState
 from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
 from alystria.project.errors import RevisionConflictError
-from alystria.providers import FailureCode, ProviderFailure
+from alystria.providers import (
+    EphemeralCredentialBroker,
+    FailureCode,
+    HttpRequest,
+    HttpResponse,
+    ProviderFailure,
+    ProviderRuntimeFactory,
+    parse_routing_policy,
+)
+from alystria.providers.openai_compatible_structured import GROQ_STRUCTURED_MODEL
 from alystria.qa import Finding, GateStatus, QualityGate, Severity
 from alystria.research import DeterministicOfflineProvider, GroundingMode
 from alystria.service import _configured_forced_aligner, _configured_local_presenter
@@ -90,6 +100,122 @@ class TerminalUsageEducationProvider(DeterministicOfflineProvider):
                 },
             },
         )
+
+
+class CoverageBudgetTransport:
+    def __init__(self) -> None:
+        self.requests: list[HttpRequest] = []
+
+    def send(self, request: HttpRequest) -> HttpResponse:
+        self.requests.append(request)
+        if len(self.requests) > 1:
+            raise AssertionError("semantic correction crossed the remaining job budget")
+        sections = [
+            {
+                "title": f"Purposeful section {index + 1}",
+                "objectiveIds": ["objective-meaning"],
+                "teachingStrategy": "explain one specific step with a concrete example",
+                "estimatedSeconds": 36,
+            }
+            for index in range(5)
+        ]
+        return HttpResponse(
+            200,
+            {"content-type": "application/json"},
+            json.dumps(
+                {
+                    "id": "coverage-missing",
+                    "model": GROQ_STRUCTURED_MODEL,
+                    "choices": [{"message": {"content": json.dumps({"sections": sections})}}],
+                    "usage": {"prompt_tokens": 55_000, "completion_tokens": 100},
+                }
+            ).encode(),
+        )
+
+
+def _groq_structured_policy(hard_limit_micros: int) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "privacyMode": "hybrid",
+        "dataClassification": "project",
+        "budget": {
+            "currency": "USD",
+            "hardLimitMicros": hard_limit_micros,
+            "requireKnownPricing": True,
+            "approved": True,
+        },
+        "approvals": [
+            {
+                "providerId": "groq",
+                "capabilities": ["llm.structured"],
+                "credentialRef": "keyring://alystria/groq/api_key",
+                "boundary": "cloud",
+                "retention": "provider_default",
+                "regions": ["provider-managed"],
+                "dataClasses": ["project"],
+                "privacyApproved": True,
+                "retentionApproved": True,
+                "regionApproved": True,
+                "budgetApproved": True,
+            }
+        ],
+        "routes": [
+            {
+                "capability": "llm.structured",
+                "providerIds": ["groq"],
+                "model": GROQ_STRUCTURED_MODEL,
+                "voice": None,
+            }
+        ],
+    }
+
+
+def test_semantic_outline_retry_is_blocked_before_transport_when_budget_is_spent(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Semantic budget", name="Semantic budget")
+    broker = EphemeralCredentialBroker()
+    credential_ref = "keyring://alystria/groq/api_key"
+    grant = broker.issue("groq", credential_ref, "fixture-credential")
+    transport = CoverageBudgetTransport()
+    provider_runtime = ProviderRuntimeFactory(
+        transport_factory=lambda _provider: transport,
+        credential_resolver=broker,
+        credential_grants={"groq": grant},
+    ).build(parse_routing_policy(_groq_structured_policy(5_000)))
+    coordinator = GenerationCoordinator(
+        store,
+        educational_provider=StructuredWritingEducationalProvider.from_runtime(
+            provider_runtime
+        ),
+    )
+    try:
+        generation = coordinator.start(
+            replace(
+                request(),
+                hard_budget_micros=5_000,
+                objectives=(
+                    ObjectiveSpec("objective-meaning", "Explain the core meaning."),
+                    ObjectiveSpec("objective-example", "Apply one worked example."),
+                    ObjectiveSpec("objective-recall", "Recall the key recurrence."),
+                ),
+            )
+        )
+        failed = coordinator.run_pending()
+
+        assert failed is not None and failed.state is GenerationState.FAILED
+        assert len(transport.requests) == 1
+        learning = next(
+            coordinator.runtime.get_job(stage.job_id)
+            for stage in failed.stages
+            if stage.stage is GenerationStage.LEARNING_PLAN
+        )
+        assert coordinator.runtime.usage_summary(learning.job_id).total_cost_micros == 4_155
+        assert learning.error is not None
+        assert "budget" in str(learning.error["message"]).casefold()
+        assert generation.generation_id == failed.generation_id
+    finally:
+        store.close()
 
 
 def test_structured_budget_is_shared_by_stages_in_one_generation(tmp_path: Path) -> None:

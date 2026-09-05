@@ -434,6 +434,7 @@ def test_groq_repairs_one_local_array_bound_and_accounts_both_calls() -> None:
     # receipts instead of repricing their combined token counts.
     assert result.usage.actual_cost_micros == 37
     assert result.raw_id == "second-valid"
+    assert result.correction_attempts == 1
 
 
 def test_groq_schema_repair_is_single_attempt_and_does_not_repair_structural_errors() -> None:
@@ -492,6 +493,44 @@ def test_groq_schema_repair_is_single_attempt_and_does_not_repair_structural_err
         structural_adapter.invoke(request, context("groq"))
     assert structural_failure.value.details["schemaKeyword"] == "type"
     assert len(structural.requests) == 1
+
+
+def test_groq_does_not_repair_when_the_shared_correction_is_already_consumed() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["labels"],
+        "properties": {
+            "labels": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"},
+            }
+        },
+    }
+    transport = SequenceTransport(
+        [
+            {
+                "id": "invalid-no-correction-left",
+                "choices": [{"message": {"content": '{"labels":[]}'}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            }
+        ]
+    )
+    adapter = launch_structured_cloud_adapter("groq", transport)
+
+    with pytest.raises(ProviderFailure, match="outside the requested schema"):
+        adapter.invoke(
+            TextRequest(
+                "Labels",
+                GROQ_STRUCTURED_MODEL,
+                json_schema=schema,
+                max_correction_attempts=0,
+            ),
+            context("groq"),
+        )
+
+    assert len(transport.requests) == 1
 
 
 def test_groq_schema_repair_never_treats_one_missing_usage_receipt_as_complete() -> None:

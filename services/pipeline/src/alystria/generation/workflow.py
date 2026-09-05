@@ -111,7 +111,7 @@ from .models import (
 from .spoken_text import normalize_spoken_text
 
 IMPLEMENTATION_VERSION = "generation-v10-reviewed-narration-reapproval"
-PROMPT_VERSION = "offline-education-v1"
+PROMPT_VERSION = "offline-education-v2-dynamic-references"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
 MAX_UNAUTHORED_VISUAL_TAIL_MS = 2_000

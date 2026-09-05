@@ -13,6 +13,8 @@ from typing import Any
 
 from alystria.providers import (
     Capability,
+    FailureCode,
+    ProviderFailure,
     ProviderResult,
     ProviderRuntime,
     ProviderTextClient,
@@ -213,6 +215,47 @@ def _publish_structured_usage(
         sink(idempotency_key, result)
 
 
+class _OutlineReferenceViolation(ValueError):
+    def __init__(self, path: str, keyword: str) -> None:
+        super().__init__("Writing provider returned invalid objective references")
+        self.path = path
+        self.keyword = keyword
+
+
+def _validate_outline_references(
+    value: Any,
+    objectives: Sequence[LearningObjective],
+) -> list[tuple[str, tuple[str, ...], str, int]]:
+    payload = _parsed_object(value, "outline")
+    raw_sections = _object_list(payload.get("sections"), "outline sections")
+    known_ids = {objective.id for objective in objectives}
+    claimed: set[str] = set()
+    validated: list[tuple[str, tuple[str, ...], str, int]] = []
+    for index, raw in enumerate(raw_sections):
+        path = f"$.sections[{index}].objectiveIds"
+        raw_objective_ids = raw.get("objectiveIds")
+        if raw_objective_ids == []:
+            raise _OutlineReferenceViolation(path, "minItems")
+        objective_ids = tuple(_string_list(raw_objective_ids, "objective IDs"))
+        if not set(objective_ids) <= known_ids:
+            raise _OutlineReferenceViolation(path, "enum")
+        claimed.update(objective_ids)
+        validated.append(
+            (
+                _clean_text(raw.get("title"), "outline title", 72),
+                objective_ids,
+                _clean_text(raw.get("teachingStrategy"), "teaching strategy", 120),
+                _positive_int(raw.get("estimatedSeconds"), "estimated seconds"),
+            )
+        )
+    if claimed != known_ids:
+        raise _OutlineReferenceViolation(
+            "$.sections[*].objectiveIds",
+            "objectiveCoverage",
+        )
+    return validated
+
+
 class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
     """Use the project's explicitly approved structured-writing route.
 
@@ -250,6 +293,10 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
         minimum_sections = 5 if target_duration_seconds >= 150 else 3
         outline_schema = copy.deepcopy(_OUTLINE_SCHEMA)
         outline_schema["properties"]["sections"]["minItems"] = minimum_sections
+        allowed_objective_ids = [objective.id for objective in objectives]
+        outline_schema["properties"]["sections"]["items"]["properties"][
+            "objectiveIds"
+        ]["items"]["enum"] = allowed_objective_ids
         prompt = json.dumps(
             {
                 "task": "Design a compact, teachable tutorial outline.",
@@ -292,26 +339,82 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             idempotency_key=idempotency_key,
         )
         _publish_structured_usage(idempotency_key, result)
-        payload = _parsed_object(result.value.parsed, "outline")
-        raw_sections = _object_list(payload.get("sections"), "outline sections")
-        known_ids = {objective.id for objective in objectives}
-        claimed: set[str] = set()
-        validated: list[tuple[str, tuple[str, ...], str, int]] = []
-        for raw in raw_sections:
-            objective_ids = tuple(_string_list(raw.get("objectiveIds"), "objective IDs"))
-            if not objective_ids or not set(objective_ids) <= known_ids:
-                raise ValueError("Writing provider returned an unknown or empty objective ID")
-            claimed.update(objective_ids)
-            validated.append(
-                (
-                    _clean_text(raw.get("title"), "outline title", 72),
-                    objective_ids,
-                    _clean_text(raw.get("teachingStrategy"), "teaching strategy", 120),
-                    _positive_int(raw.get("estimatedSeconds"), "estimated seconds"),
-                )
+        try:
+            validated = _validate_outline_references(result.value.parsed, objectives)
+        except _OutlineReferenceViolation as first_violation:
+            if result.correction_attempts >= 1:
+                raise ProviderFailure(
+                    FailureCode.MALFORMED_RESPONSE,
+                    "Writing provider returned invalid objective references after one correction",
+                    provider_id=result.provider_id,
+                    request_id=result.raw_id,
+                    details={
+                        "semanticPath": first_violation.path,
+                        "semanticKeyword": first_violation.keyword,
+                        "repairAttempted": True,
+                        "attemptCount": 2,
+                        "usageAlreadyRecorded": True,
+                    },
+                ) from first_violation
+            repair_prompt = json.dumps(
+                {
+                    "task": "Regenerate the complete tutorial outline once.",
+                    "semanticViolation": {
+                        "path": first_violation.path,
+                        "keyword": first_violation.keyword,
+                    },
+                    "requirements": [
+                        "Return the complete response, not a patch or explanation.",
+                        "Use every supplied objective ID at least once and use no other ID.",
+                        "Use at least one supplied objective ID in every section.",
+                    ],
+                    "originalRequest": prompt,
+                },
+                ensure_ascii=False,
             )
-        if claimed != known_ids:
-            raise ValueError("Writing provider did not cover every learning objective")
+            repair_key = _idempotency(
+                "outline-semantic-repair",
+                topic,
+                objective_payload,
+                target_duration_seconds,
+                first_violation.path,
+                first_violation.keyword,
+            )
+            repaired = self.client.generate(
+                TextRequest(
+                    prompt=repair_prompt,
+                    system=(
+                        "This is the single permitted objective-reference correction. "
+                        "Return only the complete schema-valid outline."
+                    ),
+                    model=self.model,
+                    max_output_tokens=2500,
+                    temperature=0.1,
+                    json_schema=outline_schema,
+                    schema_name="alystria_tutorial_outline",
+                    max_correction_attempts=0,
+                ),
+                idempotency_key=repair_key,
+            )
+            _publish_structured_usage(repair_key, repaired)
+            try:
+                validated = _validate_outline_references(
+                    repaired.value.parsed, objectives
+                )
+            except _OutlineReferenceViolation as final_violation:
+                raise ProviderFailure(
+                    FailureCode.MALFORMED_RESPONSE,
+                    "Writing provider returned invalid objective references after one correction",
+                    provider_id=repaired.provider_id,
+                    request_id=repaired.raw_id,
+                    details={
+                        "semanticPath": final_violation.path,
+                        "semanticKeyword": final_violation.keyword,
+                        "repairAttempted": True,
+                        "attemptCount": 2,
+                        "usageAlreadyRecorded": True,
+                    },
+                ) from final_violation
         normalized = _normalize_durations(
             [item[3] for item in validated], target_duration_seconds, minimum=8
         )

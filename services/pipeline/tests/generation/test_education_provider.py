@@ -16,6 +16,7 @@ from alystria.generation.workflow import _fit_storyboard_to_narration, _paced_sc
 from alystria.providers import (
     DataClassification,
     PrivacyMode,
+    ProviderFailure,
     ProviderResult,
     TextOutput,
     TextRequest,
@@ -54,19 +55,29 @@ def test_structured_scene_schema_can_author_progressive_teaching_modes() -> None
 
 
 class FakeTextClient:
-    def __init__(self, responses: Sequence[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        responses: Sequence[dict[str, Any]],
+        *,
+        correction_attempts: Sequence[int] = (),
+    ) -> None:
         self.responses = list(responses)
+        self.correction_attempts = list(correction_attempts)
         self.requests: list[TextRequest] = []
 
     def generate(self, request: TextRequest, *, idempotency_key: str) -> ProviderResult[TextOutput]:
         assert idempotency_key.startswith("education-")
         self.requests.append(request)
         response = self.responses.pop(0)
+        correction_attempts = (
+            self.correction_attempts.pop(0) if self.correction_attempts else 0
+        )
         return ProviderResult(
             "nvidia-nim",
             request.model,
             TextOutput("", parsed=response),
             Usage("nvidia-nim", request.model, {"output_tokens": 400}, 123),
+            correction_attempts=correction_attempts,
         )
 
 
@@ -375,19 +386,98 @@ def test_structured_provider_repairs_only_narration_when_pacing_is_short() -> No
     assert draft.sections[0].title == "Can three beat four?"
 
 
-def test_structured_provider_rejects_missing_objective_coverage() -> None:
-    response = _outline_response()
-    response["sections"] = response["sections"][:2]
-    client = FakeTextClient([response])
+def test_structured_provider_repairs_missing_objective_coverage_once() -> None:
+    invalid = _outline_response()
+    invalid["sections"] = invalid["sections"][:2]
+    valid = _outline_response()
+    client = FakeTextClient([invalid, valid])
     provider = StructuredWritingEducationalProvider(client, model="writer-v1")
 
-    with pytest.raises(ValueError, match="every learning objective"):
+    outline = provider.build_outline(
+        "Karatsuba",
+        LearnerProfile("beginners", ExperienceLevel.BEGINNER),
+        _objectives(),
+        60,
+    )
+
+    assert len(outline) == 3
+    assert len(client.requests) == 2
+    repair = client.requests[1]
+    assert repair.max_correction_attempts == 0
+    assert repair.json_schema == client.requests[0].json_schema
+    repair_prompt = json.loads(repair.prompt)
+    assert repair_prompt["semanticViolation"] == {
+        "path": "$.sections[*].objectiveIds",
+        "keyword": "objectiveCoverage",
+    }
+
+
+def test_structured_provider_never_rebinds_an_unknown_objective_id() -> None:
+    invalid = _outline_response()
+    invalid["sections"][0]["objectiveIds"] = ["invented-objective-id"]
+    valid = _outline_response()
+    client = FakeTextClient([invalid, valid])
+    provider = StructuredWritingEducationalProvider(client, model="writer-v1")
+
+    outline = provider.build_outline(
+        "Karatsuba",
+        LearnerProfile("beginners", ExperienceLevel.BEGINNER),
+        _objectives(),
+        60,
+    )
+
+    assert len(outline) == 3
+    assert "invented-objective-id" not in client.requests[1].prompt
+    assert json.loads(client.requests[1].prompt)["semanticViolation"] == {
+        "path": "$.sections[0].objectiveIds",
+        "keyword": "enum",
+    }
+
+
+def test_prior_schema_correction_consumes_the_only_outline_correction() -> None:
+    invalid = _outline_response()
+    invalid["sections"] = invalid["sections"][:2]
+    client = FakeTextClient([invalid], correction_attempts=[1])
+    provider = StructuredWritingEducationalProvider(client, model="writer-v1")
+
+    with pytest.raises(ProviderFailure, match="after one correction") as raised:
         provider.build_outline(
             "Karatsuba",
             LearnerProfile("beginners", ExperienceLevel.BEGINNER),
             _objectives(),
             60,
         )
+
+    assert len(client.requests) == 1
+    assert raised.value.details == {
+        "semanticPath": "$.sections[*].objectiveIds",
+        "semanticKeyword": "objectiveCoverage",
+        "repairAttempted": True,
+        "attemptCount": 2,
+        "usageAlreadyRecorded": True,
+    }
+
+
+def test_semantic_correction_stops_after_a_second_invalid_outline() -> None:
+    invalid = _outline_response()
+    invalid["sections"] = invalid["sections"][:2]
+    still_invalid = _outline_response()
+    still_invalid["sections"][2]["objectiveIds"] = []
+    client = FakeTextClient([invalid, still_invalid])
+    provider = StructuredWritingEducationalProvider(client, model="writer-v1")
+
+    with pytest.raises(ProviderFailure, match="after one correction") as raised:
+        provider.build_outline(
+            "Karatsuba",
+            LearnerProfile("beginners", ExperienceLevel.BEGINNER),
+            _objectives(),
+            60,
+        )
+
+    assert len(client.requests) == 2
+    assert client.requests[1].max_correction_attempts == 0
+    assert raised.value.details["semanticPath"] == "$.sections[2].objectiveIds"
+    assert raised.value.details["semanticKeyword"] == "minItems"
 
 
 def test_three_minute_outline_requires_more_inspectable_scenes() -> None:
@@ -406,6 +496,11 @@ def test_three_minute_outline_requires_more_inspectable_scenes() -> None:
     assert sum(section.estimated_seconds for section in outline) == 180
     assert client.requests[0].json_schema is not None
     assert client.requests[0].json_schema["properties"]["sections"]["minItems"] == 5
+    assert client.requests[0].json_schema["properties"]["sections"]["items"][
+        "properties"
+    ]["objectiveIds"]["items"]["enum"] == [
+        objective.id for objective in _objectives()
+    ]
 
 
 def test_three_minute_groq_outline_repairs_one_empty_objective_list_end_to_end() -> None:
@@ -457,9 +552,49 @@ def test_three_minute_groq_outline_repairs_one_empty_objective_list_end_to_end()
         "output_tokens": 920.0,
     }
     assert client.results[0].usage.actual_cost_micros == 423
+    assert client.results[0].correction_attempts == 1
     assert len(captured) == 1
     assert captured[0][0].startswith("education-")
     assert captured[0][1].usage == client.results[0].usage
+
+
+def test_groq_schema_then_semantic_failure_stops_after_two_total_calls() -> None:
+    first = _three_minute_outline_response()
+    first["sections"][4]["objectiveIds"] = []
+    second = _three_minute_outline_response()
+    for section in second["sections"]:
+        section["objectiveIds"] = ["objective-meaning"]
+    transport = EducationSequenceTransport(
+        [
+            {
+                "id": "schema-invalid",
+                "model": GROQ_STRUCTURED_MODEL,
+                "choices": [{"message": {"content": json.dumps(first)}}],
+                "usage": {"prompt_tokens": 900, "completion_tokens": 450},
+            },
+            {
+                "id": "semantic-invalid",
+                "model": GROQ_STRUCTURED_MODEL,
+                "choices": [{"message": {"content": json.dumps(second)}}],
+                "usage": {"prompt_tokens": 1_050, "completion_tokens": 470},
+            },
+        ]
+    )
+    provider = StructuredWritingEducationalProvider(
+        GroqEducationTextClient(transport), model=GROQ_STRUCTURED_MODEL
+    )
+
+    with pytest.raises(ProviderFailure, match="after one correction") as raised:
+        provider.build_outline(
+            "Karatsuba multiplication",
+            LearnerProfile("beginners", ExperienceLevel.BEGINNER),
+            _objectives(),
+            180,
+        )
+
+    assert len(transport.requests) == 2
+    assert raised.value.details["semanticKeyword"] == "objectiveCoverage"
+    assert raised.value.details["attemptCount"] == 2
 
 
 def test_storyboard_pacing_distributes_exact_duration_by_narration_weight() -> None:

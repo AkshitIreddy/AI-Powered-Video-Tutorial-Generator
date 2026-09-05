@@ -164,6 +164,11 @@ class TextRequest:
     schema_name: str = "alystria_output"
     research: bool = False
     allowed_domains: tuple[str, ...] = ()
+    max_correction_attempts: int = 1
+
+    def __post_init__(self) -> None:
+        if self.max_correction_attempts not in {0, 1}:
+            raise ValueError("text request corrections must be limited to zero or one")
 
     @property
     def capability(self) -> Capability:
@@ -420,6 +425,7 @@ class ProviderResult[T]:
     value: T
     usage: Usage
     raw_id: str | None = None
+    correction_attempts: int = 0
 
 
 @dataclass(frozen=True, slots=True)

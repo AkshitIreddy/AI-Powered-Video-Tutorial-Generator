@@ -227,6 +227,7 @@ class OpenAICompatibleStructuredAdapter(BaseLLMAdapter):
             and self.spec.provider_id == "groq"
             and request.json_schema is not None
             and _schema_contains_local_bounds(request.json_schema)
+            and request.max_correction_attempts > 0
         ):
             # Validate the reviewed request shape before cost precedence can
             # hide a schema/model error, then reserve the worst bounded path
@@ -305,6 +306,7 @@ class OpenAICompatibleStructuredAdapter(BaseLLMAdapter):
             return replace(
                 repaired,
                 usage=_combined_usage(first_usage, repaired.usage),
+                correction_attempts=1,
             )
 
     generate = invoke
@@ -482,6 +484,7 @@ def _repairable_groq_bounds_failure(
     return (
         provider_id == "groq"
         and request.json_schema is not None
+        and request.max_correction_attempts > 0
         and failure.code is FailureCode.MALFORMED_RESPONSE
         and keyword in _ALYSTRIA_LOCALLY_ENFORCED_SCHEMA_KEYS
         and isinstance(path, str)
@@ -528,6 +531,7 @@ def _groq_bounds_repair_request(
         prompt=prompt,
         system=(request.system or "") + system_suffix,
         temperature=0.1,
+        max_correction_attempts=0,
     )
 
 
