@@ -43,6 +43,8 @@ function receipt(asset: BundledAsset): ProjectAssetImportReceipt {
       license: "Included generated asset · project use and export allowed",
       exportEligible: true,
       blockers: [],
+      modelInputEligible: true,
+      modelInputBlockers: [],
     },
   };
 }

@@ -200,7 +200,7 @@ export interface ProjectAssetImportReceipt {
   headRevisionId: string;
   revisionNumber: number;
   artifact: { id: string; kind: ProjectAssetKind; sha256: string; byteSize: number; mediaType: string; originalFilename: string; state: string };
-  provenance: { id: string; origin: string; rightsStatus: AssetRightsStatus; creator?: string; license?: string; attribution?: string; exportEligible: boolean; blockers: string[] };
+  provenance: { id: string; origin: string; rightsStatus: AssetRightsStatus; creator?: string; license?: string; attribution?: string; exportEligible: boolean; blockers: string[]; modelInputEligible: boolean; modelInputBlockers: string[] };
   presenterProfile?: PresenterProfileRef;
   selectedPresenterProfileId?: string;
 }
@@ -996,7 +996,15 @@ export function projectAssetImport(input: ProjectAssetImportRequest): Promise<Pr
     if (project.snapshot.headRevisionId !== input.expectedHeadRevisionId) throw new Error("REVISION_CONFLICT: Reload the project before importing this asset.");
     const byteSize = decodedBase64Length(input.contentBase64);
     const sha256 = demoHash(`${input.kind}:${input.filename}:${byteSize}:${input.contentBase64.slice(0, 96)}`);
-    const exportEligible = input.rights.status !== "unknown" && input.rights.redistribution === "allowed";
+    const exportBlockers = [
+      ...(input.rights.status === "unknown" ? ["Rights status has not been established"] : []),
+      ...(input.rights.status === "licensed" && !input.rights.license?.trim() ? ["Licensed media requires a license identifier or terms reference"] : []),
+      ...(input.rights.status === "licensed" && !input.rights.attribution?.trim() ? ["Licensed media requires attribution metadata"] : []),
+      ...(input.rights.commercialUse !== "allowed" ? ["Commercial-use permission is not explicitly allowed"] : []),
+      ...(input.rights.redistribution !== "allowed" ? ["Redistribution permission is not explicitly allowed"] : []),
+    ];
+    const exportEligible = exportBlockers.length === 0;
+    const modelInputEligible = input.rights.modelInput === "allowed";
     const artifactId = `asset_${sha256.slice(0, 24)}`;
     const profile = input.kind === "presenterPortrait" && input.presenter ? {
       profileId: `presenter_${sha256.slice(0, 20)}`,
@@ -1029,7 +1037,9 @@ export function projectAssetImport(input: ProjectAssetImportRequest): Promise<Pr
         ...(input.rights.license ? { license: input.rights.license } : {}),
         ...(input.rights.attribution ? { attribution: input.rights.attribution } : {}),
         exportEligible,
-        blockers: exportEligible ? [] : ["Native validation and cleared redistribution rights are required."],
+        blockers: exportBlockers,
+        modelInputEligible,
+        modelInputBlockers: modelInputEligible ? [] : ["Model-input permission is not explicitly allowed."],
       },
       ...(profile ? { presenterProfile: profile } : {}),
       ...(profile && input.presenter?.selectAfterImport ? { selectedPresenterProfileId: profile.profileId } : {}),

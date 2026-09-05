@@ -357,7 +357,7 @@ def test_import_rejects_active_svg_and_unresolved_presenter_rights(tmp_path: Pat
             root,
             project_id,
             head,
-            rights=_rights(modelInput="unknown"),
+            rights=_rights(modelInput="notAllowed"),
             presenter={
                 "identityType": "synthetic",
                 "displayName": "Synthetic instructor",
@@ -386,7 +386,11 @@ def test_unknown_rights_are_importable_but_export_blocked(tmp_path: Path) -> Non
         ),
     )
     assert receipt["provenance"]["exportEligible"] is False
-    assert len(receipt["provenance"]["blockers"]) == 3
+    assert len(receipt["provenance"]["blockers"]) == 2
+    assert receipt["provenance"]["modelInputEligible"] is False
+    assert receipt["provenance"]["modelInputBlockers"] == [
+        "Model-input permission is not explicitly allowed"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -394,7 +398,6 @@ def test_unknown_rights_are_importable_but_export_blocked(tmp_path: Path) -> Non
     [
         ("commercialUse", "Commercial-use permission"),
         ("redistribution", "Redistribution permission"),
-        ("modelInput", "Model-input permission"),
     ],
 )
 def test_each_restricted_permission_fails_closed_for_export(
@@ -415,6 +418,28 @@ def test_each_restricted_permission_fails_closed_for_export(
     )
     assert receipt["provenance"]["exportEligible"] is False
     assert any(message in blocker for blocker in receipt["provenance"]["blockers"])
+
+
+def test_owned_editor_video_can_export_without_model_input_permission(tmp_path: Path) -> None:
+    root, project_id, head = _project(tmp_path)
+    receipt = _import(
+        PipelineService(),
+        root,
+        project_id,
+        head,
+        kind="editorVideo",
+        filename="owned.webm",
+        mime_type="video/webm",
+        content=WEBM,
+        presenter=None,
+        rights=_rights(modelInput="notAllowed"),
+    )
+    assert receipt["provenance"]["exportEligible"] is True
+    assert receipt["provenance"]["blockers"] == []
+    assert receipt["provenance"]["modelInputEligible"] is False
+    assert receipt["provenance"]["modelInputBlockers"] == [
+        "Model-input permission is not explicitly allowed"
+    ]
 
 
 def test_presenter_export_scope_and_immutable_proof_are_revalidated(

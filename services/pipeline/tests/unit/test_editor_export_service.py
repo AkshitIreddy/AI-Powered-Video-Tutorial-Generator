@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import uuid
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,34 @@ def test_editor_timeline_export_dispatch_persists_artifact_and_revision(
         head = store.head_revision()
         assert head is not None
         expected_head = head.revision_id
+
+    service = PipelineService()
+    imported = service.asset_import(
+        {
+            "projectId": project_id,
+            "projectDirectory": str(root),
+            "expectedHeadRevisionId": expected_head,
+            "kind": "editorVideo",
+            "filename": "owned.webm",
+            "mimeType": "video/webm",
+            "privacy": "project_local",
+            "rights": {
+                "status": "owned",
+                "creator": "Project owner",
+                "license": "User-owned media",
+                "attribution": None,
+                "commercialUse": "allowed",
+                "redistribution": "allowed",
+                "modelInput": "notAllowed",
+            },
+            "contentBase64": base64.b64encode(
+                b"\x1a\x45\xdf\xa3\x8b\x42\x86\x81\x01\x42\x82\x84webm\x18\x53\x80\x67\xff\xa3\x81\x00"
+            ).decode("ascii"),
+        }
+    )
+    expected_head = imported["headRevisionId"]
+    assert imported["provenance"]["exportEligible"] is True
+    assert imported["provenance"]["modelInputEligible"] is False
 
     monkeypatch.setenv("ALYSTRIA_FFMPEG_PATH", str(tmp_path / "ffmpeg.exe"))
     monkeypatch.setenv("ALYSTRIA_FFPROBE_PATH", str(tmp_path / "ffprobe.exe"))
@@ -55,7 +84,7 @@ def test_editor_timeline_export_dispatch_persists_artifact_and_revision(
         }
 
     monkeypatch.setattr(native_controls_module, "render_editor_timeline", fake_render)
-    receipt = PipelineService().dispatch(
+    receipt = service.dispatch(
         "editor.timeline.export",
         {
             "projectId": project_id,
@@ -64,7 +93,15 @@ def test_editor_timeline_export_dispatch_persists_artifact_and_revision(
             "manifest": {
                 "schema": "alystria.editor.render.v1",
                 "projectId": project_id,
-                "assets": [],
+                "assets": [
+                    {
+                        "id": imported["artifact"]["id"],
+                        "artifactHash": imported["artifact"]["sha256"],
+                        "mediaType": "video/webm",
+                        "kind": "video",
+                        "exportEligible": True,
+                    }
+                ],
             },
         },
     )

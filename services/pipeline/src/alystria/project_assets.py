@@ -116,9 +116,12 @@ class ParsedRights:
             blockers.append("Commercial-use permission is not explicitly allowed")
         if self.redistribution != "allowed":
             blockers.append("Redistribution permission is not explicitly allowed")
-        if self.model_input != "allowed":
-            blockers.append("Model-input permission is not explicitly allowed")
         return tuple(blockers)
+
+    def model_input_blockers(self) -> tuple[str, ...]:
+        if self.model_input != "allowed":
+            return ("Model-input permission is not explicitly allowed",)
+        return ()
 
 
 def import_project_asset(store: ProjectStore, params: dict[str, Any]) -> dict[str, Any]:
@@ -211,10 +214,9 @@ def import_project_asset(store: ProjectStore, params: dict[str, Any]) -> dict[st
         quarantine.unlink(missing_ok=True)
 
     blockers = list(rights.export_blockers())
+    model_input_blockers = list(rights.model_input_blockers())
     if font_inspection is not None:
         blockers.extend(font_inspection.export_blockers)
-    if kind == "presenterPortrait" and rights.model_input != "allowed":
-        blockers.append("Presenter portrait is not cleared for model input")
     export_eligible = not blockers
     asset_record = {
         "id": artifact_id,
@@ -239,6 +241,8 @@ def import_project_asset(store: ProjectStore, params: dict[str, Any]) -> dict[st
         "rights": rights.to_dict(),
         "exportEligible": export_eligible,
         "blockers": blockers,
+        "modelInputEligible": not model_input_blockers,
+        "modelInputBlockers": model_input_blockers,
         "c2paStatus": "absent",
     }
     if font_inspection is not None:
@@ -344,6 +348,8 @@ def import_project_asset(store: ProjectStore, params: dict[str, Any]) -> dict[st
             "attribution": rights.attribution,
             "exportEligible": export_eligible,
             "blockers": blockers,
+            "modelInputEligible": not model_input_blockers,
+            "modelInputBlockers": model_input_blockers,
         },
         "presenterProfile": None
         if profile_record is None

@@ -27,7 +27,14 @@ export interface NativeEditorAssetImportReceipt {
   headRevisionId: string;
   revisionNumber: number;
   artifact: { id: string; sha256: string; byteSize: number; mediaType: string; originalFilename: string; state: string };
-  provenance: { id: string; origin: string; exportEligible: boolean; blockers: string[] };
+  provenance: {
+    id: string;
+    origin: string;
+    exportEligible: boolean;
+    blockers: string[];
+    modelInputEligible?: boolean;
+    modelInputBlockers?: string[];
+  };
 }
 
 export interface NativeEditorMediaImportResult extends EditorImportBatch {
@@ -105,7 +112,13 @@ export async function importEditorMediaNative(
       hash: receipt.artifact.sha256,
       importReceiptId,
       provenance: { origin: "user-import", createdAt: requestedAt, sourceId: receipt.provenance.id, humanApproved: rights.status !== "unknown" },
-      metadata: { nativeArtifactId: receipt.artifact.id, exportEligible: receipt.provenance.exportEligible, rightsBlockers: receipt.provenance.blockers.join(" · ") },
+      metadata: {
+        nativeArtifactId: receipt.artifact.id,
+        exportEligible: receipt.provenance.exportEligible,
+        rightsBlockers: receipt.provenance.blockers.join(" · "),
+        modelInputEligible: receipt.provenance.modelInputEligible === true,
+        modelInputBlockers: (receipt.provenance.modelInputBlockers ?? []).join(" · "),
+      },
     });
   }
   return { receipts, assets, headRevisionId, revisionNumber };
