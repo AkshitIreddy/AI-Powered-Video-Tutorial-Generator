@@ -49,6 +49,7 @@ class ProviderApproval:
     budget_approved: bool
     terms_approved: bool = False
     model_access_checked_at: str | None = None
+    account_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +111,11 @@ class TutorialRoutingPolicy:
                     "budgetApproved": approval.budget_approved,
                     "termsApproved": approval.terms_approved,
                     "modelAccessCheckedAt": approval.model_access_checked_at,
+                    **(
+                        {"accountId": approval.account_id}
+                        if approval.account_id is not None
+                        else {}
+                    ),
                 }
                 for approval in self.approvals
             ],
@@ -173,6 +179,7 @@ def parse_routing_policy(
                 "budgetApproved",
                 "termsApproved",
                 "modelAccessCheckedAt",
+                "accountId",
             },
             "provider approval",
         )
@@ -218,6 +225,7 @@ def parse_routing_policy(
             _bool(item, "budgetApproved"),
             _optional_bool(item, "termsApproved") or False,
             _optional_string(item, "modelAccessCheckedAt"),
+            _optional_string(item, "accountId"),
         )
         _validate_approval(approval, privacy_mode, classification, budget)
         approvals.append(approval)
@@ -284,6 +292,13 @@ def _validate_approval(
             raise ValueError("NVIDIA hosted preview Trial Terms must be explicitly approved")
         if approval.model_access_checked_at is None:
             raise ValueError("NVIDIA model availability and limits must be checked at selection")
+    if approval.provider_id == "cloudflare-workers-ai":
+        if approval.account_id is None or re.fullmatch(
+            r"[A-Za-z0-9_-]{1,64}", approval.account_id
+        ) is None:
+            raise ValueError("Cloudflare Workers AI requires a valid Account ID")
+    elif approval.account_id is not None:
+        raise ValueError("accountId is supported only for Cloudflare Workers AI")
     if approval.boundary is DataBoundary.CLOUD:
         if privacy_mode is PrivacyMode.LOCAL:
             raise ValueError("Local privacy mode forbids cloud provider approvals")

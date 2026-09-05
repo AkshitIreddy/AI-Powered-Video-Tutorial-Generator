@@ -309,6 +309,7 @@ class ImageRequest:
     reference_images: tuple[AssetInput, ...] = ()
     negative_prompt: str | None = None
     seed: int | None = None
+    loras: tuple[str, ...] = ()
 
     @property
     def capability(self) -> Capability:

@@ -6,7 +6,11 @@ from typing import Any
 
 import pytest
 
+from alystria.audio.wav import WavFixtureSpec, generate_sine_wav
 from alystria.providers import (
+    NVIDIA_MAGPIE_ENDPOINT,
+    NVIDIA_MAGPIE_MODEL,
+    NVIDIA_MAGPIE_VOICE,
     AssetInput,
     Capability,
     DataClassification,
@@ -21,6 +25,7 @@ from alystria.providers import (
     RequestContext,
     RerankPassage,
     RerankRequest,
+    SpeechRequest,
     TextRequest,
     VisionLanguageRequest,
     default_catalog,
@@ -117,6 +122,62 @@ def test_structured_chat_reserves_completion_budget_with_low_reasoning_effort() 
     assert transport.requests[0].json_body["reasoning_effort"] == "low"
     assert transport.requests[0].timeout_seconds == 300.0
     assert result.value.parsed == {"answer": "yes"}
+
+
+def test_magpie_tts_uses_pinned_endpoint_voice_and_validates_wav() -> None:
+    wav = generate_sine_wav(WavFixtureSpec(duration_ms=250, sample_rate_hz=48_000))
+
+    class SpeechTransport:
+        def __init__(self) -> None:
+            self.requests: list[HttpRequest] = []
+
+        def send(self, request: HttpRequest) -> HttpResponse:
+            self.requests.append(request)
+            return HttpResponse(200, {"x-request-id": "magpie-1"}, wav)
+
+    transport = SpeechTransport()
+    adapter = NvidiaNimAdapter(
+        transport,
+        configured_tts_models=frozenset({NVIDIA_MAGPIE_MODEL}),
+    )
+    result = adapter.invoke(
+        SpeechRequest(
+            "A stable invariant narrows the search interval.",
+            NVIDIA_MAGPIE_MODEL,
+            NVIDIA_MAGPIE_VOICE,
+            "en-US",
+        ),
+        preview_context(),
+    )
+
+    sent = transport.requests[0]
+    assert sent.url == NVIDIA_MAGPIE_ENDPOINT
+    assert sent.json_body is None and sent.body is not None
+    assert NVIDIA_MAGPIE_VOICE.encode() in sent.body
+    assert b'name="sample_rate_hz"\r\n\r\n48000' in sent.body
+    assert result.value.assets[0].media_type == "audio/wav"
+    assert result.value.assets[0].duration_seconds == pytest.approx(0.25)
+    assert result.value.metadata["voiceId"] == NVIDIA_MAGPIE_VOICE
+    assert result.usage.units == {"characters": 47.0}
+
+
+def test_magpie_tts_rejects_unapproved_voice_before_network() -> None:
+    transport = FakeTransport()
+    adapter = NvidiaNimAdapter(
+        transport,
+        configured_tts_models=frozenset({NVIDIA_MAGPIE_MODEL}),
+    )
+    with pytest.raises(ProviderFailure, match="must pin"):
+        adapter.invoke(
+            SpeechRequest(
+                "Narrate this",
+                NVIDIA_MAGPIE_MODEL,
+                "Magpie-Multilingual.EN-US.Aria.Calm",
+                "en-US",
+            ),
+            preview_context(),
+        )
+    assert transport.requests == []
 
 
 def test_embedding_and_reranking_contracts_are_typed() -> None:

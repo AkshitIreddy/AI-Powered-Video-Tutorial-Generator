@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "schemaVersion": 1,
-  "catalogVersion": "2026.08.29.1",
-  "lastVerifiedAt": "2026-08-29",
+  "catalogVersion": "2026.09.05.2",
+  "lastVerifiedAt": "2026-09-05",
   "aliases": {
     "azure": "azure-speech",
     "google": "gemini"
@@ -69,6 +69,39 @@
       "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
     },
     {
+      "id": "groq",
+      "displayName": "Groq",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["llm"],
+      "models": ["openai/gpt-oss-20b"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "reviewed-model-snapshot", "hardBudgetEligible": true }
+    },
+    {
+      "id": "mistral",
+      "displayName": "Mistral AI",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["llm"],
+      "models": ["mistral-small-2603"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "reviewed-model-snapshot", "hardBudgetEligible": true }
+    },
+    {
+      "id": "openrouter",
+      "displayName": "OpenRouter",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "approvedByDefault": false,
+      "capabilities": ["llm"],
+      "models": ["z-ai/glm-5.2:free"],
+      "dataBoundary": "provider-cloud",
+      "pricing": { "status": "reviewed-free-model-snapshot", "hardBudgetEligible": true }
+    },
+    {
       "id": "cohere",
       "displayName": "Cohere",
       "execution": "cloud",
@@ -84,7 +117,7 @@
       "execution": "cloud",
       "credentialKind": "secret-reference",
       "approvedByDefault": false,
-      "capabilities": ["llm", "vlm", "embedding", "image"],
+      "capabilities": ["llm", "vlm", "embedding", "image", "tts"],
       "dataBoundary": "nvidia-hosted-preview-public-synthetic-only",
       "pricing": { "status": "free-preview-model-limit-check-required", "hardBudgetEligible": true },
       "usagePolicy": {
@@ -96,6 +129,27 @@
         "retention": "session-oriented-security-logging-unknown",
         "selfHostedEntitlementSeparate": true,
         "termsUrl": "https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf"
+      }
+    },
+    {
+      "id": "cloudflare-workers-ai",
+      "displayName": "Cloudflare Workers AI",
+      "execution": "cloud",
+      "credentialKind": "secret-reference",
+      "configuration": {
+        "accountId": {
+          "kind": "public-account-identifier",
+          "required": true
+        }
+      },
+      "approvedByDefault": false,
+      "capabilities": ["image"],
+      "models": ["@cf/black-forest-labs/flux-1-schnell"],
+      "dataBoundary": "provider-cloud",
+      "pricing": {
+        "status": "reviewed-unit-price-with-free-daily-allocation",
+        "hardBudgetEligible": true,
+        "verifiedAt": "2026-08-28"
       }
     },
     {
@@ -144,7 +198,7 @@
       "execution": "cloud",
       "credentialKind": "secret-reference",
       "approvedByDefault": false,
-      "capabilities": ["tts", "asr", "presenter"],
+      "capabilities": ["tts", "asr"],
       "dataBoundary": "provider-cloud",
       "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
     },
@@ -194,7 +248,7 @@
       "execution": "cloud",
       "credentialKind": "secret-reference",
       "approvedByDefault": false,
-      "capabilities": ["tts", "asr", "alignment"],
+      "capabilities": ["tts", "asr"],
       "dataBoundary": "provider-cloud",
       "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
     },

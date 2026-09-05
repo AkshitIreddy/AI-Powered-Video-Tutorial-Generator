@@ -10,15 +10,18 @@ confirmed in build.nvidia.com when a model is selected.
 from __future__ import annotations
 
 import base64
+import hashlib
+import io
 import json
+import wave
 from dataclasses import dataclass, replace
 from typing import Any
 
 from ..security.privacy import DataClassification
 from .base import GuardedAdapter
 from .catalog import default_catalog
-from .errors import FailureCode, ProviderFailure
-from .transport import HttpRequest, HttpTransport
+from .errors import FailureCode, ProviderFailure, failure_from_http
+from .transport import HttpRequest, HttpResponse, HttpTransport
 from .types import (
     Capability,
     CostEstimate,
@@ -35,6 +38,7 @@ from .types import (
     RerankOutput,
     RerankRequest,
     RerankScore,
+    SpeechRequest,
     TextOutput,
     TextRequest,
     Usage,
@@ -44,12 +48,19 @@ from .types import (
 NVIDIA_CHAT_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
 NVIDIA_EMBEDDING_ENDPOINT = "https://integrate.api.nvidia.com/v1/embeddings"
 NVIDIA_RERANK_ENDPOINT = "https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking"
+NVIDIA_MAGPIE_ENDPOINT = (
+    "https://877104f7-e885-42b9-8de8-f6e4c6303969.invocation.api.nvcf.nvidia.com"
+    "/v1/audio/synthesize"
+)
 
 NVIDIA_CHAT_MODELS = frozenset({"openai/gpt-oss-20b"})
 NVIDIA_VLM_MODELS = frozenset({"nvidia/nemotron-nano-12b-v2-vl"})
 NVIDIA_EMBEDDING_MODELS = frozenset({"nvidia/nemotron-3-embed-1b"})
 NVIDIA_RETIRED_EMBEDDING_MODELS = frozenset({"nvidia/nv-embed-v1"})
 NVIDIA_RERANK_MODELS = frozenset({"nvidia/nv-rerankqa-mistral-4b-v3"})
+NVIDIA_MAGPIE_MODEL = "nvidia/magpie-tts-multilingual"
+NVIDIA_MAGPIE_MODELS = frozenset({NVIDIA_MAGPIE_MODEL})
+NVIDIA_MAGPIE_VOICE = "Magpie-Multilingual.EN-US.Aria"
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,12 +111,16 @@ class NvidiaNimAdapter(GuardedAdapter):
         *,
         configured_visual_models: frozenset[str] = frozenset(),
         configured_rerank_models: frozenset[str] = frozenset(),
+        configured_tts_models: frozenset[str] = frozenset(),
     ) -> None:
         self.transport = transport
         self.configured_visual_models = configured_visual_models
         if not configured_rerank_models <= NVIDIA_RERANK_MODELS:
             raise ValueError("NVIDIA reranking model is not in the endpoint allowlist")
         self.configured_rerank_models = configured_rerank_models
+        if not configured_tts_models <= NVIDIA_MAGPIE_MODELS:
+            raise ValueError("NVIDIA TTS model is not in the endpoint allowlist")
+        self.configured_tts_models = configured_tts_models
         visual_capabilities: set[Capability] = set()
         for model in configured_visual_models:
             endpoint = NVIDIA_VISUAL_ENDPOINTS.get(model)
@@ -124,6 +139,7 @@ class NvidiaNimAdapter(GuardedAdapter):
                     Capability.VISION_LANGUAGE,
                     Capability.EMBEDDING,
                     *({Capability.RERANKING} if configured_rerank_models else set()),
+                    *({Capability.TTS} if configured_tts_models else set()),
                     *visual_capabilities,
                 }
             ),
@@ -141,7 +157,10 @@ class NvidiaNimAdapter(GuardedAdapter):
 
     def invoke(self, request: ProviderRequest, context: RequestContext) -> ProviderResult[Any]:
         built = self.build_request(request, context)
-        payload = self._json_response(self._send(built, context))
+        response = self._send(built, context)
+        if isinstance(request, SpeechRequest):
+            return self._parse_speech(request, response)
+        payload = self._json_response(response)
         if isinstance(request, (TextRequest, VisionLanguageRequest)):
             return self._parse_chat(request, payload)
         if isinstance(request, EmbeddingRequest):
@@ -219,6 +238,50 @@ class NvidiaNimAdapter(GuardedAdapter):
                 "passages": [{"text": passage.text} for passage in request.passages],
             }
             return HttpRequest("POST", NVIDIA_RERANK_ENDPOINT, headers=headers, json_body=body)
+        if isinstance(request, SpeechRequest):
+            if request.model not in self.configured_tts_models:
+                raise ProviderFailure(
+                    FailureCode.UNSUPPORTED_CAPABILITY,
+                    "The NVIDIA Magpie TTS endpoint was not explicitly configured and approved",
+                    provider_id="nvidia-nim",
+                )
+            _require_model(request.model, NVIDIA_MAGPIE_MODELS, "speech")
+            if request.voice != NVIDIA_MAGPIE_VOICE:
+                raise ProviderFailure(
+                    FailureCode.INVALID_REQUEST,
+                    f"The approved NVIDIA Magpie route must pin {NVIDIA_MAGPIE_VOICE}",
+                    provider_id="nvidia-nim",
+                )
+            if request.locale != "en-US" or request.output_format != "wav" or request.sample_rate_hz != 48_000:
+                raise ProviderFailure(
+                    FailureCode.INVALID_REQUEST,
+                    "NVIDIA Magpie launch narration requires en-US, WAV, and 48 kHz",
+                    provider_id="nvidia-nim",
+                )
+            boundary = "alystria-" + hashlib.sha256(
+                context.idempotency_key.encode("utf-8")
+            ).hexdigest()[:24]
+            multipart_body = _multipart_body(
+                boundary,
+                {
+                    "text": request.text,
+                    "language": request.locale,
+                    "voice": request.voice,
+                    "encoding": "LINEAR_PCM",
+                    "sample_rate_hz": str(request.sample_rate_hz),
+                },
+            )
+            return HttpRequest(
+                "POST",
+                NVIDIA_MAGPIE_ENDPOINT,
+                headers={
+                    **headers,
+                    "Content-Type": f"multipart/form-data; boundary={boundary}",
+                    "Accept": "audio/wav, application/octet-stream",
+                },
+                body=multipart_body,
+                timeout_seconds=180.0,
+            )
         if isinstance(request, (ImageRequest, MotionRequest)):
             return self._visual_request(request, headers)
         raise ProviderFailure(
@@ -566,6 +629,59 @@ class NvidiaNimAdapter(GuardedAdapter):
             _string(payload.get("id")),
         )
 
+    def _parse_speech(
+        self,
+        request: SpeechRequest,
+        response: HttpResponse,
+    ) -> ProviderResult[MediaOutput]:
+        request_id = next(
+            (value for key, value in response.headers.items() if key.casefold() == "x-request-id"),
+            None,
+        )
+        if not 200 <= response.status < 300:
+            raise failure_from_http("nvidia-nim", response.status, request_id=request_id)
+        content = response.body
+        try:
+            with wave.open(io.BytesIO(content), "rb") as stream:
+                channels = stream.getnchannels()
+                sample_width = stream.getsampwidth()
+                sample_rate = stream.getframerate()
+                frame_count = stream.getnframes()
+        except (EOFError, wave.Error) as error:
+            raise _malformed("NVIDIA Magpie TTS response was not a valid WAV file") from error
+        if channels not in {1, 2} or sample_width != 2 or sample_rate != 48_000 or frame_count <= 0:
+            raise _malformed("NVIDIA Magpie TTS response was not non-empty 48 kHz 16-bit PCM")
+        duration_seconds = frame_count / sample_rate
+        asset = MediaAsset(
+            data_base64=base64.b64encode(content).decode("ascii"),
+            media_type="audio/wav",
+            duration_seconds=duration_seconds,
+            license="LicenseRef-NVIDIA-AI-FOUNDATION-MODELS",
+        )
+        return ProviderResult(
+            "nvidia-nim",
+            request.model,
+            MediaOutput(
+                (asset,),
+                {
+                    "voiceId": request.voice,
+                    "locale": request.locale,
+                    "sampleRateHz": sample_rate,
+                    "channels": channels,
+                    "durationMs": round(duration_seconds * 1_000),
+                    "hostedPreview": True,
+                },
+            ),
+            Usage(
+                "nvidia-nim",
+                request.model,
+                {"characters": float(len(request.text))},
+                0,
+                request_id=request_id,
+            ),
+            request_id,
+        )
+
 
 def configured_nvidia_visual_models(models: tuple[str, ...]) -> frozenset[str]:
     """Return exact, active visual route models or fail closed on catalog drift."""
@@ -579,6 +695,21 @@ def configured_nvidia_visual_models(models: tuple[str, ...]) -> frozenset[str]:
             raise ValueError(f"NVIDIA visual model {model!r} is unavailable: {endpoint.note}")
         selected.add(model)
     return frozenset(selected)
+
+
+def configured_nvidia_tts_models(models: tuple[str, ...]) -> frozenset[str]:
+    return frozenset(model for model in models if model in NVIDIA_MAGPIE_MODELS)
+
+
+def _multipart_body(boundary: str, fields: dict[str, str]) -> bytes:
+    body = bytearray()
+    for name, value in fields.items():
+        body.extend(f"--{boundary}\r\n".encode("ascii"))
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("ascii"))
+        body.extend(value.encode("utf-8"))
+        body.extend(b"\r\n")
+    body.extend(f"--{boundary}--\r\n".encode("ascii"))
+    return bytes(body)
 
 
 def _nvidia_dimensions(size: str | None, aspect_ratio: str) -> tuple[int, int]:

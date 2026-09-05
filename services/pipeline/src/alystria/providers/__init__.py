@@ -11,6 +11,13 @@ from .catalog import (
     load_and_validate_root_catalog,
     validate_root_catalog,
 )
+from .cloudflare_workers_ai import (
+    CLOUDFLARE_FLUX_ESTIMATED_MICROS,
+    CLOUDFLARE_FLUX_MODEL,
+    CLOUDFLARE_FLUX_STEPS,
+    CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
+    CloudflareWorkersAIAdapter,
+)
 from .errors import FailureCode, ProviderFailure
 from .llm import (
     AnthropicMessagesAdapter,
@@ -29,11 +36,22 @@ from .media import (
 from .nvidia_nim import (
     NVIDIA_CHAT_ENDPOINT,
     NVIDIA_EMBEDDING_ENDPOINT,
+    NVIDIA_MAGPIE_ENDPOINT,
+    NVIDIA_MAGPIE_MODEL,
+    NVIDIA_MAGPIE_VOICE,
     NVIDIA_RERANK_ENDPOINT,
     NVIDIA_VISUAL_ENDPOINTS,
     NvidiaNimAdapter,
     NvidiaVisualEndpoint,
+    configured_nvidia_tts_models,
     configured_nvidia_visual_models,
+)
+from .openai_compatible_structured import (
+    GROQ_STRUCTURED_MODEL,
+    MISTRAL_STRUCTURED_MODEL,
+    OPENROUTER_STRUCTURED_MODEL,
+    OpenAICompatibleStructuredAdapter,
+    launch_structured_cloud_adapter,
 )
 from .policy import (
     BudgetApproval,
@@ -95,10 +113,20 @@ from .types import (
 __all__ = [
     "CANONICAL_PROVIDER_ALIASES",
     "CATALOG_VERSION",
+    "CLOUDFLARE_FLUX_ESTIMATED_MICROS",
+    "CLOUDFLARE_FLUX_MODEL",
+    "CLOUDFLARE_FLUX_STEPS",
+    "CLOUDFLARE_WORKERS_AI_PROVIDER_ID",
+    "GROQ_STRUCTURED_MODEL",
+    "MISTRAL_STRUCTURED_MODEL",
     "NVIDIA_CHAT_ENDPOINT",
     "NVIDIA_EMBEDDING_ENDPOINT",
+    "NVIDIA_MAGPIE_ENDPOINT",
+    "NVIDIA_MAGPIE_MODEL",
+    "NVIDIA_MAGPIE_VOICE",
     "NVIDIA_RERANK_ENDPOINT",
     "NVIDIA_VISUAL_ENDPOINTS",
+    "OPENROUTER_STRUCTURED_MODEL",
     "AnthropicMessagesAdapter",
     "AssetInput",
     "AsyncHandle",
@@ -106,6 +134,7 @@ __all__ = [
     "BudgetApproval",
     "Capability",
     "CapabilityRoute",
+    "CloudflareWorkersAIAdapter",
     "CostEstimate",
     "CredentialGrant",
     "CredentialGrantResolver",
@@ -134,6 +163,7 @@ __all__ = [
     "NvidiaNimAdapter",
     "NvidiaVisualEndpoint",
     "OpenAICompatibleLocalAdapter",
+    "OpenAICompatibleStructuredAdapter",
     "OpenAIResponsesAdapter",
     "OperationState",
     "OperationStatus",
@@ -170,11 +200,13 @@ __all__ = [
     "Usage",
     "VisionLanguageRequest",
     "canonical_provider_id",
+    "configured_nvidia_tts_models",
     "configured_nvidia_visual_models",
     "default_catalog",
     "launch_media_adapter",
     "launch_media_provider_ids",
     "launch_route_unit_prices",
+    "launch_structured_cloud_adapter",
     "load_and_validate_root_catalog",
     "parse_routing_policy",
     "validate_root_catalog",

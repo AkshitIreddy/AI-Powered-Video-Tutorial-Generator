@@ -18,6 +18,7 @@ from typing import Any, Protocol, cast
 from alystria.audio.wav import WavFixtureSpec, generate_sine_wav
 
 from .base import ProviderAdapter
+from .cloudflare_workers_ai import CloudflareWorkersAIAdapter
 from .errors import FailureCode, ProviderFailure
 from .llm import (
     AnthropicMessagesAdapter,
@@ -26,7 +27,12 @@ from .llm import (
     OpenAIResponsesAdapter,
 )
 from .media import launch_media_adapter, launch_media_provider_ids, launch_route_unit_prices
-from .nvidia_nim import NvidiaNimAdapter, configured_nvidia_visual_models
+from .nvidia_nim import (
+    NvidiaNimAdapter,
+    configured_nvidia_tts_models,
+    configured_nvidia_visual_models,
+)
+from .openai_compatible_structured import launch_structured_cloud_adapter
 from .policy import ProviderApproval, TutorialRoutingPolicy
 from .router import ProviderRouter, RoutingPolicy
 from .transport import HttpTransport
@@ -320,6 +326,15 @@ class MockProviderAdapter:
             )
         elif isinstance(request, SpeechRequest):
             wav = generate_sine_wav(WavFixtureSpec(duration_ms=900, amplitude=0.12))
+            tokens = request.text.split()
+            word_timings = [
+                {
+                    "word": token,
+                    "startMs": round(index * 900 / len(tokens)),
+                    "endMs": round((index + 1) * 900 / len(tokens)),
+                }
+                for index, token in enumerate(tokens)
+            ]
             value = MediaOutput(
                 (
                     MediaAsset(
@@ -327,7 +342,12 @@ class MockProviderAdapter:
                         media_type="audio/wav",
                         license="MIT",
                     ),
-                )
+                ),
+                {
+                    "wordTimings": word_timings,
+                    "alignmentSource": "provider-native",
+                    "alignmentEngine": "deterministic-mock-clock-v1",
+                },
             )
         else:
             raise ProviderFailure(
@@ -389,6 +409,7 @@ class ProviderRuntime:
                     "credentialRef": approval.credential_ref or "none",
                     "termsApproved": "true" if approval.terms_approved else "false",
                     "modelAccessCheckedAt": approval.model_access_checked_at or "",
+                    "accountId": approval.account_id or "",
                 },
             )
             return self.router.invoke(
@@ -510,6 +531,8 @@ class ProviderRuntimeFactory:
             adapters.append(AnthropicMessagesAdapter(transport))
         elif provider_id == "gemini":
             adapters.append(GeminiInteractionsAdapter(transport))
+        elif provider_id in {"groq", "mistral", "openrouter"}:
+            adapters.append(launch_structured_cloud_adapter(provider_id, transport))
         elif provider_id == "openai-compatible-local":
             adapters.append(OpenAICompatibleLocalAdapter(transport))
         elif provider_id == "nvidia-nim":
@@ -522,8 +545,11 @@ class ProviderRuntimeFactory:
                 NvidiaNimAdapter(
                     transport,
                     configured_visual_models=configured_nvidia_visual_models(route_models),
+                    configured_tts_models=configured_nvidia_tts_models(route_models),
                 )
             )
+        elif provider_id == "cloudflare-workers-ai":
+            adapters.append(CloudflareWorkersAIAdapter(transport))
         for adapter in adapters:
             if isinstance(
                 adapter,

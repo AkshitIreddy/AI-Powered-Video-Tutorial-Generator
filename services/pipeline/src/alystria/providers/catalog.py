@@ -22,8 +22,8 @@ from .types import (
     RetentionMode,
 )
 
-CATALOG_VERSION = "2026.08.29.1"
-VERIFIED_AT = "2026-08-29"
+CATALOG_VERSION = "2026.09.05.2"
+VERIFIED_AT = "2026-09-05"
 CANONICAL_PROVIDER_ALIASES = {
     "azure": "azure-speech",
     "google": "gemini",
@@ -63,6 +63,19 @@ NVIDIA_HOSTED_PREVIEW_POLICY = DataPolicy(
         "Not production. Trial limits vary. Session content handling and security/abuse "
         "logging follow current Trial Terms; content may be used for product/AI improvement. "
         "Self-hosted NIM requires a separate NVIDIA AI Enterprise entitlement and boundary."
+    ),
+)
+
+CLOUDFLARE_WORKERS_AI_POLICY = DataPolicy(
+    boundary=DataBoundary.CLOUD,
+    retention=RetentionMode.CONFIGURABLE,
+    regions=("provider-managed",),
+    stores_by_default=False,
+    training_use=False,
+    notes=(
+        "Cloudflare says Workers AI customer content is not used to train models or improve "
+        "services without explicit consent, and is stored only when a separate storage "
+        "service is intentionally used. Review the current subscription and model terms."
     ),
 )
 
@@ -245,6 +258,39 @@ def default_catalog() -> ProviderCatalog:
             cancellation=True,
         ),
         _entry(
+            "groq",
+            "Groq",
+            {Capability.LLM_TEXT, Capability.LLM_STRUCTURED},
+            "https://console.groq.com/docs/structured-outputs",
+            models=("openai/gpt-oss-20b",),
+        ),
+        _entry(
+            "mistral",
+            "Mistral AI",
+            {Capability.LLM_TEXT, Capability.LLM_STRUCTURED},
+            "https://docs.mistral.ai/api/endpoint/chat",
+            models=("mistral-small-2603",),
+        ),
+        _entry(
+            "openrouter",
+            "OpenRouter",
+            {Capability.LLM_TEXT, Capability.LLM_STRUCTURED},
+            "https://openrouter.ai/docs/guides/features/structured-outputs",
+            models=("z-ai/glm-5.2:free",),
+        ),
+        _entry(
+            "cohere",
+            "Cohere",
+            {
+                Capability.LLM_TEXT,
+                Capability.LLM_STRUCTURED,
+                Capability.EMBEDDING,
+                Capability.RERANKING,
+            },
+            "https://docs.cohere.com/reference/list-models",
+            policy=_cloud(RetentionMode.CONFIGURABLE),
+        ),
+        _entry(
             "nvidia-nim",
             "NVIDIA NIM Hosted Preview",
             {
@@ -253,9 +299,18 @@ def default_catalog() -> ProviderCatalog:
                 Capability.VISION_LANGUAGE,
                 Capability.EMBEDDING,
                 Capability.IMAGE_GENERATION,
+                Capability.TTS,
             },
             "https://docs.api.nvidia.com/nim/docs/api-quickstart",
             policy=NVIDIA_HOSTED_PREVIEW_POLICY,
+        ),
+        _entry(
+            "cloudflare-workers-ai",
+            "Cloudflare Workers AI",
+            {Capability.IMAGE_GENERATION},
+            "https://developers.cloudflare.com/workers-ai/models/flux-1-schnell/",
+            policy=CLOUDFLARE_WORKERS_AI_POLICY,
+            models=("@cf/black-forest-labs/flux-1-schnell",),
         ),
         _entry(
             "openai-compatible-local",
@@ -305,15 +360,14 @@ def default_catalog() -> ProviderCatalog:
         _entry(
             "azure-speech",
             "Azure AI Speech",
-            {Capability.TTS, Capability.TRANSCRIPTION, Capability.PRESENTER},
+            {Capability.TTS, Capability.TRANSCRIPTION},
             "https://learn.microsoft.com/azure/ai-services/speech-service/rest-text-to-speech",
             policy=_cloud(RetentionMode.CONFIGURABLE),
-            cancellation=True,
         ),
         _entry(
             "google-cloud-speech",
             "Google Cloud Speech",
-            {Capability.TTS, Capability.TRANSCRIPTION, Capability.ALIGNMENT},
+            {Capability.TTS, Capability.TRANSCRIPTION},
             "https://cloud.google.com/speech-to-text/v2/docs/reference/rest",
             policy=_cloud(RetentionMode.CONFIGURABLE),
             cancellation=True,
