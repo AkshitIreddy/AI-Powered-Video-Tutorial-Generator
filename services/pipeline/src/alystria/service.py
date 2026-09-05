@@ -756,6 +756,7 @@ class PipelineService:
                 generation_id,
                 name=str(params.get("name", "Approved storyboard")),
                 message=str(params.get("message", "Approved in Alystria Studio")),
+                expected_head_revision_id=_optional_string(params, "expectedHeadRevisionId"),
             )
             receipt = _generation_receipt(
                 status,

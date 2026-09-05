@@ -302,19 +302,20 @@ def test_measured_audio_retimes_scenes_without_chopping_or_lingering() -> None:
     fitted = _fit_storyboard_to_narration(
         storyboard,
         [
-            {"sceneId": "one", "durationMs": 52_000},
-            {"sceneId": "two", "durationMs": 58_000},
-            {"sceneId": "three", "durationMs": 55_000},
+            {"sceneId": "one", "durationMs": 59_000},
+            {"sceneId": "two", "durationMs": 59_000},
+            {"sceneId": "three", "durationMs": 59_000},
         ],
     )
 
     durations = [scene["durationTicks"] for scene in fitted["scenes"]]
-    measured = [52_000 * 240, 58_000 * 240, 55_000 * 240]
+    measured = [59_000 * 240, 59_000 * 240, 59_000 * 240]
     assert sum(durations) == 180 * 240_000
     assert all(duration >= audio for duration, audio in zip(durations, measured, strict=True))
-    assert max(duration - audio for duration, audio in zip(durations, measured, strict=True)) <= (
-        5_000 * 240
+    assert max(duration - audio for duration, audio in zip(durations, measured, strict=True)) == (
+        1_000 * 240
     )
+    assert [scene["visualTailTicks"] for scene in fitted["scenes"]] == [240_000] * 3
     assert storyboard["scenes"][0]["durationTicks"] == 60 * 240_000
 
 
@@ -323,4 +324,22 @@ def test_measured_audio_rejects_a_tutorial_that_cannot_fit() -> None:
         _fit_storyboard_to_narration(
             {"scenes": [{"id": "one", "durationTicks": 10 * 240_000}]},
             [{"sceneId": "one", "durationMs": 10_001}],
+        )
+
+
+def test_measured_audio_rejects_unvoiced_duration_padding() -> None:
+    storyboard = {
+        "scenes": [
+            {"id": f"scene-{index}", "durationTicks": 36 * 240_000}
+            for index in range(5)
+        ]
+    }
+
+    with pytest.raises(ValueError, match="leaves 30000 ms unvoiced"):
+        _fit_storyboard_to_narration(
+            storyboard,
+            [
+                {"sceneId": f"scene-{index}", "durationMs": 30_000}
+                for index in range(5)
+            ],
         )

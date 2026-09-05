@@ -6,6 +6,7 @@ import copy
 import hashlib
 import itertools
 import json
+import os
 import re
 from collections.abc import Mapping
 from contextlib import nullcontext
@@ -106,10 +107,12 @@ from .models import (
 )
 from .spoken_text import normalize_spoken_text
 
-IMPLEMENTATION_VERSION = "generation-v8-spoken-math-alignment"
+IMPLEMENTATION_VERSION = "generation-v9-bounded-visual-tail"
 PROMPT_VERSION = "offline-education-v1"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
+MAX_UNAUTHORED_VISUAL_TAIL_MS = 2_000
+MAX_UNAUTHORED_VISUAL_TAIL_RATIO = 0.06
 PRESENTER_SCENE_TYPES = frozenset({"presenter", "presenter-slide", "presenter-with-slide"})
 
 
@@ -931,12 +934,32 @@ class GenerationWorkflow:
         )
 
     def _approved_storyboard(self, parameters: dict[str, Any]) -> dict[str, Any]:
-        payload = self._input_payload(parameters, "approval")
-        if not payload.get("approval", {}).get("required"):
-            raise ValueError("Post-approval task lacks an approval gate")
-        if not isinstance(parameters.get("approvalRevisionId"), str):
+        approval_revision_id = parameters.get("approvalRevisionId")
+        generation_id = parameters.get("generationId")
+        if not isinstance(approval_revision_id, str):
             raise ValueError("Post-approval task lacks an approval revision")
-        return payload
+        try:
+            approval_revision = self.store.get_revision(approval_revision_id)
+        except KeyError as error:
+            raise ValueError("Post-approval task references a missing approval revision") from error
+        snapshot = approval_revision.snapshot
+        payload = snapshot.get("payload")
+        if (
+            approval_revision.kind != "approval"
+            or snapshot.get("generationId") != generation_id
+            or snapshot.get("stage") != GenerationStage.APPROVAL.value
+            or not isinstance(payload, dict)
+        ):
+            raise ValueError("Post-approval task references an invalid approval revision")
+        approval = payload.get("approval")
+        if not isinstance(approval, dict) or not approval.get("required") or not approval.get(
+            "approved"
+        ):
+            raise ValueError("Post-approval task lacks an approved storyboard snapshot")
+        storyboard = payload.get("storyboard")
+        if not isinstance(storyboard, dict) or not isinstance(storyboard.get("scenes"), list):
+            raise ValueError("Post-approval task lacks an approved storyboard")
+        return copy.deepcopy(payload)
 
     def _assets(self, context: JobContext, parameters: dict[str, Any]) -> dict[str, Any]:
         approved = self._approved_storyboard(parameters)
@@ -1184,7 +1207,12 @@ class GenerationWorkflow:
                 artifact.hash,
             )
             context.set_progress(0.65 + (index + 1) / max(1, len(scenes)) * 0.25)
-        fitted_storyboard = _fit_storyboard_to_narration(approved["storyboard"], narration)
+        fixture_timing = os.environ.get("ALYSTRIA_MEDIA_MODE") == "fixture"
+        fitted_storyboard = _fit_storyboard_to_narration(
+            approved["storyboard"],
+            narration,
+            allow_fixture_padding=fixture_timing,
+        )
         result = self._persist_stage(
             context,
             parameters,
@@ -2949,7 +2977,10 @@ def _objective_ids_for_section(plan: dict[str, Any], section_id: str) -> list[st
 
 
 def _fit_storyboard_to_narration(
-    storyboard: dict[str, Any], narration: list[dict[str, Any]]
+    storyboard: dict[str, Any],
+    narration: list[dict[str, Any]],
+    *,
+    allow_fixture_padding: bool = False,
 ) -> dict[str, Any]:
     """Fit every scene to measured audio while preserving the exact total."""
 
@@ -2978,10 +3009,29 @@ def _fit_storyboard_to_narration(
         raise ValueError(
             f"Measured narration exceeds the requested tutorial duration by {overrun_ms} ms"
         )
-    breath, remainder = divmod(total_ticks - measured_total, len(scenes))
+    unvoiced_ticks = total_ticks - measured_total
+    maximum_unvoiced_ticks = min(
+        len(scenes) * MAX_UNAUTHORED_VISUAL_TAIL_MS * TICKS_PER_MILLISECOND,
+        int(total_ticks * MAX_UNAUTHORED_VISUAL_TAIL_RATIO),
+    )
+    if unvoiced_ticks > maximum_unvoiced_ticks and not allow_fixture_padding:
+        unvoiced_ms = round(unvoiced_ticks / TICKS_PER_MILLISECOND)
+        maximum_ms = round(maximum_unvoiced_ticks / TICKS_PER_MILLISECOND)
+        raise ValueError(
+            f"Measured narration leaves {unvoiced_ms} ms unvoiced; automatic visual tails "
+            f"are limited to {maximum_ms} ms. Revise and approve the narration pacing "
+            "instead of padding finished scenes."
+        )
+    breath, remainder = divmod(unvoiced_ticks, len(scenes))
     for index, (scene, audio_ticks) in enumerate(zip(scenes, measured_ticks, strict=True)):
-        scene["durationTicks"] = audio_ticks + breath + (1 if index < remainder else 0)
-        scene["timingSource"] = "measured-narration+balanced-visual-breath"
+        visual_tail_ticks = breath + (1 if index < remainder else 0)
+        scene["durationTicks"] = audio_ticks + visual_tail_ticks
+        scene["visualTailTicks"] = visual_tail_ticks
+        scene["timingSource"] = (
+            "fixture-duration-padding"
+            if allow_fixture_padding and unvoiced_ticks > maximum_unvoiced_ticks
+            else "measured-narration+bounded-visual-tail"
+        )
     return fitted
 
 

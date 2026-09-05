@@ -37,6 +37,7 @@ from alystria.generation.workflow import (
 )
 from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
+from alystria.project.errors import RevisionConflictError
 from alystria.qa import Finding, GateStatus, QualityGate, Severity
 from alystria.research import GroundingMode
 from alystria.service import _configured_forced_aligner, _configured_local_presenter
@@ -956,10 +957,146 @@ class RecordingRenderer(DeterministicRendererClient):
 class RecordingMediaClient(DeterministicMediaClient):
     def __init__(self) -> None:
         self.visual_scene_ids: list[str] = []
+        self.narration_scenes: list[dict[str, Any]] = []
 
     def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
         self.visual_scene_ids.append(str(scene["id"]))
         return super().create_visual(scene, seed=seed)
+
+    def synthesize_narration(
+        self, scene: dict[str, Any], *, locale: str, seed: int
+    ) -> GeneratedMedia:
+        self.narration_scenes.append(copy.deepcopy(scene))
+        return super().synthesize_narration(scene, locale=locale, seed=seed)
+
+
+def test_approval_freezes_reviewed_scene_prose_for_narration_and_render(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Reviewed storyboard", name="Reviewed storyboard")
+    media = RecordingMediaClient()
+    renderer = RecordingRenderer()
+    coordinator = GenerationCoordinator(store, media_client=media, renderer_client=renderer)
+    try:
+        generation_id = coordinator.start(request()).generation_id
+        waiting = coordinator.run_pending()
+        assert waiting is not None and waiting.state is GenerationState.WAITING_APPROVAL
+        approval_job = next(
+            coordinator.runtime.get_job(item.job_id)
+            for item in waiting.stages
+            if item.stage is GenerationStage.APPROVAL
+        )
+        assert approval_job.result is not None
+        original_payload = copy.deepcopy(approval_job.result["payload"])
+        scene_id = original_payload["storyboard"]["scenes"][0]["id"]
+
+        head = store.head_revision()
+        assert head is not None
+        reviewed_snapshot = copy.deepcopy(head.snapshot)
+        reviewed_scene = reviewed_snapshot["payload"]["storyboard"]["scenes"][0]
+        reviewed_scene.update(
+            {
+                "title": "A reviewed invariant",
+                "narration": "The reviewed narration reaches the speech provider exactly.",
+                "visualIntent": "Show the reviewed learning objective as an interval invariant.",
+            }
+        )
+        reviewed = store.create_revision(
+            snapshot=reviewed_snapshot,
+            expected_head=head.revision_id,
+            message="Review scene prose before approval",
+        )
+
+        approved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=reviewed.revision_id,
+        )
+        assert approved.approval_revision_id is not None
+        approval_revision = store.get_revision(approved.approval_revision_id)
+        frozen_scene = approval_revision.snapshot["payload"]["storyboard"]["scenes"][0]
+        assert frozen_scene["id"] == scene_id
+        assert frozen_scene["title"] == "A reviewed invariant"
+        assert frozen_scene["narration"] == (
+            "The reviewed narration reaches the speech provider exactly."
+        )
+        assert frozen_scene["visualIntent"] == (
+            "Show the reviewed learning objective as an interval invariant."
+        )
+        assert approval_revision.snapshot["payload"]["approval"]["reviewedRevisionId"] == (
+            reviewed.revision_id
+        )
+        assert approval_job.result["payload"] == original_payload
+
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        spoken = next(scene for scene in media.narration_scenes if scene["id"] == scene_id)
+        assert spoken["narration"] == frozen_scene["narration"]
+        rendered = next(scene for scene in renderer.requests[0]["scenes"] if scene["id"] == scene_id)
+        assert rendered["title"] == frozen_scene["title"]
+        assert rendered["narration"] == frozen_scene["narration"]
+        assert rendered["visualIntent"] == frozen_scene["visualIntent"]
+    finally:
+        store.close()
+
+
+def test_approval_rejects_a_stale_review_revision(tmp_path: Path) -> None:
+    store, coordinator = open_coordinator(tmp_path)
+    try:
+        generation_id = coordinator.start(request()).generation_id
+        coordinator.run_pending()
+        stale = store.head_revision()
+        assert stale is not None
+        store.create_revision(
+            snapshot=copy.deepcopy(stale.snapshot),
+            expected_head=stale.revision_id,
+            message="Advance the reviewed head",
+        )
+
+        with pytest.raises(RevisionConflictError, match="Expected head"):
+            coordinator.approve(
+                generation_id,
+                expected_head_revision_id=stale.revision_id,
+            )
+    finally:
+        store.close()
+
+
+def test_approval_rejects_mismatched_or_structurally_modified_scenes(tmp_path: Path) -> None:
+    store, coordinator = open_coordinator(tmp_path)
+    try:
+        generation_id = coordinator.start(request()).generation_id
+        coordinator.run_pending()
+        head = store.head_revision()
+        assert head is not None
+
+        mismatched = copy.deepcopy(head.snapshot)
+        mismatched["payload"]["storyboard"]["scenes"][0]["id"] = "placeholder-scene"
+        mismatch_revision = store.create_revision(
+            snapshot=mismatched,
+            expected_head=head.revision_id,
+            message="Invalid placeholder scene",
+        )
+        with pytest.raises(ApprovalNotReadyError, match="scene identities"):
+            coordinator.approve(
+                generation_id,
+                expected_head_revision_id=mismatch_revision.revision_id,
+            )
+
+        restored = store.restore(head.revision_id, message="Restore generated storyboard")
+        structurally_changed = copy.deepcopy(restored.snapshot)
+        structurally_changed["payload"]["storyboard"]["scenes"][0]["durationTicks"] += 1
+        changed_revision = store.create_revision(
+            snapshot=structurally_changed,
+            expected_head=restored.revision_id,
+            message="Invalid structural edit",
+        )
+        with pytest.raises(ApprovalNotReadyError, match="outside prose"):
+            coordinator.approve(
+                generation_id,
+                expected_head_revision_id=changed_revision.revision_id,
+            )
+    finally:
+        store.close()
 
 
 def test_accepted_scene_visual_is_reused_by_generation_and_renderer(tmp_path: Path) -> None:

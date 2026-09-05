@@ -17,6 +17,7 @@ from alystria.jobs import DependencyGraph, Job, JobState, SQLiteWorkflowRuntime
 from alystria.jobs.runtime import TaskHandler
 from alystria.project import ProjectStore
 from alystria.project.database import transaction
+from alystria.project.errors import RevisionConflictError
 from alystria.project.models import utc_now
 from alystria.project_customization import validate_customization
 from alystria.providers import parse_routing_policy
@@ -322,6 +323,7 @@ class GenerationCoordinator:
         *,
         name: str = "Approved storyboard",
         message: str = "Approved generation plan, storyboard, privacy, rights, and cost gate",
+        expected_head_revision_id: str | None = None,
     ) -> GenerationStatus:
         status = self.status(generation_id)
         if status.state is GenerationState.SUCCEEDED:
@@ -336,19 +338,34 @@ class GenerationCoordinator:
         if approval_job is None or approval_job.state is not JobState.SUCCEEDED:
             raise ApprovalNotReadyError("Storyboard approval gate is not ready")
         with transaction(self.store.connection):
+            reviewed_head = self.store.head_revision()
+            if reviewed_head is None:
+                raise ApprovalNotReadyError("Project has no reviewed snapshot to approve")
+            if (
+                expected_head_revision_id is not None
+                and reviewed_head.revision_id != expected_head_revision_id
+            ):
+                raise RevisionConflictError(
+                    f"Expected head {expected_head_revision_id}, but current head is "
+                    f"{reviewed_head.revision_id}"
+                )
             existing_revision = self._approval_revision(generation_id)
             if existing_revision is None:
                 if approval_job.result is None or not isinstance(
                     approval_job.result.get("payload"), dict
                 ):
                     raise ApprovalNotReadyError("Approval gate payload is unavailable")
-                approval_payload = dict(approval_job.result["payload"])
+                approval_payload = _freeze_reviewed_approval_payload(
+                    approval_job.result["payload"],
+                    reviewed_head.snapshot,
+                    generation_id=generation_id,
+                    reviewed_revision_id=reviewed_head.revision_id,
+                )
                 approval_payload["approval"] = {
                     **dict(approval_payload.get("approval", {})),
                     "approved": True,
                 }
-                head = self.store.head_revision()
-                snapshot = copy.deepcopy(head.snapshot) if head is not None else {}
+                snapshot = copy.deepcopy(reviewed_head.snapshot)
                 snapshot.update(
                     {
                         "projectId": self.store.manifest.project_id,
@@ -362,6 +379,7 @@ class GenerationCoordinator:
                     kind="approval",
                     name=name,
                     message=message,
+                    expected_head=reviewed_head.revision_id,
                 )
                 approval_revision_id = revision.revision_id
             else:
@@ -1053,6 +1071,112 @@ def _request_from_job(parameters: dict[str, Any]) -> GenerationRequest:
     from .workflow import _request
 
     return _request(parameters)
+
+
+_REVIEWABLE_SCENE_FIELDS = frozenset({"title", "narration", "visualIntent"})
+_REVIEWABLE_SCENE_LIMITS = {
+    "title": 300,
+    "narration": 20_000,
+    "visualIntent": 4_000,
+}
+
+
+def _freeze_reviewed_approval_payload(
+    approval_payload: dict[str, Any],
+    reviewed_snapshot: dict[str, Any],
+    *,
+    generation_id: str,
+    reviewed_revision_id: str,
+) -> dict[str, Any]:
+    """Copy only reviewed prose edits into the immutable approval payload.
+
+    The webview project snapshot is user-editable JSON.  It may supply revised
+    scene prose, but it cannot replace scene identities, claims, timing,
+    visual structure, or any other generated contract while approving.
+    """
+
+    if reviewed_snapshot.get("generationId") != generation_id:
+        raise ApprovalNotReadyError(
+            "The reviewed project revision does not belong to this generation"
+        )
+    reviewed_payload = reviewed_snapshot.get("payload")
+    if not isinstance(reviewed_payload, dict):
+        raise ApprovalNotReadyError("The reviewed project revision has no generation payload")
+    baseline_storyboard = approval_payload.get("storyboard")
+    reviewed_storyboard = reviewed_payload.get("storyboard")
+    if not isinstance(baseline_storyboard, dict) or not isinstance(reviewed_storyboard, dict):
+        raise ApprovalNotReadyError("The reviewed project revision has no storyboard")
+
+    baseline_scenes = baseline_storyboard.get("scenes")
+    reviewed_scenes = reviewed_storyboard.get("scenes")
+    if not isinstance(baseline_scenes, list) or not isinstance(reviewed_scenes, list):
+        raise ApprovalNotReadyError("The reviewed storyboard has no scene list")
+    if not all(isinstance(scene, dict) for scene in [*baseline_scenes, *reviewed_scenes]):
+        raise ApprovalNotReadyError("The reviewed storyboard scenes must be objects")
+
+    baseline_ids = [scene.get("id") for scene in baseline_scenes]
+    reviewed_ids = [scene.get("id") for scene in reviewed_scenes]
+    if (
+        not baseline_ids
+        or any(not isinstance(scene_id, str) or not scene_id for scene_id in baseline_ids)
+        or len(set(baseline_ids)) != len(baseline_ids)
+        or reviewed_ids != baseline_ids
+    ):
+        raise ApprovalNotReadyError(
+            "The reviewed storyboard scene identities do not match the generated storyboard"
+        )
+
+    baseline_envelope = {key: value for key, value in baseline_storyboard.items() if key != "scenes"}
+    reviewed_envelope = {key: value for key, value in reviewed_storyboard.items() if key != "scenes"}
+    if reviewed_envelope != baseline_envelope:
+        raise ApprovalNotReadyError(
+            "The reviewed storyboard changed generated structure outside scene prose"
+        )
+
+    frozen_scenes: list[dict[str, Any]] = []
+    for baseline_scene, reviewed_scene in zip(baseline_scenes, reviewed_scenes, strict=True):
+        baseline_contract = {
+            key: value for key, value in baseline_scene.items() if key not in _REVIEWABLE_SCENE_FIELDS
+        }
+        reviewed_contract = {
+            key: value for key, value in reviewed_scene.items() if key not in _REVIEWABLE_SCENE_FIELDS
+        }
+        if reviewed_contract != baseline_contract:
+            changed_fields = sorted(
+                key
+                for key in baseline_contract.keys() | reviewed_contract.keys()
+                if baseline_contract.get(key) != reviewed_contract.get(key)
+            )
+            raise ApprovalNotReadyError(
+                f"Reviewed scene {baseline_scene['id']!r} changed generated fields outside prose: "
+                f"{', '.join(changed_fields)}. Approval accepts only title, narration, and "
+                "learning objective edits"
+            )
+        frozen_scene = copy.deepcopy(baseline_scene)
+        for field in _REVIEWABLE_SCENE_FIELDS:
+            value = reviewed_scene.get(field)
+            limit = _REVIEWABLE_SCENE_LIMITS[field]
+            requires_text = field in {"title", "narration"}
+            if (
+                not isinstance(value, str)
+                or (requires_text and not value.strip())
+                or len(value) > limit
+                or "\x00" in value
+            ):
+                raise ApprovalNotReadyError(
+                    f"Reviewed scene {baseline_scene['id']!r} has an invalid {field}"
+                )
+            frozen_scene[field] = value
+        frozen_scenes.append(frozen_scene)
+
+    frozen = copy.deepcopy(approval_payload)
+    frozen["storyboard"] = {**copy.deepcopy(baseline_storyboard), "scenes": frozen_scenes}
+    approval = frozen.get("approval")
+    frozen["approval"] = {
+        **(copy.deepcopy(approval) if isinstance(approval, dict) else {}),
+        "reviewedRevisionId": reviewed_revision_id,
+    }
+    return frozen
 
 
 def _optional_string(value: object) -> str | None:
