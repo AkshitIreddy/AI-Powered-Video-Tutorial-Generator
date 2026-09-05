@@ -310,6 +310,30 @@ official project page was inspected rather than a third-party summary.
 | 41 | [WhisperX issue 1298](https://github.com/m-bain/whisperX/issues/1298) | 2025 issue | Demonstrates number-token timing error risk. |
 | 42 | [Montreal Forced Aligner documentation](https://montreal-forced-aligner.readthedocs.io/en/latest/) | Current documentation | Defines dictionary/acoustic-model known-transcript alignment route. |
 
+## Aria pacing sample — September 5
+
+One additional public-sample request used the exact native profile route
+`nvidia/magpie-tts-multilingual`, voice `Magpie-Multilingual.EN-US.Aria`, speed
+1.0. The 38 authored and normalized spoken words produced 693,255 mono 48 kHz
+16-bit PCM frames: 14.442813 seconds, or 157.864 words per minute when measured
+over the complete WAV. Peak was -6.3717 dBFS, RMS -26.441 dBFS, with zero clipped
+samples. The receipt records 242 characters and zero preview cost. No retry,
+fallback, protected TTS provider, GPU use, or project mutation occurred.
+
+Evidence is under
+`E:\temp\Alystria Aria Calibration\20260905-190915-059662`:
+`report.json` and `aria-calibration.wav`, SHA-256
+`399b220d9970cf7096ce8bb590e78152a847c486f901c4175b5e24049637bfb9`.
+A local reporter error occurred after the WAV was saved; measurements were
+recovered without another provider call. The provider request ID was not
+retained and remains explicitly unavailable.
+
+This sample shows why the older 123-word-per-minute planning estimate cannot
+be assumed to describe Aria: 369 words scale to roughly 140 seconds at this
+sample's rate. It is an initial pacing guide, not a long-form guarantee or a
+voice-quality rating. Actual per-scene narration duration remains the authority
+for the final tutorial and its bounded visual tails.
+
 ## Remaining qualification gates
 
 - Compare JoyVASA and LatentSync only after an exact-hash, license-reviewed pack
