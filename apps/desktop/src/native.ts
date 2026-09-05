@@ -1,5 +1,16 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { CanvasCustomization } from "./types";
+import type { EditorTimelineExportRequest } from "./editor/nativeExport";
+import type { AlystriaEditorMediaBindings } from "./editor/alystriaAdapter";
+import type { EditorWaveformNativeReceipt, EditorWaveformNativeRequest } from "./editor/waveform";
+
+export function editorTimelineExport(input: EditorTimelineExportRequest): Promise<JobReceipt> {
+  return command("editor_timeline_export", input, () => { throw new Error("Timeline video rendering requires the desktop app."); });
+}
+
+export function editorWaveformGet(input: EditorWaveformNativeRequest): Promise<EditorWaveformNativeReceipt> {
+  return command("editor_waveform_get", input, () => { throw new Error("Waveform analysis requires the desktop app."); });
+}
 
 export type DesktopEnvironment = "native" | "browser-demo";
 export type GroundingMode = "creative" | "grounded" | "strict";
@@ -131,7 +142,7 @@ export interface SourceImportReceipt {
   status: "verified" | "review";
 }
 
-export type ProjectAssetKind = "presenterPortrait" | "presenterAudio" | "backgroundImage" | "font" | "music" | "soundEffect";
+export type ProjectAssetKind = "presenterPortrait" | "presenterAudio" | "backgroundImage" | "font" | "music" | "soundEffect" | "editorImage" | "editorVideo" | "editorAudio";
 export type AssetRightsStatus = "owned" | "licensed" | "publicDomain" | "unknown";
 export type AssetPermission = "allowed" | "notAllowed" | "unknown";
 
@@ -192,6 +203,27 @@ export interface ProjectAssetImportReceipt {
   provenance: { id: string; origin: string; rightsStatus: AssetRightsStatus; creator?: string; license?: string; attribution?: string; exportEligible: boolean; blockers: string[] };
   presenterProfile?: PresenterProfileRef;
   selectedPresenterProfileId?: string;
+}
+
+export interface ProjectAssetResolveRequest extends ProjectIdentityRequest {
+  artifactHash: string;
+}
+
+export interface ProjectAssetResolveReceipt {
+  projectId: string;
+  artifactHash: string;
+  path: string;
+  mediaType: string;
+  byteSize: number;
+}
+
+export interface EditorBindingsGetRequest extends ProjectIdentityRequest {
+  generationId: string;
+}
+
+export interface EditorBindingsGetReceipt extends AlystriaEditorMediaBindings {
+  projectId: string;
+  generationId: string;
 }
 
 export interface SelectPresenterProfileRequest extends ProjectIdentityRequest {
@@ -277,7 +309,7 @@ export interface JobReceipt {
   acceptedAt: string;
   message: string;
   retryable: boolean;
-  operation?: "regenerate_scene" | "render_scene" | "repair_qa" | "export_master";
+  operation?: "regenerate_scene" | "search_visual_candidates" | "render_scene" | "repair_qa" | "export_master" | "editor_timeline_export";
   progress?: number;
   result?: Record<string, unknown> | null;
   error?: Record<string, unknown> | null;
@@ -288,8 +320,44 @@ export interface SceneRegenerationRequest extends ProjectIdentityRequest {
   baseJobId?: string;
   sceneId: string;
   instruction: string;
+  role?: "scene" | "presenter";
+  seed?: number;
+  imageRecipe?: {
+    model?: "local/sdxl-base-1.0";
+    loras?: Array<"local/sdxl-offset-lora-1.0">;
+    negativePrompt?: string;
+  };
   preservationLocks: Array<"narration" | "citations" | "learningobjective" | "timing" | "assets" | "presenter">;
   alternatives: number;
+}
+
+export interface VisualCandidateAcceptRequest extends ProjectIdentityRequest {
+  expectedHeadRevisionId: string;
+  candidateId: string;
+}
+
+export interface VisualCandidateAcceptReceipt {
+  projectId: string;
+  headRevisionId: string;
+  revisionNumber: number;
+  candidateId: string;
+  sceneId: string;
+  role: "scene" | "presenter";
+  artifactHash: string;
+  assetId: string;
+  invalidated: string[];
+}
+
+export interface StockVisualCandidateSearchRequest extends ProjectIdentityRequest {
+  expectedHeadRevisionId: string;
+  sceneId: string;
+  instruction: string;
+  preservationLocks: Array<"narration" | "citations" | "learningobjective" | "timing" | "assets" | "presenter">;
+  alternatives: number;
+  providerId: "openverse" | "pexels";
+  searchQuery?: string;
+  desiredAspectRatio?: "16:9" | "4:3" | "1:1" | "9:16";
+  locale?: string;
 }
 
 export interface SceneRenderRequest extends ProjectIdentityRequest {
@@ -315,6 +383,7 @@ export interface MasterExportRequest extends ProjectIdentityRequest {
   aspect: "16:9" | "9:16" | "1:1";
   resolution: "1080p" | "1440p" | "4K";
   fps: 24 | 25 | 30 | 50 | 60;
+  codecPreference?: "h264-hardware" | "hevc-hardware" | "av1";
   captionDeliveryMode: CaptionDeliveryMode;
   transcript: boolean;
   bibliography: boolean;
@@ -341,6 +410,7 @@ export type ProviderCapability =
   | "llm.text"
   | "llm.structured"
   | "research.web"
+  | "media.licensed.search"
   | "image.generate"
   | "image.edit"
   | "motion.generate"
@@ -368,6 +438,8 @@ export interface ProviderApproval {
   budgetApproved: boolean;
   termsApproved: boolean;
   modelAccessCheckedAt: string | null;
+  /** Non-secret Cloudflare account identifier used only for Workers AI URL construction. */
+  accountId?: string | null;
 }
 
 export interface TutorialRoutingPolicy {
@@ -424,7 +496,7 @@ export interface ModelProfile {
 }
 
 export interface ProjectModelRouteSnapshot {
-  medium: "writing" | "research" | "images" | "motion" | "voice" | "transcription" | "presenter" | "portraitAnimation" | "lipSync";
+  medium: "writing" | "research" | "images" | "motion" | "voice" | "transcription" | "presenter" | "portraitAnimation" | "lipSync" | "stock" | "visualReview";
   capability: ProviderCapability;
   providerId: string;
   modelId: string;
@@ -960,6 +1032,18 @@ export function projectAssetImport(input: ProjectAssetImportRequest): Promise<Pr
   });
 }
 
+export function projectAssetResolve(input: ProjectAssetResolveRequest): Promise<ProjectAssetResolveReceipt> {
+  return command("project_asset_resolve", input, () => {
+    throw new Error("Project media resolution requires the desktop app.");
+  });
+}
+
+export function editorBindingsGet(input: EditorBindingsGetRequest): Promise<EditorBindingsGetReceipt> {
+  return command("editor_bindings_get", input, () => {
+    throw new Error("Generated editor media bindings require the desktop app.");
+  });
+}
+
 export function presenterProfileSelect(input: SelectPresenterProfileRequest): Promise<SelectPresenterProfileReceipt> {
   return command("presenter_profile_select", input, () => {
     const project = browserProjects.get(input.projectId);
@@ -1004,6 +1088,23 @@ export function sceneRegenerate(input: SceneRegenerationRequest): Promise<JobRec
     demoOnly: true,
     sceneId: input.sceneId,
     baseRevisionId: input.baseRevisionId,
+    candidateIds: Array.from({ length: input.alternatives }, () => `demo_candidate_${demoId()}`),
+    preservationLocks: input.preservationLocks,
+  }));
+}
+
+export function sceneCandidateAccept(input: VisualCandidateAcceptRequest): Promise<VisualCandidateAcceptReceipt> {
+  return command("scene_candidate_accept", input, () => {
+    throw new Error("Visual candidate acceptance requires the desktop app.");
+  });
+}
+
+export function searchVisualCandidates(input: StockVisualCandidateSearchRequest): Promise<JobReceipt> {
+  return command("scene_stock_search", input, () => browserControlReceipt("search_visual_candidates", {
+    demoOnly: true,
+    sceneId: input.sceneId,
+    providerId: input.providerId,
+    searchQuery: input.searchQuery ?? null,
     candidateIds: Array.from({ length: input.alternatives }, () => `demo_candidate_${demoId()}`),
     preservationLocks: input.preservationLocks,
   }));
