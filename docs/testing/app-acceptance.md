@@ -80,28 +80,33 @@ recovery-after-restart states must also be exercised through the native job
 broker. Browser localStorage injection is useful fault-state UI coverage, but
 is not packaged-native evidence.
 
-Frame rate is part of the current master-export command contract. The Export UI
-also records the selected codec preference in its job receipt, but the native
-command contract does not yet accept an encoder selection. Codec choice must
-therefore remain an explicit packaged-native blocker rather than being claimed
-as applied.
+Frame rate and the closed `codecPreference` selection are part of the current
+native master-export command contract. The pipeline validates that selection
+and maps it to a renderer codec. Contract support alone does not qualify every
+encoder: each claimed delivery format still needs a probed native export on
+the target machine.
 
-## Native GUI automation blocker
+## Native Windows automation
 
-Playwright controls Chromium through its browser protocol. The packaged Tauri
-2 application hosts the UI in Windows WebView2, and this repository does not
-expose a test-only WebView2 debugging endpoint or desktop automation driver.
-On the Windows test machine checked on 2026-08-29, WinAppDriver, Appium, and the
-PowerShell UIAutomation module were not installed. Consequently, attaching
-Playwright to the packaged native window is not currently a repeatable or CI
-safe path. Until that changes, passing `node scripts/run-app-acceptance.mjs`
-must be reported as UI-contract plus sidecar-protocol acceptance, never as
-packaged-native acceptance.
+The Windows debug/test package now exposes an explicitly enabled, loopback
+WebView2 debugging endpoint for hidden acceptance runs. It requires both the
+debug or `portable-debug-runtime` build gate and the acceptance environment
+configuration. Ordinary application launches do not enable this endpoint.
+`apps/desktop/e2e/native-portable.mjs` drives the actual packaged WebView through
+Playwright while application commands traverse the real Rust broker and
+supervised worker. The lifecycle harness posts `WM_CLOSE` only to the exact
+Tauri main window and checks desktop and worker exit.
+
+This removes the earlier automation blocker; it does not change the scope of
+`node scripts/run-app-acceptance.mjs`. That separate command remains
+UI-contract plus sidecar-protocol acceptance. Keep package hashes, native
+receipts, and inspected media alongside each native result, and do not promote
+short editor or lifecycle checks into full tutorial qualification.
 
 Computer-use automation can inspect the native window interactively, but it is
 not a deterministic acceptance harness and cannot replace file, database,
 provider-usage, or media assertions. A native production acceptance result
-must therefore pair interactive desktop control with durable project evidence,
+must therefore pair actual application interaction with durable project evidence,
 provider usage records, model/runtime manifests, GPU/process telemetry when
 applicable, `ffprobe`/audio QA, and inspection of the exported full tutorial.
 
