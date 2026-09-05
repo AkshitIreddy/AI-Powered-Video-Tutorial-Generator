@@ -37,6 +37,13 @@ from alystria.generation.spoken_text import SpokenTextError, normalize_spoken_te
             "one in divide and conquer.",
         ),
         (
+            "Karatsuba is divide\N{HYPHEN}and\N{HYPHEN}conquer: for n\N{NON-BREAKING HYPHEN}1, "
+            "compute (a+b)(c+d)\N{HYPHEN}ac\N{NON-BREAKING HYPHEN}bd.",
+            "Karatsuba is divide and conquer: for n minus one, compute open parenthesis "
+            "a plus b close parenthesis times open parenthesis c plus d close parenthesis "
+            "minus a c minus b d.",
+        ),
+        (
             "Karatsuba is O(n^1.585), versus O(n^2).",
             "Karatsuba is big O of n to the power of one point five eight five, "
             "versus big O of n squared.",

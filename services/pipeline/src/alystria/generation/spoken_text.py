@@ -181,6 +181,13 @@ def normalize_spoken_text(text: str, *, locale: str) -> SpokenText:
             ord("\N{SUPERSCRIPT TWO}"): "^2",
             ord("\N{SUPERSCRIPT THREE}"): "^3",
             ord("\N{SUPERSCRIPT FOUR}"): "^4",
+            # Publishing tools commonly substitute these for ASCII hyphen-minus.
+            # Normalize them before NFKC (which maps the non-breaking form to
+            # U+2010) so the existing context-sensitive prose/subtraction rules
+            # still decide how the mark is spoken. U+2212 remains an explicit
+            # mathematical minus in _SPOKEN_SYMBOLS below.
+            ord("\N{HYPHEN}"): "-",
+            ord("\N{NON-BREAKING HYPHEN}"): "-",
         }
     )
     value = unicodedata.normalize("NFKC", value)
