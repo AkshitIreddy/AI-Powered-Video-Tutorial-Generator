@@ -733,12 +733,17 @@ fn validate_render_target(aspect: &str, resolution: &str, fps: u16) -> Result<()
 }
 
 fn job_action_with_transport(
-    input: JobActionRequest,
+    mut input: JobActionRequest,
     method: &str,
     projects: &crate::project_store::ProjectStore,
     worker: &dyn WorkerTransport,
 ) -> Result<JobReceipt, CommandError> {
     projects.verify_identity(&input.project_directory, input.project_id)?;
+    input.expected_head_revision_id = input
+        .expected_head_revision_id
+        .as_deref()
+        .map(|value| validation::stable_id(value, "expectedHeadRevisionId"))
+        .transpose()?;
     let job_id = input.job_id;
     let payload = serde_json::to_value(&input).map_err(|_| {
         CommandError::new(
@@ -1073,11 +1078,14 @@ fn validate_project_asset_import(
 
     let limit = match input.kind {
         ProjectAssetKind::Font => 16 * 1024 * 1024,
-        ProjectAssetKind::PresenterPortrait | ProjectAssetKind::BackgroundImage => 32 * 1024 * 1024,
+        ProjectAssetKind::PresenterPortrait
+        | ProjectAssetKind::BackgroundImage
+        | ProjectAssetKind::EditorImage => 32 * 1024 * 1024,
         ProjectAssetKind::SoundEffect => 32 * 1024 * 1024,
-        ProjectAssetKind::PresenterAudio | ProjectAssetKind::Music => {
-            validation::MAX_PROJECT_ASSET_BYTES
-        }
+        ProjectAssetKind::PresenterAudio
+        | ProjectAssetKind::Music
+        | ProjectAssetKind::EditorVideo
+        | ProjectAssetKind::EditorAudio => validation::MAX_PROJECT_ASSET_BYTES,
     };
     if input.content_base64.len() > limit.div_ceil(3) * 4 {
         return Err(CommandError::invalid(
@@ -1329,6 +1337,42 @@ mod tests {
         assert!(error.message.contains("only valid for presenter portraits"));
     }
 
+    #[test]
+    fn asset_validation_accepts_all_durable_editor_media_kinds() {
+        for (kind, filename, mime_type, encoded_kind) in [
+            (
+                ProjectAssetKind::EditorImage,
+                "lesson.png",
+                "image/png",
+                "editorImage",
+            ),
+            (
+                ProjectAssetKind::EditorVideo,
+                "lesson.webm",
+                "video/webm",
+                "editorVideo",
+            ),
+            (
+                ProjectAssetKind::EditorAudio,
+                "lesson.wav",
+                "audio/wav",
+                "editorAudio",
+            ),
+        ] {
+            let mut input = presenter_asset_input(PresenterIdentityType::Synthetic);
+            input.kind = kind;
+            input.filename = filename.into();
+            input.mime_type = mime_type.into();
+            input.presenter = None;
+
+            validate_project_asset_import(&mut input).unwrap();
+            assert_eq!(
+                serde_json::to_value(input.kind).unwrap(),
+                serde_json::json!(encoded_kind)
+            );
+        }
+    }
+
     #[derive(Default)]
     struct RecordingWorker {
         method: Mutex<Option<String>>,
@@ -1371,6 +1415,7 @@ mod tests {
                 project_id: project.manifest.project_id,
                 project_directory: project.project_directory.clone(),
                 job_id: Uuid::nil(),
+                expected_head_revision_id: None,
             },
             "job.status",
             &ProjectStore,
@@ -1383,9 +1428,24 @@ mod tests {
 
         let error = job_action_with_transport(
             JobActionRequest {
+                project_id: project.manifest.project_id,
+                project_directory: project.project_directory.clone(),
+                job_id: Uuid::nil(),
+                expected_head_revision_id: Some("revision with spaces".into()),
+            },
+            "generation.approve",
+            &ProjectStore,
+            &worker,
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "INVALID_INPUT");
+
+        let error = job_action_with_transport(
+            JobActionRequest {
                 project_id: Uuid::now_v7(),
                 project_directory: project.project_directory,
                 job_id: Uuid::nil(),
+                expected_head_revision_id: None,
             },
             "job.status",
             &ProjectStore,

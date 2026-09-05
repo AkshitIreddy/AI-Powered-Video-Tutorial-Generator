@@ -186,6 +186,9 @@ pub enum ProjectAssetKind {
     Font,
     Music,
     SoundEffect,
+    EditorImage,
+    EditorVideo,
+    EditorAudio,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -495,6 +498,8 @@ pub struct JobActionRequest {
     pub project_id: Uuid,
     pub project_directory: PathBuf,
     pub job_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_head_revision_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

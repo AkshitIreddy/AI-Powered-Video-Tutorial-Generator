@@ -47,7 +47,8 @@ export async function importNativeEditorMedia(
       });
       batch.receipts.push({ id: `import-${id}`, assetId: id, fileName: file.name, status: "ready", requestedAt, completedAt: new Date().toISOString(), byteLength: stored.byteSize, mimeType: stored.mediaType, localOnly: true });
     } catch (error) {
-      batch.receipts.push({ id: `failed-${requestedAt}-${file.name}`, assetId: "", fileName: file.name, status: "failed", requestedAt, completedAt: new Date().toISOString(), errorCode: "NATIVE_IMPORT_FAILED", errorMessage: error instanceof Error ? error.message : "Media import failed.", localOnly: true });
+      const errorMessage = error instanceof Error ? error.message : typeof error === "string" && error.trim() ? error : "Media import failed.";
+      batch.receipts.push({ id: `failed-${requestedAt}-${file.name}`, assetId: "", fileName: file.name, status: "failed", requestedAt, completedAt: new Date().toISOString(), errorCode: "NATIVE_IMPORT_FAILED", errorMessage, localOnly: true });
     } finally {
       if (transientUrl) controller.release(transientUrl);
     }
