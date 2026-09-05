@@ -1,23 +1,31 @@
 import { chromium, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
-import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, open, readFile, rename, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 const portableArgument = process.argv[process.argv.indexOf("--portable-root") + 1];
 if (!portableArgument || process.argv.indexOf("--portable-root") < 0) throw new Error("--portable-root is required");
 const portableRoot = path.resolve(portableArgument);
 const executable = path.join(portableRoot, "App", "AI Video Tutorial Generator.exe");
+const appDataPath = path.join(portableRoot, "App Data");
+const workerExecutable = path.join(portableRoot, "Runtime", "alystria-pipeline.exe");
 const readyPath = path.join(portableRoot, "Evidence", "native-headless-ready.json");
 const evidenceRoot = path.join(portableRoot, "Evidence", "native-recovery");
 const reportPath = path.join(evidenceRoot, "report.json");
 const topic = `Native restart and cancellation ${Date.now()}`;
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+let rotationSequence = 0;
 
+await rotateExistingPath(evidenceRoot);
 await mkdir(evidenceRoot, { recursive: true });
-await rm(reportPath, { force: true });
 let first;
 let second;
+let report;
+let workError;
 try {
   first = await launch("first");
   await seedCleanWorkspace(first.page);
@@ -53,7 +61,10 @@ try {
   if (receiptState(afterCancel.generationJob) !== "CANCELLED") {
     throw new Error(`Native cancellation persisted ${receiptState(afterCancel.generationJob) ?? "unknown"}, expected CANCELLED`);
   }
-  const report = {
+  const manifestText = await readFile(path.join(portableRoot, "test-area-manifest.json"), "utf8");
+  const packageManifest = JSON.parse(manifestText);
+  await writeFile(path.join(evidenceRoot, "test-area-manifest.json"), manifestText, "utf8");
+  report = {
     schemaVersion: 1,
     state: "passed",
     actualNativeWebView: true,
@@ -68,17 +79,41 @@ try {
     firstWorkerPid,
     secondDesktopPid: second.child.pid,
     secondWorkerPid: second.workerPid,
+    executableSha256: await sha256File(executable),
+    workerSha256: await sha256File(workerExecutable),
+    packageManifest: {
+      createdAt: packageManifest.createdAt,
+      desktop: packageManifest.desktop,
+      pipelineWorker: packageManifest.pipelineWorker,
+      rendererRuntime: packageManifest.rendererRuntime,
+    },
     finishedAtUtc: new Date().toISOString(),
   };
+  await closeLaunch(second);
+  second = null;
+  report.gracefulShutdown = true;
+  report.workerExitedWithApp = true;
+} catch (error) {
+  workError = error;
+  throw error;
+} finally {
+  for (const pending of [first, second]) {
+    if (!pending) continue;
+    try {
+      await closeLaunch(pending);
+    } catch (error) {
+      if (!workError) throw error;
+    }
+  }
+}
+
+if (report) {
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-} finally {
-  if (first) await closeLaunch(first).catch(() => {});
-  if (second) await closeLaunch(second).catch(() => {});
 }
 
 async function launch(label) {
-  await rm(readyPath, { force: true });
+  await rotateExistingPath(readyPath);
   const port = await reservePort();
   const stdout = await open(path.join(evidenceRoot, `${label}.stdout.log`), "w");
   const stderr = await open(path.join(evidenceRoot, `${label}.stderr.log`), "w");
@@ -88,38 +123,106 @@ async function launch(label) {
     windowsHide: true,
     stdio: ["ignore", stdout.fd, stderr.fd],
   });
+  let browser;
+  let workerPid;
   try {
+    browser = await connectToWebView(port, 120_000);
     const ready = await waitForJson(readyPath, 120_000, child);
-    const browser = await connectToWebView(port, 120_000);
+    workerPid = validatedReadyWorkerPid(ready, child.pid);
     const pages = browser.contexts().flatMap((context) => context.pages());
     if (pages.length !== 1) throw new Error(`Expected one native WebView page, found ${pages.length}`);
-    const launch = { child, browser, page: pages[0], workerPid: Number(ready.workerPid), stdout, stderr };
+    const launch = { child, browser, page: pages[0], workerPid, stdout, stderr };
     await expect(launch.page.locator(".runtime-badge")).toContainText("Worker ready", { timeout: 45_000 });
     return launch;
   } catch (error) {
-    if (child.exitCode === null) {
-      await postWmClose(child.pid).catch(() => {});
-      await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(15_000)]);
-    }
-    if (child.exitCode === null) child.kill();
-    await Promise.all([stdout.close(), stderr.close()]);
+    workerPid ||= await readReadyWorkerPid(child.pid);
+    const cleanupErrors = await cleanupFailedLaunch({ child, browser, workerPid, stdout, stderr });
+    if (cleanupErrors.length) throw new AggregateError([error, ...cleanupErrors], "Native recovery launch and startup cleanup both failed");
     throw error;
   }
 }
 
+async function readReadyWorkerPid(desktopPid) {
+  try {
+    const ready = JSON.parse(await readFile(readyPath, "utf8"));
+    return validatedReadyWorkerPid(ready, desktopPid);
+  } catch {
+    return undefined;
+  }
+}
+
+function validatedReadyWorkerPid(ready, desktopPid) {
+  const workerPid = Number(ready?.workerPid);
+  if (ready?.schemaVersion !== 1 || ready?.workerHandshake !== true || Number(ready?.desktopPid) !== desktopPid) {
+    throw new Error("Native readiness receipt does not identify this authenticated desktop launch");
+  }
+  if (!Number.isSafeInteger(workerPid) || workerPid <= 0) throw new Error("Native readiness receipt has an invalid worker PID");
+  return workerPid;
+}
+
+async function cleanupFailedLaunch({ child, browser, workerPid, stdout, stderr }) {
+  const errors = [];
+  if (browser) await browser.close().catch((error) => errors.push(error));
+  if (child.exitCode === null) {
+    await postWmClose(child.pid).catch((error) => errors.push(error));
+    await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(15_000)]);
+  }
+  if (child.exitCode === null) {
+    child.kill();
+    await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(5_000)]);
+  }
+  if (workerPid && await processExists(workerPid)) {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline && await processExists(workerPid)) await delay(100);
+    if (await processExists(workerPid)) {
+      try { process.kill(workerPid); } catch (error) { if (error?.code !== "ESRCH") errors.push(error); }
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline && await processExists(workerPid)) await delay(100);
+      if (await processExists(workerPid)) errors.push(new Error(`Native worker ${workerPid} remained alive after failed startup cleanup`));
+    }
+  }
+  await waitForPortableWebViewExit(30_000).catch((error) => errors.push(error));
+  await Promise.all([stdout.close(), stderr.close()]).catch((error) => errors.push(error));
+  return errors;
+}
+
+async function rotateExistingPath(target, label = "previous") {
+  try {
+    await stat(target);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+  rotationSequence += 1;
+  const parsedPath = path.parse(target);
+  const stamp = new Date().toISOString().replace(/[^0-9]/gu, "");
+  const destination = path.join(parsedPath.dir, `${parsedPath.name}.${label}-${stamp}-${process.pid}-${rotationSequence}${parsedPath.ext}`);
+  await rename(target, destination);
+  return destination;
+}
+
 async function closeLaunch(launch) {
-  await launch.browser.close().catch(() => {});
-  if (launch.child.exitCode === null) {
-    await postWmClose(launch.child.pid);
-    await Promise.race([new Promise((resolve) => launch.child.once("exit", resolve)), delay(15_000)]);
-  }
   let failure = null;
-  if (launch.child.exitCode === null) {
-    launch.child.kill();
-    failure = new Error("The native app did not exit within 15 seconds of WM_CLOSE");
+  try {
+    if (launch.child.exitCode === null) {
+      await postWmClose(launch.child.pid);
+      await Promise.race([new Promise((resolve) => launch.child.once("exit", resolve)), delay(15_000)]);
+    }
+    if (launch.child.exitCode === null) {
+      launch.child.kill();
+      failure = new Error("The native app did not exit within 15 seconds of WM_CLOSE");
+    } else if (launch.child.exitCode !== 0) {
+      failure = new Error(`The native app exited with code ${launch.child.exitCode}`);
+    } else {
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline && await processExists(launch.workerPid)) await delay(100);
+      if (await processExists(launch.workerPid)) failure = new Error(`Native worker ${launch.workerPid} remained alive after WM_CLOSE`);
+      await waitForPortableWebViewExit(30_000);
+    }
+  } finally {
+    await launch.browser.close().catch(() => {});
+    await Promise.all([launch.stdout.close(), launch.stderr.close()]);
   }
-  else if (launch.child.exitCode !== 0) failure = new Error(`The native app exited with code ${launch.child.exitCode}`);
-  await Promise.all([launch.stdout.close(), launch.stderr.close()]);
   if (failure) throw failure;
 }
 
@@ -148,6 +251,9 @@ async function createBlockedTutorial(page) {
   await wizard.getByRole("button", { name: /^creative/i }).click();
   await wizard.getByRole("button", { name: /continue/i }).click();
   await wizard.getByRole("button", { name: "Standard", exact: true }).click();
+  await expect(wizard.locator(".routing-readiness")).not.toContainText("Loading", { timeout: 120_000 });
+  const setupError = wizard.getByRole("alert");
+  if (await setupError.count() && await setupError.isVisible()) throw new Error(`Native model setup failed: ${(await setupError.innerText()).trim()}`);
   await wizard.getByLabel("Creation profile").selectOption("portable-test-local");
   await wizard.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
   await wizard.getByRole("button", { name: /create learning plan/i }).click();
@@ -209,7 +315,7 @@ async function connectToWebView(port, timeoutMs) {
 }
 
 async function postWmClose(pid) {
-  const helper = path.resolve(process.cwd(), "..", "..", "scripts", "post-wm-close.py");
+  const helper = path.join(repoRoot, "scripts", "post-wm-close.py");
   const child = spawn(process.env.PYTHON ?? "python", [helper, "--pid", String(pid)], { windowsHide: true, stdio: "ignore" });
   await new Promise((resolve, reject) => {
     child.once("error", reject);
@@ -223,4 +329,39 @@ async function processExists(pid) {
   return await new Promise((resolve) => child.once("exit", (code) => resolve(code === 0)));
 }
 
+async function portableWebViewExists() {
+  const appDataNeedle = appDataPath.replaceAll("'", "''");
+  const command = [
+    `$needle = '${appDataNeedle}'`,
+    "$match = Get-CimInstance Win32_Process | Where-Object {",
+    "  $_.Name -eq 'msedgewebview2.exe' -and",
+    "  $_.CommandLine -like \"*$needle*\" -and",
+    "  $_.CommandLine -like '*webview-exe-name=*AI Video Tutorial Generator.exe*'",
+    "}",
+    "if ($match) { exit 0 } else { exit 1 }",
+  ].join("; ");
+  const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], { windowsHide: true, stdio: "ignore" });
+  return await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve(true);
+      else if (code === 1) resolve(false);
+      else reject(new Error(`Portable WebView process inspection failed with PowerShell exit code ${code}`));
+    });
+  });
+}
+
+async function waitForPortableWebViewExit(timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!await portableWebViewExists()) return;
+    await delay(200);
+  }
+  throw new Error("Portable WebView processes remained alive after native shutdown");
+}
+
 function delay(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
+
+async function sha256File(file) {
+  return createHash("sha256").update(await readFile(file)).digest("hex");
+}
