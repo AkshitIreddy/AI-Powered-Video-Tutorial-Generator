@@ -8,6 +8,29 @@ The catalog uses a conservative evidence rule: a model identifier proves identit
 
 ## Findings and changes
 
+### Compact discovery and saved writing choices
+
+The library now puts search and the first results in the initial desktop
+viewport. Eight source cards sit behind a native disclosure, the duplicate
+hero is removed, and the catalog uses the application's light surface.
+Route comparison and resource estimates are explicitly temporary tools.
+
+An eligible connected cloud model with `llm.structured` capability offers
+**Use in writing profile**. This stages the exact provider, model ID, and
+revision in the active profile and focuses its writing field. The existing
+**Save setup & active profile** action persists it; changing a catalog
+selection does not silently save settings or approve project cloud access.
+Disconnected or incompatible choices remain disabled. Text-only models do
+not receive the structured-writing action.
+
+The complete desktop unit suite passed 238 tests and the production build
+passed under Node 24.20. Focused browser tests verified disconnected and
+connected states, exact Groq 120B staging, discard without saving, and
+persistence after saving and reloading. Final screenshot inspection caught
+and corrected an overflowing slide-only action label. These catalog captures
+are browser evidence; the final Windows package has its separate native
+acceptance record.
+
 ### Execution-path compatibility
 
 The previous compatibility evaluator merged local and cloud concerns. For a hybrid item it skipped both runtime checks and credential checks, which could make a model selectable even though neither route was usable. It also applied local OS, GPU, and VRAM failures to the entire item, blocking a valid connected cloud route.

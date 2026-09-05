@@ -103,7 +103,7 @@ See [Rendering](docs/architecture/rendering.md) and [Accessibility](docs/accessi
 
 ## Cloud, Local, and Hybrid providers
 
-![Current Models and Providers browser](docs/images/models-providers-2026-09-05.png)
+![Current Models and Providers browser](docs/images/models-providers-compact-2026-09-05.png)
 
 - **Fully Local:** project-content networking is denied; loopback workers remain available.
 - **Hybrid:** sensitive stages can remain local while separately approved payloads use named cloud capabilities.
