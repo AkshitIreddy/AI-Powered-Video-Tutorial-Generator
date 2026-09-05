@@ -176,6 +176,31 @@ The NVIDIA runtime now exposes one guarded speech route for `nvidia/magpie-tts-m
 - Theme package: 26 tests passed. Its generated manifest registers all 20 currently offered fictional presenter profiles by exact hash, byte size, media type, and decoded dimensions while retaining earlier profile IDs for saved projects.
 - Strict Python typing and Ruff checks passed for the changed pipeline integration modules; scene, theme, and renderer TypeScript builds passed.
 
+## Reusing narration after pacing edits
+
+Generation implementation `generation-v11-reusable-narration-clips` retains each
+successful narration clip and its final alignment before checking aggregate
+storyboard pacing. A reviewed edit can reuse unchanged scenes after reopening
+the project. The cache identity includes authored and normalized text, scene,
+locale, seed, exact synthesis route and voice controls, and pinned alignment
+runtime. Unknown or changeable runtime identities disable reuse. Cache records
+and audio remain verified, registered CAS artifacts; reuse does not publish a
+partial generation result or alter the approved revision.
+
+The workflow regression deliberately fails pacing, reopens the project, edits
+one of five scenes, and verifies one new synthesis call plus four cache hits.
+A subsequent edit changes the other four scenes and reaches completion. The
+usage ledger contains ten provider invocations across those three attempts,
+rather than fifteen; reused clips retain their original usage provenance and
+incur no new charge. The combined cache, coordinator, education, and NVIDIA
+accounting selection passed 89 tests. This is controlled workflow evidence;
+the final native Aria run remains the real-provider qualification.
+
+NVIDIA hosted visual preview receipts now retain their actual output count and
+confirmed no-charge cost. The media ledger records these successful requests
+instead of dropping them because cost was unknown. Nineteen NVIDIA adapter
+tests passed; unavailable provider telemetry is never invented.
+
 ## Current acceptance boundaries
 
 1. The aligner has passed exact-token CPU proof on real speech and is wired into generation. The coordinated native acceptance run is the evidence for Magpie-produced audio passing this same path in the packaged worker.
