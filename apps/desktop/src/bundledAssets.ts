@@ -211,9 +211,9 @@ export async function importBundledAsset(
     privacy: "public",
     rights: {
       status: "owned",
-      creator: "Alystria Studio built-in image library",
+      creator: "AI Video Tutorial Generator built-in image library",
       license: "Included generated asset · project use and export allowed",
-      attribution: `Built into Alystria Studio · generated and visually reviewed 2026-09-05 · ${asset.sha256}`,
+      attribution: `Built into AI Video Tutorial Generator · generated and visually reviewed 2026-09-05 · ${asset.sha256}`,
       commercialUse: "allowed",
       redistribution: "allowed",
       modelInput: "allowed",

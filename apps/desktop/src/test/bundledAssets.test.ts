@@ -39,7 +39,7 @@ function receipt(asset: BundledAsset): ProjectAssetImportReceipt {
       id: `provenance-${asset.id}`,
       origin: "userImport",
       rightsStatus: "owned",
-      creator: "Alystria Studio built-in image library",
+      creator: "AI Video Tutorial Generator built-in image library",
       license: "Included generated asset · project use and export allowed",
       exportEligible: true,
       blockers: [],
@@ -102,7 +102,7 @@ describe("included offline asset manifest", () => {
       privacy: "public",
       rights: {
         status: "owned",
-        creator: "Alystria Studio built-in image library",
+        creator: "AI Video Tutorial Generator built-in image library",
         commercialUse: "allowed",
         redistribution: "allowed",
         modelInput: "allowed",
