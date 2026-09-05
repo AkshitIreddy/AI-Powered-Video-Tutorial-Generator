@@ -1,70 +1,178 @@
-# Alystria product-overhaul acceptance record
+# AI Video Tutorial Generator local-overhaul acceptance record
 
-Completed 2026-09-02. An item is checked only where behavioral, rendered, packaged, or media evidence exists.
+Updated 2026-09-05. This replaces the obsolete September 2 all-green snapshot,
+which used the old Alystria name, palette, assets, test counts, and prototype
+controls. Git history preserves that record. A checked item below means the
+current implementation has matching source-level or browser evidence. It does
+not imply that the final packaged Windows journey or a public release passed.
 
-## Startup and trustworthy state
+Primary evidence:
 
-- [x] `Alystria.exe` uses the Windows GUI subsystem and its portable launcher is windowless.
-- [x] Pipeline, renderer, model, development-server, and diagnostic child processes use hidden-process flags.
-- [x] A clean first launch has no projects, recent project, jobs, or user-invisible work.
-- [x] The exact old seeded-demo fingerprint is migrated away without removing real user-created projects.
-- [x] User-facing product, window, executable, and launcher names are `Alystria`, without overhaul-version marketing.
-- [x] The executable and Windows icon set use the original scene-thread/play Alystria mark.
+- [Product and browser audit](research/product-audit-2026-09-05.md)
+- [Generation audit](research/generation-audit-2026-09-05.md)
+- [Editor audit](research/editor-audit-2026-09-05.md)
+- [Presenter and voice audit](research/presenter-voice-audit-2026-09-05.md)
+- [Catalog and routing audit](research/catalog-audit-2026-09-05.md)
+- [Windows integration audit](research/windows-integration-audit-2026-09-05.md)
 
-## Visual system and assets
+## Current verified implementation
 
-- [x] The desktop uses the original obsidian, cyan, violet, magenta, and gold Alystria visual system.
-- [x] The supplied luminous reference informed the mood only; no unicorn artwork or silhouette was copied.
-- [x] Six templates have distinct, semantically relevant generated artwork.
-- [x] Twenty default profile/presenter portraits cover photoreal, editorial, anime, 3D, illustrated, and cartoon treatments.
-- [x] Profile-photo selection and the default-profile padding defect are covered by rendered evidence.
-- [x] Desktop and narrow layouts, keyboard focus, reduced motion, clean state, first-run state, studio, editor, model, and settings surfaces pass Playwright checks.
+### Product identity, state, and browser experience
 
-## First-launch interactive onboarding
+- [x] User-facing identity is **AI Video Tutorial Generator**. The current
+  paper, plum, and muted-lavender workbench and book/play mark replace the old
+  Alystria obsidian/neon presentation.
+- [x] A clean browser profile starts without invented projects or jobs, and the
+  exact legacy seeded-project fingerprint is migrated without deleting normal
+  user work.
+- [x] Home, Templates, Models, Settings, Plan, Storyboard, Studio, Design,
+  Review, Export, creation, and narrow layouts were captured and inspected. The
+  13-route capture reported no page error or document horizontal overflow.
+- [x] The current UI matrix passed 25 Playwright cases with three intentional
+  viewport skips. The current coordinator run also reports 200 desktop unit
+  tests passing after the final UI integration.
+- [x] First-run setup and contextual onboarding use real highlighted controls,
+  meaningful actions, replay, completed-setup detection, keyboard navigation,
+  and a non-blurred target.
+- [x] Settings expose working UI preferences and native runtime/storage facts.
+  Inert privacy, backup-count, caption-language, and unsupported Design
+  Inspector controls were removed instead of being presented as functional.
 
-- [x] A truly clean first launch opens onboarding until the user completes or skips it.
-- [x] The contextual tutorial uses a scrim, highlighted target, coach panel, progress, forward/back controls, and safe exit.
-- [x] Setup covers profile, storage, privacy, hardware, providers, local runtimes, routes, presenter choice, creative modes, editor, export, and recovery.
-- [x] Existing setup is detected and summarized rather than silently repeated.
-- [x] Setup and contextual tours are replayable from Settings and support keyboard navigation.
+### Providers, models, assets, and resource policy
 
-## Providers, models, and hardware safety
+- [x] Capability routing is explicit for writing, research, embeddings,
+  transcription, voice, music, images, presenter animation, lip sync, visual
+  review, and upscaling. An authored-layout profile can deliberately turn image
+  generation off.
+- [x] Hugging Face and Civitai discovery, provider catalogs, filtering,
+  compatibility, route readiness, credential gating, and bounded resource
+  policy are implemented and tested. Search metadata is not treated as proof
+  that a model is installed or executable.
+- [x] The local image installer pins the ComfyUI runtime and model artifacts,
+  verifies hashes, reuses the existing E:-resident SDXL installation, and does
+  not duplicate verified multi-gigabyte files.
+- [x] Cloudflare Account ID and credential reference are persisted separately;
+  secret values remain in the operating-system credential path.
+- [x] The bundled teaching library provides distinct slide backgrounds and
+  reusable slide elements with checked hashes and ImageGen provenance. Stock
+  search and generated images remain review-first assets with rights records.
 
-- [x] Search, role filters, source filters, compatibility filters, sort, pagination, and routing cover every Alystria model capability.
-- [x] User-triggered Hugging Face and Civitai discovery normalizes metadata and rejects off-origin pagination cursors.
-- [x] NVIDIA NIM discovery runs through the native broker and leases its key from the OS credential vault.
-- [x] Official permitted Hugging Face and NVIDIA assets are bundled; other sources use governed local marks.
-- [x] Capability routes independently cover writing, research, embeddings, transcription, voice, music, images, presenter animation, lip-sync, visual review, and upscaling.
-- [x] Local and cloud OpenAI-compatible endpoints accept explicit endpoint and model identifiers.
-- [x] RAM, VRAM, context, quantization, concurrency, thermal, power, disk, TTL, offload, and fallback limits are configurable.
-- [x] Fit explanations and blocking resource-policy decisions are deterministic and unit tested.
+### Teaching generation, review, and export contracts
 
-## Presenter, image, and slide generation
+- [x] Preview and final rendering share authored scene data rather than fixture
+  copy. Scene compilation covers landscape, portrait, and square targets.
+- [x] Requested duration is represented on the 240 kHz timeline and reconciled
+  against measured narration. Provider timing is retained when available;
+  proportional estimates cannot claim complete alignment.
+- [x] A pinned CPU forced-aligner passed an exact-token real-speech proof and is
+  wired into generation. Whiteboard derivations and live-code actions use
+  timed, editable scene structures.
+- [x] Designed scenes can run without an image provider. Optional raster
+  candidates are stored separately, visually reviewed, and explicitly accepted
+  before the active scene changes.
+- [x] Review can bind to the exact promoted render and generation, sample six
+  decoded frames, retain timestamps and frame hashes, and reject stale reports.
+  A failed optional VLM call is retained as a failure rather than a quality pass.
+- [x] Codec and frame-rate intent reach the renderer. Captions derive from one
+  cue model and produce UTF-8 WebVTT and SRT companions; open-caption styling is
+  identified separately from viewer-controlled captions.
 
-- [x] Presenter provenance, rights, synthetic status, and generation controls are visible in the creative inspector.
-- [x] The presenter lab exposes guided, advanced, and graph workflows with model, prompt, negative prompt, style, reference, LoRA, control, face-detail, inpaint, upscale, seed, and provenance controls.
-- [x] Image routes cover Hugging Face, Civitai, NVIDIA NIM, connected APIs, and local installs with revision-aware adapters.
-- [x] Designed-layout and illustrated-canvas slide schools keep text deterministic and editable.
-- [x] Alignment guides, safe areas, visual-review routing, bounded patch proposals, inpaint repair, and upscale routing are configurable.
-- [x] The second-slide alignment regression and presenter-card sequence geometry have deterministic renderer coverage and reviewed 1920x1080 evidence.
-- [x] Generated-background pseudo-text is rejected; the approved three-minute candidate uses deterministic semantic diagrams and typography.
+### Integrated editor
 
-## Integrated AI video editor
+- [x] The editor provides slide, presenter, title, caption, narration, music,
+  and SFX tracks with governed media import.
+- [x] Split, trim, move, linked reorder, snap, lift, ripple delete, extract,
+  speed, transforms, opacity, audio gain/fades, keyframes, and linked
+  narration/caption edits are reversible transactions with undo/redo.
+- [x] Project JSON and OTIO downloads write real validated files. The native app
+  persists the validated editor document in the project snapshot and keeps
+  browser-only blob URLs out of durable state.
+- [x] Native imports and generated-stage bindings resolve through registered,
+  contained CAS objects. Saved user edits are retained when later generated
+  media bindings become available.
+- [x] Native timeline export validates project identity, head revision, rights,
+  assets, trims, source offsets, layers, speed, visual keyframes, title/caption
+  layers, programme audio, audio gain/fades, codec, and output containment.
+- [x] Real waveforms are generated from the selected CAS audio stream, cached by
+  source hash and profile, and cropped according to source offsets and trims.
+- [x] The focused editor suite passes 47 tests; its TypeScript build and editor
+  lint pass. A pinned-FFmpeg proof verifies decoded first/middle/last keyframed
+  frames, source audio, title/caption pixels, and matching VTT/SRT cues.
 
-- [x] The in-app editor has slide, presenter, title/overlay, caption, narration, music, and SFX tracks plus a governed media bin.
-- [x] Split, trim, move, snap, lift, ripple delete, extract, reorder, transforms, opacity, audio level/pan/fades, keyframes, and transcript/caption edits are reversible transactions.
-- [x] Undo/redo, version records, playhead, in/out, loop, playback rate, snapping, zoom, guides, keyboard shortcuts, JSON project export, and OTIO-like interchange are implemented.
-- [x] AI/automation edit proposals expose their exact diff, policy impact, provider/model provenance, cost/retention warnings, and affected clips before apply.
-- [x] Proposals can be rejected, undone, or applied to a new project copy without mutating the active edit.
+### Native source and lifecycle evidence
 
-## Acceptance and handoff
+- [x] The current Rust broker and portable policy pass 63 tests and formatting.
+  Desktop TypeScript builds with Node 24.20.0.
+- [x] A prior packaged binary proved hidden WebView loading, authenticated worker
+  startup, GUI-subsystem execution, `WM_CLOSE`, zero console output, and no
+  orphan worker. It is lifecycle evidence only because it predates the final
+  integrated source.
+- [x] Native harnesses now cover the intended final generation, review, archive,
+  export, editor, and restart/recovery journeys and fail closed when receipts or
+  output files do not satisfy the contract.
 
-- [x] Repository lint and strict typecheck pass.
-- [x] Tests pass: 105 desktop, 104 renderer, 65 contracts, 26 themes, 16 scenes, 50 Rust, and 476 Python; environment-gated skips remain explicit.
-- [x] Playwright passes 18 desktop/narrow acceptance journeys with 2 deliberate project-specific skips.
-- [x] Full-screen and close-up acceptance captures are under `E:\temp\Alystria Visual Acceptance\2026-09-02`.
-- [x] NVIDIA NIM and ElevenLabs credentialed health checks passed without logging secret values.
-- [x] A locked two-second MuseTalk GPU inference passed and restored `gpu use.txt` to `no`.
-- [x] The 180.008-second female-presenter master is 1920x1080 VP9/Opus and its final six-slide contact sheet was reviewed.
-- [x] The fresh 0.741 GiB portable package under `E:\temp\Alystria Test Sandbox` passed an invisible 12-second launch smoke with empty stdout/stderr.
-- [x] Changes are split into working Conventional Commits directly on local `main`; `see me` is untouched and nothing is pushed.
+## Remaining local-overhaul acceptance
+
+These are required before the local overhaul can be called complete. Browser
+tests or the older portable binary cannot substitute for them.
+
+- [ ] Rebuild the desktop, renderer, and packaged worker from the frozen current
+  source, then repeat hidden launch, worker handshake, normal close, no-console,
+  and no-orphan checks against that exact package.
+- [ ] Prove a fresh packaged profile starts with no invented projects/jobs,
+  replays setup, reuses the configured E:-resident runtimes, and confines writes
+  to the disposable sandbox apart from the documented credential-store path.
+- [ ] Complete the representative 178-182 second native tutorial through the
+  selected provider route, Magpie narration, forced alignment, sparse Elena
+  opening, authored teaching scenes, current Review, archive, and master export.
+  Inspect frames throughout the duration, audio, captions, pacing, presenter
+  identity, mouth-at-rest behavior, and exact output receipts.
+- [ ] Complete the packaged editor journey: CAS import, reload, playback,
+  waveform, title and trim edit, durable revision, edited timeline render,
+  preserved audio, and approximately three-minute output.
+- [ ] Complete cancellation and restart recovery through the real Tauri app and
+  verify the durable terminal receipt after restart.
+- [x] Produce and inspect the current complex live-code proof: the 84.008-second
+  binary-search lesson uses independently checked Python/JavaScript traces,
+  timed code writing, found/missing cases, eight narration clips, and ten
+  inspected checkpoints. The video is
+  `E:\temp\avt-audit-2026-09-05\teaching-proof\binary-search-teaching-proof.webm`,
+  SHA-256 `8a2599b8d8bef813446ac1e33896a2a2bd3040f52122f75ed5d4215b79f743b7`.
+  This is distinct from the required native three-minute provider tutorial.
+- [ ] Reconcile final documentation and Git status after the coordinated native
+  run. Preserve the owner-owned `see me`, release our GPU lease only when owned, and record
+  exact current artifact paths and hashes.
+
+## Honest editor and media limitations
+
+These are product-depth gaps, not claims hidden behind completed checkboxes.
+
+- [ ] Preview uses HTML media seeking and is not qualified as frame-accurate.
+  A bounded proxy generation/cache/invalidation workflow is still absent.
+- [ ] Timeline transitions, same-track overlap, slip/roll/slide tools, nested
+  sequences, and independent stems from an already composited generation master
+  are not implemented.
+- [ ] Timeline-range media regeneration and automatic splice-in are absent.
+  Scene-image candidate generation and explicit acceptance are implemented, but
+  they are not a general NLE segment-regeneration engine.
+- [ ] Native render deliberately blocks unsupported pan, text rotation/scale,
+  arbitrary effects, and custom font-asset binding instead of silently ignoring
+  them.
+- [ ] OTIO output has not completed an official OpenTimelineIO parser and named
+  Windows NLE round-trip compatibility matrix.
+- [ ] Presenter runtime preflight and short component evidence exist, but the
+  final packaged tutorial is still required to qualify natural idle behavior,
+  identity stability, synchronization, and closed-mouth silence end to end.
+
+## Release-only and owner-approval gates
+
+These are deliberately outside the authorized local overhaul and must remain
+separate from the current native acceptance run.
+
+- [ ] Qualify NSIS/MSI install, uninstall, update, and rollback on a clean
+  Windows VM with production-ready runtime inputs.
+- [ ] Sign the application, runtime/model manifests, installer, and updater feed
+  with approved production keys.
+- [ ] Complete portable macOS/Linux packaging and platform-specific validation.
+- [ ] Push commits, publish packages, create a public release, deploy, or announce
+  the product. Each action requires explicit owner approval.
