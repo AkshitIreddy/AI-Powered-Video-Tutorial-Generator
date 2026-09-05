@@ -185,3 +185,20 @@ html[data-dense-editor=true] .aly-editor-timeline__scroll { max-height: 480px; }
 .library-source-record { display: flex; align-items: start; gap: 16px; padding: 18px; border-bottom: 1px solid #e7e0ea; } .library-source-record p { margin: 6px 0; font-size: 13px; }
 .stock-image-search { margin: 0 14px 14px; min-width: 0; } .stock-image-search .creative-field { min-width: 0; } .stock-image-search input, .stock-image-search select { width: 100%; min-width: 0; }
 .rendered-frame-review { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--ink); } .rendered-frame-review h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; } .rendered-frame-review p, .rendered-frame-review small, .rendered-frame-review summary { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; } .rendered-frame-review details { margin-top: 10px; } .rendered-frame-review article { margin-top: 12px; padding: 10px; border-radius: 8px; background: var(--paper); } .rendered-frame-review article strong { display: flex; gap: 6px; font-size: 12px; } .rendered-frame-review .reviewer-source { color: var(--muted); }
+.studio-workspace .inspector .inspector-note { color: #554a61; font-size: 12px; line-height: 1.55; }
+.studio-workspace .inspector .guided-callout { background: #ece4f8; color: #39235c; }
+.studio-workspace .inspector .guided-callout > svg, .studio-workspace .inspector .guided-callout strong { color: #39235c; }
+.studio-workspace .inspector .guided-callout strong { font-size: 12px; line-height: 1.4; }
+.studio-workspace .inspector .guided-callout p { color: #514361; font-size: 12px; line-height: 1.55; }
+@media (max-width: 930px) and (min-width: 701px) {
+  .studio-workspace { --compact-inspector-width: 270px; }
+  .studio-workspace .studio-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 4px 10px; min-height: 76px; }
+  .studio-workspace .studio-toolbar > div:first-child { grid-column: 1; grid-row: 1; }
+  .studio-workspace .studio-toolbar-center { grid-column: 1; grid-row: 2; justify-content: flex-start; }
+  .studio-workspace .studio-toolbar > div:last-child { grid-column: 2; grid-row: 1 / span 2; flex-wrap: wrap; justify-content: flex-end; max-width: 370px; }
+  .studio-workspace .studio-layout { grid-template-columns: 130px minmax(0, 1fr); overflow: hidden; padding-right: var(--compact-inspector-width); }
+  .studio-workspace .canvas-stage { min-width: 0; }
+  .studio-workspace .inspector { top: calc(var(--topbar-height) + 76px); width: var(--compact-inspector-width); }
+  .studio-workspace .playback-bar { min-width: 0; }
+  .studio-workspace .playback-bar small { display: none; }
+}

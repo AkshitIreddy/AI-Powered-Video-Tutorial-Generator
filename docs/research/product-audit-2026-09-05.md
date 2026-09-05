@@ -58,6 +58,6 @@ Optional rendered-frame review is tied to the current generation ID and exact vi
 Review, stock-search and image-candidate unit checks passed 13 cases. The matched/stale review states were visually inspected at 860 pixels, and the stock UI was inspected at 1440 and 860 with no horizontal overflow. Evidence is under `E:\temp\avt-audit-2026-09-05\review-ui` and `stock-ui`.
 ## Final source checks and capture conditions
 
-The complete desktop Vitest run passed **200 tests in 29 files** in 143.58 seconds under the pinned Node 24 runtime. The final desktop TypeScript build and ESLint run also passed. The browser matrix above exercises UI behavior independently of the pending provider/native media journey.
+The complete desktop Vitest run passed **211 tests** under pinned Node 24.20.0 after the approval and source-audio fixes. The earlier 200-test run in 29 files took 143.58 seconds. The final desktop TypeScript build and ESLint run also passed. The browser matrix above exercises UI behavior independently of the pending provider/native media journey.
 
 The owner runs a separate screen-dimming transparency overlay. It was left running. Visual acceptance uses captures from the hidden application WebView/Chromium render surface, rather than interpreting desktop-overlay darkness as an application palette defect. Other-project GPU work and its shared lease remain untouched; a busy lease delays our own model inference.
