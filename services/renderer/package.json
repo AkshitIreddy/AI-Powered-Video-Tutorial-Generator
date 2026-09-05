@@ -29,7 +29,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.json && node --test \"dist/tests/*.test.js\"",
+    "test": "tsc -p tsconfig.json && node --test dist/tests",
     "test:unit": "pnpm run test",
     "test:render": "tsc -p tsconfig.json && node --test dist/tests/render.test.js"
   },

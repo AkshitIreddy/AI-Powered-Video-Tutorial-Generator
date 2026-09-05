@@ -66,7 +66,41 @@ function validateInput(spec: SceneSpec, target: Required<CompileTarget>, registr
   if (target.safeAreaPercent < 0 || target.safeAreaPercent > 0.2) diagnostics.push({ code: "scene.target.safe-area", severity: "error", message: "Safe area must be between 0% and 20%.", path: "target.safeAreaPercent" });
   const definition = registry.get(spec.content.kind);
   if (definition) diagnostics.push(...definition.lint(spec.content));
+  diagnostics.push(...timedContentDiagnostics(spec));
   diagnostics.push(...duplicateIdDiagnostics(spec));
+  return diagnostics;
+}
+
+function timedContentDiagnostics(spec: SceneSpec): readonly Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  if (spec.content.kind === "whiteboard") {
+    for (const stroke of spec.content.strokes) {
+      if (stroke.startTick < 0 || stroke.endTick > spec.durationTicks) diagnostics.push({
+        code: "scene.whiteboard.stroke.timeline",
+        severity: "error",
+        message: `Stroke ${stroke.id} must stay inside the scene timeline.`,
+        path: "content.strokes",
+      });
+    }
+    for (const label of spec.content.labels ?? []) {
+      if (label.startTick < 0 || label.startTick >= spec.durationTicks || (label.endTick !== undefined && label.endTick > spec.durationTicks)) diagnostics.push({
+        code: "scene.whiteboard.label.timeline",
+        severity: "error",
+        message: `Label ${label.id} must stay inside the scene timeline.`,
+        path: "content.labels",
+      });
+    }
+  }
+  if (spec.content.kind === "live-code") {
+    for (const action of spec.content.actions ?? []) {
+      if (action.startTick < 0 || action.endTick > spec.durationTicks) diagnostics.push({
+        code: "scene.live-code.action.timeline",
+        severity: "error",
+        message: `Action ${action.id} must stay inside the scene timeline.`,
+        path: "content.actions",
+      });
+    }
+  }
   return diagnostics;
 }
 

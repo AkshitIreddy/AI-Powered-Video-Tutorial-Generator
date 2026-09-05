@@ -10,6 +10,7 @@ import {
   preflightScene,
   SPECIMEN_SCENES,
   specimenFor,
+  sceneSpecFromStoryboard,
   TIMEBASE_TICKS_PER_SECOND,
   trackValue,
   validateScenePlugin,
@@ -24,6 +25,39 @@ const portrait = { width: 1080, height: 1920, fps: 30 as const };
 const square = { width: 1080, height: 1080, fps: 30 as const };
 
 describe("built-in scene catalog", () => {
+  it("hydrates provider-authored storyboard content without specimen text", () => {
+    const spec = sceneSpecFromStoryboard({
+      id: "lesson-search",
+      type: "live_code",
+      title: "Binary search narrows the interval",
+      narration: "Compare the midpoint and keep only the half that can still contain the target.",
+      durationTicks: 2_913_600,
+      duration: 1,
+      objectiveIds: ["objective-search"],
+      claimIds: ["claim-search"],
+      onScreenText: ["mid = (low + high) // 2", "if value < target: low = mid + 1"],
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "demonstrate",
+        compositionFamily: "document_focus",
+        focalAnchor: "search-loop",
+        continuityKey: "binary-search",
+        informationUnits: [{ id: "result", role: "result", text: "target found" }],
+        attentionCue: "active-line",
+        motionIntent: ["evidence-focus"],
+        textRoles: { result: "target found" },
+        avoidRegions: [],
+      },
+    }, { seedScope: "project-one" });
+
+    expect(spec?.durationTicks).toBe(2_913_600);
+    expect(spec?.content.kind).toBe("live-code");
+    expect(JSON.stringify(spec)).toContain("mid = (low + high) // 2");
+    expect(JSON.stringify(spec)).toContain("target found");
+    expect(JSON.stringify(spec)).not.toContain("karatsuba");
+    expect(preflightScene(spec!, landscape).ok).toBe(true);
+  });
+
   it("contains one definition and one specimen for every built-in kind", () => {
     expect(builtinSceneRegistry.list()).toHaveLength(BUILTIN_SCENE_KINDS.length);
     expect(SPECIMEN_SCENES).toHaveLength(BUILTIN_SCENE_KINDS.length);
@@ -325,6 +359,21 @@ describe("built-in scene catalog", () => {
     expect(render("presenter-slide")).toContain('data-presenter-stage="portrait"');
     expect(render("summary")).toContain("THE DURABLE THREAD");
   });
+
+  it("shows the authored live-code action and run result at the active tick", () => {
+    const spec = specimenFor("live-code");
+    const scene = compileScene(spec, landscape);
+    const markup = renderToStaticMarkup(createElement(SceneView, {
+      scene,
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 6.5, reducedMotion: false },
+    }));
+
+    expect(markup).toContain('data-live-code-action="run"');
+    expect(markup).toContain("PASS · 8 × 7 = 56");
+    expect(markup).not.toContain(">CALL<");
+    expect(markup).not.toContain(">SPLIT<");
+    expect(markup).not.toContain(">RETURN<");
+  });
 });
 
 describe("preflight diagnostics", () => {
@@ -358,6 +407,32 @@ describe("preflight diagnostics", () => {
     if (code.content.kind !== "live-code") throw new Error("Expected live-code specimen");
     const badCode = { ...code, content: { ...code.content, actions: [{ id: "stale", type: "type" as const, lineId: "line.missing", startTick: 1, endTick: 2 }] } };
     expect(preflightScene(badCode, landscape).diagnostics.some((item) => item.code === "scene.live-code.action.line")).toBe(true);
+  });
+
+  it("rejects whiteboard and live-code events outside the scene timeline", () => {
+    const board = specimenFor("whiteboard");
+    if (board.content.kind !== "whiteboard") throw new Error("Expected whiteboard specimen");
+    const lateBoard = {
+      ...board,
+      content: {
+        ...board.content,
+        strokes: [{ ...board.content.strokes[0]!, endTick: board.durationTicks + 1 }],
+      },
+    };
+    expect(preflightScene(lateBoard, landscape).diagnostics.some((item) => item.code === "scene.whiteboard.stroke.timeline"))
+      .toBe(true);
+
+    const code = specimenFor("live-code");
+    if (code.content.kind !== "live-code") throw new Error("Expected live-code specimen");
+    const lateCode = {
+      ...code,
+      content: {
+        ...code.content,
+        actions: [{ ...code.content.actions![0]!, endTick: code.durationTicks + 1 }],
+      },
+    };
+    expect(preflightScene(lateCode, landscape).diagnostics.some((item) => item.code === "scene.live-code.action.timeline"))
+      .toBe(true);
   });
 });
 

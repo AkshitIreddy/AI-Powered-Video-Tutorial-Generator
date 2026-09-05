@@ -70,7 +70,8 @@ export interface NarrationWordTiming {
 export interface NarrationTiming {
   readonly schemaVersion: 1;
   readonly source: "provider-native" | "forced-alignment" | "duration-proportional";
-  readonly alignedTokenRatio: number;
+  /** Measured token coverage. Omitted for duration-proportional estimates. */
+  readonly alignedTokenRatio?: number;
   readonly words: readonly NarrationWordTiming[];
 }
 
@@ -280,7 +281,7 @@ export function assertResolvedScene(scene: ResolvedScene): void {
     if (timing.schemaVersion !== 1 || !timingSources.has(timing.source)) {
       throw new TypeError(`Scene ${scene.id} narration timing has an unsupported source`);
     }
-    if (!Number.isFinite(timing.alignedTokenRatio) || timing.alignedTokenRatio < 0 || timing.alignedTokenRatio > 1) {
+    if (timing.alignedTokenRatio !== undefined && (!Number.isFinite(timing.alignedTokenRatio) || timing.alignedTokenRatio < 0 || timing.alignedTokenRatio > 1)) {
       throw new RangeError(`Scene ${scene.id} narration timing alignedTokenRatio must be in [0, 1]`);
     }
     if (timing.words.length === 0 || timing.words.length > 4_096) {
