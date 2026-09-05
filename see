@@ -1,0 +1,186 @@
+# Successor-agent brief: AI Video Tutorial Generator
+
+This is the current handoff for the next agent. Read it completely before changing anything. It is deliberately candid: it records evidence, unfinished work, and prior decisions, but it is not design authority.
+
+## Ready-to-send instruction
+
+Work in `C:\Users\akshi\Desktop\Code Palace\ai video tutorials`.
+
+First read this repo-root `see` file completely. Then read the older repo-root `see me`, `README.md`, `IMPLEMENTATION_STATUS.md`, `PAUSE_HANDOFF.md`, `legacy/v1/README.md`, and `docs/research/presenter-motion-runtime-2026-09-04.md`. Inspect the Git history, the `v1.0.0` tag, and the preserved `legacy/v1` source. Do not run the legacy prototype: it is unsafe historical code.
+
+Treat every statement and every current method as a hypothesis to verify, not a direction to follow blindly. You are expected to be more capable than the previous agent. Independently judge the product architecture, user experience, generation pipeline, animation approach, model/provider choices, testing, and evidence. Keep what survives scrutiny, repair or replace what does not, and explain important tradeoffs through working results rather than deference to prior choices.
+
+Finish the product work rather than producing only a critique. Research current best methods first, implement the strongest practical choices for a Windows PC with an NVIDIA GPU, perform a comprehensive original UI/UX overhaul, verify the real integrated app headlessly, and leave reversible commits on local `main`. Do not push, publish, release, deploy, or contact anyone without explicit owner approval.
+
+## Product and repository identity
+
+- Visible product name: **AI Video Tutorial Generator**. Do not call the product “Alystria Studio 1.0” or “Alystria Studio 2.0” in the user-facing app. “2.0 overhaul” may eventually be mentioned in GitHub release notes, not as the app's everyday name.
+- GitHub origin: `https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator.git`.
+- Work only on local `main`; the owner dislikes multiple branches.
+- Current source checkpoint: `40c27ce feat(presenter): add hybrid portrait motion runtime`. The immediately preceding research checkpoint is `c3a2c8a docs(research): define presenter motion runtime strategy`. The commit containing this `see` file is the handoff checkpoint; inspect `git log -3` for its hash.
+- At handoff, local `main` is substantially ahead of `origin/main`. Nothing from this workstream has been pushed or released.
+- Preserve unknown/user-owned files. In particular, the untracked repo-root `see me` is an older user-owned handoff/history file: read it, do not overwrite or commit it unless the owner explicitly asks.
+- The current project is a Windows-first, local-first Tauri 2 + React desktop application for turning topics and source material into source-grounded, editable tutorial videos.
+
+## Inspect the old version and evolution
+
+Do not evaluate the overhaul in isolation.
+
+1. Inspect Git tag `v1.0.0` (`ab57e5ca0e8df4409dd56de3d2e75820bb7bd2f9`, 2023-06-07) with read-only Git commands such as `git show` and `git ls-tree`.
+2. Inspect `legacy/v1`, especially `legacy/v1/README.md`. It is a preserved FastAPI/Next.js-era prototype using Cohere, Edge TTS, Google images, and SadTalker. It contains known insecure practices and must not be executed or given credentials.
+3. Inspect the pre-overhaul checkpoint `32f4fc9 chore(repo): bootstrap alystria studio 2.0 workspace`, the older branch-era account in `PAUSE_HANDOFF.md`, the current `main` history, and the old `see me` brief.
+4. Compare what was charming or direct in v1 with what the new product genuinely improves. Do not copy obsolete architecture, visual styling, security problems, or random slide placement.
+5. Audit current docs and screenshots. Several counts, screenshots, release-gate claims, and “Alystria” labels may be stale. `README.md` and `IMPLEMENTATION_STATUS.md` are useful inventories, not proof of current behavior.
+
+## Current architecture to verify
+
+- `apps/desktop`: React/Vite interface and Playwright UI tests.
+- `apps/desktop/src-tauri`: Tauri 2 Rust shell, broker, setup/runtime policy, native job integration, and Windows packaging.
+- `services/pipeline`: Python planning/generation workflow, model policy, presenter workers, and tests.
+- `services/renderer`: TypeScript scene/video renderer.
+- `packages/contracts`, `packages/scenes`, `packages/themes`: shared typed contracts, scene families, and themes.
+- Local project model: SQLite state plus content-addressed artifacts, durable jobs, project revisions, provider/model routing, evidence and storyboard data, narration/presenter/render/QA/export stages, captions, and editing surfaces.
+
+The intended product is not a slideshow demo. It should provide a polished nontechnical path from onboarding and setup through source ingestion, planning, script/storyboard review, slide and presenter creation, generation, visual/educational QA, editing, and export. Local models and bring-your-own cloud providers should be configurable without silently changing privacy, cost, or quality.
+
+## Owner's non-negotiable operating constraints
+
+- Keep development commands, workers, test servers, diagnostics, and app launches hidden/headless. Do not open PowerShell, Command Prompt, consoles, or random app windows on the owner's desktop. The final `.exe` and every helper process must also avoid console pop-ups.
+- The app itself must manage its workers and status. Do not require the user to operate an external terminal or a second “hidden launcher.”
+- On clean launch, show only jobs and projects the user actually created. Remove incomplete dummy data and stale seeded jobs; one complete intentional demo is acceptable only if clearly presented as a demo and genuinely complete.
+- C: is space constrained. Put model weights, large runtimes, generated video, benchmarks, caches, and temporary build/test artifacts under `E:\temp`, using product-specific subdirectories. Do not casually duplicate multi-gigabyte packs.
+- For AI-model GPU work, coordinate through `C:\Users\akshi\Desktop\Code Palace\gpu use.txt`: if it says `yes`, do other work or wait; if it says `no`, set it to `yes`, use the GPU, and always restore it to `no`, including after interruption or failure. Do not hold the lock for ordinary non-AI GPU use.
+- The owner authorized use of keys in `C:\Users\akshi\Desktop\Code Palace\Commonly used Keys.txt`. Read only what is needed, never print keys, place them in command lines, commit them, copy them into the handoff, expose them to logs/screenshots, or move/delete the source file. Use OS credential storage or a suitably ignored test profile.
+- Make reversible, focused commits directly on `main`. Preserve unrelated work. No push, public release, GitHub message, deployment, external communication, or production signing without explicit approval.
+- If interrupted or told to pause, stop immediately, clean up owned processes, release the GPU lock, and preserve partial evidence.
+
+## Product requirements accumulated from owner review
+
+### Visual design and onboarding
+
+- Perform a complete original visual pass. The current app has repeatedly been described as boring, cheap, or generic. Do not merely recolor cards or add gradients. Establish a coherent art direction, stronger hierarchy, excellent typography, spacing, density, motion, and educational personality across every route and empty/loading/error state.
+- Use the owner's prior unicorn/AI-page reference only as mood input, never copied branding. Create a proper app icon with a meaningful center mark and use it consistently in the app, setup/onboarding, executable, taskbar, installer, and metadata.
+- Fix every concrete layout issue: centered card text, slider number/track overlap, slider centering, presenter cards fitting their containers, thin themed scrollbars, actual app scrolling, non-blurred tutorial targets, adequate profile padding, aligned graph nodes, text overflow, artifacting below slide text, and narrow-window behavior.
+- The home image and repeated template thumbnails were disliked. Build a distinct, complete visual library. Do not use the same image for every template.
+- First launch needs an interactive game-tutorial-style onboarding system: contextual panels point to and highlight the real controls, wait for meaningful user actions, explain why each stage matters, and walk through the full workflow. It must not blur the control it is teaching. It should know what is already configured, skip or acknowledge completed setup, and work when replayed from Settings.
+- Setup and onboarding are different: setup installs/configures required components; onboarding teaches the product. Preselect mandatory components and state exact download/storage estimates before action. In the owner's test profile, attach existing local models and credentials so review does not repeat installation work.
+- Make Settings and Diagnostics genuinely detailed: providers, model routes, storage, cache, RAM/VRAM limits, power/safety profiles based on the system, concurrency, privacy, cost, download locations, runtime health, logs, updates, accessibility, captions, voices, render/export defaults, and recovery. Defaults must still be understandable.
+- Add profile-picture selection with a polished, diverse set of original choices. The presenter/profile library already has generated assets, but they are only a start; inspect quality and replace weak ones.
+
+### Models and providers
+
+- Give users broad, explicit control over the model used for every capability rather than a single opaque provider choice. Show dependency, size, license, quantization, compatibility, expected RAM/VRAM, speed/quality tier, status, and source.
+- Search/discovery should cover relevant model hubs and provider catalogs, with deliberate filters and compatibility checks similar in spirit to LM Studio's model browser. Research LM Studio's current public behavior and the appropriate Hugging Face APIs instead of guessing. Include relevant image ecosystems such as Hugging Face and Civitai where lawful and technically supportable.
+- Include Cohere. Use the real provider icons for Cohere, OpenAI, Anthropic, Google/Gemini, NVIDIA, ElevenLabs, Hugging Face, and other providers, subject to trademark guidance; do not use generic letter placeholders when official assets are permitted.
+- Research current API options, especially NVIDIA NIM and strong voice/image/video providers. Never imply a provider supports a modality just because its general catalog exists; capability-test exact routes.
+- Local and cloud paths should share stable internal capability contracts. Timing, caption alignment, scene duration, and editing must not work only with ElevenLabs timestamps. Normalize provider word/phoneme timestamps when available and have robust forced-alignment/fallback paths when they are not.
+- Resource safety should learn the actual Windows/NVIDIA machine and expose sensible VRAM, RAM, power, offload, concurrency, and thermal/safety limits. Avoid downloading models that cannot reasonably run unless the user deliberately chooses an experimental/offload path.
+
+### Voices and presenters
+
+- Voice quality is not acceptable merely because speech is intelligible. Research and compare current strong local TTS and cloud APIs such as ElevenLabs and any relevant NVIDIA offerings. Evaluate expressiveness, pronunciation, timestamps, language support, latency, licensing, privacy, and cost.
+- Match voice, gender/presentation, age, accent, pacing, and teaching style to the selected presenter. Do not use a female voice for a male character or vice versa unless the user deliberately chooses it.
+- Presenters should look like teachers, tutors, creators, specialists, and demonstrators—not only news anchors. Build a broad pool appropriate for math, science, history, coding, young learners, corporate training, documentary, language, playful/cartoon, and anime tutorials.
+- Most default presenters should be front-facing, attractive, original, and suitable for teaching. A source portrait should normally have a relaxed closed mouth, neutral resting expression, stable face, and no unwanted mole/blemish. `apps/desktop/src/assets/presenters/academic-amara-v1.webp` was the current test choice; inspect it yourself.
+- Presenters need natural idle life: blinking, breathing, subtle gaze, realistic micro head/shoulder motion, and expression. Do not fake this by moving the whole portrait up and down. Do not erase beards, change eye color, alter identity, or distort the face during lip sync. When narration stops, the mouth must settle naturally rather than remain open.
+- The owner explicitly said to forget the proposed 3D approach. Do not revive 3D unless the owner later changes direction.
+- Presenter use should not cause a character to linger pointlessly after its narration has ended. Time entrances, exits, gaze, idle, and speaker focus to the educational beat.
+- Give users a presenter/image generator with local and API model options, LoRA and other current controllable-generation features where appropriate, clear rights/consent controls, and visual review before use.
+
+### Slides, teaching modes, timing, and editor
+
+- There are two valuable slide paths; support and compare both:
+  1. Deterministic/programmatic scenes where an AI plans and visually reviews editable DOM/SVG/canvas content and a layout/QA system repairs alignment, overflow, graph geometry, pacing, and contrast.
+  2. Image-model-generated artistic slides where a multimodal reviewer iterates prompts/edits, but text, citations, identity, consistency, and editability are handled honestly.
+- Programmatic slides must look designed, not like default web cards. Generated image slides must not smuggle in malformed text or unverifiable details. Use each method where it is strongest and let users choose or mix them.
+- Systemically prevent the defects seen in prior videos: off-center questions, graph nodes detached from their path, cheap card styling, misaligned second slides, black/washed-out ghost text or artifacts below content, overflowing text, presenter panels outside cards, and dead time after narration.
+- Tutorial duration must be user-selectable. Planning, narration, scene pacing, captions, and final media should converge on the requested duration rather than padding by leaving a presenter still on a finished slide.
+- Add credible whiteboard and live-coding tutorial modes. Whiteboard math should draw equations, diagrams, transformations, erasures, and explanatory annotations stroke-by-stroke in synchronization with narration. Coding should type/edit/highlight/execute or trace code in meaningful steps rather than replay a fake terminal overlay. Research best technical approaches and validate complex derivations, not only trivial text.
+- Captions should export at least WebVTT and SRT from one internal cue model. Explain these as common subtitle formats in nontechnical UI. Also support burned-in captions and accessible transcript output where appropriate.
+- The post-generation workspace should become a capable integrated video editor: multitrack timeline, scene and clip trimming/reordering, narration and caption edits, presenter and slide replacement, keyframes/motion/transition controls, asset import, waveform and caption alignment, local regeneration of a segment, revision history/undo, preview proxies, and final export. Research current desktop NLE UX and technical foundations before choosing libraries.
+- The LLM/vision reviewer must inspect actual rendered frames and temporal sequences, not only JSON or isolated source. The user wants defects caught before handoff and wants controls to perform the same repairs manually.
+
+## Presenter research and implementation currently in the tree
+
+The previous agent researched and tested several 2D portrait-animation routes. The current default local experiment is a two-stage chain:
+
+1. LivePortrait adds pose, gaze, blink, expression, and shoulder motion.
+2. MuseTalk 1.5 applies narration-driven mouth motion to the resulting video.
+
+The app now separates `portraitAnimation` and `lipSync` routes, exposes relevant model choices, preserves the two choices through save/setup, and includes a hybrid adapter with exact source-manifest/hash checks. The MuseTalk security adapter was changed to permit exact video-frame extraction while still denying shell execution. Read the implementation and `docs/research/presenter-motion-runtime-2026-09-04.md`.
+
+This is not a mandate. Independently research 2026 best practice and test whether a better route now exists. Compare identity preservation, temporal stability, natural full-face/eye/head/shoulder motion, mouth closure at silence, expression control, source resolution, audio sync, install size, Windows compatibility, VRAM/RAM, speed, licensing, reproducibility, and integration complexity. A unified audio-driven model may beat the two-stage chain; a carefully controlled layered method may still be better. Prove it visually on this machine.
+
+Measured evidence from the previous pass, to reproduce or challenge:
+
+- Target machine: NVIDIA RTX 4080 Laptop GPU with 12 GB VRAM and 32 GB RAM.
+- LivePortrait produced 16.48 seconds of motion in 61.96 seconds, peak 2,655 MiB VRAM.
+- MuseTalk lip stage produced 3.24 seconds in 66.73 seconds; hybrid wall time 128.69 seconds, peak 7,913 MiB VRAM.
+- Direct hybrid sample: `E:\temp\avt-presenter-bench-2026-09-04\hybrid-amara\v15\amara-liveportrait-musetalk.mp4`.
+- Managed-broker smoke: `E:\temp\AI Video Tutorial Generator\benchmarks\presenter-runtime-2026-09-04\managed-hybrid-smoke-v3\presenter-identity-and-motion-check.mp4`. It was probed as 640x640, 25 fps, H.264/AAC, 3.24 seconds. A contact sheet is beside it.
+- LongCat Video Avatar 1.5 via WanGP completed 49 frames / 1.96 seconds in 587.05 seconds after about 29 GB of downloads, peak 4,685 MiB VRAM. The result showed identity drift, eye-color change, and exaggerated mouth motion: `E:\temp\AI Video Tutorial Generator\benchmarks\presenter-runtime-2026-09-04\longcat-avatar-1.5\outputs-profile5\longcat-amara-profile5.mp4`.
+- EchoMimicV3-Flash was stopped after 386.92 seconds before frame one, with roughly 46.33 GB committed RAM/pagefile and only about 500 MiB GPU use. It was not viable as a default on this machine under that configuration.
+- HunyuanVideo-Avatar's inspected official native path required at least 24 GB VRAM, so it was not treated as the default on the 12 GB laptop.
+- InfiniteTalk was considered an older 14B/30-step comparison route and was not run after the LongCat result.
+
+Do not accept those tests as definitive. Verify model versions, setup, driving-video quality, inference configuration, newer releases, and alternatives using current primary sources and fresh visual comparisons.
+
+## Current large runtime and artifact locations
+
+- Self-contained presenter test runtimes were moved under `E:\temp\AI Video Tutorial Generator Test Sandbox\Models\Presenter` (approximately 12.74 GB MuseTalk runtime, 0.03 GB MuseTalk source, and 2.07 GB LivePortrait runtime at the last measurement).
+- Generated unsafe-test-only runtime configuration: `E:\temp\AI Video Tutorial Generator Test Sandbox\Models\presenter-runtime.json`. It is test evidence, not a signed production runtime pack.
+- The portable test app at `E:\temp\AI Video Tutorial Generator Test Sandbox\App\AI Video Tutorial Generator.exe` predates the latest source changes and must be rebuilt before anyone calls it current.
+- LongCat/WanGP assets may remain under `E:\temp\AI Video Tutorial Generator\runtimes\WanGP` and related venv/checkpoint directories. Verify exact paths and whether evidence still needs them before reclaiming space.
+- Never move these back to C:. Avoid duplicating them while benchmarking.
+
+## Interrupted three-minute evaluation
+
+The newest three-minute run was started and then immediately stopped when the owner asked to pause. Owned processes were cleaned up and the GPU lock was restored to `no`.
+
+- Partial fresh output: `E:\temp\AI Video Tutorial Generator\evidence\three-minute-liveportrait-musetalk-2026-09-04`.
+- It contains a project directory and `presenter-runtime-amara.json`, but no completed current video. Inspect and deliberately resume or restart; do not claim it is complete.
+- Old rejected/diagnostic video: `E:\temp\AI Video Tutorial Generator\evidence\three-minute-quality-maya-2026-09-03\ai-video-tutorial-generator-karatsuba-3min-maya-2026-09-03.webm` (180.01 s, 1920x1080, 30 fps, VP9/Opus). The owner correctly identified it as the old presenter and old result; it is not final evidence.
+- `scripts/run-three-minute-quality-evaluation.py` was updated to preserve the hybrid runtime configuration and use Amara/product naming, but its fresh run was interrupted. Review the script independently before re-running it.
+
+Use a short, discriminating clip while iterating on expensive presenter models. When the selected approach is genuinely stable, generate a representative three-minute integrated tutorial so frame defects, pacing, captions, teaching flow, and identity can be inspected. A long render is not proof by itself.
+
+## Verification evidence at this checkpoint
+
+The following passed during the previous workstream, but the successor should re-run proportionate tests after changes:
+
+- Presenter-focused Python tests: 25 passed.
+- Full desktop unit suite at an earlier checkpoint: 106 passed.
+- Tauri model-setup tests: 4 passed.
+- Latest desktop production build passed after the setup-persistence fix. It ran under Node 20.20.2 and emitted an engine warning because the repository requires Node 24 or newer; use the configured/best Windows Node 24 runtime for final qualification.
+- Latest targeted Playwright test passed: `local model and provider profiles remain explicit and saveable` (desktop viewport). Its screenshot confirmed LivePortrait and MuseTalk remained selected after save.
+- `git diff --check` passed apart from a line-ending warning on a PowerShell script.
+- At shutdown, the GPU lock was `no` and no owned project worker/server processes remained.
+
+These are development checks, not release qualification. The integrated desktop app, worker lifecycle, clean first launch, setup replay, narrow layouts, long generation, editor, media quality, packaging, installer behavior, and clean-machine runtime provisioning remain material gates.
+
+## Priority plan for the successor
+
+1. **Forensic audit.** Read current and historical docs/code; map claims to real executable behavior; identify mock/demo-only paths, stale screenshots/data, unfinished routes, UI dead ends, and unsafe or overly complicated architecture.
+2. **State-of-the-art research.** Use current primary sources and reproducible tests for presenter animation/lip sync, TTS/alignment, slide/diagram generation, image generation, multimodal visual QA, whiteboard/math animation, live-code teaching, timeline editing, local model discovery, provider catalogs, Windows/NVIDIA inference, and resource scheduling. Compare the current choices and replace them when evidence supports it.
+3. **Product and UI overhaul.** Establish a distinctive cohesive design system, then repair every route and state—not only the home screen. Build and visually inspect variations. Check desktop and narrow windows, scrolling, onboarding highlights, keyboard/focus/accessibility, empty and populated states, and native-window presentation.
+4. **Generation quality.** Make duration, pacing, voice/persona match, slide geometry, presenter motion, captions, whiteboard/code sequences, and artifact detection systematic. Add renderer/vision gates and repair loops that catch the owner's actual reported defects.
+5. **Integrated behavior.** Exercise the actual Tauri app and supervised workers. No external terminal should be required or appear. A user-created job should persist, recover/cancel correctly, show truthful progress, and produce editable outputs. Clean launch must not invent jobs.
+6. **Packaging.** Rebuild a current no-console Windows `.exe` in the E: test box, verify icon/branding, first-run/setup/onboarding, model reuse, storage policy, clean shutdown, and no orphan process. Do not create a second launcher for behavior the real executable should own.
+7. **Evidence and handoff.** Produce a short discriminating presenter comparison, a polished complex whiteboard/math or live-code example, and finally a current three-minute tutorial. Inspect frames and temporal behavior, not just metadata. Update docs with exact proven status and return exact paths. Leave small reversible commits on `main`.
+
+## Definition of done
+
+Do not declare success merely because tests pass or a file exists. A credible completion should include:
+
+- A noticeably stronger, consistent, original UI that has been inspected in the running app at desktop and narrow sizes.
+- An interactive onboarding/setup experience that works on clean first launch and intelligently on replay.
+- No phantom jobs, incomplete dummy projects, terminal pop-ups, stale visible Alystria branding, broken scrolling, or obvious layout defects.
+- Honest provider/model browsing and selection with icons, exact capability routes, download estimates, local compatibility, and resource controls.
+- Presenter/voice pairings that look and sound intentional, with natural non-bobbing idle behavior, stable identity, closed-mouth silence, and good synchronization.
+- High-quality slides and teaching modes with programmatic geometry/text QA and visibly credible complex whiteboard/math or live-code sequencing.
+- A usable integrated post-generation editor and provider-independent timing/caption pipeline.
+- A current three-minute generated tutorial visually reviewed across its duration, plus caption/export evidence and an exact output path.
+- A current portable Windows test app path on E: that launches without a terminal and leaves no orphan worker.
+- Current verification results, known limitations, storage/runtime inventory, GPU lock restored to `no`, and a clean Git status except deliberate owner-owned files.
+
+Be ambitious, but remain evidence-driven. The purpose of this handoff is to prevent context loss, not to preserve the previous agent's ego or architecture.
