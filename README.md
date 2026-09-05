@@ -8,7 +8,7 @@ AI Video Tutorial Generator is a Windows-first, local-first desktop environment 
 
 ![Current teaching workbench, empty local profile](docs/images/workbench-home-2026-09-05.png)
 
-The [September 5 independent audit](docs/research/product-audit-2026-09-05.md) records the current product changes and evidence boundaries. Earlier screenshots and counts below are historical unless explicitly refreshed in the [implementation ledger](IMPLEMENTATION_STATUS.md).
+The [September 5 independent audit](docs/research/product-audit-2026-09-05.md) records the current product changes and evidence boundaries. The screenshots here show the September 5 browser UI; they do not substitute for the separately documented native Windows acceptance. Current verification is tracked in the [implementation ledger](IMPLEMENTATION_STATUS.md).
 
 [Documentation](docs/README.md) · [Architecture](docs/architecture/overview.md) · [Local model profiles](docs/models/local-profiles.md) · [Free/trial provider guide](docs/providers/free-and-trial.md) · [Security and privacy](docs/security/security-and-privacy.md) · [Evaluation](docs/testing/evaluation.md) · [Implementation ledger](IMPLEMENTATION_STATUS.md)
 
@@ -37,15 +37,17 @@ The Guided flow keeps provider IDs, raw prompts, cache keys, codec details, and 
 
 No content-bearing cloud call should occur before provider, payload class, retention/region, and upper-bound cost are approved.
 
-![New Tutorial wizard](docs/images/alystria-new-tutorial.png)
+![Current New Tutorial wizard in an empty browser profile](docs/images/new-tutorial-2026-09-05.png)
 
 Studio mode reveals stable scene navigation, the shared exact preview, Content/Design/Motion inspectors, pronunciation and evidence controls, dependency impact, 240,000-tick choreography, target overrides, narration/caption tracks, preservation locks, candidates, scene-local regeneration, undo/redo, revision history, and persistent jobs—without remounting or discarding project state.
 
-![AI Video Tutorial Generator workspace](docs/images/alystria-studio.png)
+The included asset library works before a project exists, without an image API key.
+
+![Included teaching backgrounds and elements](docs/images/included-library-2026-09-05.png)
 
 Global areas are Home, Projects, Templates, Library, Models & Providers, and Settings & Diagnostics. Project workspaces are Plan, Storyboard, Studio, Review, and Export. The responsive desktop layout is tested at a narrow 860 px window as well as larger displays.
 
-![AI Video Tutorial Generator at a narrow desktop width](docs/images/alystria-narrow.png)
+![Current workbench at a narrow desktop width](docs/images/workbench-narrow-2026-09-05.png)
 
 ## Feature map
 
@@ -101,7 +103,7 @@ See [Rendering](docs/architecture/rendering.md) and [Accessibility](docs/accessi
 
 ## Cloud, Local, and Hybrid providers
 
-![Models and Providers](docs/images/alystria-providers.png)
+![Current Models and Providers browser](docs/images/models-providers-2026-09-05.png)
 
 - **Fully Local:** project-content networking is denied; loopback workers remain available.
 - **Hybrid:** sensitive stages can remain local while separately approved payloads use named cloud capabilities.
@@ -132,7 +134,7 @@ Planned Windows baseline:
 - 64-bit Windows 10/11 with WebView2;
 - 25 GiB free disk recommended; model packs may need much more;
 - 8 GiB RAM minimum for desktop/cloud work, 16 GiB or more recommended;
-- GPU optional; the fully tested local target is an RTX 4080 Laptop GPU with 12 GB VRAM;
+- GPU optional; the reference local test machine uses an RTX 4080 Laptop GPU with 12 GB VRAM;
 - verified managed FFmpeg/ffprobe for final delivery.
 
 The app observes but never changes Windows/G-Helper power settings. Silent mode with CPU boost disabled is valid for functional work; peak benchmarks must record a deliberately selected profile.
