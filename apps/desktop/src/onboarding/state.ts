@@ -24,6 +24,7 @@ export const REQUIRED_ONBOARDING_MODEL_IDS = [
   "local/qwen3.5-9b-gguf",
   "local/kokoro",
   "local/whisper-large-v3-turbo",
+  "local/liveportrait",
   "local/musetalk-1.5",
 ] as const;
 

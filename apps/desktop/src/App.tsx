@@ -327,16 +327,24 @@ const localModelOptions = [
   { id: "local/piper-voice-pack", name: "Piper voice pack", medium: "Legacy draft voice", detail: "Optional only · per-voice rights review" },
   { id: "local/whisper-large-v3-turbo", name: "Whisper large-v3-turbo", medium: "Transcription", detail: "Local ASR & timing candidate" },
   { id: "local/montreal-forced-aligner", name: "Montreal Forced Aligner", medium: "Caption alignment", detail: "Language-pack and license review" },
-  { id: "local/liveportrait", name: "LivePortrait", medium: "Pose & expression", detail: "Companion animation, not audio lip-sync" },
+  { id: "local/liveportrait", name: "LivePortrait", medium: "Pose, gaze & expression", detail: "Measured at 2.7 GB peak VRAM on this PC" },
+  { id: "local/longcat-avatar-1.5", name: "LongCat Video Avatar 1.5", medium: "Unified presenter generation", detail: "Large opt-in quality route · roughly 32 GB installed" },
   { id: "local/stableavatar", name: "StableAvatar", medium: "Talking-head research", detail: "Offload candidate · benchmark before enable" },
   { id: "local/wav2lip-baseline", name: "Wav2Lip baseline", medium: "Lip-sync fallback", detail: "Legacy baseline · rights review required" },
 ] as const;
 
 const lipSyncModelOptions = [
-  { id: "local/echomimicv3-flash", name: "EchoMimicV3 Flash", detail: "Expressive talking head · first 12 GB benchmark target", tag: "Recommended to benchmark" },
-  { id: "local/musetalk-1.5", name: "MuseTalk 1.5", detail: "Fast face-region lip-sync for short presenter shots", tag: "Fast fallback" },
+  { id: "local/musetalk-1.5", name: "MuseTalk 1.5", detail: "Narration-accurate mouth pass · measured below 8 GB VRAM", tag: "Measured local choice" },
   { id: "local/latentsync-1.5", name: "LatentSync 1.5", detail: "Slower diffusion comparison · version 1.5 only", tag: "Quality comparison" },
   { id: "local/nvidia-lipsync-private", name: "NVIDIA LipSync", detail: "Private-access local NIM sidecar; hosted NIM key does not unlock it", tag: "Separate access" },
+] as const;
+
+const portraitAnimationModelOptions = [
+  { id: "local/liveportrait", name: "LivePortrait", detail: "Native gaze, blink, expression, head and shoulder motion", tag: "Best local default" },
+  { id: "local/longcat-avatar-1.5", name: "LongCat Video Avatar 1.5", detail: "Unified audio-driven avatar · 13.6B INT8 · large install", tag: "High-compute option" },
+  { id: "local/echomimicv3-flash", name: "EchoMimicV3 Flash", detail: "Committed about 46 GB RAM and never reached frame one here", tag: "Blocked on this PC" },
+  { id: "local/hunyuan-video-avatar", name: "HunyuanVideo-Avatar", detail: "Official runtime requires at least 24 GB VRAM", tag: "Cloud / larger GPU" },
+  { id: "local/infinitetalk", name: "InfiniteTalk", detail: "Older 30-step 14B route superseded by LongCat 1.5", tag: "Legacy comparison" },
 ] as const;
 
 const profileMediums = [
@@ -347,6 +355,7 @@ const profileMediums = [
   ["voice", "Narration"],
   ["transcription", "Transcription"],
   ["presenter", "Presenter"],
+  ["portraitAnimation", "Portrait animation"],
   ["lipSync", "Lip-sync"],
 ] as const;
 
@@ -578,6 +587,18 @@ const ONBOARDING_CATALOG: OnboardingCatalog = {
       required: /qwen3\.5-9b|kokoro|whisper-large-v3-turbo/i.test(model.id),
       requirementReason: /qwen3\.5-9b/i.test(model.id) ? "Core writing and visual review" : /kokoro/i.test(model.id) ? "Core draft narration" : /whisper/i.test(model.id) ? "Core transcription and timing" : undefined,
       downloadBytes: /qwen3\.5-9b/i.test(model.id) ? 6.4 * 1024 ** 3 : /kokoro/i.test(model.id) ? 350 * 1024 ** 2 : /whisper/i.test(model.id) ? 1.6 * 1024 ** 3 : undefined,
+      sizeConfidence: "estimated" as const,
+    })),
+    ...portraitAnimationModelOptions.slice(0, 3).map((model) => ({
+      id: model.id,
+      name: model.name,
+      providerId: "local",
+      medium: "presenter" as const,
+      description: model.detail,
+      compatible: model.id !== "local/echomimicv3-flash",
+      required: model.id === "local/liveportrait",
+      requirementReason: model.id === "local/liveportrait" ? "Core presenter pose, gaze, expression and blink stage" : undefined,
+      downloadBytes: model.id === "local/liveportrait" ? 1 * 1024 ** 3 : model.id === "local/longcat-avatar-1.5" ? 32 * 1024 ** 3 : 26 * 1024 ** 3,
       sizeConfidence: "estimated" as const,
     })),
     ...lipSyncModelOptions.slice(0, 3).map((model) => ({ id: model.id, name: model.name, providerId: "local", medium: "lip-sync" as const, description: model.detail, compatible: true, required: model.id === "local/musetalk-1.5", requirementReason: model.id === "local/musetalk-1.5" ? "Core presenter lip-sync fallback" : undefined, downloadBytes: model.id === "local/musetalk-1.5" ? 4.7 * 1024 ** 3 : undefined, sizeConfidence: "estimated" as const })),
@@ -1860,9 +1881,15 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   const toggleLocalModel = (modelId: string, selected: boolean) => mutateSetup((current) => {
     const next = new Set(current.selectedModelIds);
     if (selected) next.add(modelId); else next.delete(modelId);
-    return { ...current, selectedModelIds: [...next], lipSyncModelId: current.lipSyncModelId === modelId && !selected ? null : current.lipSyncModelId };
+    return {
+      ...current,
+      selectedModelIds: [...next],
+      lipSyncModelId: current.lipSyncModelId === modelId && !selected ? null : current.lipSyncModelId,
+      portraitAnimationModelId: current.portraitAnimationModelId === modelId && !selected ? null : current.portraitAnimationModelId ?? null,
+    };
   });
   const selectLipSync = (modelId: string) => mutateSetup((current) => ({ ...current, lipSyncModelId: modelId, selectedModelIds: [...new Set([...current.selectedModelIds, modelId])] }));
+  const selectPortraitAnimation = (modelId: string) => mutateSetup((current) => ({ ...current, portraitAnimationModelId: modelId, selectedModelIds: [...new Set([...current.selectedModelIds, modelId])] }));
   const selectedDownload = downloadCatalog.find((entry) => entry.modelId === setup?.lipSyncModelId) ?? null;
   const selectedDownloadStatus = downloadStatuses.find((status) => status.modelId === selectedDownload?.modelId) ?? null;
   const beginModelDownload = async () => {
@@ -1879,7 +1906,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     if (!setup) return;
     setSetupSaving(true);
     try {
-      const saved = await localModelSetupSave({ activeProfileId: setup.activeProfileId, selectedModelIds: setup.selectedModelIds, lipSyncModelId: setup.lipSyncModelId, existingModelDirectory: setup.existingModelDirectory, profiles: setup.profiles });
+      const saved = await localModelSetupSave({ activeProfileId: setup.activeProfileId, selectedModelIds: setup.selectedModelIds, lipSyncModelId: setup.lipSyncModelId, portraitAnimationModelId: setup.portraitAnimationModelId ?? null, existingModelDirectory: setup.existingModelDirectory, profiles: setup.profiles });
       setSetup(saved);
       onNotify("Setup saved locally", "Your model choices and no-secret profiles were saved. A project still asks for cloud, privacy, and budget approval before a provider call.", "success");
     } catch (error) {
@@ -1945,7 +1972,8 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       <div className="model-setup-heading"><div><span className="section-kicker">First-run setup</span><h2 id="local-model-setup-title">Local models, without surprise downloads.</h2><p>Pick a small local profile, bring a pre-existing model folder, or stay API-first. Model weights are never bundled or activated until a signed immutable manifest, license acceptance, hash check, and hardware preflight all pass.</p></div><span className="setup-state"><HardDrive size={15} /> {setupLoading ? "Loading setup" : `${setup?.selectedModelIds.length ?? 0} choices saved`}</span></div>
       <div className="local-model-grid" aria-busy={setupLoading}>{localModelOptions.map((model) => { const selected = setup?.selectedModelIds.includes(model.id) ?? false; return <label className={`local-model-choice ${selected ? "selected" : ""}`} key={model.id}><input type="checkbox" checked={selected} disabled={!setup} onChange={(event) => toggleLocalModel(model.id, event.target.checked)} /><span><b>{model.name}</b><small>{model.medium} · {model.detail}</small></span><em>Manifest required</em></label>; })}</div>
       <div className="existing-model-row"><div><b>Use an existing model folder</b><small>The native app proves the folder exists when you save. It records the location but never executes or activates its contents; a later manifest inspection still has to identify every revision, license, file, and hash.</small>{setup?.existingModelDirectory && <span className="folder-record-state"><FolderClock size={13} /> Folder path entered · save to verify it exists</span>}</div><label><span>Existing folder path</span><input value={setup?.existingModelDirectory ?? ""} disabled={!setup} placeholder={environment === "native" ? "E:\\temp\\AI Video Tutorial Generator Models" : "/your/local/model-folder"} onChange={(event) => mutateSetup((current) => ({ ...current, existingModelDirectory: event.target.value || null }))} /></label></div>
-      <div className="lipsync-chooser"><div><span className="section-kicker">Optional presenter pack</span><h3>Choose your local lip-sync model</h3><p>Presenter shots are selective. Choosing a pack saves a preference; downloading is a separate, explicit step and inference stays blocked until activation review.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onChange={() => { selectLipSync(model.id); setLicenseAccepted(false); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{downloadCatalog.some((entry) => entry.modelId === model.id) ? "Download declaration ready" : model.tag}</em></label>)}</div></div>
+      <div className="lipsync-chooser"><div><span className="section-kicker">Presenter motion stage</span><h3>Choose how portraits come alive</h3><p>Motion and lip-sync are separate stages. The measured local default animates pose, gaze, expression, and genuine blinks with LivePortrait, then uses the selected lip-sync model only for narration-accurate mouth motion.</p></div><div className="lipsync-options">{portraitAnimationModelOptions.map((model) => <label className={setup?.portraitAnimationModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="portrait-animation-model" checked={setup?.portraitAnimationModelId === model.id} disabled={!setup || model.id === "local/echomimicv3-flash" || model.id === "local/hunyuan-video-avatar"} onChange={() => selectPortraitAnimation(model.id)} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{model.tag}</em></label>)}</div></div>
+      <div className="lipsync-chooser"><div><span className="section-kicker">Narration mouth stage</span><h3>Choose your local lip-sync model</h3><p>This stage follows portrait animation and may be disabled for presenter-free scenes. Choosing a pack saves a preference; downloading remains a separate explicit step and inference stays blocked until activation review.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onChange={() => { selectLipSync(model.id); setLicenseAccepted(false); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{downloadCatalog.some((entry) => entry.modelId === model.id) ? "Download declaration ready" : model.tag}</em></label>)}</div></div>
       <div className="model-download-panel" aria-live="polite">
         {selectedDownload ? <>
           <div className="download-record"><span className="download-record-mark"><PackageCheck size={19} /></span><div><b>{selectedDownload.displayName} · download-only pack</b><small>{formatBytes(selectedDownload.totalBytes)} across {selectedDownload.artifactCount} artifacts · revision <code>{selectedDownload.immutableRevision}</code></small><p>{selectedDownload.downloadOnlyReason}</p></div><span className={`download-phase ${selectedDownloadStatus?.phase ?? "manifestRequired"}`}>{downloadPhaseLabel(selectedDownloadStatus?.phase)}</span></div>
@@ -1961,7 +1989,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       {setup && activeProfile ? <><div className="profile-tabs" role="tablist" aria-label="Provider profiles">{setup.profiles.map((profile) => <button role="tab" aria-selected={setup.activeProfileId === profile.id} className={setup.activeProfileId === profile.id ? "active" : ""} key={profile.id} onClick={() => mutateSetup((current) => ({ ...current, activeProfileId: profile.id }))}>{profile.name}</button>)}</div><div className="profile-editor"><div className="profile-copy-fields"><label>Name<input value={activeProfile.name} onChange={(event) => updateProfile(activeProfile.id, (profile) => ({ ...profile, name: event.target.value }))} /></label><label>Description<input value={activeProfile.description} onChange={(event) => updateProfile(activeProfile.id, (profile) => ({ ...profile, description: event.target.value }))} /></label></div><div className="profile-route-grid">{profileMediums.map(([medium, label]) => {
         const selection = activeProfile.routes[medium] ?? { providerId: "local-runtime", modelId: "choose before generation" };
         const updateSelection = (changes: Partial<typeof selection>) => updateProfile(activeProfile.id, (profile) => ({ ...profile, routes: { ...profile.routes, [medium]: { ...selection, ...changes } } }));
-        const presenterBound = medium === "presenter" || medium === "lipSync";
+        const presenterBound = medium === "presenter" || medium === "portraitAnimation" || medium === "lipSync";
         return <label className="profile-route-choice" key={medium}><span>{label}</span><div className="profile-route-fields"><select aria-label={`${label} provider`} value={selection.providerId} onChange={(event) => updateSelection({ providerId: event.target.value })}>{profileProviderOptions.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select><input value={selection.modelId} aria-label={`${label} model`} onChange={(event) => updateSelection({ modelId: event.target.value })} placeholder="Exact model ID" />{medium === "voice" && <input value={selection.voiceId ?? ""} aria-label={`${label} voice ID`} onChange={(event) => updateSelection({ voiceId: event.target.value || null })} placeholder="Voice ID" />}{presenterBound && <input value={selection.presenterProfileId ?? ""} aria-label={`${label} presenter profile ID`} onChange={(event) => updateSelection({ presenterProfileId: event.target.value || null })} placeholder="Presenter profile ID" />}{selection.providerId === "local-runtime" && <><input value={selection.modelRevision ?? ""} aria-label={`${label} model revision`} onChange={(event) => updateSelection({ modelRevision: event.target.value || null })} placeholder="Immutable revision" /><input value={selection.installFingerprint ?? ""} aria-label={`${label} install fingerprint`} onChange={(event) => updateSelection({ installFingerprint: event.target.value || null })} placeholder="Verified SHA-256" /></>}</div></label>;
       })}</div></div></> : <div className="profile-loading">Loading local profiles…</div>}
       <div className="profile-save-row"><span><ShieldCheck size={15} /> Preferences only · credentials stay in the OS vault · project approval remains required</span><button className="primary-button" disabled={!setup || setupSaving} onClick={() => { void saveSetup(); }}>{setupSaving ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}{setupSaving ? "Saving…" : "Save setup & active profile"}</button></div>

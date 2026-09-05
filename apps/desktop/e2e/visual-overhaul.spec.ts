@@ -46,7 +46,7 @@ test("captures the clean first launch and redesigned global surfaces", async ({ 
   await expect(page.getByRole("heading", { name: /create your studio profile/i })).toBeVisible();
   await waitForDecodedImages(page, ".aly-onboarding-profile__gallery img");
   await page.screenshot({ path: `${output}/01a-onboarding-profile-gallery.png` });
-  await page.locator('label:has(.aly-onboarding-profile__portrait-radio[value="presenter-portrait.educator-maya-v2"])').click();
+  await page.locator('label:has(.aly-onboarding-profile__portrait-radio[value="presenter-portrait.academic-amara-v1"])').click();
   await page.getByLabel("Display name", { exact: true }).fill("Akshit");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: /your studio is prepared/i })).toBeVisible();

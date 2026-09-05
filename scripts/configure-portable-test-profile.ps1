@@ -110,10 +110,10 @@ $Route = {
 $Setup = [ordered]@{
     schemaVersion = 1
     activeProfileId = "portable-test-connected"
-    selectedModelIds = @("local/qwen3.5-9b-gguf", "local/kokoro", "local/whisper-large-v3-turbo", "local/musetalk-1.5")
+    selectedModelIds = @("local/qwen3.5-9b-gguf", "local/kokoro", "local/whisper-large-v3-turbo", "local/liveportrait", "local/musetalk-1.5")
     lipSyncModelId = "local/musetalk-1.5"
-    portraitAnimationModelId = $null
-    existingModelDirectory = $null
+    portraitAnimationModelId = "local/liveportrait"
+    existingModelDirectory = Join-Path $PortableRoot "Models"
     profiles = @([ordered]@{
         id = "portable-test-connected"
         name = "Portable test · connected"
@@ -126,7 +126,7 @@ $Setup = [ordered]@{
             voice = & $Route "elevenlabs" "eleven_multilingual_v2" "Xb7hH8MSUJpSbSDYk0k2"
             transcription = & $Route "local-runtime" "local/whisper-large-v3-turbo"
             presenter = & $Route "local-runtime" "choose in studio"
-            portraitAnimation = & $Route "local-runtime" "off by default"
+            portraitAnimation = & $Route "local-runtime" "local/liveportrait"
             lipSync = & $Route "local-runtime" "local/musetalk-1.5"
         }
     })

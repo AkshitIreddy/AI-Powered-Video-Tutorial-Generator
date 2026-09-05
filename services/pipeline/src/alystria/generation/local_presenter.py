@@ -84,7 +84,10 @@ ALLOWED_MUSE_TALK_FILE_ROLES = frozenset(
         "face-resnet-weights",
         "musetalk-config",
         "musetalk-inference-entrypoint",
+        "musetalk-adapter-entrypoint",
         "musetalk-weights",
+        "liveportrait-motion-template",
+        "liveportrait-runtime-manifest",
         "runtime-source-manifest",
         "vae-config",
         "vae-weights",
@@ -403,7 +406,11 @@ class LocalPresenterRuntime:
                 raise ValueError(
                     "Managed presenter mode requires a pinned entrypoint file, not inline/module code"
                 )
-            if self.model_id.casefold() in {"musetalk", "musetalk-1.5"}:
+            if self.model_id.casefold() in {
+                "musetalk",
+                "musetalk-1.5",
+                "liveportrait-musetalk-1.5",
+            }:
                 if self.encoder_policy is None:
                     raise ValueError(
                         "Managed MuseTalk requires an explicitly probed H.264 encoder policy"

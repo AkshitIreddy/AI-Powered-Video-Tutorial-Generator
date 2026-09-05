@@ -131,8 +131,10 @@ def test_catalog_covers_every_planned_local_capability_and_stays_unverified() ->
         "qwen3-tts-0.6b",
         "kokoro",
         "whisper-large-v3-turbo",
+        "liveportrait",
         "musetalk-1.5",
         "echomimicv3-flash",
+        "longcat-avatar-1.5",
         "latentsync-1.5",
     }
     assert all(not entry.installable for entry in BUILTIN_CATALOG.entries())

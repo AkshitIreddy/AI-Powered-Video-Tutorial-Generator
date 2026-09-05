@@ -206,6 +206,23 @@ BUILTIN_CATALOG = ModelCatalog(
             license_id="mixed-upstream-review-required",
         ),
         ModelCatalogEntry(
+            model_id="liveportrait",
+            display_name="LivePortrait",
+            upstream="KlingAIResearch/LivePortrait",
+            capabilities=(Capability.AVATAR,),
+            runtime="liveportrait-worker",
+            preferred_serialization=SerializationFormat.BINARY_DATA,
+            resources=ResourceEstimate(1 * GIB, 4 * GIB, 3 * GIB, 4, True),
+            supported_backends=frozenset({ComputeBackend.NVIDIA_CUDA}),
+            verified_revision=None,
+            license_id="mit-code-and-model-terms-review-required",
+            notes=(
+                "Measured on the RTX 4080 Laptop test box at 2.7 GB peak VRAM for a "
+                "16.48-second native pose/expression/eye pass. Pair with a separate "
+                "lip-sync route when narration-accurate mouth motion is required."
+            ),
+        ),
+        ModelCatalogEntry(
             model_id="musetalk-1.5",
             display_name="MuseTalk 1.5",
             upstream="TMElyralab/MuseTalk",
@@ -229,12 +246,34 @@ BUILTIN_CATALOG = ModelCatalog(
             capabilities=(Capability.AVATAR, Capability.LIP_SYNC),
             runtime="echomimic-worker",
             preferred_serialization=SerializationFormat.SAFETENSORS,
-            resources=ResourceEstimate(12 * GIB, 12 * GIB, 11 * GIB, 8, True),
+            resources=ResourceEstimate(26 * GIB, 48 * GIB, 12 * GIB, 8, True),
             supported_backends=frozenset({ComputeBackend.NVIDIA_CUDA}),
             verified_revision=None,
             license_id="apache-2.0-review-required",
             optional=True,
-            notes="Official Flash profile reports 12 GB VRAM and supports 768x768 talking-head generation; keep partial clips short until the laptop benchmark passes.",
+            notes=(
+                "Official Flash profile reports 12 GB VRAM, but the pinned Windows test "
+                "committed about 46 GB of host memory and did not reach frame one after "
+                "386.92 seconds. Keep unavailable on this 32 GB reference machine."
+            ),
+        ),
+        ModelCatalogEntry(
+            model_id="longcat-avatar-1.5",
+            display_name="LongCat Video Avatar 1.5",
+            upstream="meituan-longcat/LongCat-Video-Avatar-1.5",
+            capabilities=(Capability.AVATAR, Capability.LIP_SYNC),
+            runtime="wangp-longcat-worker",
+            preferred_serialization=SerializationFormat.SAFETENSORS,
+            resources=ResourceEstimate(32 * GIB, 24 * GIB, 12 * GIB, 8, True),
+            supported_backends=frozenset({ComputeBackend.NVIDIA_CUDA}),
+            verified_revision=None,
+            license_id="upstream-and-wangp-terms-review-required",
+            optional=True,
+            notes=(
+                "Eight-step distilled whole-avatar quality route. The measured WanGP "
+                "bootstrap uses a 15.96 GB INT8 transformer plus Whisper, UMT5, VAE, and "
+                "shared preprocessing assets; never install it as a surprise dependency."
+            ),
         ),
         ModelCatalogEntry(
             model_id="latentsync-1.5",

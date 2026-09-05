@@ -1186,9 +1186,9 @@ function defaultLocalModelSetup(): LocalModelSetup {
   return {
     schemaVersion: 1,
     activeProfileId: "balanced-cloud",
-    selectedModelIds: [],
-    lipSyncModelId: null,
-    portraitAnimationModelId: null,
+    selectedModelIds: ["local/qwen3.5-9b-gguf", "local/kokoro", "local/whisper-large-v3-turbo", "local/liveportrait", "local/musetalk-1.5"],
+    lipSyncModelId: "local/musetalk-1.5",
+    portraitAnimationModelId: "local/liveportrait",
     existingModelDirectory: null,
     updatedAt: new Date().toISOString(),
     profiles: [{
@@ -1206,8 +1206,8 @@ function defaultLocalModelSetup(): LocalModelSetup {
         },
         transcription: { providerId: "openai", modelId: "choose at generation" },
         presenter: { providerId: "local-runtime", modelId: "off by default" },
-        portraitAnimation: { providerId: "local-runtime", modelId: "off by default" },
-        lipSync: { providerId: "local-runtime", modelId: "off by default" },
+        portraitAnimation: { providerId: "local-runtime", modelId: "local/liveportrait" },
+        lipSync: { providerId: "local-runtime", modelId: "local/musetalk-1.5" },
       },
     }],
   };

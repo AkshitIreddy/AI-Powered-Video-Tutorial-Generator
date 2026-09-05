@@ -1,8 +1,10 @@
 """Alystria adapter for the exact-hash MuseTalk 1.5 inference pack.
 
-The upstream entrypoint is imported from the verified source ledger. Its two
+The upstream entrypoint is imported from the verified source ledger. Its
 ``os.system`` FFmpeg calls are intercepted and replaced with fixed argv calls
-using Alystria's already-probed encoder. No shell command is executed.
+using the application's already-probed encoder. Still portraits require two
+calls; an animated portrait requires one additional, narrowly pinned frame
+extraction call. No shell command is executed.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ ALLOWED_CODEC_ARGUMENTS = {
     "h264_mf": ("-c:v", "h264_mf", "-hw_encoding", "1"),
     "libx264": ("-c:v", "libx264", "-preset", "medium", "-crf", "18"),
 }
+VIDEO_SUFFIXES = frozenset({".avi", ".mkv", ".mov", ".mp4", ".webm"})
 
 
 def _fail(message: str) -> NoReturn:
@@ -336,9 +339,10 @@ def run_presenter_job(
     if ALLOWED_CODEC_ARGUMENTS.get(encoder) != codec_arguments:
         _fail("Presenter encoder arguments do not match the allowlisted selection")
     ffmpeg = Path(_library_path(Path(str(encoding["ffmpegPath"]))))
-    _version_root, silent_video, generated_output, frames = _upstream_output_paths(
+    version_root, silent_video, generated_output, frames = _upstream_output_paths(
         result_root, portrait_path, audio_path
     )
+    source_frames = version_root / Path(portrait_path).stem / "%08d.png"
     intercepted = 0
 
     def safe_ffmpeg(argv: Any, **_: Any) -> subprocess.CompletedProcess[bytes]:
@@ -440,10 +444,16 @@ def run_presenter_job(
         _fail("MuseTalk attempted an unexpected additional FFmpeg invocation")
 
     def safe_system(command: str) -> int:
-        """Translate only the two exact pinned upstream shell strings to argv."""
+        """Translate only exact pinned upstream shell strings to fixed argv."""
 
+        extraction = (
+            f"ffmpeg -v fatal -i {portrait_path} -start_number 0 "
+            f"{source_frames.parent}/%08d.png"
+        )
+
+        upstream_fps = "25.0" if portrait.suffix.casefold() in VIDEO_SUFFIXES else "25"
         first = (
-            "ffmpeg -y -v warning -r 25 -f image2 -i "
+            f"ffmpeg -y -v warning -r {upstream_fps} -f image2 -i "
             f"{frames.parent}/%08d.png -vcodec libx264 -vf format=yuv420p -crf 18 "
             f"{silent_video.parent}/{silent_video.name}"
         )
@@ -451,6 +461,27 @@ def run_presenter_job(
             f"ffmpeg -y -v warning -i {audio_path} -i "
             f"{silent_video.parent}/{silent_video.name} {generated_output}"
         )
+        if command == extraction and portrait.suffix.casefold() in VIDEO_SUFFIXES:
+            if not source_frames.parent.resolve(strict=True).is_relative_to(
+                result_root.resolve(strict=True)
+            ):
+                _fail("MuseTalk frame extraction escaped the attempt workspace")
+            _run(
+                (
+                    str(ffmpeg),
+                    "-hide_banner",
+                    "-nostdin",
+                    "-v",
+                    "fatal",
+                    "-i",
+                    portrait_path,
+                    "-start_number",
+                    "0",
+                    str(source_frames),
+                ),
+                cwd=workspace,
+            )
+            return 0
         if command == first:
             safe_ffmpeg(
                 [
@@ -470,7 +501,8 @@ def run_presenter_job(
             return 0
         _fail(
             "MuseTalk attempted an unexpected shell command: "
-            f"received={command!r}; first={first!r}; second={second!r}"
+            f"received={command!r}; extraction={extraction!r}; "
+            f"first={first!r}; second={second!r}"
         )
 
     emit_progress("inference", 0.15, "Running pinned MuseTalk 1.5 inference")

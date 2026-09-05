@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one real, routed, three-minute Alystria quality evaluation."""
+"""Run one real, routed, three-minute AI Video Tutorial Generator evaluation."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import argparse
 import hashlib
 import json
 import re
-import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -141,40 +140,15 @@ def routing_policy() -> dict[str, Any]:
 
 
 def prepare_presenter_config(output: Path, base_config: Path) -> Path:
-    runtime_adapter = Path(
-        r"E:\temp\Alystria Studio\models\musetalk-runtime\worker\musetalk_v15_adapter.py"
-    )
-    source_adapter = (
-        ROOT / "services" / "pipeline" / "scripts" / "musetalk_v15_adapter.py"
-    )
-    shutil.copy2(source_adapter, runtime_adapter)
-    adapter_hash = sha256_file(runtime_adapter)
     config = json.loads(base_config.resolve(strict=True).read_text(encoding="utf-8"))
     config["defaultProfileId"] = AMARA_ID
-    configured_profiles = [
-        dict(item)
-        for item in config.get("profiles", [])
-        if isinstance(item, dict) and item.get("profileId") != AMARA_ID
-    ]
     config["profiles"] = [
-        *configured_profiles,
         {
             "profileId": AMARA_ID,
             "portraitArtifactHash": AMARA_HASH,
             "subjectId": "fictional-synthetic-academic-amara-v1",
         },
     ]
-    config["modelRevision"] = (
-        f"musetalk-1.5+identity-lip-aperture-{adapter_hash[:12]}"
-    )
-    worker_files = config["workerContract"]["files"]
-    adapter_record = next(
-        item for item in worker_files if item.get("role") == "adapter-entrypoint"
-    )
-    adapter_record["sha256"] = adapter_hash
-    config["installFingerprint"] = hashlib.sha256(
-        json.dumps(config["workerContract"], sort_keys=True).encode()
-    ).hexdigest()
     path = output / "presenter-runtime-amara.json"
     path.write_text(
         json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -269,7 +243,7 @@ def build_request(portrait_hash: str) -> GenerationRequest:
                 "inline:verified-karatsuba-notes",
                 "text/plain",
                 "CC0-1.0",
-                "Alystria Studio QA",
+                "AI Video Tutorial Generator QA",
             ),
         ),
         objectives=(
@@ -429,7 +403,7 @@ def main() -> int:
                 "origin": "generated",
                 "rightsStatus": "verified",
                 "licenseId": "LicenseRef-USER-OWNED",
-                "creator": "Alystria Studio project owner",
+                "creator": "AI Video Tutorial Generator project owner",
             },
         )
         policy = parse_routing_policy(routing_policy())
@@ -507,7 +481,7 @@ def main() -> int:
                 "captions-srt": ".srt",
                 "transcript": ".txt",
             }[role]
-            destination = output / f"alystria-karatsuba-3min-female-quality{suffix}"
+            destination = output / f"ai-video-tutorial-generator-karatsuba-3min{suffix}"
             store.cas.copy_to(digest, destination)
             delivered[role] = str(destination)
         report = {

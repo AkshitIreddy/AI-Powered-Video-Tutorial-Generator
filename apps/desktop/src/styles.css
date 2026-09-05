@@ -1465,3 +1465,15 @@ select { color-scheme: dark; }
 @media (max-width: 620px) { .settings-form-grid { grid-template-columns: 1fr; } }
 @media (max-width: 1180px) { .diagnostic-rows { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .diagnostic-rows { grid-template-columns: 1fr; } }
+
+/* Model selections must retain readable contrast in both light and dark themes. */
+.local-model-choice.selected {
+  border-color: var(--teal);
+  background: linear-gradient(135deg, var(--teal-soft), var(--surface-soft));
+  box-shadow: inset 3px 0 0 var(--teal), 0 0 0 1px color-mix(in srgb, var(--teal) 18%, transparent);
+}
+.lipsync-options label.selected {
+  border-color: var(--teal);
+  background: linear-gradient(135deg, var(--teal-soft), var(--surface-soft));
+  box-shadow: inset 3px 0 0 var(--teal), 0 10px 28px color-mix(in srgb, var(--teal) 9%, transparent);
+}

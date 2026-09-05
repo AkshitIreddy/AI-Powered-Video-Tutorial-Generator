@@ -38,6 +38,9 @@ const KNOWN_MODELS: &[&str] = &[
     "local/latentsync-1.5",
     "local/nvidia-lipsync-private",
     "local/liveportrait",
+    "local/longcat-avatar-1.5",
+    "local/hunyuan-video-avatar",
+    "local/infinitetalk",
     "local/stableavatar",
     "local/wav2lip-baseline",
 ];
@@ -47,7 +50,13 @@ const LIP_SYNC_MODELS: &[&str] = &[
     "local/latentsync-1.5",
     "local/nvidia-lipsync-private",
 ];
-const PORTRAIT_ANIMATION_MODELS: &[&str] = &["local/liveportrait"];
+const PORTRAIT_ANIMATION_MODELS: &[&str] = &[
+    "local/liveportrait",
+    "local/longcat-avatar-1.5",
+    "local/echomimicv3-flash",
+    "local/hunyuan-video-avatar",
+    "local/infinitetalk",
+];
 const ROUTE_MEDIA: &[&str] = &[
     "writing",
     "research",
@@ -128,9 +137,15 @@ fn default_setup() -> LocalModelSetup {
     LocalModelSetup {
         schema_version: 1,
         active_profile_id: "balanced-cloud".into(),
-        selected_model_ids: vec![],
-        lip_sync_model_id: None,
-        portrait_animation_model_id: None,
+        selected_model_ids: vec![
+            "local/qwen3.5-9b-gguf".into(),
+            "local/kokoro".into(),
+            "local/whisper-large-v3-turbo".into(),
+            "local/liveportrait".into(),
+            "local/musetalk-1.5".into(),
+        ],
+        lip_sync_model_id: Some("local/musetalk-1.5".into()),
+        portrait_animation_model_id: Some("local/liveportrait".into()),
         existing_model_directory: None,
         profiles: vec![ModelProfile {
             id: "balanced-cloud".into(),
@@ -156,9 +171,12 @@ fn default_setup() -> LocalModelSetup {
                 ("presenter".into(), route("local-runtime", "off by default")),
                 (
                     "portraitAnimation".into(),
-                    route("local-runtime", "off by default"),
+                    route("local-runtime", "local/liveportrait"),
                 ),
-                ("lipSync".into(), route("local-runtime", "off by default")),
+                (
+                    "lipSync".into(),
+                    route("local-runtime", "local/musetalk-1.5"),
+                ),
             ]),
         }],
         updated_at: Utc::now(),

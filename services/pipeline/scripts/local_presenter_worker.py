@@ -1,4 +1,4 @@
-"""Pinned MuseTalk worker boundary for Alystria's local presenter runtime.
+"""Pinned worker boundary for the local presenter runtime.
 
 This file intentionally has no torch or MuseTalk import at module load time. The
 privileged runtime pack supplies one exact-hash adapter implementing
@@ -20,6 +20,7 @@ from types import ModuleType
 from typing import Any, NoReturn
 
 CONTRACT_ID = "alystria.musetalk.worker.v1"
+SUPPORTED_MODELS = frozenset({"musetalk", "musetalk-1.5", "liveportrait-musetalk-1.5"})
 ALLOWED_ROLES = frozenset(
     {
         "adapter-entrypoint",
@@ -32,7 +33,10 @@ ALLOWED_ROLES = frozenset(
         "face-resnet-weights",
         "musetalk-config",
         "musetalk-inference-entrypoint",
+        "musetalk-adapter-entrypoint",
         "musetalk-weights",
+        "liveportrait-motion-template",
+        "liveportrait-runtime-manifest",
         "runtime-source-manifest",
         "vae-config",
         "vae-weights",
@@ -99,8 +103,8 @@ def _load_manifest(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or value.get("schemaVersion") != 2:
         _fail("job manifest requires schemaVersion 2")
-    if value.get("model") not in {"musetalk", "musetalk-1.5"}:
-        _fail("worker accepts only MuseTalk jobs")
+    if value.get("model") not in SUPPORTED_MODELS:
+        _fail("worker accepts only pinned local presenter jobs")
     return value
 
 
@@ -216,9 +220,17 @@ def main() -> int:
         "vae-config",
         "vae-weights",
     }
+    if job["model"] == "liveportrait-musetalk-1.5":
+        required_roles |= {
+            "liveportrait-motion-template",
+            "liveportrait-runtime-manifest",
+            "musetalk-adapter-entrypoint",
+        }
     if not required_roles <= verified.keys():
         _fail("worker contract is incomplete")
     _verify_source_manifest(verified["runtime-source-manifest"])
+    if job["model"] == "liveportrait-musetalk-1.5":
+        _verify_source_manifest(verified["liveportrait-runtime-manifest"])
 
     encoding = job.get("encoding")
     if not isinstance(encoding, dict):
@@ -291,20 +303,25 @@ def main() -> int:
             stream.flush()
             os.fsync(stream.fileno())
 
-    emit_progress("accepted", 0.0, "MuseTalk job accepted")
+    presenter_name = (
+        "LivePortrait + MuseTalk"
+        if job["model"] == "liveportrait-musetalk-1.5"
+        else "MuseTalk"
+    )
+    emit_progress("accepted", 0.0, f"{presenter_name} job accepted")
     emit_progress("verified", 0.05, "Exact-hash runtime and inputs verified")
     _install_network_denial()
-    emit_progress("model-loading", 0.1, "Loading pinned MuseTalk adapter")
+    emit_progress("model-loading", 0.1, f"Loading pinned {presenter_name} adapter")
     adapter = _load_adapter(verified["adapter-entrypoint"])
     entry = getattr(adapter, "run_presenter_job", None)
     if not callable(entry):
-        _fail("pinned MuseTalk adapter has no run_presenter_job function")
+        _fail("pinned presenter adapter has no run_presenter_job function")
     result = entry(job, emit_progress)
     if result not in (None, 0):
-        _fail(f"pinned MuseTalk adapter failed with result {result!r}")
+        _fail(f"pinned presenter adapter failed with result {result!r}")
     if not output_path.is_file() or output_path.is_symlink():
-        _fail("pinned MuseTalk adapter did not produce the declared output")
-    emit_progress("complete", 1.0, "MuseTalk delivery completed")
+        _fail("pinned presenter adapter did not produce the declared output")
+    emit_progress("complete", 1.0, f"{presenter_name} delivery completed")
     return 0
 
 
