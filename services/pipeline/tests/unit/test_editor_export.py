@@ -145,6 +145,9 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
     command = " ".join(plan.argv)
     assert "trim=start=0.5:duration=2" in command
     assert "setpts=(PTS-STARTPTS)/2.000000000" in command
+    assert "min(1280/iw,720/ih)" in command
+    assert "ow='ceil(hypot(iw,ih)/2)*2'" in command
+    assert "rotw(iw)" not in command
     assert "overlay=x='(W-w)/2+(" in command
     assert "drawtext=fontfile=" in command
     assert "fontfile=" in command
@@ -338,6 +341,89 @@ def test_actual_ffmpeg_renders_motion_text_captions_and_source_audio(tmp_path: P
         assert [sidecar["format"] for sidecar in sidecars] == ["vtt", "srt"]
         assert "00:00:00.000 --> 00:00:01.000" in Path(sidecars[0]["path"]).read_text(encoding="utf-8")
         assert "CAPTION" in Path(sidecars[1]["path"]).read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(_ffmpeg() is None, reason="FFmpeg is required for native editor fit and rotation proof")
+@pytest.mark.parametrize(("rotation", "scale"), [(0, 1), (30, 0.5)])
+def test_actual_ffmpeg_contains_source_before_transform_without_cropping_edges(
+    tmp_path: Path,
+    rotation: int,
+    scale: float,
+) -> None:
+    ffmpeg = _ffmpeg()
+    assert ffmpeg is not None
+    source_path = tmp_path / f"edge-source-{rotation}.webm"
+    subprocess.run(
+        [
+            str(ffmpeg), "-hide_banner", "-nostdin", "-y",
+            "-f", "lavfi", "-i", "color=c=white:s=960x540:r=10:d=1",
+            "-vf",
+            "drawbox=x=0:y=0:w=72:h=ih:color=red:t=fill,"
+            "drawbox=x=iw-72:y=0:w=72:h=ih:color=lime:t=fill,"
+            "drawbox=x=72:y=0:w=iw-144:h=54:color=blue:t=fill,"
+            "drawbox=x=72:y=ih-54:w=iw-144:h=54:color=yellow:t=fill",
+            "-an", "-c:v", "libvpx-vp9", "-lossless", "1", "-pix_fmt", "yuv420p", str(source_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    with ProjectStore.create(tmp_path / f"fit-proof-{rotation}", name="Editor fit proof") as store:
+        source = store.add_artifact_bytes(source_path.read_bytes(), media_type="video/webm", original_name=source_path.name)
+        value = _actual_manifest(source.hash, store.manifest.project_id)
+        value["canvas"] = {"width": 1280, "height": 720, "pixelAspectRatio": 1, "backgroundColor": "#000000"}
+        value["clips"] = [value["clips"][0]]  # type: ignore[index]
+        clip = value["clips"][0]  # type: ignore[index]
+        clip["transform"] = {  # type: ignore[index]
+            "x": 0,
+            "y": 0,
+            "scaleX": scale,
+            "scaleY": scale,
+            "rotation": rotation,
+            "anchorX": 0.5,
+            "anchorY": 0.5,
+        }
+        clip["keyframes"] = []  # type: ignore[index]
+        clip["includeSourceAudio"] = False  # type: ignore[index]
+        receipt = render_editor_timeline(store, value, ffmpeg_path=ffmpeg)
+        output_path = Path(str(receipt["outputPath"]))
+        raw = subprocess.run(
+            [str(ffmpeg), "-v", "error", "-ss", "0.5", "-i", str(output_path), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        assert len(raw) == 1280 * 720 * 3
+
+        def pixels() -> list[tuple[int, int, int]]:
+            return [tuple(raw[index:index + 3]) for index in range(0, len(raw), 3)]  # type: ignore[misc]
+
+        decoded = pixels()
+        assert any(red > 180 and green < 70 and blue < 70 for red, green, blue in decoded)
+        assert any(red < 70 and green > 180 and blue < 70 for red, green, blue in decoded)
+        assert any(red < 70 and green < 70 and blue > 180 for red, green, blue in decoded)
+        assert any(red > 180 and green > 180 and blue < 70 for red, green, blue in decoded)
+
+        def pixel(x: int, y: int) -> tuple[int, int, int]:
+            offset = (y * 1280 + x) * 3
+            return tuple(raw[offset:offset + 3])  # type: ignore[return-value]
+
+        if rotation == 0:
+            left = pixel(16, 360)
+            right = pixel(1263, 360)
+            top = pixel(640, 16)
+            bottom = pixel(640, 703)
+            assert left[0] > 180 and left[1] < 70 and left[2] < 70
+            assert right[0] < 70 and right[1] > 180 and right[2] < 70
+            assert top[0] < 70 and top[1] < 70 and top[2] > 180
+            assert bottom[0] > 180 and bottom[1] > 180 and bottom[2] < 70
+        else:
+            left = pixel(363, 201)
+            right = pixel(917, 521)
+            top = pixel(730, 205)
+            bottom = pixel(550, 517)
+            assert left[0] > 180 and left[1] < 70 and left[2] < 70
+            assert right[0] < 70 and right[1] > 180 and right[2] < 70
+            assert top[0] < 70 and top[1] < 70 and top[2] > 180
+            assert bottom[0] > 180 and bottom[1] > 180 and bottom[2] < 70
 
 
 @pytest.mark.skipif(_ffmpeg() is None, reason="FFmpeg is required for silent native editor media proof")

@@ -479,12 +479,14 @@ def build_editor_export_plan(
             opacity_expression = _automation_expression(keyframes, "opacity", opacity, time_expression="T")
             x_expression = _automation_expression(keyframes, "transform.x", x)
             y_expression = _automation_expression(keyframes, "transform.y", y)
+            contain_expression = f"min({width}/iw,{height}/ih)"
             chains.append(
                 f"[{input_index}:v]{prefix}trim=start={source_at}:duration={source_for},"
                 f"setpts=(PTS-STARTPTS)/{rate:.9f}+{start}/TB,"
-                f"scale='trunc(iw*({scale_x_expression})/2)*2':'trunc(ih*({scale_y_expression})/2)*2':eval=frame,"
-                f"rotate='({rotation_expression})*PI/180':c=none:ow=rotw(iw):oh=roth(ih),"
-                f"format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*({opacity_expression})'[{current}]"
+                f"scale='trunc(iw*({contain_expression})*({scale_x_expression})/2)*2':'trunc(ih*({contain_expression})*({scale_y_expression})/2)*2':eval=frame,"
+                "format=rgba,"
+                f"rotate='({rotation_expression})*PI/180':c=none:ow='ceil(hypot(iw,ih)/2)*2':oh='ceil(hypot(iw,ih)/2)*2',"
+                f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*({opacity_expression})'[{current}]"
             )
             chains.append(
                 f"[{visual_label}][{current}]overlay=x='(W-w)/2+({x_expression})':y='(H-h)/2+({y_expression})':eval=frame:"
