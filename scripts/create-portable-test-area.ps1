@@ -2,6 +2,8 @@
 param(
     [string]$Destination,
     [string]$TrustedRuntimeSourceRoot,
+    [string]$DesktopSource,
+    [string]$WorkerSource,
     [switch]$Force,
     [switch]$ValidateDestinationOnly,
     [switch]$SkipSourceBuild
@@ -10,7 +12,13 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Destination) {
-    $Destination = Join-Path (Split-Path -Parent $RepoRoot) "AI Video Tutorial Generator Test Sandbox"
+    $PreferredTestRoot = "E:\temp"
+    $Destination = if (Test-Path -LiteralPath $PreferredTestRoot -PathType Container) {
+        Join-Path $PreferredTestRoot "AI Video Tutorial Generator Test Sandbox"
+    }
+    else {
+        Join-Path (Split-Path -Parent $RepoRoot) "AI Video Tutorial Generator Test Sandbox"
+    }
 }
 $Destination = [IO.Path]::GetFullPath($Destination)
 $DestinationRoot = [IO.Path]::GetPathRoot($Destination)
@@ -58,12 +66,18 @@ function Assert-NoReparsePoints {
         [string]$ContainedRoot
     )
     if (-not (Test-Path -LiteralPath $CandidatePath)) { return }
-    if (Test-IsReparsePoint $CandidatePath) {
+    $CandidateIsReparsePoint = Test-IsReparsePoint $CandidatePath
+    if ($CandidateIsReparsePoint -and -not $ContainedRoot) {
         throw "$Label is a link, junction, or other reparse target: $CandidatePath"
     }
-    if ($Recurse) {
-        $ReparseItems = @(Get-ChildItem -LiteralPath $CandidatePath -Force -Recurse |
-            Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint })
+    if ($Recurse -or $CandidateIsReparsePoint) {
+        $ReparseItems = @(if ($CandidateIsReparsePoint) {
+            Get-Item -LiteralPath $CandidatePath -Force
+        }
+        else {
+            Get-ChildItem -LiteralPath $CandidatePath -Force -Recurse |
+                Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }
+        })
         if ($ReparseItems.Count -gt 0 -and -not $ContainedRoot) {
             throw "$Label contains a link, junction, or other reparse target: $($ReparseItems[0].FullName)"
         }
@@ -98,7 +112,16 @@ function Assert-SafePortableDestination {
     }
 
     $Cursor = $SafeDestinationPath
-    Assert-NoReparsePoints -CandidatePath $SafeDestinationPath -Label "Portable destination" -Recurse -ContainedRoot $SafeDestinationPath
+    # The packager refreshes only its owned App/Runtime payload. Models and
+    # project media are durable user/runtime state and may intentionally contain
+    # verified model junctions, so do not traverse those preserved trees here.
+    Assert-NoReparsePoints -CandidatePath $SafeDestinationPath -Label "Portable destination"
+    if (Test-Path -LiteralPath $SafeDestinationPath -PathType Container) {
+        foreach ($Child in Get-ChildItem -LiteralPath $SafeDestinationPath -Force) {
+            if ($Child.Name -in @("Models", "Projects", "Exports")) { continue }
+            Assert-NoReparsePoints -CandidatePath $Child.FullName -Label "Portable destination" -Recurse -ContainedRoot $SafeDestinationPath
+        }
+    }
 
     # Validate every already-existing ancestor before creating or replacing a
     # file. This blocks a seemingly safe child path from traversing a junction.
@@ -127,8 +150,20 @@ if ($ValidateDestinationOnly) {
     return
 }
 
-$DesktopSource = Join-Path $RepoRoot "apps\desktop\src-tauri\target\debug\alystria-studio.exe"
-$WorkerSource = Join-Path $RepoRoot "dist\runtime-packs\pipeline\current\alystria-pipeline.exe"
+if (-not $DesktopSource) {
+    $CargoTargetRoot = if ($env:CARGO_TARGET_DIR) {
+        [IO.Path]::GetFullPath($env:CARGO_TARGET_DIR)
+    }
+    else {
+        Join-Path $RepoRoot "apps\desktop\src-tauri\target"
+    }
+    $DesktopSource = Join-Path $CargoTargetRoot "debug\alystria-studio.exe"
+}
+if (-not $WorkerSource) {
+    $WorkerSource = Join-Path $RepoRoot "dist\runtime-packs\pipeline\current\alystria-pipeline.exe"
+}
+$DesktopSource = [IO.Path]::GetFullPath($DesktopSource)
+$WorkerSource = [IO.Path]::GetFullPath($WorkerSource)
 $StarterAudioSource = Join-Path (Split-Path -Parent $WorkerSource) "assets\starter\audio"
 $StarterVisualSource = Join-Path (Split-Path -Parent $WorkerSource) "assets\starter\visuals"
 $ManifestPath = Join-Path $Destination "test-area-manifest.json"
@@ -143,17 +178,17 @@ foreach ($Path in @($DesktopSource, $WorkerSource)) {
 
 if (Test-Path -LiteralPath $Destination) {
     if (-not $Force) {
-        throw "Test area already exists: $Destination. Review it, then rerun with -Force to replace only Alystria-owned files."
+        throw "Test area already exists: $Destination. Review it, then rerun with -Force to replace only AI Video Tutorial Generator-owned files."
     }
     if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
-        throw "Refusing to write into an existing folder without Alystria's test-area manifest: $Destination"
+        throw "Refusing to write into an existing folder without AI Video Tutorial Generator's test-area manifest: $Destination"
     }
     $Existing = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
     if ($Existing.kind -notin @(
         "alystria-studio-portable-debug-test-area",
         "ai-video-tutorial-generator-portable-debug-test-area"
     )) {
-        throw "Refusing to write into a folder that is not Alystria's portable test area: $Destination"
+        throw "Refusing to write into a folder that is not AI Video Tutorial Generator's portable test area: $Destination"
     }
 }
 
@@ -168,12 +203,33 @@ $CacheDirectory = Join-Path $Destination "Cache"
 $TempDirectory = Join-Path $Destination "Temp"
 $TestHarnessDirectory = Join-Path $Destination "Test Harness"
 $EvidenceDirectory = Join-Path $Destination "Evidence"
+
+# Reject redirection in every existing path the packager will overwrite or
+# populate. Preserved Models/Projects/Exports remain outside this mutation set.
+foreach ($OwnedMutablePath in @(
+    $AppDirectory,
+    $RuntimeDirectory,
+    $DataDirectory,
+    $CacheDirectory,
+    $TempDirectory,
+    $TestHarnessDirectory,
+    $EvidenceDirectory
+)) {
+    Assert-NoReparsePoints -CandidatePath $OwnedMutablePath -Label "Portable owned destination" -Recurse -ContainedRoot $Destination
+}
 if (-not $TrustedRuntimeSourceRoot) {
     $TrustedRuntimeSourceRoot = Join-Path (Split-Path -Parent $Destination) "Alystria Studio Test Area\Test Data\runtimes"
 }
 $TrustedRuntimeSourceRoot = [IO.Path]::GetFullPath($TrustedRuntimeSourceRoot)
 if (-not (Test-Path -LiteralPath $TrustedRuntimeSourceRoot -PathType Container)) {
     throw "The trusted Node/Chromium/FFmpeg cache is missing: $TrustedRuntimeSourceRoot"
+}
+$DestinationPrefix = $Destination.TrimEnd('\') + '\'
+foreach ($SourceRoot in @($TrustedRuntimeSourceRoot, $DesktopSource, $WorkerSource)) {
+    $ResolvedSourceRoot = [IO.Path]::GetFullPath($SourceRoot)
+    if (($ResolvedSourceRoot + '\').StartsWith($DestinationPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Portable build inputs must be outside the destination so -Force cannot erase or overwrite its own source: $ResolvedSourceRoot"
+    }
 }
 Assert-NoReparsePoints -CandidatePath $TrustedRuntimeSourceRoot -Label "Trusted runtime source" -Recurse
 

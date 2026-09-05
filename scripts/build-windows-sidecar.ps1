@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputDirectory,
+    [string]$BuildRootDirectory,
     [switch]$Force
 )
 
@@ -17,6 +18,17 @@ if (-not $OutputDirectory) {
 }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $OutputExecutable = Join-Path $OutputDirectory "alystria-pipeline.exe"
+
+if (-not $BuildRootDirectory) {
+    $PreferredBuildRoot = "E:\temp\AI Video Tutorial Generator\build\sidecar"
+    $BuildRootDirectory = if (Test-Path -LiteralPath "E:\temp" -PathType Container) {
+        $PreferredBuildRoot
+    }
+    else {
+        Join-Path ([IO.Path]::GetTempPath()) "ai-video-tutorial-generator\build\sidecar"
+    }
+}
+$BuildRootDirectory = [IO.Path]::GetFullPath($BuildRootDirectory)
 
 if ((Test-Path $OutputExecutable) -and -not $Force) {
     throw "Sidecar output already exists. Pass -Force to replace this exact artifact: $OutputExecutable"
@@ -35,13 +47,13 @@ if (-not $UvPath) {
     throw "uv is required to build the isolated Python sidecar. Install uv and rerun this script."
 }
 
-$WorkRoot = Join-Path ([IO.Path]::GetTempPath()) ("alystria-sidecar-" + [Guid]::NewGuid().ToString("N"))
+$WorkRoot = Join-Path $BuildRootDirectory ("build-" + [Guid]::NewGuid().ToString("N"))
 $DistRoot = Join-Path $WorkRoot "dist"
 $BuildRoot = Join-Path $WorkRoot "build"
 $SpecRoot = Join-Path $WorkRoot "spec"
 $Launcher = Join-Path $PipelineRoot "sidecar_entry.py"
 
-New-Item -ItemType Directory -Path $WorkRoot | Out-Null
+New-Item -ItemType Directory -Path $WorkRoot -Force | Out-Null
 try {
     $UvExecutable = [string]$UvPath
     # Start-Process is deliberately used instead of relying on LASTEXITCODE:
@@ -94,11 +106,11 @@ try {
     Set-Content -LiteralPath ($OutputExecutable + ".sha256") `
         -Value ("$Digest  alystria-pipeline.exe") -Encoding ASCII
 
-    Write-Host "Built Alystria desktop sidecar: $OutputExecutable"
+    Write-Host "Built AI Video Tutorial Generator desktop sidecar: $OutputExecutable"
     Write-Host "SHA-256: $Digest"
     Write-Host "Verified starter audio: $($StarterAudioProof.AssetCount) assets, catalog $($StarterAudioProof.CatalogSha256)"
     Write-Host "Verified starter visuals: $($StarterVisualProof.AssetCount) assets, catalog $($StarterVisualProof.CatalogSha256)"
-    Write-Host "Runtime install location: <Alystria app data>\runtimes\pipeline\current\alystria-pipeline.exe"
+    Write-Host "Runtime install location: <AI Video Tutorial Generator app data>\runtimes\pipeline\current\alystria-pipeline.exe"
 }
 finally {
     if (Test-Path $WorkRoot) {
