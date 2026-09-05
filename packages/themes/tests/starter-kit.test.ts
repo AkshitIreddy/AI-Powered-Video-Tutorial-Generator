@@ -15,7 +15,7 @@ describe("built-in starter kit", () => {
   it("offers substantial choice with audio remaining opt-in", () => {
     expect(STARTER_ASSET_COUNTS).toMatchObject({
       background: 13, transition: 8, font: 14, "presenter-style": 12,
-      "presenter-portrait": 6, music: 2, "sound-effect": 14,
+      "presenter-portrait": 26, music: 2, "sound-effect": 14,
     });
     const audio = BUILT_IN_STARTER_KIT.assets.filter((asset) => asset.kind === "music" || asset.kind === "sound-effect");
     expect(audio).toHaveLength(16);
@@ -40,7 +40,7 @@ describe("built-in starter kit", () => {
 
   it("binds every bundled generated image to its actual bytes", async () => {
     const bundled = BUILT_IN_STARTER_KIT.assets.filter((asset) => asset.source.delivery === "bundled-file");
-    expect(bundled).toHaveLength(25);
+    expect(bundled).toHaveLength(45);
     for (const asset of bundled) {
       const bytes = await readFile(resolve(process.cwd(), "../..", asset.source.relativePath!));
       expect(bytes.byteLength, asset.id).toBe(asset.source.byteSize);
