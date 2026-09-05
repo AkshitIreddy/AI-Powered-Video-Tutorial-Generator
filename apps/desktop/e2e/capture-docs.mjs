@@ -20,10 +20,10 @@ page.on("console", (message) => {
 });
 
 await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
-await page.getByRole("heading", { name: /turn a difficult idea/i }).waitFor();
+await page.getByRole("heading", { name: /your teaching workbench/i }).waitFor();
 await page.screenshot({ path: resolve(output, "alystria-home.png"), fullPage: false });
 
-await page.getByRole("button", { name: /continue working/i }).click();
+await page.getByRole("button", { name: /^open project$/i }).click();
 await page
   .getByRole("navigation", { name: /project workspace/i })
   .getByRole("button", { name: /^studio$/i })
@@ -36,7 +36,7 @@ await page.getByRole("button", { name: /models & providers/i }).click();
 await page.screenshot({ path: resolve(output, "alystria-providers.png"), fullPage: false });
 
 await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
-await page.getByRole("heading", { name: /turn a difficult idea/i }).waitFor();
+await page.getByRole("heading", { name: /your teaching workbench/i }).waitFor();
 await page.getByRole("button", { name: /new tutorial/i }).first().click();
 await page.getByPlaceholder(/explain why karatsuba/i).fill(
   "Explain Karatsuba multiplication to an undergraduate using an intuitive visual analogy.",
@@ -45,7 +45,7 @@ await page.screenshot({ path: resolve(output, "alystria-new-tutorial.png"), full
 
 await page.setViewportSize({ width: 860, height: 900 });
 await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
-await page.getByRole("heading", { name: /turn a difficult idea/i }).waitFor();
+await page.getByRole("heading", { name: /your teaching workbench/i }).waitFor();
 await page.screenshot({ path: resolve(output, "alystria-narrow.png"), fullPage: false });
 
 await browser.close();

@@ -16,8 +16,9 @@ test("settings scrolls and the guided tutorial keeps its target sharp", async ({
 
   await page.getByRole("button", { name: /replay guided tour/i }).click();
   await expect(page.locator(".aly-onboarding-tour")).toBeVisible();
-  const backdropFilter = await page.locator(".aly-onboarding-tour__shade").evaluate((element) => getComputedStyle(element).backdropFilter);
-  expect(backdropFilter === "none" || backdropFilter === "").toBeTruthy();
+  const backdropFilters = await page.locator(".aly-onboarding-tour__shade").evaluateAll((elements) => elements.map((element) => getComputedStyle(element).backdropFilter));
+  expect(backdropFilters.length).toBeGreaterThan(0);
+  expect(backdropFilters.every((value) => value === "none" || value === "")).toBeTruthy();
   await expect(page.locator(".aly-onboarding-tour__spotlight")).toBeVisible();
 });
 
@@ -30,11 +31,12 @@ test("@ui-contract drives create, approve, review boundary, and export through t
     if (message.type() === "error") consoleErrors.push(message.text());
   });
 
-  await expect(page.locator(".runtime-badge")).toContainText("UI contract");
+  await expect(page.locator(".runtime-badge")).toContainText("Browser preview");
   await expect(page.locator(".runtime-badge")).toHaveAttribute("title", /browser adapter only; no native artifact/i);
 
   await page.getByRole("button", { name: /models & providers/i }).click();
   await expect(page.getByRole("heading", { name: /provider & model profiles/i })).toBeVisible();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Balanced cloud");
   for (const [provider, key] of [["OpenAI", "ui-contract-openai"], ["ElevenLabs", "ui-contract-elevenlabs"]] as const) {
     await page.getByRole("button", { name: new RegExp(`add ${provider} credential`, "i") }).click();
     await page.getByLabel("API key").fill(key);
@@ -43,24 +45,23 @@ test("@ui-contract drives create, approve, review boundary, and export through t
     await page.locator(".toast button").click();
   }
   await page.getByRole("button", { name: /add profile/i }).click();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("My profile 2");
   await page.getByLabel("Name", { exact: true }).fill("UI contract cloud");
   const routes: Record<string, { provider: string; model: string }> = {
     "Writing & review": { provider: "openai", model: "gpt-5.4" },
-    Research: { provider: "openai", model: "off for deterministic acceptance" },
     Images: { provider: "openai", model: "gpt-image-2" },
-    Motion: { provider: "runway", model: "off for deterministic acceptance" },
     Narration: { provider: "elevenlabs", model: "eleven_multilingual_v2" },
-    Transcription: { provider: "openai", model: "off for deterministic acceptance" },
-    Presenter: { provider: "local-runtime", model: "off for deterministic acceptance" },
-    "Lip-sync": { provider: "local-runtime", model: "off for deterministic acceptance" },
   };
   for (const [medium, routeSettings] of Object.entries(routes)) {
     const route = page.locator(".profile-route-grid label").filter({ hasText: medium });
     await route.locator("select").selectOption(routeSettings.provider);
+    await expect(route.locator("select")).toHaveValue(routeSettings.provider);
     await route.getByLabel(`${medium} model`, { exact: true }).fill(routeSettings.model);
+    await expect(route.getByLabel(`${medium} model`, { exact: true })).toHaveValue(routeSettings.model);
   }
   await page.getByRole("button", { name: /save setup & active profile/i }).click();
   await expect(page.getByText(/setup saved locally/i)).toBeVisible();
+  await expect(page.getByRole("tab", { name: "UI contract cloud", exact: true })).toHaveAttribute("aria-selected", "true");
   await page.locator(".toast button").click();
 
   await page.getByRole("button", { name: /new tutorial/i }).click();
@@ -82,6 +83,8 @@ test("@ui-contract drives create, approve, review boundary, and export through t
   await expect(wizard.getByText("About 3 minutes")).toBeVisible();
   await page.getByRole("button", { name: "Maximum", exact: true }).click();
   await expect(page.getByText(/hard creation budget/i)).toBeVisible();
+  await wizard.getByLabel("Creation profile").selectOption({ label: "UI contract cloud" });
+  await expect(wizard.getByLabel("Creation profile")).toHaveValue("custom-profile-2");
   await page.getByLabel("Content class", { exact: true }).selectOption("public");
   await expect(page.getByText(/none yet/i)).toBeVisible();
   await page.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
@@ -95,8 +98,9 @@ test("@ui-contract drives create, approve, review boundary, and export through t
 
   await page.getByRole("button", { name: /approve learning plan/i }).click();
 
+  await expect(page.getByRole("heading", { name: /see the teaching sequence/i })).toBeVisible();
+  await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^review$/i }).click();
   await expect(page.getByRole("heading", { name: /review the whole argument/i })).toBeVisible();
-  await expect(page.getByText(/tutorial generation completed/i)).toBeVisible();
   await expect(page.getByRole("heading", { name: /no authoritative media yet/i })).toBeVisible();
   await expect(page.getByText(/browser ui contract does not create video/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /prepare export/i })).toBeDisabled();
@@ -117,7 +121,9 @@ test("@ui-contract drives create, approve, review boundary, and export through t
   await page.getByLabel("Codec preference").selectOption("av1");
   await expect(page.getByLabel("Frame rate")).toHaveValue("24");
   await expect(page.getByLabel("Codec preference")).toHaveValue("av1");
-  await expect(page.getByText(/codec preference is recorded with this request/i)).toBeVisible();
+  await expect(page.getByRole("note")).toContainText(
+    /frame rate and codec are applied during native export.*selected encoder is unavailable/is,
+  );
 
   await page.getByRole("button", { name: /export portable/i }).click();
   await expect(page.getByText(/portable project archived/i)).toBeVisible();
@@ -153,7 +159,7 @@ test("@ui-contract drives create, approve, review boundary, and export through t
 });
 
 test("@ui-contract exposes retry and cancel only for eligible durable job states", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: /turn a difficult idea/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /your teaching workbench/i })).toBeVisible();
   await page.evaluate(() => {
     const snapshot = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
     const link = { projectId: "fault-project", projectDirectory: "C:/Alystria/fault-project" };

@@ -46,7 +46,7 @@ test("captures the clean first launch and redesigned global surfaces", async ({ 
   await expect(page.getByRole("heading", { name: /create your studio profile/i })).toBeVisible();
   await waitForDecodedImages(page, ".aly-onboarding-profile__gallery img");
   await page.screenshot({ path: `${output}/01a-onboarding-profile-gallery.png` });
-  await page.locator('label:has(.aly-onboarding-profile__portrait-radio[value="presenter-portrait.academic-amara-v1"])').click();
+  await page.getByRole("group", { name: "Available portraits" }).locator("label").first().click();
   await page.getByLabel("Display name", { exact: true }).fill("Akshit");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: /your studio is prepared/i })).toBeVisible();
@@ -59,9 +59,9 @@ test("captures the clean first launch and redesigned global surfaces", async ({ 
 
 test("captures home, templates, model catalog, settings, studio and editor", async ({ page }) => {
   await readyPage(page, true);
-  await expect(page.getByRole("heading", { name: /turn a difficult idea/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /your teaching workbench/i })).toBeVisible();
   await page.screenshot({ path: `${output}/02-home.png` });
-  await page.locator(".home-hero").screenshot({ path: `${output}/02a-home-hero-closeup.png` });
+  await page.locator(".workbench-intro").screenshot({ path: `${output}/02a-workbench-intro-closeup.png` });
   await page.locator(".sidebar").screenshot({ path: `${output}/02b-sidebar-closeup.png` });
 
   await page.getByRole("button", { name: "Templates" }).click();
