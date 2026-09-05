@@ -30,9 +30,9 @@ def main() -> int:
             owner.value == options.pid
             and class_name.value == "Tauri Window"
             and title.value == "AI Video Tutorial Generator"
+            and ctypes.windll.user32.PostMessageW(window, wm_close, 0, 0)
         ):
-            if ctypes.windll.user32.PostMessageW(window, wm_close, 0, 0):
-                closed += 1
+            closed += 1
         return True
 
     if not ctypes.windll.user32.EnumWindows(visit, 0):
