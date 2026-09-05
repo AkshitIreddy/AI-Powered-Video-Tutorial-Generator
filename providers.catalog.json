@@ -65,8 +65,9 @@
       "credentialKind": "secret-reference",
       "approvedByDefault": false,
       "capabilities": ["llm", "image", "video", "tts", "asr"],
+      "models": ["gemini-2.5-flash"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "reviewed-model-snapshot", "hardBudgetEligible": true }
     },
     {
       "id": "groq",

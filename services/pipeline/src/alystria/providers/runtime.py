@@ -25,6 +25,7 @@ from .llm import (
     GeminiInteractionsAdapter,
     OpenAICompatibleLocalAdapter,
     OpenAIResponsesAdapter,
+    reviewed_gemini_prices,
 )
 from .media import launch_media_adapter, launch_media_provider_ids, launch_route_unit_prices
 from .nvidia_nim import (
@@ -530,7 +531,23 @@ class ProviderRuntimeFactory:
         elif provider_id == "anthropic":
             adapters.append(AnthropicMessagesAdapter(transport))
         elif provider_id == "gemini":
-            adapters.append(GeminiInteractionsAdapter(transport))
+            route_models = tuple(
+                route.model
+                for route in policy.routes
+                if provider_id in route.provider_ids
+                and route.capability
+                in {
+                    Capability.LLM_TEXT,
+                    Capability.LLM_STRUCTURED,
+                    Capability.RESEARCH,
+                }
+            )
+            adapters.append(
+                GeminiInteractionsAdapter(
+                    transport,
+                    prices=reviewed_gemini_prices(route_models),
+                )
+            )
         elif provider_id in {"groq", "mistral", "openrouter"}:
             adapters.append(launch_structured_cloud_adapter(provider_id, transport))
         elif provider_id == "openai-compatible-local":

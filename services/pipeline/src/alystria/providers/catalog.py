@@ -255,6 +255,7 @@ def default_catalog() -> ProviderCatalog:
             },
             "https://ai.google.dev/api/interactions-api-v1",
             policy=_cloud(RetentionMode.CONFIGURABLE),
+            models=("gemini-2.5-flash",),
             cancellation=True,
         ),
         _entry(

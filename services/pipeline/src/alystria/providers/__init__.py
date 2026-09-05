@@ -20,11 +20,14 @@ from .cloudflare_workers_ai import (
 )
 from .errors import FailureCode, ProviderFailure
 from .llm import (
+    GEMINI_2_5_FLASH_MODEL,
+    GEMINI_2_5_FLASH_PRICES,
     AnthropicMessagesAdapter,
     GeminiInteractionsAdapter,
     OpenAICompatibleLocalAdapter,
     OpenAIResponsesAdapter,
     TokenPrices,
+    reviewed_gemini_prices,
 )
 from .media import (
     LaunchMediaAdapter,
@@ -117,6 +120,8 @@ __all__ = [
     "CLOUDFLARE_FLUX_MODEL",
     "CLOUDFLARE_FLUX_STEPS",
     "CLOUDFLARE_WORKERS_AI_PROVIDER_ID",
+    "GEMINI_2_5_FLASH_MODEL",
+    "GEMINI_2_5_FLASH_PRICES",
     "GROQ_STRUCTURED_MODEL",
     "MISTRAL_STRUCTURED_MODEL",
     "NVIDIA_CHAT_ENDPOINT",
@@ -209,5 +214,6 @@ __all__ = [
     "launch_structured_cloud_adapter",
     "load_and_validate_root_catalog",
     "parse_routing_policy",
+    "reviewed_gemini_prices",
     "validate_root_catalog",
 ]

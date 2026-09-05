@@ -33,6 +33,25 @@ class TokenPrices:
     estimated_search_calls: int = 3
 
 
+GEMINI_2_5_FLASH_MODEL = "gemini-2.5-flash"
+GEMINI_2_5_FLASH_PRICES = TokenPrices(
+    catalog_version="2026-09-05-google-gemini-pricing",
+    input_micros_per_million=300_000,
+    output_micros_per_million=2_500_000,
+)
+
+
+def reviewed_gemini_prices(models: tuple[str, ...]) -> TokenPrices:
+    """Return the verified paid-tier ceiling for one exact Gemini text model."""
+
+    selected = tuple(dict.fromkeys(models))
+    if selected != (GEMINI_2_5_FLASH_MODEL,):
+        raise ValueError(
+            "Gemini structured writing must pin the reviewed gemini-2.5-flash price snapshot"
+        )
+    return GEMINI_2_5_FLASH_PRICES
+
+
 class BaseLLMAdapter(GuardedAdapter):
     def __init__(self, transport: HttpTransport, prices: TokenPrices | None = None) -> None:
         self.transport = transport
@@ -99,6 +118,7 @@ class BaseLLMAdapter(GuardedAdapter):
         request_id: str | None,
         *,
         extra: dict[str, float] | None = None,
+        billable_output_tokens: int | None = None,
     ) -> Usage:
         units: dict[str, float] = {
             "input_tokens": input_tokens,
@@ -107,7 +127,13 @@ class BaseLLMAdapter(GuardedAdapter):
         units.update(extra or {})
         actual_cost: int | None = None
         if self.prices is not None:
-            actual_cost = _token_cost(input_tokens, output_tokens, self.prices)
+            actual_cost = _token_cost(
+                input_tokens,
+                output_tokens
+                if billable_output_tokens is None
+                else billable_output_tokens,
+                self.prices,
+            )
             if "search_requests" in units:
                 actual_cost += round(
                     units["search_requests"] * self.prices.search_micros_per_call
@@ -406,16 +432,19 @@ class GeminiInteractionsAdapter(BaseLLMAdapter):
             for item in _list(usage.get("grounding_tool_count"))
             if item.get("type") == "google_search"
         )
+        output_tokens = _int(usage.get("total_output_tokens"))
+        thought_tokens = _int(usage.get("total_thought_tokens"))
         result_usage = self._usage(
             request.model,
             _int(usage.get("total_input_tokens")),
-            _int(usage.get("total_output_tokens")),
+            output_tokens,
             _string(payload.get("id")),
             extra={
-                "thought_tokens": _int(usage.get("total_thought_tokens")),
+                "thought_tokens": thought_tokens,
                 "tool_use_tokens": _int(usage.get("total_tool_use_tokens")),
                 "search_requests": search_requests,
             },
+            billable_output_tokens=output_tokens + thought_tokens,
         )
         return ProviderResult(
             self.descriptor.provider_id,
