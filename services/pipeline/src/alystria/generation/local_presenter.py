@@ -1227,7 +1227,10 @@ class LocalPresenterMediaClient:
                 "-v",
                 "error",
                 "-show_entries",
-                "format=duration:stream=codec_type,codec_name,width,height,r_frame_rate",
+                (
+                    "format=duration:stream=codec_type,codec_name,width,height,"
+                    "r_frame_rate,duration,sample_rate,channels"
+                ),
                 "-of",
                 "json",
                 str(output_path),
@@ -1267,6 +1270,28 @@ class LocalPresenterMediaClient:
         frame_rate = str(video.get("r_frame_rate", ""))
         if not re.fullmatch(r"[1-9][0-9]*/[1-9][0-9]*", frame_rate):
             raise LocalPresenterOutputError("Presenter delivery frame rate is invalid")
+        frame_rate_numerator, frame_rate_denominator = (
+            int(value) for value in frame_rate.split("/", maxsplit=1)
+        )
+        stream_tolerance = max(
+            0.12,
+            3 * frame_rate_denominator / frame_rate_numerator,
+        )
+        video_duration = _presenter_stream_duration(
+            video.get("duration"), "video stream"
+        )
+        audio_durations = [
+            _presenter_stream_duration(item.get("duration"), f"audio stream {index}")
+            for index, item in enumerate(audios, start=1)
+            if isinstance(item, dict)
+        ]
+        if any(
+            abs(video_duration - audio_duration) > stream_tolerance
+            for audio_duration in audio_durations
+        ):
+            raise LocalPresenterOutputError(
+                "Presenter delivery audio and video stream durations disagree"
+            )
         format_value = value.get("format")
         if not isinstance(format_value, dict):
             raise LocalPresenterOutputError("Presenter delivery has no format probe")
@@ -1279,9 +1304,19 @@ class LocalPresenterMediaClient:
             raise LocalPresenterOutputError("Presenter delivery duration is invalid") from error
         if not 0 < duration <= 10_800:
             raise LocalPresenterOutputError("Presenter delivery duration is outside policy")
+        if abs(duration - max(video_duration, *audio_durations)) > stream_tolerance:
+            raise LocalPresenterOutputError(
+                "Presenter delivery container and stream durations disagree"
+            )
         return {
             "verified": True,
             "durationSeconds": duration,
+            "videoDurationSeconds": video_duration,
+            "audioDurationSeconds": audio_durations,
+            "avDurationDeltaSeconds": max(
+                abs(video_duration - audio_duration)
+                for audio_duration in audio_durations
+            ),
             "width": width,
             "height": height,
             "frameRate": frame_rate,
@@ -1597,6 +1632,22 @@ def _positive_int(value: object, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise LocalPresenterOutputError(f"{label} is invalid")
     return value
+
+
+def _presenter_stream_duration(value: object, label: str) -> float:
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+        raise LocalPresenterOutputError(f"Presenter delivery {label} duration is invalid")
+    try:
+        duration = float(value)
+    except (TypeError, ValueError) as error:
+        raise LocalPresenterOutputError(
+            f"Presenter delivery {label} duration is invalid"
+        ) from error
+    if not 0 < duration <= 10_800:
+        raise LocalPresenterOutputError(
+            f"Presenter delivery {label} duration is outside policy"
+        )
+    return duration
 
 
 def _make_read_only(path: Path) -> None:

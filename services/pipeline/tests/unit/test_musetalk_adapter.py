@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from array import array
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -85,3 +86,22 @@ def test_output_contract_tracks_the_effective_normalized_portrait_name(
     assert silent_video == version_root / "temp_portrait-normalized_narration.mp4"
     assert generated_output == version_root / "presenter.mp4"
     assert frames == version_root / "portrait-normalized_narration" / "%08d.png"
+
+
+def test_speech_weights_hold_true_silence_at_the_source_mouth() -> None:
+    adapter = _adapter_module()
+    samples_per_frame = 16_000 // 25
+    samples = array(
+        "h",
+        [0] * (10 * samples_per_frame)
+        + [10_000] * (10 * samples_per_frame)
+        + [0] * (10 * samples_per_frame),
+    )
+
+    weights = adapter._speech_weights_from_pcm(samples.tobytes())
+
+    assert weights[:9] == [0.0] * 9
+    assert weights[9] == pytest.approx(0.5)
+    assert weights[10:20] == [1.0] * 10
+    assert weights[20] == pytest.approx(0.5)
+    assert weights[21:] == [0.0] * 9

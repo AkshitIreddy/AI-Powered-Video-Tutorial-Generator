@@ -62,6 +62,7 @@ class FakePresenterRunner:
     ffprobe: Path | None
     mutate_portrait: bool = False
     invalid_probe: bool = False
+    mismatched_stream_durations: bool = False
     worker_exit_code: int = 0
 
     def __post_init__(self) -> None:
@@ -145,8 +146,23 @@ class FakePresenterRunner:
                             "width": 768,
                             "height": 768,
                             "r_frame_rate": "25/1",
+                            "duration": (
+                                "1.000000"
+                                if self.mismatched_stream_durations
+                                else "2.500000"
+                            ),
                         },
-                        {"codec_type": "audio", "codec_name": "aac"},
+                        {
+                            "codec_type": "audio",
+                            "codec_name": "aac",
+                            "sample_rate": "48000",
+                            "channels": 2,
+                            "duration": (
+                                "4.000000"
+                                if self.mismatched_stream_durations
+                                else "2.500000"
+                            ),
+                        },
                     ],
                     "format": {"duration": "2.500000"},
                 }
@@ -346,6 +362,9 @@ def test_managed_worker_returns_ffprobe_validated_video_generated_media(tmp_path
         assert media.metadata["probe"] == {
             "verified": True,
             "durationSeconds": 2.5,
+            "videoDurationSeconds": 2.5,
+            "audioDurationSeconds": [2.5],
+            "avDurationDeltaSeconds": 0.0,
             "width": 768,
             "height": 768,
             "frameRate": "25/1",
@@ -355,6 +374,22 @@ def test_managed_worker_returns_ffprobe_validated_video_generated_media(tmp_path
         assert len(runner.calls) == 3
         assert "lavfi" in runner.calls[0]
         assert all("scene/unsafe name" not in item for call in runner.calls for item in call)
+    finally:
+        store.close()
+
+
+def test_managed_worker_rejects_mismatched_audio_and_video_durations(tmp_path: Path) -> None:
+    store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
+    runtime, worker, ffprobe = _runtime(tmp_path / "runtime")
+    runner = FakePresenterRunner(worker, ffprobe, mismatched_stream_durations=True)
+    try:
+        with pytest.raises(
+            LocalPresenterOutputError,
+            match="audio and video stream durations disagree",
+        ):
+            _client(store, runtime, portrait_hash, runner).create_presenter(
+                {"id": "scene-1"}, narration_hash=narration_hash, seed=42
+            )
     finally:
         store.close()
 
@@ -1089,6 +1124,8 @@ def test_musetalk_adapter_replaces_upstream_shell_mux_with_fixed_argv(
         return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
 
     monkeypatch.setattr(adapter.subprocess, "run", fake_run)
+    monkeypatch.setattr(adapter, "_decode_speech_weights", lambda **_kwargs: [1.0])
+    monkeypatch.setattr(adapter, "_restore_silent_mouth_frames", lambda **_kwargs: 0)
     contract_files = {
         "musetalk-inference-entrypoint": inference,
         "runtime-source-manifest": source_manifest,

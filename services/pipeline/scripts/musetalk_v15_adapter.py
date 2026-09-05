@@ -14,10 +14,12 @@ import hashlib
 import importlib
 import importlib.util
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
+from array import array
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -256,6 +258,133 @@ def _run(argv: tuple[str, ...], *, cwd: Path) -> None:
         raise RuntimeError(f"Presenter FFmpeg failed with code {result.returncode}: {detail}")
 
 
+def _speech_weights_from_pcm(
+    pcm: bytes,
+    *,
+    sample_rate: int = 16_000,
+    fps: int = 25,
+) -> list[float]:
+    """Return a conservative per-video-frame speech envelope.
+
+    MuseTalk can hallucinate open-mouth motion over digital silence. Decode the
+    final narration itself and keep the source mouth wherever no speech energy
+    exists. A short two-frame transition avoids a visible snap at phrase edges.
+    """
+
+    if not pcm or len(pcm) % 2:
+        _fail("Decoded presenter narration PCM is missing or malformed")
+    samples = array("h")
+    samples.frombytes(pcm)
+    if sys.byteorder != "little":  # pragma: no cover - Windows runtime is little-endian
+        samples.byteswap()
+    samples_per_frame = sample_rate / fps
+    frame_count = max(1, math.ceil(len(samples) / samples_per_frame))
+    weights: list[float] = []
+    for frame_index in range(frame_count):
+        start = round(frame_index * samples_per_frame)
+        end = min(len(samples), round((frame_index + 1) * samples_per_frame))
+        window = samples[start:end]
+        if not window:
+            weights.append(0.0)
+            continue
+        mean_square = sum(float(value) * float(value) for value in window) / len(window)
+        dbfs = 20.0 * math.log10(max(math.sqrt(mean_square) / 32768.0, 1e-9))
+        # Below -50 dBFS is a true rest frame. Above -35 dBFS is confidently
+        # voiced; the interval between them fades rather than toggles.
+        weights.append(min(1.0, max(0.0, (dbfs + 50.0) / 15.0)))
+    for index in range(1, len(weights)):
+        weights[index] = max(weights[index], weights[index - 1] - 0.5)
+    for index in range(len(weights) - 2, -1, -1):
+        weights[index] = max(weights[index], weights[index + 1] - 0.5)
+    return weights
+
+
+def _decode_speech_weights(
+    *,
+    ffmpeg: Path,
+    audio_path: str,
+    workspace: Path,
+) -> list[float]:
+    result = subprocess.run(
+        (
+            str(ffmpeg),
+            "-hide_banner",
+            "-nostdin",
+            "-v",
+            "error",
+            "-i",
+            audio_path,
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-f",
+            "s16le",
+            "pipe:1",
+        ),
+        cwd=workspace,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        shell=False,
+        timeout=3_600,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr[-4_096:].decode(errors="replace")
+        _fail(f"Presenter narration decode failed with code {result.returncode}: {detail}")
+    return _speech_weights_from_pcm(result.stdout)
+
+
+def _restore_silent_mouth_frames(
+    *,
+    generated_pattern: Path,
+    source_pattern: Path,
+    portrait: Path,
+    speech_weights: list[float],
+) -> int:
+    """Blend generated frames back to the verified source during silence."""
+
+    import cv2
+
+    generated_frames = sorted(generated_pattern.parent.glob("*.png"))
+    if not generated_frames:
+        _fail("MuseTalk produced no frames for silence restoration")
+    source_frames = sorted(source_pattern.parent.glob("*.png"))
+    static_source = None
+    if not source_frames:
+        static_source = cv2.imread(_library_path(portrait), cv2.IMREAD_COLOR)
+        if static_source is None or static_source.size == 0:
+            _fail("Presenter source could not be decoded for silence restoration")
+    restored = 0
+    for index, generated_path in enumerate(generated_frames):
+        weight = speech_weights[min(index, len(speech_weights) - 1)]
+        if weight >= 0.999:
+            continue
+        generated = cv2.imread(_library_path(generated_path), cv2.IMREAD_COLOR)
+        source = (
+            cv2.imread(
+                _library_path(source_frames[index % len(source_frames)]),
+                cv2.IMREAD_COLOR,
+            )
+            if source_frames
+            else static_source
+        )
+        if generated is None or source is None or generated.size == 0 or source.size == 0:
+            _fail("Presenter frame could not be decoded for silence restoration")
+        if source.shape[:2] != generated.shape[:2]:
+            source = cv2.resize(
+                source,
+                (generated.shape[1], generated.shape[0]),
+                interpolation=cv2.INTER_LANCZOS4,
+            )
+        blended = cv2.addWeighted(generated, weight, source, 1.0 - weight, 0.0)
+        if not cv2.imwrite(_library_path(generated_path), blended):
+            _fail("Silence-restored presenter frame could not be written")
+        restored += 1
+    return restored
+
+
 def _identity_preserving_get_image(
     image: Any,
     face: Any,
@@ -339,6 +468,11 @@ def run_presenter_job(
     if ALLOWED_CODEC_ARGUMENTS.get(encoder) != codec_arguments:
         _fail("Presenter encoder arguments do not match the allowlisted selection")
     ffmpeg = Path(_library_path(Path(str(encoding["ffmpegPath"]))))
+    speech_weights = _decode_speech_weights(
+        ffmpeg=ffmpeg,
+        audio_path=audio_path,
+        workspace=workspace,
+    )
     version_root, silent_video, generated_output, frames = _upstream_output_paths(
         result_root, portrait_path, audio_path
     )
@@ -375,6 +509,12 @@ def run_presenter_job(
             )
             if not _fixed_argv_matches(upstream, expected, path_indices={0, 9, 16}):
                 _fail("MuseTalk image-to-video argv changed from the pinned contract")
+            _restore_silent_mouth_frames(
+                generated_pattern=frames,
+                source_pattern=source_frames,
+                portrait=portrait,
+                speech_weights=speech_weights,
+            )
             emit_progress("encoding", 0.85, "Encoding MuseTalk frames with approved H.264")
             _run(
                 (
@@ -560,7 +700,10 @@ def run_presenter_job(
             fps=25,
             audio_padding_length_left=2,
             audio_padding_length_right=2,
-            batch_size=1,
+            # The pinned upstream v1.5 default is eight. The previous value of
+            # one left most of this 12 GB GPU idle and made a 9.6-second mouth
+            # pass take 327.8 seconds in a fresh Windows measurement.
+            batch_size=8,
             output_vid_name="presenter.mp4",
             use_saved_coord=False,
             saved_coord=False,
