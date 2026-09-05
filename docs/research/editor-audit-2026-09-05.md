@@ -6,6 +6,29 @@ This audit covers the integrated editor under `apps/desktop/src/editor`, its rea
 
 The editor is a browser-rendered React surface inside a Windows desktop shell. Its validated document is stored in immutable project revisions. Native editor imports are promoted into the project content-addressed store and resolved through a checked media resolver. A typed render manifest and durable background job now render supported timeline edits with the pinned FFmpeg runtime; unsupported operations fail explicitly.
 
+## Native composition correction
+
+The current native import/export test passed CAS persistence, UI-driven playback,
+waveform loading, durable export registration, immediate-close save recovery, and
+worker shutdown. Root inspection of its decoded output still rejected the result:
+the neutral 960 × 540 lesson was cropped inside a 1280 × 720 canvas.
+
+Two source defects caused the mismatch. Export omitted the preview's
+aspect-preserving contain fit, and its rotation surface used `rotw(iw)` and
+`roth(ih)`, passing dimensions to functions that accept an angle. The latter can
+crop media even with zero rotation. The corrected chain fits media before user
+scale, preserves alpha before rotation, and reserves an even diagonal surface for
+animated rotation. [FFmpeg's rotation implementation](https://www.ffmpeg.org/doxygen/8.0/vf__rotate_8c_source.html)
+confirms the angle-based bounds calculation.
+
+Commit `664fe60` includes a real FFmpeg regression with colored edges. Decoded
+1280 × 720 output preserves every source edge at neutral scale and at 30-degree
+rotation with half scale. Root inspected both proof images; all nine focused
+export tests, Ruff, and strict mypy passed. The prior native functional pass is
+explicitly separated from its rejected visual result in
+`Evidence/native-editor-smoke/visual-inspection.json`. Rebuilding the worker and
+repeating the real packaged export remain required.
+
 ## Findings before this pass
 
 The previous editor was a substantial foundation: a seven-track timeline, local reducer history, OTIO-shaped interchange, proposals with provenance and policy previews, and deterministic project adapters. Several controls, however, overstated the implemented behavior or produced incorrect edits.

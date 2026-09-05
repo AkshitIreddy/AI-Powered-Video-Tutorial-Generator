@@ -29,8 +29,8 @@ Primary evidence:
   Review, Export, creation, and narrow layouts were captured and inspected. The
   13-route capture reported no page error or document horizontal overflow.
 - [x] The current UI matrix passed 25 Playwright cases with three intentional
-  viewport skips. The current coordinator run also reports 200 desktop unit
-  tests passing after the final UI integration.
+  viewport skips. The current coordinator run also reports 235 desktop unit
+  tests passing after caption, text-creation, and setup-replay integration.
 - [x] First-run setup and contextual onboarding use real highlighted controls,
   meaningful actions, replay, completed-setup detection, keyboard navigation,
   and a non-blurred target.
@@ -95,9 +95,11 @@ Primary evidence:
   layers, programme audio, audio gain/fades, codec, and output containment.
 - [x] Real waveforms are generated from the selected CAS audio stream, cached by
   source hash and profile, and cropped according to source offsets and trims.
-- [x] The focused editor suite passes 54 tests; its TypeScript build and editor
-  lint pass. A pinned-FFmpeg proof verifies decoded first/middle/last keyframed
-  frames, source audio, title/caption pixels, and matching VTT/SRT cues.
+- [x] Editor tests are included in the 235-test desktop pass; TypeScript and
+  editor lint pass. A pinned-FFmpeg proof verifies decoded first/middle/last
+  keyframed frames, source audio, title/caption pixels, and matching VTT/SRT cues.
+  Final native inspection subsequently exposed an imported-media sizing and
+  rotation-bounds defect; corrected decoded-export acceptance is still required.
 
 ### Native source and lifecycle evidence
 
