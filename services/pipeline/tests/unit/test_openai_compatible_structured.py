@@ -8,6 +8,7 @@ import pytest
 
 from alystria.providers.errors import FailureCode, ProviderFailure
 from alystria.providers.openai_compatible_structured import (
+    GROQ_STRUCTURED_120B_MODEL,
     GROQ_STRUCTURED_MODEL,
     MISTRAL_STRUCTURED_MODEL,
     OPENROUTER_STRUCTURED_MODEL,
@@ -145,6 +146,39 @@ def test_groq_cost_guard_uses_the_published_model_specific_prices() -> None:
     estimate = adapter.estimate(structured_request(GROQ_STRUCTURED_MODEL))
     assert estimate.micros is not None and estimate.micros > 0
     assert estimate.catalog_version == "groq-2026-09-05"
+
+
+def test_groq_120b_is_explicitly_selected_with_reviewed_pricing_and_low_reasoning() -> None:
+    adapter_20b = launch_structured_cloud_adapter("groq", FixtureTransport())
+    adapter_120b = launch_structured_cloud_adapter(
+        "groq",
+        FixtureTransport(),
+        model=GROQ_STRUCTURED_120B_MODEL,
+    )
+    request_20b = structured_request(GROQ_STRUCTURED_MODEL)
+    request_120b = structured_request(GROQ_STRUCTURED_120B_MODEL)
+
+    estimate_20b = adapter_20b.estimate(request_20b)
+    estimate_120b = adapter_120b.estimate(request_120b)
+    assert estimate_20b.micros is not None
+    assert estimate_120b.micros == estimate_20b.micros * 2
+    assert adapter_120b.descriptor.models == (GROQ_STRUCTURED_120B_MODEL,)
+
+    body = adapter_120b.build_request(request_120b, context("groq")).json_body
+    assert body is not None
+    assert body["model"] == GROQ_STRUCTURED_120B_MODEL
+    assert body["max_completion_tokens"] == request_120b.max_output_tokens
+    assert body["reasoning_effort"] == "low"
+    assert "max_tokens" not in body
+
+
+def test_groq_unreviewed_model_selection_fails_before_transport() -> None:
+    with pytest.raises(ValueError, match="not reviewed for structured output"):
+        launch_structured_cloud_adapter(
+            "groq",
+            FixtureTransport(),
+            model="openai/gpt-oss-future",
+        )
 
 
 def test_groq_projects_local_bounds_into_structural_schema_descriptions() -> None:

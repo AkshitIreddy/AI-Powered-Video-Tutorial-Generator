@@ -76,7 +76,7 @@
       "credentialKind": "secret-reference",
       "approvedByDefault": false,
       "capabilities": ["llm"],
-      "models": ["openai/gpt-oss-20b"],
+      "models": ["openai/gpt-oss-20b", "openai/gpt-oss-120b"],
       "dataBoundary": "provider-cloud",
       "pricing": { "status": "reviewed-model-snapshot", "hardBudgetEligible": true }
     },

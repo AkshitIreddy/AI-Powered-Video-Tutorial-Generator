@@ -31,6 +31,7 @@ from .types import (
 )
 
 GROQ_STRUCTURED_MODEL = "openai/gpt-oss-20b"
+GROQ_STRUCTURED_120B_MODEL = "openai/gpt-oss-120b"
 MISTRAL_STRUCTURED_MODEL = "mistral-small-2603"
 OPENROUTER_STRUCTURED_MODEL = "z-ai/glm-5.2:free"
 
@@ -100,6 +101,18 @@ STRUCTURED_CLOUD_SPECS: dict[str, StructuredCloudSpec] = {
         docs_url="https://openrouter.ai/docs/guides/features/structured-outputs",
         prices=TokenPrices("openrouter-model-list-2026-09-05", 0, 0),
         require_parameter_routing=True,
+    ),
+}
+
+_GROQ_MODEL_SPECS: dict[str, StructuredCloudSpec] = {
+    GROQ_STRUCTURED_MODEL: STRUCTURED_CLOUD_SPECS["groq"],
+    GROQ_STRUCTURED_120B_MODEL: StructuredCloudSpec(
+        provider_id="groq",
+        display_name="Groq",
+        base_url="https://api.groq.com/openai/v1",
+        model=GROQ_STRUCTURED_120B_MODEL,
+        docs_url="https://console.groq.com/docs/structured-outputs",
+        prices=TokenPrices("groq-2026-09-05", 150_000, 600_000),
     ),
 }
 
@@ -187,8 +200,16 @@ class OpenAICompatibleStructuredAdapter(BaseLLMAdapter):
         body: dict[str, Any] = {
             "model": request.model,
             "messages": messages,
-            "max_tokens": request.max_output_tokens,
         }
+        if self.spec.provider_id == "groq":
+            # Groq deprecates max_tokens for chat completions. GPT-OSS defaults
+            # to medium reasoning, which competes with a long structured
+            # document for the same completion allowance. Low remains a
+            # supported reasoning mode while reserving more room for JSON.
+            body["max_completion_tokens"] = request.max_output_tokens
+            body["reasoning_effort"] = "low"
+        else:
+            body["max_tokens"] = request.max_output_tokens
         if request.temperature is not None:
             body["temperature"] = request.temperature
         if request.json_schema is not None:
@@ -451,14 +472,30 @@ class OpenAICompatibleStructuredAdapter(BaseLLMAdapter):
 
 
 def launch_structured_cloud_adapter(
-    provider_id: str, transport: HttpTransport
+    provider_id: str,
+    transport: HttpTransport,
+    *,
+    model: str | None = None,
 ) -> OpenAICompatibleStructuredAdapter:
     try:
-        spec = STRUCTURED_CLOUD_SPECS[provider_id]
+        default_spec = STRUCTURED_CLOUD_SPECS[provider_id]
     except KeyError as exc:
         raise ValueError(
             f"provider {provider_id!r} has no reviewed structured-cloud adapter"
         ) from exc
+    if model is None or model == default_spec.model:
+        spec = default_spec
+    elif provider_id == "groq":
+        try:
+            spec = _GROQ_MODEL_SPECS[model]
+        except KeyError as exc:
+            raise ValueError(
+                f"provider {provider_id!r} model {model!r} is not reviewed for structured output"
+            ) from exc
+    else:
+        raise ValueError(
+            f"provider {provider_id!r} model {model!r} is not reviewed for structured output"
+        )
     return OpenAICompatibleStructuredAdapter(transport, spec)
 
 

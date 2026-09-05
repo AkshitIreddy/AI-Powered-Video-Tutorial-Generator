@@ -582,7 +582,26 @@ class ProviderRuntimeFactory:
                 )
             )
         elif provider_id in {"groq", "mistral", "openrouter"}:
-            adapters.append(launch_structured_cloud_adapter(provider_id, transport))
+            route_models = tuple(
+                dict.fromkeys(
+                    route.model
+                    for route in policy.routes
+                    if provider_id in route.provider_ids
+                    and route.capability
+                    in {Capability.LLM_TEXT, Capability.LLM_STRUCTURED}
+                )
+            )
+            if len(route_models) > 1:
+                raise ValueError(
+                    f"{provider_id} structured writing must select one reviewed model"
+                )
+            adapters.append(
+                launch_structured_cloud_adapter(
+                    provider_id,
+                    transport,
+                    model=route_models[0] if route_models else None,
+                )
+            )
         elif provider_id == "openai-compatible-local":
             adapters.append(OpenAICompatibleLocalAdapter(transport))
         elif provider_id == "nvidia-nim":

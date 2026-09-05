@@ -263,7 +263,7 @@ def default_catalog() -> ProviderCatalog:
             "Groq",
             {Capability.LLM_TEXT, Capability.LLM_STRUCTURED},
             "https://console.groq.com/docs/structured-outputs",
-            models=("openai/gpt-oss-20b",),
+            models=("openai/gpt-oss-20b", "openai/gpt-oss-120b"),
         ),
         _entry(
             "mistral",

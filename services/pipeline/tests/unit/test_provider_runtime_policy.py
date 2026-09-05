@@ -29,6 +29,7 @@ from alystria.providers import (
 )
 from alystria.providers.comfyui_local import SDXL_MODEL_ID, ComfyGenerationMediaClient
 from alystria.providers.openai_compatible_structured import (
+    GROQ_STRUCTURED_120B_MODEL,
     GROQ_STRUCTURED_MODEL,
     MISTRAL_STRUCTURED_MODEL,
     OPENROUTER_STRUCTURED_MODEL,
@@ -363,6 +364,7 @@ def test_approved_credential_reference_selects_adapter_without_persisting_value(
     ("provider_id", "model"),
     (
         ("groq", GROQ_STRUCTURED_MODEL),
+        ("groq", GROQ_STRUCTURED_120B_MODEL),
         ("mistral", MISTRAL_STRUCTURED_MODEL),
         ("openrouter", OPENROUTER_STRUCTURED_MODEL),
     ),
@@ -407,6 +409,10 @@ def test_reviewed_structured_cloud_routes_execute_through_runtime_factory(
     assert request.json_body is not None
     assert request.json_body["model"] == model
     assert request.json_body["response_format"]["json_schema"]["strict"] is True
+    if provider_id == "groq":
+        assert request.json_body["max_completion_tokens"] == 2048
+        assert request.json_body["reasoning_effort"] == "low"
+        assert "max_tokens" not in request.json_body
     if provider_id == "openrouter":
         assert request.json_body["provider"] == {"require_parameters": True}
 

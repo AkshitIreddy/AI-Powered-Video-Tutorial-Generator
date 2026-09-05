@@ -59,6 +59,12 @@ describe("desktop curated cloud routes", () => {
         capabilities: ["llm.text", "llm.structured"],
       },
       {
+        providerId: "groq",
+        sourceId: "openai/gpt-oss-120b",
+        baseUrl: "https://api.groq.com/openai/v1",
+        capabilities: ["llm.text", "llm.structured"],
+      },
+      {
         providerId: "mistral",
         sourceId: "mistral-small-2603",
         baseUrl: "https://api.mistral.ai/v1",

@@ -326,7 +326,7 @@ const providerConfigs = [
   { id: "local", name: "Local models", icon: HardDrive, detail: "Qwen · Whisper · Kokoro", tone: "teal", local: true },
   { id: "openai", name: "OpenAI", icon: Sparkles, detail: "Language · images · speech", tone: "indigo" },
   { id: "anthropic", name: "Anthropic", icon: MessageSquareText, detail: "Language and structured review", tone: "amber" },
-  { id: "groq", name: "Groq", icon: Zap, detail: "GPT-OSS 20B structured writing", tone: "amber" },
+  { id: "groq", name: "Groq", icon: Zap, detail: "GPT-OSS 20B or 120B structured writing", tone: "amber" },
   { id: "mistral", name: "Mistral AI", icon: Wind, detail: "Mistral Small 4 structured writing", tone: "indigo" },
   { id: "openrouter", name: "OpenRouter", icon: Network, detail: "Vetted free structured-output route", tone: "teal" },
   { id: "cohere", name: "Cohere", icon: Layers3, detail: "Command · Embed · Rerank", tone: "teal" },

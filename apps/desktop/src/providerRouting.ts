@@ -99,10 +99,10 @@ const providerPolicies: Record<string, ProviderPolicyDescriptor> = {
   tavus: cloud("provider_default", ["presenter.generate"]),
 };
 
-const reviewedStructuredCloudModels: Readonly<Record<string, string>> = {
-  groq: "openai/gpt-oss-20b",
-  mistral: "mistral-small-2603",
-  openrouter: "z-ai/glm-5.2:free",
+const reviewedStructuredCloudModels: Readonly<Record<string, readonly string[]>> = {
+  groq: ["openai/gpt-oss-20b", "openai/gpt-oss-120b"],
+  mistral: ["mistral-small-2603"],
+  openrouter: ["z-ai/glm-5.2:free"],
 };
 
 const reviewedOptionalRouteModels: Readonly<Record<string, Readonly<Partial<Record<ProviderCapability, string>>>>> = {
@@ -165,9 +165,9 @@ export function buildProviderRoutingReview(input: {
       errors.push("Cloudflare Workers AI currently supports only the reviewed FLUX.1 Schnell image route.");
       continue;
     }
-    const reviewedStructuredModel = reviewedStructuredCloudModels[selection.providerId];
-    if (reviewedStructuredModel && selection.modelId !== reviewedStructuredModel) {
-      errors.push(`${selection.providerId} structured writing currently supports only the reviewed ${reviewedStructuredModel} route.`);
+    const reviewedStructuredModels = reviewedStructuredCloudModels[selection.providerId];
+    if (reviewedStructuredModels && !reviewedStructuredModels.includes(selection.modelId)) {
+      errors.push(`${selection.providerId} structured writing currently supports only the reviewed models: ${reviewedStructuredModels.join(", ")}.`);
       continue;
     }
     const reviewedOptionalModel = reviewedOptionalRouteModels[selection.providerId]?.[capability];

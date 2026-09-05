@@ -158,6 +158,7 @@ describe("provider routing review", () => {
 
   it.each([
     ["groq", "openai/gpt-oss-20b"],
+    ["groq", "openai/gpt-oss-120b"],
     ["mistral", "mistral-small-2603"],
     ["openrouter", "z-ai/glm-5.2:free"],
   ])("builds the exact reviewed %s structured-writing route", (providerId, modelId) => {
