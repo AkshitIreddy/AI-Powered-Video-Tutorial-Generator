@@ -1840,7 +1840,7 @@ function App() {
               onSceneUpdate={(sceneId, update) => updateScene(activeProject.id, sceneId, update)}
               onProjectCustomization={(customization, receipt) => updateProjectCustomization(activeProject, customization, receipt)}
               onProjectCreative={(creative) => updateProjectCreative(activeProject.id, creative)}
-              onProjectEdit={(update) => setSnapshot((current) => ({ ...current, projects: current.projects.map((item) => item.id === activeProject.id ? { ...item, ...update, updatedAt: "just now" } : item), version: current.version + 1 }))}
+              onProjectEdit={(update, options) => setSnapshot((current) => ({ ...current, projects: current.projects.map((item) => item.id === activeProject.id ? { ...item, ...update, updatedAt: "just now" } : item), version: current.version + (options?.alreadyDurable ? 0 : 1) }))}
               onEditorDocumentChange={(document) => queueEditorDocumentSave(activeProject.id, document)}
               onFlushEditorDocument={() => flushEditorDocument(activeProject.id)}
               {...(editorSaveStates[activeProject.id] ? { editorSaveStatus: editorSaveStates[activeProject.id] } : {})}
@@ -2495,7 +2495,7 @@ function ProjectWorkspace(props: {
   onSceneUpdate: (sceneId: string, update: Partial<Scene>) => void;
   onProjectCustomization: (customization: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => void;
   onProjectCreative: (creative: CreativeConfiguration) => void;
-  onProjectEdit: (update: Pick<Partial<ProjectRecord>, "scenes" | "sceneCandidates" | "customization" | "editorDocument" | "reviewNotes" | "nativeHeadRevisionId" | "nativeRevisionNumber">) => void;
+  onProjectEdit: (update: Pick<Partial<ProjectRecord>, "scenes" | "sceneCandidates" | "customization" | "editorDocument" | "reviewNotes" | "nativeHeadRevisionId" | "nativeRevisionNumber">, options?: { alreadyDurable?: boolean }) => void;
   onEditorDocumentChange: (document: EditorProject) => void;
   onFlushEditorDocument: () => Promise<void>;
   editorSaveStatus?: EditorSaveStatus;
@@ -2639,7 +2639,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
     if (!identity) throw new Error("Open a saved desktop project before importing media.");
     return importNativeEditorMedia(files, identity, editorImportController.current!, editorImportRights, projectAssetResolve, (update) => {
       projectRef.current = { ...projectRef.current, ...update };
-      onProjectEdit(update);
+      onProjectEdit(update, { alreadyDurable: true });
     });
   };
   const resolveEditorWaveform = async (asset: EditorMediaAsset) => {
@@ -2728,7 +2728,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
     const durable = await projectSnapshotGet(identity);
     const next = hydrateDurableProject(current, durable.snapshot, { nativeProjectId: identity.projectId, nativeProjectDirectory: identity.projectDirectory, nativeHeadRevisionId: durable.headRevisionId, nativeRevisionNumber: durable.revisionNumber });
     projectRef.current = next;
-    onProjectEdit(next);
+    onProjectEdit(next, { alreadyDurable: true });
   };
   const acceptCandidateImage = async (candidate: VisualCandidate) => {
     const identity = nativeProjectLink(projectRef.current);
@@ -2747,7 +2747,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
     try {
       const durable = await projectSnapshotGet(identity);
       const saved = await projectSnapshotSave({ ...identity, expectedHeadRevisionId: durable.headRevisionId, snapshot: { ...durable.snapshot, creative }, message: "Saved image generation recipe" });
-      onProjectEdit({ nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber });
+      onProjectEdit({ nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber }, { alreadyDurable: true });
       const imageModel = role === "presenter" ? creative.presenter.baseModel : creative.slide.imageModel;
       const loras = role === "presenter" ? creative.presenter.loras : creative.slide.loras;
       if (loras.some((id) => id !== "local/sdxl-offset-lora-1.0")) throw new Error("Choose the supported official SDXL LoRA in the generation panel before continuing.");

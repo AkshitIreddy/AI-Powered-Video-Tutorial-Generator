@@ -7,16 +7,53 @@ function receipt(headRevisionId: string, snapshot: Record<string, unknown>): Dur
 }
 
 describe("EditorDocumentSaveQueue", () => {
-  it("keeps the durable editor document and customization out of delayed general autosaves", () => {
-    expect(mergeGeneralProjectSnapshot(
-      { editorDocument: { name: "new WebM timeline" }, customization: { accent: "new" }, payload: { generationId: "current" } },
-      { editorDocument: { name: "old MP4 timeline" }, customization: { accent: "old" }, reviewNotes: "keep this edit" },
-    )).toEqual({
+  it("preserves a newer same-generation stage while merging only authored prose and creative settings", () => {
+    const merged = mergeGeneralProjectSnapshot({
+      generationId: "generation-1",
+      stage: "rendered",
       editorDocument: { name: "new WebM timeline" },
       customization: { accent: "new" },
-      payload: { generationId: "current" },
-      reviewNotes: "keep this edit",
+      sceneCandidates: [{ id: "candidate-new" }],
+      payload: { render: { artifactHash: "new-render" }, storyboard: { approved: true, scenes: [{ id: "scene-1", type: "definition", durationTicks: 2_400_000, title: "Generated title", narration: "Generated narration", visualIntent: "Generated intent", artifactId: "immutable-scene" }] } },
+    }, {
+      nativeGenerationId: "generation-1",
+      stage: "planning",
+      editorDocument: { name: "old MP4 timeline" },
+      customization: { accent: "old" },
+      sceneCandidates: [{ id: "candidate-old" }],
+      payload: { render: { artifactHash: "old-render" }, storyboard: { scenes: [{ id: "scene-1", type: "definition", durationTicks: 2_400_000, title: "Old title" }] } },
+      scenes: [{ id: "scene-1", kind: "definition", duration: 10, title: "Reviewed title", narration: "Reviewed narration", objective: "Reviewed intent" }],
+      creative: { slide: { prompt: "Line art" } },
+      reviewNotes: "Check the final example",
     });
+
+    expect(merged).toMatchObject({
+      generationId: "generation-1",
+      stage: "rendered",
+      editorDocument: { name: "new WebM timeline" },
+      customization: { accent: "new" },
+      sceneCandidates: [{ id: "candidate-new" }],
+      creative: { slide: { prompt: "Line art" } },
+      reviewNotes: "Check the final example",
+      payload: { render: { artifactHash: "new-render" }, storyboard: { approved: true, scenes: [{ id: "scene-1", type: "definition", durationTicks: 2_400_000, title: "Reviewed title", narration: "Reviewed narration", visualIntent: "Reviewed intent", artifactId: "immutable-scene" }] } },
+    });
+  });
+
+  it("fails visibly instead of applying stale edits to a different generation", () => {
+    expect(() => mergeGeneralProjectSnapshot(
+      { generationId: "generation-2", payload: {} },
+      { nativeGenerationId: "generation-1", scenes: [] },
+    )).toThrow(/PROJECT_EDIT_CONFLICT.*newer generation/i);
+    expect(() => mergeGeneralProjectSnapshot(
+      { generationId: "generation-1", stage: "storyboard", payload: { storyboard: { scenes: [] } } },
+      { stage: "project-created", payload: { brief: { topic: "stale" } }, scenes: [] },
+    )).toThrow(/PROJECT_EDIT_CONFLICT.*newer generation/i);
+  });
+
+  it("rejects timing and scene-type changes outside the approved prose fields", () => {
+    const durable = { generationId: "generation-1", payload: { storyboard: { scenes: [{ id: "scene-1", type: "definition", durationTicks: 2_400_000 }] } } };
+    expect(() => mergeGeneralProjectSnapshot(durable, { nativeGenerationId: "generation-1", scenes: [{ id: "scene-1", kind: "definition", duration: 11 }] })).toThrow(/timing is immutable/i);
+    expect(() => mergeGeneralProjectSnapshot(durable, { nativeGenerationId: "generation-1", scenes: [{ id: "scene-1", kind: "recap", duration: 10 }] })).toThrow(/scene type is immutable/i);
   });
 
   it("flushes an immediate close through every edit that arrived during the first save", async () => {

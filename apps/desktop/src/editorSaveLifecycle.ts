@@ -75,10 +75,93 @@ export function mergeGeneralProjectSnapshot(
   durable: Record<string, unknown>,
   captured: Record<string, unknown>,
 ): Record<string, unknown> {
-  const general = { ...captured };
-  delete general.editorDocument;
-  delete general.customization;
-  return { ...durable, ...general };
+  const capturedGenerationId = typeof captured.nativeGenerationId === "string"
+    ? captured.nativeGenerationId
+    : typeof captured.generationId === "string" ? captured.generationId : null;
+  const durableGenerationId = typeof durable.generationId === "string"
+    ? durable.generationId
+    : typeof durable.nativeGenerationId === "string" ? durable.nativeGenerationId : null;
+  if ((capturedGenerationId || durableGenerationId) && capturedGenerationId !== durableGenerationId) {
+    throw new Error("PROJECT_EDIT_CONFLICT: This tutorial belongs to a newer generation. Reopen it before saving these edits.");
+  }
+
+  const merged: Record<string, unknown> = { ...durable };
+  if (Array.isArray(captured.scenes)) merged.scenes = structuredClone(captured.scenes);
+  if (captured.creative !== undefined) merged.creative = structuredClone(captured.creative);
+  if (captured.reviewNotes !== undefined) merged.reviewNotes = captured.reviewNotes;
+  if (typeof captured.updatedAt === "string") merged.updatedAt = captured.updatedAt;
+
+  const durablePayload = objectRecord(durable.payload);
+  const durableStoryboard = objectRecord(durablePayload?.storyboard);
+  if (!durablePayload || !durableStoryboard || !Array.isArray(durableStoryboard.scenes) || !Array.isArray(captured.scenes)) return merged;
+  assertSameAuthoredSceneSet(durableStoryboard.scenes, captured.scenes);
+  const authoredById = new Map(captured.scenes.map((raw) => {
+    const scene = objectRecord(raw)!;
+    return [scene.id as string, scene] as const;
+  }));
+  const durableById = new Map(durableStoryboard.scenes.map((raw) => {
+    const scene = objectRecord(raw)!;
+    return [scene.id as string, scene] as const;
+  }));
+  const scenes = durableStoryboard.scenes.map((raw) => {
+    const durableScene = objectRecord(raw)!;
+    const authored = authoredById.get(durableScene.id as string)!;
+    assertImmutableScenePlan(durableScene, authored);
+    return {
+      ...durableScene,
+      title: typeof authored.title === "string" ? authored.title : durableScene.title,
+      narration: typeof authored.narration === "string" ? authored.narration : durableScene.narration,
+      visualIntent: typeof authored.objective === "string" ? authored.objective : durableScene.visualIntent,
+    };
+  });
+  merged.scenes = captured.scenes.map((raw) => {
+    const authored = objectRecord(raw)!;
+    const durableScene = durableById.get(authored.id as string)!;
+    const durationTicks = durableScene.durationTicks;
+    const kind = normalizedSceneType(durableScene.type ?? durableScene.kind);
+    return {
+      ...authored,
+      ...(typeof durationTicks === "number" ? { duration: durationTicks / 240_000 } : {}),
+      ...(kind ? { kind } : {}),
+      authored: structuredClone(durableScene),
+    };
+  });
+  merged.payload = { ...durablePayload, storyboard: { ...durableStoryboard, scenes } };
+  return merged;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function normalizedSceneType(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase().replaceAll("_", "-") : "";
+}
+
+function assertSameAuthoredSceneSet(durableScenes: unknown[], capturedScenes: unknown[]): void {
+  const durableIds = durableScenes.map((scene) => objectRecord(scene)?.id).filter((id): id is string => typeof id === "string");
+  const capturedIds = capturedScenes.map((scene) => objectRecord(scene)?.id).filter((id): id is string => typeof id === "string");
+  if (
+    durableIds.length !== durableScenes.length
+    || capturedIds.length !== capturedScenes.length
+    || new Set(durableIds).size !== durableIds.length
+    || new Set(capturedIds).size !== capturedIds.length
+    || durableIds.length !== capturedIds.length
+    || capturedIds.some((id) => !durableIds.includes(id))
+  ) throw new Error("PROJECT_EDIT_CONFLICT: The generated scene plan changed. Reopen it before saving prose edits.");
+}
+
+function assertImmutableScenePlan(durable: Record<string, unknown>, captured: Record<string, unknown>): void {
+  const durableDuration = durable.durationTicks;
+  const capturedDuration = captured.duration;
+  if (typeof durableDuration === "number" && typeof capturedDuration === "number" && Math.abs(capturedDuration * 240_000 - durableDuration) > 0.5) {
+    throw new Error("PROJECT_EDIT_CONFLICT: Generated scene timing is immutable here; restore it before saving prose edits.");
+  }
+  const durableType = normalizedSceneType(durable.type ?? durable.kind);
+  const capturedType = normalizedSceneType(captured.kind);
+  if (durableType && capturedType && durableType !== capturedType) {
+    throw new Error("PROJECT_EDIT_CONFLICT: Generated scene type is immutable here; restore it before saving prose edits.");
+  }
 }
 
 /**
