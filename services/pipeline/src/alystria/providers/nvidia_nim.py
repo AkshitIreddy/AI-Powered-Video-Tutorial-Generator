@@ -638,7 +638,7 @@ class NvidiaNimAdapter(GuardedAdapter):
             "nvidia-nim",
             request.model,
             {"outputs": float(len(assets))},
-            None,
+            0,
             request_id=_string(payload.get("id")),
         )
         return ProviderResult(

@@ -159,6 +159,7 @@ def test_magpie_tts_uses_pinned_endpoint_voice_and_validates_wav() -> None:
     assert result.value.assets[0].duration_seconds == pytest.approx(0.25)
     assert result.value.metadata["voiceId"] == NVIDIA_MAGPIE_VOICE
     assert result.usage.units == {"characters": 47.0}
+    assert result.usage.actual_cost_micros == 0
 
 
 def test_magpie_tts_rejects_unapproved_voice_before_network() -> None:
@@ -360,6 +361,8 @@ def test_flux_klein_visual_response_preserves_its_exact_model_license() -> None:
 
     assert result.value.assets[0].license == "Apache-2.0"
     assert result.value.assets[0].media_type == "image/jpeg"
+    assert result.usage.units == {"outputs": 1.0}
+    assert result.usage.actual_cost_micros == 0
 
 
 def test_flux_klein_binds_media_type_to_returned_bytes_not_requested_format() -> None:
