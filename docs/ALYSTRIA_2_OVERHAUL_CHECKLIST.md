@@ -95,13 +95,13 @@ Primary evidence:
   layers, programme audio, audio gain/fades, codec, and output containment.
 - [x] Real waveforms are generated from the selected CAS audio stream, cached by
   source hash and profile, and cropped according to source offsets and trims.
-- [x] The focused editor suite passes 47 tests; its TypeScript build and editor
+- [x] The focused editor suite passes 50 tests; its TypeScript build and editor
   lint pass. A pinned-FFmpeg proof verifies decoded first/middle/last keyframed
   frames, source audio, title/caption pixels, and matching VTT/SRT cues.
 
 ### Native source and lifecycle evidence
 
-- [x] The current Rust broker and portable policy pass 63 tests and formatting.
+- [x] The current Rust broker and portable policy pass 65 tests and formatting.
   Desktop TypeScript builds with Node 24.20.0.
 - [x] A prior packaged binary proved hidden WebView loading, authenticated worker
   startup, GUI-subsystem execution, `WM_CLOSE`, zero console output, and no
