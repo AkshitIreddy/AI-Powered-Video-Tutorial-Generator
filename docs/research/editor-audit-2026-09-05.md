@@ -83,12 +83,31 @@ The application record stores `editorDocument: EditorProject` when an edit exist
   onImportMedia={importNativeEditorMedia}
   onRenderTimeline={renderEditorTimeline}
   onProjectChange={(editorDocument) => {
-    onProjectEdit(project.id, { editorDocument });
+    onEditorDocumentChange(editorDocument);
   }}
 />
 ```
 
 The inline callback is safe because the shell emits only when its reducer revision changes. The app persists the validated document through the native project snapshot path and uses native project history for durable revisions. `onExportProject` and `onExportOtio` remain unset so the real download bridge writes the local files. Native render snapshots the portable document, submits `editor.timeline.export`, records the receipt in the common jobs drawer, polls the existing job-status contract, and accepts the output only after `editorTimelineExportResult()` validates a successful result for the same project. `prepareEditorProjectForPersistence()` removes temporary browser-only preview URLs before the snapshot is saved.
+
+Timeline edits now use a serialized save queue with a 750 ms debounce and
+explicit saving, saved, and failure states. Return to scene and timeline export
+wait for the latest validated document. Native window close first flushes
+general edits, customization, and editor writes, then asks the Rust shell to
+stop its worker and exit. A failed flush retains the local edits and keeps the
+app open. Editor saves reload the durable head, merge only `editorDocument`,
+and retry bounded revision conflicts; their receipts cannot replace unsaved
+local prose. Pending documents also survive asynchronous job hydration.
+
+General autosaves separately merge authored prose, creative settings, and
+review notes into the current durable snapshot. They preserve newer generation
+stages, rendered artifacts, candidates, media imports, customization, and editor
+documents. Different generation identities or changes to the immutable scene
+set, timing, or type fail visibly. Receipt-only updates no longer schedule a
+redundant general autosave. Seven lifecycle regressions and seven approval
+regressions pass after this correction. The preceding complete desktop suite
+passed 221 tests; the final packaged immediate-close/reopen journey remains a
+separate acceptance gate until its native report passes.
 
 ## Gates that remain open
 
