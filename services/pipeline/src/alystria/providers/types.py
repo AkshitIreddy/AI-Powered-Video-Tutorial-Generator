@@ -125,6 +125,7 @@ class Usage:
     actual_cost_micros: int | None = None
     currency: str = "USD"
     request_id: str | None = None
+    billing_basis: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

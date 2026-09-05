@@ -6,6 +6,7 @@ import copy
 import hashlib
 import itertools
 import json
+import math
 import os
 import re
 from collections.abc import Mapping
@@ -144,14 +145,44 @@ def _record_structured_provider_usage(
     usage = result.usage
     input_tokens = usage.units.get("input_tokens")
     output_tokens = usage.units.get("output_tokens")
+    tokens_known = all(
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+        for value in (input_tokens, output_tokens)
+    )
+    no_charge_preview = (
+        result.provider_id == usage.provider_id == "nvidia-nim"
+        and usage.billing_basis == "nvidia-hosted-developer-preview-v1"
+        and type(usage.actual_cost_micros) is int
+        and usage.actual_cost_micros == 0
+    )
+    if no_charge_preview and not tokens_known:
+        # This fixed hosted preview charges no dollars per request. Missing
+        # token telemetry is still unknown; record a request, never zero tokens.
+        context.record_usage(
+            provider=result.provider_id,
+            model=result.model,
+            unit="requests",
+            quantity=1,
+            cost_micros=0,
+            idempotency_key=f"structured-writing:{context.attempt_number}:{idempotency_key}",
+            metadata={
+                "inputTokens": input_tokens,
+                "outputTokens": output_tokens,
+                "tokenUsageComplete": False,
+                "usageComplete": True,
+                "knownCostMicros": 0,
+                "billingBasis": usage.billing_basis,
+                "providerRequestId": result.raw_id,
+            },
+            incurred=True,
+        )
+        return
     if (
         usage.actual_cost_micros is None
-        or not isinstance(input_tokens, int | float)
-        or isinstance(input_tokens, bool)
-        or not isinstance(output_tokens, int | float)
-        or isinstance(output_tokens, bool)
-        or input_tokens < 0
-        or output_tokens < 0
+        or not tokens_known
     ):
         raise ProviderFailure(
             FailureCode.MALFORMED_RESPONSE,
@@ -160,6 +191,8 @@ def _record_structured_provider_usage(
             request_id=result.raw_id,
         )
     remaining_budget = _remaining_structured_job_budget(context)
+    assert isinstance(input_tokens, int | float)
+    assert isinstance(output_tokens, int | float)
     context.record_usage(
         provider=result.provider_id,
         model=result.model,

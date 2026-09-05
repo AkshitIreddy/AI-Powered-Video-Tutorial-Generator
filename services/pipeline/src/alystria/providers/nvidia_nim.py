@@ -499,15 +499,21 @@ class NvidiaNimAdapter(GuardedAdapter):
             except json.JSONDecodeError as exc:
                 raise _malformed("NVIDIA NIM structured output was not valid JSON") from exc
         usage_payload = _record(payload.get("usage"))
+        token_units = {
+            unit: float(value)
+            for unit, value in (
+                ("input_tokens", usage_payload.get("prompt_tokens")),
+                ("output_tokens", usage_payload.get("completion_tokens")),
+            )
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        }
         usage = Usage(
             "nvidia-nim",
             _string(payload.get("model")) or request.model,
-            {
-                "input_tokens": float(_integer(usage_payload.get("prompt_tokens"))),
-                "output_tokens": float(_integer(usage_payload.get("completion_tokens"))),
-            },
-            None,
+            token_units,
+            0,
             request_id=_string(payload.get("id")),
+            billing_basis="nvidia-hosted-developer-preview-v1",
         )
         return ProviderResult(
             "nvidia-nim",
