@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -53,6 +53,32 @@ describe("AdvancedVideoEditor", () => {
     expect(screen.getByTestId("editor-preview-slide")).toHaveTextContent("Opening slide");
     expect(screen.getAllByText("Why does this work?").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Start with the question.").length).toBeGreaterThan(0);
+  });
+
+  it("edits export-backed text placement, size, color, and explicit line breaks", async () => {
+    const user = userEvent.setup();
+    render(<AdvancedVideoEditor project={makeSampleProject()} />);
+    await user.click(screen.getByRole("button", { name: /Opening question, titles/ }));
+
+    expect(screen.getByRole("group", { name: "On-screen text style" })).toBeInTheDocument();
+    const textSize = screen.getByRole("spinbutton", { name: "Text size" });
+    fireEvent.change(textSize, { target: { value: "72" } });
+    fireEvent.blur(textSize);
+    fireEvent.change(screen.getByLabelText("Text color"), { target: { value: "#ff3355" } });
+    await user.selectOptions(screen.getByLabelText("Text alignment"), "left");
+    await user.selectOptions(screen.getByLabelText("Text placement"), "top");
+    await user.click(screen.getByRole("checkbox", { name: "Background panel" }));
+    const text = screen.getByDisplayValue("Why does this work?");
+    await user.clear(text);
+    await user.type(text, "Why this works{enter}in two steps");
+
+    const preview = screen.getByTestId("editor-preview-title");
+    expect(preview).toHaveTextContent("Why this works in two steps");
+    expect(preview).toHaveStyle({ left: "5%", top: "5%", color: "#FF3355" });
+    expect(preview.style.fontSize).toBe("72px");
+    expect(preview.style.whiteSpace).toBe("pre");
+    expect(preview).toHaveAttribute("title", expect.stringContaining("Preview and export use Arial"));
+    expect(screen.getByText(/keep only explicit line breaks/i)).toBeInTheDocument();
   });
 
   it("previews video source audio with the same clip, mute, and solo policy as export", async () => {

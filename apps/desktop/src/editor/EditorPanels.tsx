@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch } from "react";
 import { clipCarriesProgrammeAudio, isClipAudible } from "./audioPolicy";
 import { selectedClips } from "./model";
 import { describeEditProposal } from "./proposals";
-import { previewStyleAtFrame, volumeAtFrame } from "./preview";
+import { previewCanvasScale, previewMediaShouldSeek, previewStyleAtFrame, resolvedTextStyle, textPreviewStyleAtFrame, volumeAtFrame, type PreviewCanvasScale } from "./preview";
 import { formatTimecode, framesToSeconds } from "./timecode";
 import type { EditProposal, EditorAction, EditorClip, EditorImportBatch, EditorMediaAsset, EditorState, ImportReceipt, InspectorProperty } from "./types";
 
@@ -88,8 +88,10 @@ function activeClip(state: EditorState, kind: EditorClip["kind"]): EditorClip | 
   return track.clips.find((clip) => clip.enabled && state.transport.playheadFrame >= clip.timelineRange.startFrame && state.transport.playheadFrame < clip.timelineRange.startFrame + clip.timelineRange.durationFrames) ?? null;
 }
 
-function MediaPreview({ state, clip, className, muted = true }: { state: EditorState; clip: EditorClip; className: string; muted?: boolean }) {
+function MediaPreview({ state, clip, className, canvasScale, muted = true }: { state: EditorState; clip: EditorClip; className: string; canvasScale: PreviewCanvasScale; muted?: boolean }) {
   const ref = useRef<HTMLMediaElement>(null);
+  const syncStateRef = useRef<{ sourceKey: string; status: EditorState["transport"]["status"] } | null>(null);
+  const lastSeekAtRef = useRef<number | null>(null);
   const asset = clip.assetId ? state.project.assets.find((candidate) => candidate.id === clip.assetId) : null;
   const playable = asset?.status === "ready" && asset.previewUrl && (asset.kind === "video" || asset.kind === "audio");
   useEffect(() => {
@@ -97,15 +99,27 @@ function MediaPreview({ state, clip, className, muted = true }: { state: EditorS
     if (!media || !playable) return;
     const sourceFrame = clip.sourceRange.startFrame + (Math.max(0, state.transport.playheadFrame - clip.timelineRange.startFrame) * (clip.playbackRate ?? 1));
     const expectedTime = framesToSeconds(sourceFrame, state.project.frameRate);
-    if (Number.isFinite(media.duration)) media.currentTime = Math.min(expectedTime, Math.max(0, media.duration - 0.001));
-    else media.currentTime = expectedTime;
+    const boundedTime = Number.isFinite(media.duration) ? Math.min(expectedTime, Math.max(0, media.duration - 0.001)) : expectedTime;
+    const previousSync = syncStateRef.current;
+    const playing = state.transport.status === "playing";
+    const enteringPlayback = playing && previousSync?.status !== "playing";
+    const sourceKey = `${clip.id}:${asset?.previewUrl ?? ""}`;
+    const clipChanged = previousSync?.sourceKey !== sourceKey;
+    const now = performance.now();
+    const secondsSinceLastSeek = lastSeekAtRef.current === null ? Number.POSITIVE_INFINITY : (now - lastSeekAtRef.current) / 1000;
+    if (previewMediaShouldSeek(media.currentTime, boundedTime, { playing, enteringPlayback, clipChanged, secondsSinceLastSeek })) {
+      media.currentTime = boundedTime;
+      lastSeekAtRef.current = now;
+    }
     media.playbackRate = state.transport.playbackRate * (clip.playbackRate ?? 1);
     media.volume = muted ? 0 : volumeAtFrame(clip, state.transport.playheadFrame);
-    if (state.transport.status === "playing") void media.play().catch(() => undefined);
-    else media.pause();
-  }, [clip, muted, playable, state.project.frameRate, state.transport.playbackRate, state.transport.playheadFrame, state.transport.status]);
+    if (playing) {
+      if (media.paused) void media.play().catch(() => undefined);
+    } else if (!media.paused) media.pause();
+    syncStateRef.current = { sourceKey, status: state.transport.status };
+  }, [asset?.previewUrl, clip, muted, playable, state.project.frameRate, state.transport.playbackRate, state.transport.playheadFrame, state.transport.status]);
   if (!asset?.previewUrl || asset.status !== "ready") return null;
-  const style = previewStyleAtFrame(clip, state.transport.playheadFrame);
+  const style = previewStyleAtFrame(clip, state.transport.playheadFrame, canvasScale);
   if (asset.kind === "image") return <img className={className} src={asset.previewUrl} alt={`Preview of ${asset.name}`} style={style} />;
   if (asset.kind === "video") return <video ref={(element) => { ref.current = element; }} className={className} src={asset.previewUrl} muted={muted} aria-label={`Preview of ${asset.name}`} style={style} />;
   if (asset.kind === "audio") return <audio ref={(element) => { ref.current = element; }} src={asset.previewUrl} aria-label={`Preview audio for ${asset.name}`} />;
@@ -113,6 +127,8 @@ function MediaPreview({ state, clip, className, muted = true }: { state: EditorS
 }
 
 export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch: Dispatch<EditorAction> }) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [previewSize, setPreviewSize] = useState({ width: state.project.canvas.width, height: state.project.canvas.height });
   const slideTrack = state.project.tracks.find((track) => track.kind === "slides");
   const presenterTrack = state.project.tracks.find((track) => track.kind === "presenter");
   const slide = activeClip(state, "slides");
@@ -126,6 +142,24 @@ export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch
   });
   const slideAsset = slide?.assetId ? state.project.assets.find((candidate) => candidate.id === slide.assetId) : null;
   const hasVisibleContent = Boolean(slide || presenter || title || caption);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const updateSize = () => {
+      const width = stage.clientWidth;
+      const height = stage.clientHeight;
+      if (width > 0 && height > 0) setPreviewSize((current) => current.width === width && current.height === height ? current : { width, height });
+    };
+    updateSize();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateSize);
+      return () => window.removeEventListener("resize", updateSize);
+    }
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [state.project.canvas.height, state.project.canvas.width]);
+  const canvasScale = previewCanvasScale(state.project.canvas, previewSize);
   return (
     <section className="aly-editor-canvas-panel" aria-label="Canvas preview">
       <div className="aly-editor-canvas-toolbar">
@@ -134,13 +168,13 @@ export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch
           {(["safe-action", "safe-title", "thirds", "center"] as const).map((guide) => <button key={guide} type="button" aria-pressed={state.view.guides.includes(guide)} onClick={() => dispatch({ type: "TOGGLE_GUIDE", guide })}>{guide.replace("-", " ")}</button>)}
         </div>
       </div>
-      <div className="aly-editor-canvas-stage" style={{ aspectRatio: `${state.project.canvas.width} / ${state.project.canvas.height}`, backgroundColor: state.project.canvas.backgroundColor }} data-media-status={slideAsset?.status ?? "none"}>
-        {slide ? <MediaPreview state={state} clip={slide} className="aly-editor-canvas-stage__media" muted={!slideTrack || !isClipAudible(state.project, slideTrack, slide)} /> : null}
+      <div ref={stageRef} className="aly-editor-canvas-stage" style={{ aspectRatio: `${state.project.canvas.width} / ${state.project.canvas.height}`, backgroundColor: state.project.canvas.backgroundColor }} data-media-status={slideAsset?.status ?? "none"}>
+        {slide ? <MediaPreview state={state} clip={slide} className="aly-editor-canvas-stage__media" canvasScale={canvasScale} muted={!slideTrack || !isClipAudible(state.project, slideTrack, slide)} /> : null}
         {slide && (!slideAsset?.previewUrl || slideAsset.status !== "ready") ? <div className="aly-editor-canvas-stage__slide" data-testid="editor-preview-slide"><span>Scene preview</span><strong>{slide.name}</strong><small>{typeof slide.metadata.objective === "string" ? slide.metadata.objective : "Rendered scene media is not attached yet."}</small></div> : null}
-        {presenter ? <MediaPreview state={state} clip={presenter} className="aly-editor-canvas-stage__media aly-editor-canvas-stage__media--presenter" muted={!presenterTrack || !isClipAudible(state.project, presenterTrack, presenter)} /> : null}
-        {title?.text ? <div className="aly-editor-canvas-stage__text aly-editor-canvas-stage__text--titles" style={previewStyleAtFrame(title, state.transport.playheadFrame)}>{title.text}</div> : null}
-        {caption?.text ? <div className="aly-editor-canvas-stage__text aly-editor-canvas-stage__text--captions" style={previewStyleAtFrame(caption, state.transport.playheadFrame)}>{caption.text}</div> : null}
-        {audioClips.map((clip) => <MediaPreview key={clip.id} state={state} clip={clip} className="aly-editor-canvas-stage__audio" muted={false} />)}
+        {presenter ? <MediaPreview state={state} clip={presenter} className="aly-editor-canvas-stage__media aly-editor-canvas-stage__media--presenter" canvasScale={canvasScale} muted={!presenterTrack || !isClipAudible(state.project, presenterTrack, presenter)} /> : null}
+        {title?.text ? <div className="aly-editor-canvas-stage__text aly-editor-canvas-stage__text--titles" data-testid="editor-preview-title" title={`Preview and export use Arial; your requested “${resolvedTextStyle(title).fontFamily}” font is saved.`} style={textPreviewStyleAtFrame(title, state.transport.playheadFrame, canvasScale)}>{title.text}</div> : null}
+        {caption?.text ? <div className="aly-editor-canvas-stage__text aly-editor-canvas-stage__text--captions" data-testid="editor-preview-caption" title={`Preview and export use Arial; your requested “${resolvedTextStyle(caption).fontFamily}” font is saved.`} style={textPreviewStyleAtFrame(caption, state.transport.playheadFrame, canvasScale)}>{caption.text}</div> : null}
+        {audioClips.map((clip) => <MediaPreview key={clip.id} state={state} clip={clip} className="aly-editor-canvas-stage__audio" canvasScale={canvasScale} muted={false} />)}
         {!hasVisibleContent ? <div className="aly-editor-canvas-stage__empty">No visual clip at the playhead</div> : null}
         {state.view.guides.includes("safe-action") ? <div className="aly-editor-canvas-guide aly-editor-canvas-guide--safe-action" aria-hidden="true" /> : null}
         {state.view.guides.includes("safe-title") ? <div className="aly-editor-canvas-guide aly-editor-canvas-guide--safe-title" aria-hidden="true" /> : null}
@@ -178,8 +212,13 @@ export function EditorInspector({ state, dispatch }: { state: EditorState; dispa
     ? ["transform.x", "transform.y", "transform.scaleX", "transform.scaleY", "transform.rotation", "opacity", ...(audioClip ? ["audio.volumeDb" as const] : [])]
     : textClip ? ["transform.x", "transform.y", "opacity"] : ["audio.volumeDb"];
   const selectedKeyframeProperty = keyframeProperties.includes(keyframeProperty) ? keyframeProperty : keyframeProperties[0]!;
+  const textStyle = textClip ? resolvedTextStyle(clip) : null;
   const updateTransform = (property: keyof EditorClip["transform"], value: number) => dispatch({ type: "UPDATE_SELECTED_CLIP", patch: { transform: { ...clip.transform, [property]: value } }, label: `Change ${property}` });
   const updateAudio = (property: keyof EditorClip["audio"], value: number | boolean) => dispatch({ type: "UPDATE_SELECTED_CLIP", patch: { audio: { ...clip.audio, [property]: value } }, label: `Change audio ${property}` });
+  const updateTextStyle = (patch: Partial<NonNullable<EditorClip["textStyle"]>>) => {
+    if (!textStyle) return;
+    dispatch({ type: "UPDATE_SELECTED_CLIP", patch: { textStyle: { ...textStyle, ...patch } }, label: "Change text style" });
+  };
   const propertyValue = (property: PreviewInspectorProperty): number => {
     switch (property) {
       case "transform.x": return clip.transform.x;
@@ -208,6 +247,15 @@ export function EditorInspector({ state, dispatch }: { state: EditorState; dispa
         <label className="aly-editor-inspector__check"><input type="checkbox" checked={clip.audio.muted} onChange={(event) => updateAudio("muted", event.target.checked)} />Mute clip</label>
       </fieldset> : null}
       {clip.text !== undefined ? <label className="aly-editor-inspector__text"><span>On-screen text</span><textarea value={clip.text} onChange={(event) => dispatch({ type: "UPDATE_SELECTED_CLIP", patch: { text: event.target.value }, label: "Edit clip text" })} /></label> : null}
+      {textStyle ? <fieldset className="aly-editor-inspector__section aly-editor-inspector__section--text-style"><legend>On-screen text style</legend>
+        <NumberControl label="Text size" value={textStyle.fontSize} min={6} max={512} onChange={(fontSize) => updateTextStyle({ fontSize })} />
+        <label className="aly-editor-inspector__field"><span>Text color</span><input aria-label="Text color" type="color" value={textStyle.color} onChange={(event) => updateTextStyle({ color: event.target.value.toUpperCase() })} /></label>
+        <label className="aly-editor-inspector__field"><span>Alignment</span><select aria-label="Text alignment" value={textStyle.align} onChange={(event) => updateTextStyle({ align: event.target.value as typeof textStyle.align })}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
+        <label className="aly-editor-inspector__field"><span>Placement</span><select aria-label="Text placement" value={textStyle.position} onChange={(event) => updateTextStyle({ position: event.target.value as typeof textStyle.position })}><option value="top">Top</option><option value="center">Center</option><option value="bottom">Bottom</option><option value="custom">Custom center + X/Y</option></select></label>
+        <label className="aly-editor-inspector__check"><input type="checkbox" checked={textStyle.backgroundColor !== null} onChange={(event) => updateTextStyle({ backgroundColor: event.target.checked ? "#000000" : null })} />Background panel</label>
+        {textStyle.backgroundColor ? <label className="aly-editor-inspector__field"><span>Background color</span><input aria-label="Text background color" type="color" value={textStyle.backgroundColor} onChange={(event) => updateTextStyle({ backgroundColor: event.target.value.toUpperCase() })} /></label> : null}
+        <p className="aly-editor-inspector__text-note">Preview and export keep only explicit line breaks. If text reaches an edge, add a line break or reduce its size. Export uses Arial on Windows. Your chosen “{textStyle.fontFamily}” font is saved, but its appearance may differ.</p>
+      </fieldset> : null}
       <fieldset className="aly-editor-inspector__section aly-editor-inspector__section--keyframes"><legend>Keyframes</legend>
         <div className="aly-editor-inspector__keyframe-add"><select value={selectedKeyframeProperty} aria-label="Keyframe property" onChange={(event) => setKeyframeProperty(event.target.value as PreviewInspectorProperty)}>{keyframeProperties.map((property) => <option key={property} value={property}>{property}</option>)}</select><button type="button" onClick={() => dispatch({ type: "ADD_KEYFRAME", clipId: clip.id, keyframe: { id: `${clip.id}-${selectedKeyframeProperty}-${state.transport.playheadFrame}`, property: selectedKeyframeProperty, frame: state.transport.playheadFrame, value: propertyValue(selectedKeyframeProperty), interpolation: "ease-in-out" } })}>Add at playhead</button></div>
         <ul className="aly-editor-inspector__keyframes">{clip.keyframes.map((keyframe) => <li key={keyframe.id}><button type="button" onClick={() => dispatch({ type: "SET_PLAYHEAD", frame: keyframe.frame })}>{keyframe.property} · {formatTimecode(keyframe.frame, state.project.frameRate)}</button><select aria-label={`Interpolation for ${keyframe.property} at frame ${keyframe.frame}`} value={keyframe.interpolation} onChange={(event) => dispatch({ type: "UPDATE_KEYFRAME", clipId: clip.id, keyframeId: keyframe.id, patch: { interpolation: event.target.value as typeof keyframe.interpolation } })}><option value="hold">Hold</option><option value="linear">Linear</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="ease-in-out">Ease in/out</option></select><button type="button" aria-label={`Remove ${keyframe.property} keyframe at frame ${keyframe.frame}`} onClick={() => dispatch({ type: "REMOVE_KEYFRAME", clipId: clip.id, keyframeId: keyframe.id })}>Remove</button></li>)}</ul>
