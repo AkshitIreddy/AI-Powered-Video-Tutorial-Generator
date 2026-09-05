@@ -1,4 +1,4 @@
-"""Post WM_CLOSE to every top-level window owned by a Windows process."""
+"""Post WM_CLOSE to the native Tauri main window owned by a process."""
 
 from __future__ import annotations
 
@@ -22,7 +22,15 @@ def main() -> int:
         nonlocal closed
         owner = ctypes.c_ulong()
         ctypes.windll.user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
-        if owner.value == options.pid:
+        class_name = ctypes.create_unicode_buffer(256)
+        title = ctypes.create_unicode_buffer(512)
+        ctypes.windll.user32.GetClassNameW(window, class_name, len(class_name))
+        ctypes.windll.user32.GetWindowTextW(window, title, len(title))
+        if (
+            owner.value == options.pid
+            and class_name.value == "Tauri Window"
+            and title.value == "AI Video Tutorial Generator"
+        ):
             if ctypes.windll.user32.PostMessageW(window, wm_close, 0, 0):
                 closed += 1
         return True
