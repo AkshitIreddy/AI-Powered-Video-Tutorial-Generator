@@ -130,8 +130,13 @@ tests or the older portable binary cannot substitute for them.
 - [ ] Complete the packaged editor journey: CAS import, reload, playback,
   waveform, title and trim edit, durable revision, edited timeline render,
   preserved audio, and approximately three-minute output.
-- [ ] Complete cancellation and restart recovery through the real Tauri app and
-  verify the durable terminal receipt after restart.
+- [x] Complete cancellation and restart recovery through the real Tauri app and
+  verify the durable terminal receipt after restart. The refreshed package
+  retained BLOCKED across restart and persisted CANCELLED afterward; both
+  desktops and workers exited. Evidence:
+  `E:\temp\AI Video Tutorial Generator Test Sandbox\Evidence\native-recovery\report.json`
+  (2026-09-05 10:04:03 UTC). One WebView2 shutdown diagnostic was logged;
+  this is not a zero-stderr claim.
 - [x] Produce and inspect the current complex live-code proof: the 84.008-second
   binary-search lesson uses independently checked Python/JavaScript traces,
   timed code writing, found/missing cases, eight narration clips, and ten
