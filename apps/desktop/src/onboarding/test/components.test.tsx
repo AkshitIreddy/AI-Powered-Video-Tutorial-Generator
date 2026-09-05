@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -174,5 +174,187 @@ describe("GuidedTour", () => {
     expect(onComplete).toHaveBeenCalledOnce();
     await user.keyboard("{Escape}");
     expect(onExit).toHaveBeenCalledOnce();
+  });
+
+  it("waits for the taught action instead of advancing from Next or ArrowRight", async () => {
+    const user = userEvent.setup();
+    const onActiveIndexChange = vi.fn();
+    const onStepComplete = vi.fn();
+    render(
+      <>
+        <button id="create-tutorial">New tutorial</button>
+        <GuidedTour
+          open
+          steps={[{
+            id: "create",
+            target: "#create-tutorial",
+            title: "Create a tutorial",
+            description: "Open the real creation flow.",
+            completion: { type: "target-event", event: "click", label: "Select New tutorial" },
+          }, {
+            id: "review",
+            target: null,
+            title: "Review",
+            description: "Review the result.",
+          }]}
+          activeIndex={0}
+          onActiveIndexChange={onActiveIndexChange}
+          onExit={vi.fn()}
+          onComplete={vi.fn()}
+          onStepComplete={onStepComplete}
+        />
+      </>,
+    );
+
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    await user.keyboard("{ArrowRight}");
+    expect(onActiveIndexChange).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "New tutorial" }));
+    expect(onStepComplete).toHaveBeenCalledWith(expect.objectContaining({ id: "create" }), 0);
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(onActiveIndexChange).toHaveBeenCalledWith(1);
+  });
+
+  it("re-resolves a target added after the step mounts and keeps its description attached", async () => {
+    const steps = [{
+      id: "late",
+      target: "#late-target",
+      title: "A control that loads later",
+      description: "Wait for the route to render.",
+      completion: { type: "target-event" as const, event: "click" as const, label: "Open the control" },
+    }];
+    const { container } = render(
+      <GuidedTour open steps={steps} activeIndex={0} onActiveIndexChange={vi.fn()} onExit={vi.fn()} onComplete={vi.fn()} />,
+    );
+    expect(container.querySelector(".aly-onboarding-tour")).toHaveAttribute("data-target-missing", "true");
+
+    const target = document.createElement("button");
+    target.id = "late-target";
+    target.textContent = "Late control";
+    await act(async () => { document.body.append(target); });
+
+    await waitFor(() => expect(container.querySelector(".aly-onboarding-tour")).toHaveAttribute("data-target-missing", "false"));
+    expect(target).toHaveClass("aly-onboarding-tour-target");
+    expect(target.getAttribute("aria-describedby")).toContain(screen.getByText("Wait for the route to render.").id);
+    target.remove();
+  });
+
+  it("uses the rendered panel size and scrolls off-screen targets without motion when reduced", async () => {
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.classList.contains("aly-onboarding-tour__panel")) {
+        return { top: 0, left: 0, width: 500, height: 300, right: 500, bottom: 300, x: 0, y: 0, toJSON: () => ({}) };
+      }
+      if (this.id === "tracked-target") {
+        return { top: 900, left: 400, width: 100, height: 50, right: 500, bottom: 950, x: 400, y: 900, toJSON: () => ({}) };
+      }
+      return originalRect.call(this);
+    };
+
+    try {
+      render(
+        <>
+          <button id="tracked-target">Tracked control</button>
+          <GuidedTour
+            open
+            reducedMotion
+            steps={[{ id: "tracked", target: "#tracked-target", title: "Tracked", description: "Keep this visible.", placement: "center" }]}
+            activeIndex={0}
+            onActiveIndexChange={vi.fn()}
+            onExit={vi.fn()}
+            onComplete={vi.fn()}
+          />
+        </>,
+      );
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ behavior: "auto", block: "center" })));
+      const panel = screen.getByRole("dialog", { name: "Tracked" });
+      expect(Number.parseFloat(panel.style.left)).toBeCloseTo((window.innerWidth - 500) / 2);
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect;
+      delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+    }
+  });
+
+  it("focuses the highlighted control on request and restores its original attributes", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <>
+        <button id="focus-target" aria-describedby="existing-help">Target action</button>
+        <GuidedTour
+          open
+          steps={[{ id: "focus", target: "#focus-target", title: "Use the target", description: "Activate it.", completion: { type: "target-event", label: "Activate Target action" } }]}
+          activeIndex={0}
+          onActiveIndexChange={vi.fn()}
+          onExit={vi.fn()}
+          onComplete={vi.fn()}
+        />
+      </>,
+    );
+    const target = screen.getByRole("button", { name: "Target action" });
+    await user.click(screen.getByRole("button", { name: "Focus highlighted control" }));
+    expect(target).toHaveFocus();
+    expect(target.getAttribute("aria-describedby")).toContain("existing-help");
+
+    rerender(<button id="focus-target" aria-describedby="existing-help">Target action</button>);
+    expect(target).not.toHaveClass("aly-onboarding-tour-target");
+    expect(target).toHaveAttribute("aria-describedby", "existing-help");
+  });
+
+  it("accepts durable completion keys and observes real element state", async () => {
+    const user = userEvent.setup();
+    const steps = [{
+      id: "provider",
+      target: "#provider-route",
+      title: "Choose a provider",
+      description: "Save an explicit route.",
+      completion: { type: "external" as const, key: "provider-saved", label: "Save a provider route" },
+    }];
+    const props = {
+      open: true,
+      steps,
+      activeIndex: 0,
+      onActiveIndexChange: vi.fn(),
+      onExit: vi.fn(),
+      onComplete: vi.fn(),
+    };
+    const { rerender } = render(
+      <>
+        <button id="provider-route">Provider route</button>
+        <GuidedTour {...props} />
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "Finish tour" })).toBeDisabled();
+    rerender(
+      <>
+        <button id="provider-route">Provider route</button>
+        <GuidedTour {...props} completedStepIds={["provider-saved"]} />
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "Finish tour" })).toBeEnabled();
+
+    const elementSteps = [{
+      id: "drawer",
+      target: "#drawer-trigger",
+      title: "Open jobs",
+      description: "Inspect active work.",
+      allowTargetInteraction: true,
+      completion: { type: "element-state" as const, selector: "#jobs-drawer", label: "Open the Jobs drawer" },
+    }];
+    rerender(
+      <>
+        <button id="drawer-trigger">Jobs</button>
+        <GuidedTour {...props} steps={elementSteps} />
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "Finish tour" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Jobs" }));
+    const drawer = document.createElement("aside");
+    drawer.id = "jobs-drawer";
+    await act(async () => { document.body.append(drawer); });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Finish tour" })).toBeEnabled());
+    drawer.remove();
   });
 });

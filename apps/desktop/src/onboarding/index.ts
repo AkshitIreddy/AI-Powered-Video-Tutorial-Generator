@@ -21,7 +21,7 @@ export {
   startOnboarding,
   updateOnboardingConfiguration,
 } from "./state";
-export { clamp, computeSpotlightRect, computeTourPanelPosition, safeTourIndex } from "./tour";
+export { clamp, computeSpotlightRect, computeTourPanelPosition, createGuidedTourReplaySteps, guidedTourCompletionKey, safeTourIndex } from "./tour";
 export { useOnboardingController } from "./useOnboardingController";
 export type { OnboardingController, UseOnboardingControllerOptions } from "./useOnboardingController";
 export type * from "./types";

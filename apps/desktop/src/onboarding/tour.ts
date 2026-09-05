@@ -97,3 +97,22 @@ export function safeTourIndex(steps: readonly GuidedTourStep[], requestedIndex: 
   if (steps.length === 0) return 0;
   return clamp(Math.trunc(requestedIndex), 0, steps.length - 1);
 }
+
+export function guidedTourCompletionKey(step: GuidedTourStep): string {
+  return step.completion?.type === "external" && step.completion.key
+    ? step.completion.key
+    : step.id;
+}
+
+/**
+ * Replays unfinished work first. When every step is already complete, the full
+ * tour remains available as a read-only refresher instead of opening empty UI.
+ */
+export function createGuidedTourReplaySteps(
+  steps: readonly GuidedTourStep[],
+  completedStepIds: readonly string[],
+): readonly GuidedTourStep[] {
+  const completed = new Set(completedStepIds);
+  const pending = steps.filter((step) => !completed.has(step.id) && !completed.has(guidedTourCompletionKey(step)));
+  return pending.length > 0 ? pending : steps;
+}

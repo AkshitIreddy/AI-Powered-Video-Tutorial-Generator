@@ -3,6 +3,7 @@ import {
   advanceOnboarding,
   computeSpotlightRect,
   computeTourPanelPosition,
+  createGuidedTourReplaySteps,
   createOnboardingState,
   normalizeOnboardingState,
   replayOnboarding,
@@ -137,6 +138,17 @@ describe("guided-tour geometry", () => {
       height: 48,
       borderRadius: 20,
     });
+  });
+
+  it("replays unfinished actions first and keeps a full refresher when all are done", () => {
+    const steps = [
+      { id: "create", target: "#create", title: "Create", description: "Create a tutorial", completion: { type: "external" as const, key: "project-created", label: "Create a project" } },
+      { id: "review", target: "#review", title: "Review", description: "Review the result", completion: { type: "external" as const, label: "Open review" } },
+      { id: "export", target: "#export", title: "Export", description: "Export the result", completion: { type: "external" as const, label: "Export a tutorial" } },
+    ];
+
+    expect(createGuidedTourReplaySteps(steps, ["project-created", "export"])).toEqual([steps[1]]);
+    expect(createGuidedTourReplaySteps(steps, ["project-created", "review", "export"])).toEqual(steps);
   });
 
   it("falls back to a panel placement that remains visible", () => {

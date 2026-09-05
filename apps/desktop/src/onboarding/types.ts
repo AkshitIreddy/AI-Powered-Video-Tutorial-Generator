@@ -150,6 +150,39 @@ export interface ProfileGalleryProps {
 
 export type TourPlacement = "top" | "right" | "bottom" | "left" | "center";
 
+export type GuidedTourTargetEvent = "click" | "change" | "input";
+
+/**
+ * Describes the observable result that makes a tour step true. A target event is
+ * useful for reversible navigation controls. External completion should be used
+ * for durable work such as creating a project, approving a plan, or exporting.
+ */
+export type GuidedTourCompletion =
+  | {
+    type: "target-event";
+    event?: GuidedTourTargetEvent;
+    label: string;
+    completedLabel?: string;
+    autoAdvance?: boolean;
+  }
+  | {
+    type: "element-state";
+    selector: string;
+    state?: "present" | "absent";
+    attribute?: string;
+    value?: string;
+    label: string;
+    completedLabel?: string;
+    autoAdvance?: boolean;
+  }
+  | {
+    type: "external";
+    key?: string;
+    label: string;
+    completedLabel?: string;
+    autoAdvance?: boolean;
+  };
+
 export interface GuidedTourStep {
   id: string;
   target: string | null;
@@ -159,6 +192,7 @@ export interface GuidedTourStep {
   padding?: number;
   allowTargetInteraction?: boolean;
   chapterId?: OnboardingChapterId;
+  completion?: GuidedTourCompletion;
 }
 
 export interface SpotlightRect {
@@ -179,4 +213,7 @@ export interface GuidedTourProps {
   reducedMotion?: boolean;
   resolveTarget?: (selector: string) => HTMLElement | null;
   spotlightRadius?: number;
+  completedStepIds?: readonly string[];
+  onStepComplete?: (step: GuidedTourStep, index: number) => void;
+  onStepEnter?: (step: GuidedTourStep, index: number) => void;
 }
