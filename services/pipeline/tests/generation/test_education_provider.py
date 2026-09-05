@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from collections.abc import Sequence
 from typing import Any
@@ -9,9 +10,27 @@ import pytest
 from alystria.generation.education_provider import (
     StructuredWritingEducationalProvider,
     _pacing_word_count,
+    capture_structured_writing_usage,
 )
 from alystria.generation.workflow import _fit_storyboard_to_narration, _paced_scene_ticks
-from alystria.providers import ProviderResult, TextOutput, TextRequest, Usage
+from alystria.providers import (
+    DataClassification,
+    PrivacyMode,
+    ProviderResult,
+    TextOutput,
+    TextRequest,
+    Usage,
+)
+from alystria.providers.openai_compatible_structured import (
+    GROQ_STRUCTURED_MODEL,
+    launch_structured_cloud_adapter,
+)
+from alystria.providers.transport import HttpRequest, HttpResponse
+from alystria.providers.types import (
+    DataBoundary,
+    RequestContext,
+    RetentionMode,
+)
 from alystria.research import (
     ExperienceLevel,
     GroundingMode,
@@ -49,6 +68,48 @@ class FakeTextClient:
             TextOutput("", parsed=response),
             Usage("nvidia-nim", request.model, {"output_tokens": 400}, 123),
         )
+
+
+class EducationSequenceTransport:
+    def __init__(self, payloads: Sequence[dict[str, Any]]) -> None:
+        self.payloads = list(payloads)
+        self.requests: list[HttpRequest] = []
+
+    def send(self, request: HttpRequest) -> HttpResponse:
+        self.requests.append(request)
+        if not self.payloads:
+            raise AssertionError("unexpected extra education provider request")
+        return HttpResponse(
+            200,
+            {"content-type": "application/json"},
+            json.dumps(self.payloads.pop(0)).encode(),
+        )
+
+
+class GroqEducationTextClient:
+    def __init__(self, transport: EducationSequenceTransport) -> None:
+        self.adapter = launch_structured_cloud_adapter("groq", transport)
+        self.results: list[ProviderResult[TextOutput]] = []
+
+    def generate(
+        self, request: TextRequest, *, idempotency_key: str
+    ) -> ProviderResult[TextOutput]:
+        result = self.adapter.invoke(
+            request,
+            RequestContext(
+                idempotency_key=idempotency_key,
+                approved_provider_id="groq",
+                credential="fixture-secret",
+                hard_budget_micros=1_000_000,
+                approved_boundary=DataBoundary.CLOUD,
+                approved_region="provider-managed",
+                approved_retention=RetentionMode.PROVIDER_DEFAULT,
+                privacy_mode=PrivacyMode.CLOUD,
+                data_classification=DataClassification.PROJECT,
+            ),
+        )
+        self.results.append(result)
+        return result
 
 
 def _objectives() -> tuple[LearningObjective, ...]:
@@ -97,6 +158,27 @@ def _outline_response() -> dict[str, Any]:
             },
         ]
     }
+
+
+def _three_minute_outline_response() -> dict[str, Any]:
+    response = _outline_response()
+    response["sections"].extend(
+        [
+            {
+                "title": "Check the saved multiplication",
+                "objectiveIds": ["objective-meaning", "objective-example"],
+                "teachingStrategy": "contrast the three-product and four-product paths",
+                "estimatedSeconds": 30,
+            },
+            {
+                "title": "Connect the recurrence to runtime",
+                "objectiveIds": ["objective-recall"],
+                "teachingStrategy": "link the recurrence to the asymptotic improvement",
+                "estimatedSeconds": 30,
+            },
+        ]
+    )
+    return response
 
 
 def _narration(seed: str) -> str:
@@ -309,23 +391,7 @@ def test_structured_provider_rejects_missing_objective_coverage() -> None:
 
 
 def test_three_minute_outline_requires_more_inspectable_scenes() -> None:
-    response = _outline_response()
-    response["sections"].extend(
-        [
-            {
-                "title": "Check the saved multiplication",
-                "objectiveIds": ["objective-meaning", "objective-example"],
-                "teachingStrategy": "contrast the three-product and four-product paths",
-                "estimatedSeconds": 30,
-            },
-            {
-                "title": "Connect the recurrence to runtime",
-                "objectiveIds": ["objective-recall"],
-                "teachingStrategy": "link the recurrence to the asymptotic improvement",
-                "estimatedSeconds": 30,
-            },
-        ]
-    )
+    response = _three_minute_outline_response()
     client = FakeTextClient([response])
     provider = StructuredWritingEducationalProvider(client, model="writer-v1")
 
@@ -340,6 +406,60 @@ def test_three_minute_outline_requires_more_inspectable_scenes() -> None:
     assert sum(section.estimated_seconds for section in outline) == 180
     assert client.requests[0].json_schema is not None
     assert client.requests[0].json_schema["properties"]["sections"]["minItems"] == 5
+
+
+def test_three_minute_groq_outline_repairs_one_empty_objective_list_end_to_end() -> None:
+    valid = _three_minute_outline_response()
+    invalid = copy.deepcopy(valid)
+    invalid["sections"][4]["objectiveIds"] = []
+    transport = EducationSequenceTransport(
+        [
+            {
+                "id": "outline-invalid",
+                "model": GROQ_STRUCTURED_MODEL,
+                "choices": [{"message": {"content": json.dumps(invalid)}}],
+                "usage": {"prompt_tokens": 900, "completion_tokens": 450},
+            },
+            {
+                "id": "outline-repaired",
+                "model": GROQ_STRUCTURED_MODEL,
+                "choices": [{"message": {"content": json.dumps(valid)}}],
+                "usage": {"prompt_tokens": 1_050, "completion_tokens": 470},
+            },
+        ]
+    )
+    client = GroqEducationTextClient(transport)
+    provider = StructuredWritingEducationalProvider(client, model=GROQ_STRUCTURED_MODEL)
+
+    captured: list[tuple[str, ProviderResult[TextOutput]]] = []
+    with capture_structured_writing_usage(
+        lambda key, result: captured.append((key, result))
+    ):
+        outline = provider.build_outline(
+            "Karatsuba multiplication",
+            LearnerProfile("beginners", ExperienceLevel.BEGINNER),
+            _objectives(),
+            180,
+        )
+
+    assert len(outline) == 5
+    assert all(section.objective_ids for section in outline)
+    assert len(transport.requests) == 2
+    repair_body = transport.requests[1].json_body
+    assert repair_body is not None
+    repair_prompt = json.loads(repair_body["messages"][-1]["content"])
+    assert repair_prompt["schemaViolation"] == {
+        "path": "$.sections[4].objectiveIds",
+        "keyword": "minItems",
+    }
+    assert client.results[0].usage.units == {
+        "input_tokens": 1_950.0,
+        "output_tokens": 920.0,
+    }
+    assert client.results[0].usage.actual_cost_micros == 423
+    assert len(captured) == 1
+    assert captured[0][0].startswith("education-")
+    assert captured[0][1].usage == client.results[0].usage
 
 
 def test_storyboard_pacing_distributes_exact_duration_by_narration_weight() -> None:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .errors import FailureCode, ProviderFailure, failure_from_http
@@ -17,14 +17,17 @@ from .llm import BaseLLMAdapter, TokenPrices
 from .transport import HttpRequest, HttpResponse, HttpTransport
 from .types import (
     Capability,
+    CostEstimate,
     DataBoundary,
     DataPolicy,
     ProviderDescriptor,
+    ProviderRequest,
     ProviderResult,
     RequestContext,
     RetentionMode,
     TextOutput,
     TextRequest,
+    Usage,
 )
 
 GROQ_STRUCTURED_MODEL = "openai/gpt-oss-20b"
@@ -125,7 +128,46 @@ class OpenAICompatibleStructuredAdapter(BaseLLMAdapter):
             models=(spec.model,),
         )
 
+    def estimate(self, request: ProviderRequest) -> CostEstimate:
+        if not isinstance(request, TextRequest):
+            return super().estimate(request)
+        body = self._request_body(request)
+        # The submitted JSON body contains the projected schema and message
+        # framing omitted by BaseLLMAdapter's prompt-only heuristic. One token
+        # per UTF-8 byte plus fixed chat framing is a conservative upper bound.
+        input_token_bound = len(
+            json.dumps(
+                body,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ) + 256
+        micros = _bounded_token_cost(
+            input_token_bound,
+            request.max_output_tokens,
+            self.spec.prices,
+        )
+        return CostEstimate(
+            micros,
+            "USD",
+            True,
+            "Serialized structured request byte bound plus maximum output tokens",
+            self.spec.prices.catalog_version,
+        )
+
     def build_request(self, request: TextRequest, context: RequestContext) -> HttpRequest:
+        body = self._request_body(request)
+        return HttpRequest(
+            "POST",
+            f"{self.spec.base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {context.credential or ''}",
+                "Content-Type": "application/json",
+            },
+            json_body=body,
+        )
+
+    def _request_body(self, request: TextRequest) -> dict[str, Any]:
         if request.research:
             raise ProviderFailure(
                 FailureCode.UNSUPPORTED_CAPABILITY,
@@ -166,15 +208,106 @@ class OpenAICompatibleStructuredAdapter(BaseLLMAdapter):
                 # OpenRouter may choose between upstream providers. This keeps
                 # only routes that accept the requested JSON-Schema parameter.
                 body["provider"] = {"require_parameters": True}
-        return HttpRequest(
-            "POST",
-            f"{self.spec.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {context.credential or ''}",
-                "Content-Type": "application/json",
-            },
-            json_body=body,
-        )
+        return body
+
+    def invoke(
+        self, request: ProviderRequest, context: RequestContext
+    ) -> ProviderResult[TextOutput]:
+        """Make one bounded Groq correction for locally enforced schema bounds.
+
+        Groq's supported schema subset omits array/string/numeric bounds, so
+        Alystria validates those constraints after receipt. A single complete
+        regeneration with the exact failing schema path is permitted for that
+        narrow mismatch. HTTP failures, structural-schema failures, other
+        providers, and a second invalid response remain terminal.
+        """
+
+        if (
+            isinstance(request, TextRequest)
+            and self.spec.provider_id == "groq"
+            and request.json_schema is not None
+            and _schema_contains_local_bounds(request.json_schema)
+        ):
+            # Validate the reviewed request shape before cost precedence can
+            # hide a schema/model error, then reserve the worst bounded path
+            # for the one correction that this adapter may perform.
+            self.build_request(request, context)
+            _combined_estimate(
+                self.estimate(request),
+                self.estimate(_groq_bounds_repair_reserve_request(request)),
+            ).require_within(context.hard_budget_micros)
+
+        try:
+            return super().invoke(request, context)
+        except ProviderFailure as first_failure:
+            if not isinstance(request, TextRequest) or not _repairable_groq_bounds_failure(
+                self.spec.provider_id, request, first_failure
+            ):
+                raise
+
+            repair_request = _groq_bounds_repair_request(request, first_failure)
+            first_usage = _usage_from_failure(first_failure)
+            first_estimate = self.estimate(request)
+            repair_estimate = self.estimate(repair_request)
+            try:
+                _combined_estimate(
+                    first_estimate,
+                    repair_estimate,
+                    first_actual_cost_micros=first_usage.actual_cost_micros,
+                ).require_within(context.hard_budget_micros)
+            except ProviderFailure as budget_failure:
+                budget_failure.provider_id = self.spec.provider_id
+                budget_failure.details = {
+                    "repairAttempted": False,
+                    "attemptCount": 1,
+                    "billableUsage": _usage_details(first_usage),
+                }
+                raise
+            repair_context = replace(
+                context,
+                idempotency_key=f"{context.idempotency_key}:schema-repair-1",
+            )
+            try:
+                repaired = super().invoke(repair_request, repair_context)
+            except ProviderFailure as repair_failure:
+                repair_failure_usage = _usage_from_failure(repair_failure)
+                combined_failure_usage = _combined_usage(first_usage, repair_failure_usage)
+                repair_failure.details = {
+                    **repair_failure.details,
+                    "repairAttempted": True,
+                    "attemptCount": 2,
+                    "billableUsage": _usage_details(
+                        combined_failure_usage,
+                        complete=(
+                            _usage_is_complete(first_usage)
+                            and _usage_is_complete(repair_failure_usage)
+                        ),
+                    ),
+                }
+                raise
+            if not (
+                _usage_is_complete(first_usage)
+                and _usage_is_complete(repaired.usage)
+            ):
+                missing_usage = self._malformed(
+                    "Structured-output provider omitted billable token usage"
+                )
+                missing_usage.request_id = repaired.raw_id
+                missing_usage.details = {
+                    "repairAttempted": True,
+                    "attemptCount": 2,
+                    "billableUsage": _usage_details(
+                        _combined_usage(first_usage, repaired.usage),
+                        complete=False,
+                    ),
+                }
+                raise missing_usage from first_failure
+            return replace(
+                repaired,
+                usage=_combined_usage(first_usage, repaired.usage),
+            )
+
+    generate = invoke
 
     def _json_response(self, response: HttpResponse) -> dict[str, Any]:
         if 200 <= response.status < 300:
@@ -207,11 +340,37 @@ class OpenAICompatibleStructuredAdapter(BaseLLMAdapter):
             "providerErrorType": provider_type,
             "providerErrorParam": provider_param,
             "failedGenerationPresent": "failed_generation" in error,
+            "providerInvocationAttempted": True,
+            "billableUsage": {
+                "model": self.spec.model,
+                "inputTokens": None,
+                "outputTokens": None,
+                "actualCostMicros": None,
+                "usageComplete": False,
+            },
         }
         raise failure
 
     def parse_response(
         self, request: TextRequest, payload: dict[str, Any]
+    ) -> ProviderResult[TextOutput]:
+        usage = self._usage_from_payload(payload, request.model)
+        try:
+            return self._parse_response_payload(request, payload, usage)
+        except ProviderFailure as failure:
+            failure.request_id = failure.request_id or usage.request_id
+            failure.details = {
+                **failure.details,
+                "providerInvocationAttempted": True,
+                "billableUsage": _usage_details(usage),
+            }
+            raise
+
+    def _parse_response_payload(
+        self,
+        request: TextRequest,
+        payload: dict[str, Any],
+        usage: Usage,
     ) -> ProviderResult[TextOutput]:
         choices = payload.get("choices")
         if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -241,24 +400,44 @@ class OpenAICompatibleStructuredAdapter(BaseLLMAdapter):
                 failure = self._malformed(
                     "Structured-output provider returned JSON outside the requested schema"
                 )
-                failure.details = {"schemaKeyword": exc.keyword, "schemaPath": exc.path}
+                failure.details = {
+                    "schemaKeyword": exc.keyword,
+                    "schemaPath": exc.path,
+                }
                 raise failure from exc
-        usage = payload.get("usage")
-        if not isinstance(usage, dict):
-            usage = {}
-        request_id = _string(payload.get("id"))
-        result_usage = self._usage(
-            request.model,
-            _integer(usage.get("prompt_tokens")),
-            _integer(usage.get("completion_tokens")),
-            request_id,
-        )
         return ProviderResult(
             self.spec.provider_id,
             _string(payload.get("model")) or request.model,
             TextOutput(content, parsed),
-            result_usage,
-            request_id,
+            usage,
+            usage.request_id,
+        )
+
+    def _usage_from_payload(self, payload: dict[str, Any], model: str) -> Usage:
+        usage = payload.get("usage")
+        if not isinstance(usage, dict):
+            return Usage(
+                self.spec.provider_id,
+                model,
+                {},
+                None,
+                request_id=_string(payload.get("id")),
+            )
+        input_tokens = _optional_integer(usage.get("prompt_tokens"))
+        output_tokens = _optional_integer(usage.get("completion_tokens"))
+        if input_tokens is None or output_tokens is None:
+            return Usage(
+                self.spec.provider_id,
+                model,
+                {},
+                None,
+                request_id=_string(payload.get("id")),
+            )
+        return self._usage(
+            model,
+            input_tokens,
+            output_tokens,
+            _string(payload.get("id")),
         )
 
     def _malformed(self, message: str) -> ProviderFailure:
@@ -279,6 +458,205 @@ def launch_structured_cloud_adapter(
             f"provider {provider_id!r} has no reviewed structured-cloud adapter"
         ) from exc
     return OpenAICompatibleStructuredAdapter(transport, spec)
+
+
+def _bounded_token_cost(
+    input_tokens: int,
+    output_tokens: int,
+    prices: TokenPrices,
+) -> int:
+    numerator = (
+        input_tokens * prices.input_micros_per_million
+        + output_tokens * prices.output_micros_per_million
+    )
+    return (numerator + 999_999) // 1_000_000
+
+
+def _repairable_groq_bounds_failure(
+    provider_id: str,
+    request: TextRequest,
+    failure: ProviderFailure,
+) -> bool:
+    keyword = failure.details.get("schemaKeyword")
+    path = failure.details.get("schemaPath")
+    return (
+        provider_id == "groq"
+        and request.json_schema is not None
+        and failure.code is FailureCode.MALFORMED_RESPONSE
+        and keyword in _ALYSTRIA_LOCALLY_ENFORCED_SCHEMA_KEYS
+        and isinstance(path, str)
+        and 1 <= len(path) <= 256
+    )
+
+
+def _schema_contains_local_bounds(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(key in _ALYSTRIA_LOCALLY_ENFORCED_SCHEMA_KEYS for key in value) or any(
+            _schema_contains_local_bounds(child) for child in value.values()
+        )
+    if isinstance(value, list):
+        return any(_schema_contains_local_bounds(child) for child in value)
+    return False
+
+
+def _groq_bounds_repair_request(
+    request: TextRequest, failure: ProviderFailure
+) -> TextRequest:
+    diagnostic = {
+        "path": str(failure.details["schemaPath"]),
+        "keyword": str(failure.details["schemaKeyword"]),
+    }
+    prompt = json.dumps(
+        {
+            "task": "Regenerate the complete structured response once.",
+            "schemaViolation": diagnostic,
+            "requirements": [
+                "Return the complete response, not a patch or explanation.",
+                "Correct the identified local schema-bound violation.",
+                "Keep every other field within the same supplied schema and request.",
+            ],
+            "originalRequest": request.prompt,
+        },
+        ensure_ascii=False,
+    )
+    system_suffix = (
+        " This is the single permitted schema-bound correction. Return only a complete "
+        "response matching the original schema."
+    )
+    return replace(
+        request,
+        prompt=prompt,
+        system=(request.system or "") + system_suffix,
+        temperature=0.1,
+    )
+
+
+def _groq_bounds_repair_reserve_request(request: TextRequest) -> TextRequest:
+    """Build the largest trusted diagnostic admitted by the repair gate."""
+
+    return _groq_bounds_repair_request(
+        request,
+        ProviderFailure(
+            FailureCode.MALFORMED_RESPONSE,
+            "schema-bound reserve",
+            provider_id="groq",
+            details={
+                "schemaPath": "$" + ("x" * 255),
+                "schemaKeyword": max(
+                    _ALYSTRIA_LOCALLY_ENFORCED_SCHEMA_KEYS,
+                    key=len,
+                ),
+            },
+        ),
+    )
+
+
+def _combined_estimate(
+    first: CostEstimate,
+    repair: CostEstimate,
+    *,
+    first_actual_cost_micros: int | None = None,
+) -> CostEstimate:
+    can_sum = (
+        first.bounded
+        and repair.bounded
+        and first.micros is not None
+        and repair.micros is not None
+        and first.currency == repair.currency
+    )
+    micros: int | None = None
+    if can_sum and first.micros is not None and repair.micros is not None:
+        first_reserve = (
+            max(first.micros, first_actual_cost_micros)
+            if first_actual_cost_micros is not None
+            else first.micros
+        )
+        micros = first_reserve + repair.micros
+    return CostEstimate(
+        micros,
+        first.currency,
+        can_sum,
+        "Original structured request plus at most one schema-bound correction",
+        first.catalog_version,
+    )
+
+
+def _usage_from_failure(failure: ProviderFailure) -> Usage:
+    value = failure.details.get("billableUsage")
+    usage = value if isinstance(value, dict) else {}
+    input_tokens = _optional_integer(usage.get("inputTokens"))
+    output_tokens = _optional_integer(usage.get("outputTokens"))
+    units = {
+        key: float(value)
+        for key, value in (
+            ("input_tokens", input_tokens),
+            ("output_tokens", output_tokens),
+        )
+        if value is not None
+    }
+    return Usage(
+        failure.provider_id or "groq",
+        _string(usage.get("model")) or GROQ_STRUCTURED_MODEL,
+        units,
+        (
+            usage.get("actualCostMicros")
+            if isinstance(usage.get("actualCostMicros"), int)
+            and not isinstance(usage.get("actualCostMicros"), bool)
+            else None
+        ),
+        request_id=failure.request_id,
+    )
+
+
+def _combined_usage(first: Usage, repair: Usage) -> Usage:
+    keys = set(first.units) | set(repair.units)
+    reported_costs = tuple(
+        cost
+        for cost in (first.actual_cost_micros, repair.actual_cost_micros)
+        if cost is not None
+    )
+    actual_cost = sum(reported_costs) if reported_costs else None
+    return Usage(
+        repair.provider_id,
+        repair.model,
+        {
+            key: float(first.units.get(key, 0)) + float(repair.units.get(key, 0))
+            for key in sorted(keys)
+        },
+        actual_cost,
+        repair.currency,
+        repair.request_id,
+    )
+
+
+def _usage_is_complete(usage: Usage) -> bool:
+    return (
+        usage.actual_cost_micros is not None
+        and "input_tokens" in usage.units
+        and "output_tokens" in usage.units
+    )
+
+
+def _usage_details(
+    usage: Usage,
+    *,
+    complete: bool | None = None,
+) -> dict[str, bool | int | str | None]:
+    return {
+        "model": usage.model,
+        "inputTokens": (
+            round(float(usage.units["input_tokens"]))
+            if "input_tokens" in usage.units
+            else None
+        ),
+        "outputTokens": (
+            round(float(usage.units["output_tokens"]))
+            if "output_tokens" in usage.units
+            else None
+        ),
+        "actualCostMicros": usage.actual_cost_micros,
+        "usageComplete": _usage_is_complete(usage) if complete is None else complete,
+    }
 
 
 def _groq_structural_schema(value: Any, *, provider_id: str) -> Any:
@@ -486,6 +864,10 @@ def _matches_schema_type(value: Any, expected: Any) -> bool:
 
 def _integer(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _optional_integer(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _string(value: object) -> str | None:

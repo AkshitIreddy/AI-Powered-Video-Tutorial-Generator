@@ -6,10 +6,19 @@ import copy
 import hashlib
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
-from alystria.providers import Capability, ProviderRuntime, ProviderTextClient, TextRequest
+from alystria.providers import (
+    Capability,
+    ProviderResult,
+    ProviderRuntime,
+    ProviderTextClient,
+    TextOutput,
+    TextRequest,
+)
 from alystria.research import (
     DeterministicOfflineProvider,
     GroundingMode,
@@ -178,6 +187,31 @@ _NARRATION_REWRITE_SCHEMA: dict[str, Any] = {
     },
 }
 
+_StructuredUsageSink = Callable[[str, ProviderResult[TextOutput]], None]
+_structured_usage_sink: ContextVar[_StructuredUsageSink | None] = ContextVar(
+    "alystria_structured_writing_usage_sink",
+    default=None,
+)
+
+
+@contextmanager
+def capture_structured_writing_usage(sink: _StructuredUsageSink) -> Iterator[None]:
+    """Bind accepted provider usage to the current durable job invocation."""
+
+    token = _structured_usage_sink.set(sink)
+    try:
+        yield
+    finally:
+        _structured_usage_sink.reset(token)
+
+
+def _publish_structured_usage(
+    idempotency_key: str, result: ProviderResult[TextOutput]
+) -> None:
+    sink = _structured_usage_sink.get()
+    if sink is not None:
+        sink(idempotency_key, result)
+
 
 class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
     """Use the project's explicitly approved structured-writing route.
@@ -238,6 +272,9 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             },
             ensure_ascii=False,
         )
+        idempotency_key = _idempotency(
+            "outline", topic, objective_payload, target_duration_seconds
+        )
         result = self.client.generate(
             TextRequest(
                 prompt=prompt,
@@ -252,10 +289,9 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                 json_schema=outline_schema,
                 schema_name="alystria_tutorial_outline",
             ),
-            idempotency_key=_idempotency(
-                "outline", topic, objective_payload, target_duration_seconds
-            ),
+            idempotency_key=idempotency_key,
         )
+        _publish_structured_usage(idempotency_key, result)
         payload = _parsed_object(result.value.parsed, "outline")
         raw_sections = _object_list(payload.get("sections"), "outline sections")
         known_ids = {objective.id for objective in objectives}
@@ -353,6 +389,12 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             ensure_ascii=False,
         )
         target_words = round(plan.target_duration_seconds * NARRATION_WORDS_PER_SECOND)
+        idempotency_key = _idempotency(
+            "script",
+            plan.topic,
+            [item.id for item in plan.outline],
+            plan.target_duration_seconds,
+        )
         result = self.client.generate(
             TextRequest(
                 prompt=prompt,
@@ -370,13 +412,9 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                 json_schema=_SCRIPT_SCHEMA,
                 schema_name="alystria_tutorial_script",
             ),
-            idempotency_key=_idempotency(
-                "script",
-                plan.topic,
-                [item.id for item in plan.outline],
-                plan.target_duration_seconds,
-            ),
+            idempotency_key=idempotency_key,
         )
+        _publish_structured_usage(idempotency_key, result)
         payload = _parsed_object(result.value.parsed, "script")
         draft = _draft_from_payload(plan, grounding, payload, result)
         pacing_word_count = _pacing_word_count(draft)
@@ -444,6 +482,13 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                 for index, raw in enumerate(raw_sections)
             ],
         }
+        idempotency_key = _idempotency(
+            "narration-rewrite",
+            plan.topic,
+            expected_ids,
+            plan.target_duration_seconds,
+            attempt,
+        )
         result = self.client.generate(
             TextRequest(
                 prompt=json.dumps(request_payload, ensure_ascii=False),
@@ -457,14 +502,9 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                 json_schema=_NARRATION_REWRITE_SCHEMA,
                 schema_name="alystria_paced_narration",
             ),
-            idempotency_key=_idempotency(
-                "narration-rewrite",
-                plan.topic,
-                expected_ids,
-                plan.target_duration_seconds,
-                attempt,
-            ),
+            idempotency_key=idempotency_key,
         )
+        _publish_structured_usage(idempotency_key, result)
         rewrite = _parsed_object(result.value.parsed, "paced narration")
         rewritten_sections = _object_list(rewrite.get("sections"), "paced narration sections")
         rewritten_ids = [str(item.get("outlineSectionId", "")) for item in rewritten_sections]

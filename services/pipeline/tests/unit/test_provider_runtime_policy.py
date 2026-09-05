@@ -17,6 +17,7 @@ from alystria.providers import (
     CredentialGrant,
     DesktopCredentialBrokerResolver,
     EphemeralCredentialBroker,
+    FailureCode,
     HttpRequest,
     HttpResponse,
     ProviderFailure,
@@ -32,6 +33,7 @@ from alystria.providers.openai_compatible_structured import (
     MISTRAL_STRUCTURED_MODEL,
     OPENROUTER_STRUCTURED_MODEL,
 )
+from alystria.providers.runtime import provider_job_budget_scope
 from alystria.service import PipelineService, _configured_local_image_runtime
 
 
@@ -407,6 +409,44 @@ def test_reviewed_structured_cloud_routes_execute_through_runtime_factory(
     assert request.json_body["response_format"]["json_schema"]["strict"] is True
     if provider_id == "openrouter":
         assert request.json_body["provider"] == {"require_parameters": True}
+
+
+def test_durable_job_budget_scope_blocks_groq_repair_reserve_before_transport() -> None:
+    policy = parse_routing_policy(
+        _structured_cloud_policy("groq", GROQ_STRUCTURED_MODEL)
+    )
+    broker = EphemeralCredentialBroker()
+    credential_ref = "keyring://alystria/groq/api_key"
+    grant = broker.issue("groq", credential_ref, "fixture-runtime-credential")
+    transport = StructuredFixtureTransport()
+    runtime = ProviderRuntimeFactory(
+        transport_factory=lambda _selected: transport,
+        credential_resolver=broker,
+        credential_grants={"groq": grant},
+    ).build(policy)
+    request = TextRequest(
+        "Return one lesson.",
+        GROQ_STRUCTURED_MODEL,
+        max_output_tokens=256,
+        json_schema={
+            "type": "object",
+            "properties": {"lesson": {"type": "string", "minLength": 1}},
+            "required": ["lesson"],
+            "additionalProperties": False,
+        },
+        schema_name="lesson_plan",
+    )
+
+    with provider_job_budget_scope(lambda: 1), pytest.raises(
+        ProviderFailure, match="hard budget"
+    ) as raised:
+        ProviderTextClient(runtime).generate(
+            request,
+            idempotency_key="groq-durable-retry",
+        )
+
+    assert raised.value.code is FailureCode.BUDGET_EXCEEDED
+    assert transport.requests == []
 
 
 def test_desktop_keyring_callback_uses_fresh_one_call_nonces() -> None:

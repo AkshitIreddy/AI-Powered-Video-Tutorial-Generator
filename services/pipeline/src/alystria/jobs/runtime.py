@@ -128,6 +128,7 @@ class JobContext:
         cost_micros: int,
         idempotency_key: str,
         metadata: dict[str, Any] | None = None,
+        incurred: bool = False,
     ) -> None:
         self.runtime.record_usage(
             self.job_id,
@@ -138,6 +139,7 @@ class JobContext:
             cost_micros=cost_micros,
             idempotency_key=idempotency_key,
             metadata=metadata,
+            incurred=incurred,
         )
 
     def provider_acceptance(self, idempotency_key: str) -> dict[str, Any] | None:
@@ -512,6 +514,7 @@ class SQLiteWorkflowRuntime:
         cost_micros: int,
         idempotency_key: str,
         metadata: dict[str, Any] | None = None,
+        incurred: bool = False,
     ) -> None:
         if quantity < 0 or cost_micros < 0:
             raise ValueError("Usage quantity and cost cannot be negative")
@@ -531,10 +534,20 @@ class SQLiteWorkflowRuntime:
                     (job_id,),
                 ).fetchone()[0]
             )
-            if job.budget_micros is not None and spent + cost_micros > job.budget_micros:
+            overage_micros = (
+                max(0, spent + cost_micros - job.budget_micros)
+                if job.budget_micros is not None
+                else 0
+            )
+            if overage_micros and not incurred:
                 raise BudgetExceededError(
                     f"Usage would exceed the job budget of {job.budget_micros} micros"
                 )
+            stored_metadata = dict(metadata or {})
+            if incurred:
+                stored_metadata["incurred"] = True
+            if overage_micros:
+                stored_metadata["budgetOverageMicros"] = overage_micros
             self.connection.execute(
                 """INSERT INTO usage_records(
                     usage_id,job_id,provider,model,unit,quantity,cost_micros,metadata_json,created_at
@@ -547,7 +560,7 @@ class SQLiteWorkflowRuntime:
                     unit,
                     quantity,
                     cost_micros,
-                    canonical_json(metadata or {}),
+                    canonical_json(stored_metadata),
                     utc_now(),
                 ),
             )

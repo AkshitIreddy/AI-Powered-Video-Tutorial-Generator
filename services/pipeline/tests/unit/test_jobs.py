@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -208,6 +209,43 @@ def test_usage_over_budget_fails_job(tmp_path: Path) -> None:
 
         assert runtime.run_once({"metered": metered}).state == JobState.FAILED
         assert runtime.get_job(job.job_id).error["code"] == "BUDGET_EXCEEDED"
+
+
+def test_incurred_provider_usage_is_retained_when_actual_cost_exceeds_budget(
+    tmp_path: Path,
+) -> None:
+    with ProjectStore.create(tmp_path / "project", name="Incurred overage") as store:
+        runtime = SQLiteWorkflowRuntime(store.connection)
+        job = runtime.enqueue(
+            project_id=store.manifest.project_id,
+            kind="metered",
+            parameters={},
+            budget_micros=10,
+        )
+
+        def metered(context, parameters):
+            context.record_usage(
+                provider="mock",
+                model="v1",
+                unit="call",
+                quantity=1,
+                cost_micros=11,
+                idempotency_key="incurred-overage",
+                incurred=True,
+            )
+            raise RuntimeError("provider result cannot be accepted after the overage")
+
+        assert runtime.run_once({"metered": metered}).state == JobState.FAILED
+        summary = runtime.usage_summary(job.job_id)
+        assert summary.total_cost_micros == 11
+        row = store.connection.execute(
+            "SELECT metadata_json FROM usage_records WHERE job_id=?",
+            (job.job_id,),
+        ).fetchone()
+        assert json.loads(row["metadata_json"]) == {
+            "budgetOverageMicros": 1,
+            "incurred": True,
+        }
 
 
 def test_recovery_reuses_accepted_provider_checkpoint_without_duplicate_charge(

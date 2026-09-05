@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -47,6 +48,22 @@ class FixtureTransport:
             self.status,
             {"content-type": "application/json", "x-request-id": "safe-request-id"},
             json.dumps(self.payload).encode(),
+        )
+
+
+class SequenceTransport:
+    def __init__(self, payloads: list[dict[str, Any]]) -> None:
+        self.payloads = list(payloads)
+        self.requests: list[HttpRequest] = []
+
+    def send(self, request: HttpRequest) -> HttpResponse:
+        self.requests.append(request)
+        if not self.payloads:
+            raise AssertionError("unexpected extra provider request")
+        return HttpResponse(
+            200,
+            {"content-type": "application/json"},
+            json.dumps(self.payloads.pop(0)).encode(),
         )
 
 
@@ -248,6 +265,45 @@ def test_non_finite_structured_numbers_are_rejected(invalid_number: str) -> None
     assert raised.value.code is FailureCode.MALFORMED_RESPONSE
 
 
+@pytest.mark.parametrize(
+    "choices",
+    (
+        [],
+        [{"message": {"refusal": "declined"}}],
+        [{"message": {"content": ""}}],
+        [{"message": {"content": "not-json"}}],
+    ),
+)
+def test_groq_post_transport_parse_failures_keep_sanitized_billable_usage(
+    choices: list[dict[str, Any]],
+) -> None:
+    transport = FixtureTransport(
+        {
+            "id": "failed-parse-receipt",
+            "model": GROQ_STRUCTURED_MODEL,
+            "choices": choices,
+            "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+        }
+    )
+    adapter = launch_structured_cloud_adapter("groq", transport)
+
+    with pytest.raises(ProviderFailure) as raised:
+        adapter.invoke(structured_request(GROQ_STRUCTURED_MODEL), context("groq"))
+
+    assert len(transport.requests) == 1
+    assert raised.value.request_id == "failed-parse-receipt"
+    assert raised.value.details == {
+        "providerInvocationAttempted": True,
+        "billableUsage": {
+            "model": GROQ_STRUCTURED_MODEL,
+            "inputTokens": 10,
+            "outputTokens": 2,
+            "actualCostMicros": 2,
+            "usageComplete": True,
+        },
+    }
+
+
 def test_structured_json_is_validated_against_original_unprojected_schema() -> None:
     transport = FixtureTransport(
         {
@@ -270,7 +326,308 @@ def test_structured_json_is_validated_against_original_unprojected_schema() -> N
     with pytest.raises(ProviderFailure, match="outside the requested schema") as raised:
         adapter.invoke(request, context("groq"))
     assert raised.value.code is FailureCode.MALFORMED_RESPONSE
-    assert raised.value.details == {"schemaKeyword": "maxLength", "schemaPath": "$.title"}
+    assert raised.value.details == {
+        "schemaKeyword": "maxLength",
+        "schemaPath": "$.title",
+        "providerInvocationAttempted": True,
+        "billableUsage": {
+            "model": GROQ_STRUCTURED_MODEL,
+            "inputTokens": None,
+            "outputTokens": None,
+            "actualCostMicros": None,
+            "usageComplete": False,
+        },
+        "repairAttempted": True,
+        "attemptCount": 2,
+    }
+    assert len(transport.requests) == 2
+
+
+def test_groq_repairs_one_local_array_bound_and_accounts_both_calls() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["sections"],
+        "properties": {
+            "sections": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["title", "objectiveIds"],
+                    "properties": {
+                        "title": {"type": "string"},
+                        "objectiveIds": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string"},
+                        },
+                    },
+                },
+            }
+        },
+    }
+    transport = SequenceTransport(
+        [
+            {
+                "id": "first-invalid",
+                "model": GROQ_STRUCTURED_MODEL,
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"sections":[{"title":"Recap","objectiveIds":[]}]}'
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 20},
+            },
+            {
+                "id": "second-valid",
+                "model": GROQ_STRUCTURED_MODEL,
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"sections":[{"title":"Recap",'
+                                '"objectiveIds":["objective-recall"]}]}'
+                            )
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 180, "completion_tokens": 30},
+            },
+        ]
+    )
+    adapter = launch_structured_cloud_adapter("groq", transport)
+    request = TextRequest(
+        "Create the complete five-section outline.",
+        GROQ_STRUCTURED_MODEL,
+        system="Return only the requested structure.",
+        max_output_tokens=512,
+        json_schema=schema,
+        schema_name="alystria_tutorial_outline",
+    )
+
+    # Call the public alias directly; BaseLLMAdapter's inherited alias must not
+    # bypass this adapter's correction/accounting override.
+    result = adapter.generate(request, context("groq"))
+
+    assert result.value.parsed == {
+        "sections": [{"title": "Recap", "objectiveIds": ["objective-recall"]}]
+    }
+    assert len(transport.requests) == 2
+    repair_body = transport.requests[1].json_body
+    assert repair_body is not None
+    repair_prompt = json.loads(repair_body["messages"][-1]["content"])
+    assert repair_prompt["schemaViolation"] == {
+        "path": "$.sections[0].objectiveIds",
+        "keyword": "minItems",
+    }
+    assert repair_prompt["originalRequest"] == request.prompt
+    assert "Recap" not in repair_body["messages"][-1]["content"]
+    assert repair_body["response_format"]["json_schema"]["schema"] == (
+        transport.requests[0].json_body["response_format"]["json_schema"]["schema"]
+    )
+    assert result.usage.units == {"input_tokens": 280.0, "output_tokens": 50.0}
+    # Provider billing rounds each request independently, so aggregate the two
+    # receipts instead of repricing their combined token counts.
+    assert result.usage.actual_cost_micros == 37
+    assert result.raw_id == "second-valid"
+
+
+def test_groq_schema_repair_is_single_attempt_and_does_not_repair_structural_errors() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["labels"],
+        "properties": {
+            "labels": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"},
+            }
+        },
+    }
+    twice_invalid = SequenceTransport(
+        [
+            {
+                "id": "invalid-1",
+                "choices": [{"message": {"content": '{"labels":[]}'}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            },
+            {
+                "id": "invalid-2",
+                "choices": [{"message": {"content": '{"labels":[]}'}}],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 2},
+            },
+        ]
+    )
+    adapter = launch_structured_cloud_adapter("groq", twice_invalid)
+    request = TextRequest("Labels", GROQ_STRUCTURED_MODEL, json_schema=schema)
+    with pytest.raises(ProviderFailure, match="outside the requested schema") as raised:
+        adapter.invoke(request, context("groq"))
+    assert len(twice_invalid.requests) == 2
+    assert raised.value.details["repairAttempted"] is True
+    assert raised.value.details["attemptCount"] == 2
+    assert raised.value.details["billableUsage"] == {
+        "model": GROQ_STRUCTURED_MODEL,
+        "inputTokens": 22,
+        "outputTokens": 4,
+        "actualCostMicros": 4,
+        "usageComplete": True,
+    }
+
+    structural = SequenceTransport(
+        [
+            {
+                "id": "wrong-type",
+                "choices": [{"message": {"content": '{"labels":"wrong"}'}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            }
+        ]
+    )
+    structural_adapter = launch_structured_cloud_adapter("groq", structural)
+    with pytest.raises(ProviderFailure) as structural_failure:
+        structural_adapter.invoke(request, context("groq"))
+    assert structural_failure.value.details["schemaKeyword"] == "type"
+    assert len(structural.requests) == 1
+
+
+def test_groq_schema_repair_never_treats_one_missing_usage_receipt_as_complete() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["labels"],
+        "properties": {
+            "labels": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"},
+            }
+        },
+    }
+    transport = SequenceTransport(
+        [
+            {
+                "id": "invalid-usage-missing",
+                "choices": [{"message": {"content": '{"labels":[]}'}}],
+            },
+            {
+                "id": "valid-usage-reported",
+                "choices": [{"message": {"content": '{"labels":["one"]}'}}],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 3},
+            },
+        ]
+    )
+    adapter = launch_structured_cloud_adapter("groq", transport)
+
+    with pytest.raises(ProviderFailure, match="omitted billable token usage") as raised:
+        adapter.invoke(
+            TextRequest("Labels", GROQ_STRUCTURED_MODEL, json_schema=schema),
+            context("groq"),
+        )
+
+    assert len(transport.requests) == 2
+    assert raised.value.details["billableUsage"] == {
+        "model": GROQ_STRUCTURED_MODEL,
+        "inputTokens": 12,
+        "outputTokens": 3,
+        "actualCostMicros": 2,
+        "usageComplete": False,
+    }
+
+
+def test_groq_schema_repair_reserves_the_combined_request_budget_before_transport() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["labels"],
+        "properties": {
+            "labels": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"},
+            }
+        },
+    }
+    transport = SequenceTransport(
+        [
+            {
+                "id": "invalid",
+                "choices": [{"message": {"content": '{"labels":[]}'}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            }
+        ]
+    )
+    adapter = launch_structured_cloud_adapter("groq", transport)
+    request = TextRequest(
+        "Labels",
+        GROQ_STRUCTURED_MODEL,
+        max_output_tokens=256,
+        json_schema=schema,
+    )
+    first_estimate = adapter.estimate(request)
+    assert first_estimate.micros is not None
+    constrained = replace(context("groq"), hard_budget_micros=first_estimate.micros)
+
+    with pytest.raises(ProviderFailure) as raised:
+        adapter.invoke(request, constrained)
+    assert raised.value.code is FailureCode.BUDGET_EXCEEDED
+    assert raised.value.details == {}
+    assert len(transport.requests) == 0
+
+
+def test_groq_schema_repair_uses_first_actual_cost_when_it_exceeds_estimate() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["labels"],
+        "properties": {
+            "labels": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"},
+            }
+        },
+    }
+    transport = SequenceTransport(
+        [
+            {
+                "id": "invalid-expensive",
+                "model": GROQ_STRUCTURED_MODEL,
+                "choices": [{"message": {"content": '{"labels":[]}'}}],
+                "usage": {"prompt_tokens": 100_000, "completion_tokens": 2},
+            }
+        ]
+    )
+    adapter = launch_structured_cloud_adapter("groq", transport)
+    request = TextRequest(
+        "Labels",
+        GROQ_STRUCTURED_MODEL,
+        max_output_tokens=64,
+        json_schema=schema,
+    )
+
+    with pytest.raises(ProviderFailure) as raised:
+        adapter.invoke(
+            request,
+            replace(context("groq"), hard_budget_micros=5_000),
+        )
+
+    assert raised.value.code is FailureCode.BUDGET_EXCEEDED
+    assert raised.value.details == {
+        "repairAttempted": False,
+        "attemptCount": 1,
+        "billableUsage": {
+            "model": GROQ_STRUCTURED_MODEL,
+            "inputTokens": 100_000,
+            "outputTokens": 2,
+            "actualCostMicros": 7_501,
+            "usageComplete": True,
+        },
+    }
+    assert len(transport.requests) == 1
 
 
 def test_groq_error_keeps_only_sanitized_machine_diagnostics() -> None:
@@ -295,6 +652,14 @@ def test_groq_error_keeps_only_sanitized_machine_diagnostics() -> None:
         "providerErrorType": "invalid_request_error",
         "providerErrorParam": None,
         "failedGenerationPresent": True,
+        "providerInvocationAttempted": True,
+        "billableUsage": {
+            "model": GROQ_STRUCTURED_MODEL,
+            "inputTokens": None,
+            "outputTokens": None,
+            "actualCostMicros": None,
+            "usageComplete": False,
+        },
     }
     assert secret not in repr(raised.value)
     assert secret not in json.dumps(diagnostic)
@@ -312,6 +677,14 @@ def test_non_object_error_envelope_keeps_generic_http_failure(invalid_envelope: 
         "providerErrorType": None,
         "providerErrorParam": None,
         "failedGenerationPresent": False,
+        "providerInvocationAttempted": True,
+        "billableUsage": {
+            "model": GROQ_STRUCTURED_MODEL,
+            "inputTokens": None,
+            "outputTokens": None,
+            "actualCostMicros": None,
+            "usageComplete": False,
+        },
     }
 
 

@@ -21,6 +21,8 @@ from alystria.jobs.runtime import TaskHandler
 from alystria.presenters import PresenterDirection, PresenterPlacement
 from alystria.project import ProjectStore
 from alystria.project_assets import validate_approved_presenter_for_export
+from alystria.providers import FailureCode, ProviderFailure, ProviderResult, TextOutput
+from alystria.providers.runtime import provider_job_budget_scope
 from alystria.qa import Finding, GateStatus, QualityGate, Severity
 from alystria.qa.content import (
     Citation,
@@ -96,6 +98,7 @@ from .adapters import (
     GenerationMediaClient,
     RendererClient,
 )
+from .education_provider import capture_structured_writing_usage
 from .forced_alignment import AlignmentInput, ForcedAlignmentClient
 from .models import (
     PRE_APPROVAL_STAGES,
@@ -131,6 +134,167 @@ def _canonical(value: Any) -> str:
 
 def _fingerprint(value: Any) -> str:
     return hashlib.sha256(_canonical(value).encode()).hexdigest()
+
+
+def _record_structured_provider_usage(
+    context: JobContext,
+    idempotency_key: str,
+    result: ProviderResult[TextOutput],
+) -> None:
+    usage = result.usage
+    input_tokens = usage.units.get("input_tokens")
+    output_tokens = usage.units.get("output_tokens")
+    if (
+        usage.actual_cost_micros is None
+        or not isinstance(input_tokens, int | float)
+        or isinstance(input_tokens, bool)
+        or not isinstance(output_tokens, int | float)
+        or isinstance(output_tokens, bool)
+        or input_tokens < 0
+        or output_tokens < 0
+    ):
+        raise ProviderFailure(
+            FailureCode.MALFORMED_RESPONSE,
+            "Structured-writing provider omitted billable token usage",
+            provider_id=result.provider_id,
+            request_id=result.raw_id,
+        )
+    remaining_budget = _remaining_structured_job_budget(context)
+    context.record_usage(
+        provider=result.provider_id,
+        model=result.model,
+        unit="tokens",
+        quantity=float(input_tokens) + float(output_tokens),
+        cost_micros=usage.actual_cost_micros,
+        idempotency_key=(
+            f"structured-writing:{context.attempt_number}:{idempotency_key}"
+        ),
+        metadata={
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+            "providerRequestId": result.raw_id,
+        },
+        incurred=True,
+    )
+    if remaining_budget is not None and usage.actual_cost_micros > remaining_budget:
+        raise ProviderFailure(
+            FailureCode.BUDGET_EXCEEDED,
+            "Structured-writing provider usage exceeded the durable job budget",
+            provider_id=result.provider_id,
+            request_id=result.raw_id,
+            details={"usageAlreadyRecorded": True},
+        )
+
+
+def _record_terminal_structured_failure_usage(
+    context: JobContext, failure: ProviderFailure
+) -> None:
+    billable = failure.details.get("billableUsage")
+    if not isinstance(billable, dict):
+        return
+    cost = billable.get("actualCostMicros")
+    model = billable.get("model")
+    input_tokens = billable.get("inputTokens")
+    output_tokens = billable.get("outputTokens")
+    usage_complete = billable.get("usageComplete")
+    identity_is_valid = (
+        failure.provider_id is not None
+        and isinstance(model, str)
+        and bool(model)
+    )
+    usage_is_known = (
+        isinstance(cost, int)
+        and not isinstance(cost, bool)
+        and cost >= 0
+        and isinstance(input_tokens, int)
+        and not isinstance(input_tokens, bool)
+        and input_tokens >= 0
+        and isinstance(output_tokens, int)
+        and not isinstance(output_tokens, bool)
+        and output_tokens >= 0
+    )
+    if not identity_is_valid:
+        return
+    assert failure.provider_id is not None
+    assert isinstance(model, str)
+    idempotency_key = (
+        f"structured-writing-terminal:{context.task_key}:{context.attempt_number}"
+    )
+    if not usage_is_known:
+        if usage_complete is not False:
+            return
+        context.record_usage(
+            provider=failure.provider_id,
+            model=model,
+            unit="billing-status",
+            quantity=0,
+            cost_micros=0,
+            idempotency_key=idempotency_key,
+            metadata={
+                "terminalFailure": True,
+                "attemptCount": failure.details.get("attemptCount"),
+                "usageComplete": False,
+                "knownCostMicros": None,
+            },
+            incurred=True,
+        )
+        return
+    if (
+        failure.provider_id is None
+        or not isinstance(model, str)
+        or not isinstance(cost, int)
+        or not isinstance(input_tokens, int)
+        or not isinstance(output_tokens, int)
+    ):
+        return
+    context.record_usage(
+        provider=failure.provider_id,
+        model=model,
+        unit="tokens",
+        quantity=float(input_tokens + output_tokens),
+        cost_micros=cost,
+        idempotency_key=idempotency_key,
+        metadata={
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+            "terminalFailure": True,
+            "attemptCount": failure.details.get("attemptCount"),
+            "usageComplete": (
+                usage_complete if isinstance(usage_complete, bool) else True
+            ),
+        },
+        incurred=True,
+    )
+
+
+def _remaining_structured_job_budget(context: JobContext) -> int | None:
+    job = context.runtime.get_job(context.job_id)
+    if job.budget_micros is None:
+        return None
+    generation_id = job.parameters.get("generationId")
+    if not isinstance(generation_id, str) or not generation_id:
+        spent = context.runtime.usage_summary(context.job_id).total_cost_micros
+        return max(0, job.budget_micros - spent)
+    rows = context.runtime.connection.execute(
+        "SELECT job_id FROM jobs WHERE project_id=?",
+        (job.project_id,),
+    ).fetchall()
+    spent = 0
+    for row in rows:
+        candidate = context.runtime.get_job(str(row["job_id"]))
+        if candidate.parameters.get("generationId") == generation_id:
+            usage_rows = context.runtime.connection.execute(
+                "SELECT metadata_json FROM usage_records WHERE job_id=?",
+                (candidate.job_id,),
+            ).fetchall()
+            if any(
+                json.loads(str(usage_row["metadata_json"])).get("usageComplete")
+                is False
+                for usage_row in usage_rows
+            ):
+                return 0
+            spent += context.runtime.usage_summary(candidate.job_id).total_cost_micros
+    return max(0, job.budget_micros - spent)
 
 
 def _render_scene_windows(scenes: object) -> list[dict[str, Any]]:
@@ -702,20 +866,31 @@ class GenerationWorkflow:
             Prerequisite.create(label, assumed=True) for label in request.prerequisites
         )
         workflow = EducationalWorkflow(self.educational_provider)
-        plan = workflow.create_plan(
-            topic=request.topic,
-            learner=learner,
-            objectives=objectives,
-            prerequisites=PrerequisiteDag(prerequisites),
-            misconceptions=(
-                Misconception.create(
-                    f"{request.topic} can be learned by memorizing labels alone.",
-                    "Understanding requires connecting the idea to a concrete example.",
-                    "Can you explain why the example works?",
-                ),
-            ),
-            target_duration_seconds=request.duration_seconds,
-        )
+        try:
+            with provider_job_budget_scope(
+                lambda: _remaining_structured_job_budget(context)
+            ), capture_structured_writing_usage(
+                lambda key, result: _record_structured_provider_usage(
+                    context, key, result
+                )
+            ):
+                plan = workflow.create_plan(
+                    topic=request.topic,
+                    learner=learner,
+                    objectives=objectives,
+                    prerequisites=PrerequisiteDag(prerequisites),
+                    misconceptions=(
+                        Misconception.create(
+                            f"{request.topic} can be learned by memorizing labels alone.",
+                            "Understanding requires connecting the idea to a concrete example.",
+                            "Can you explain why the example works?",
+                        ),
+                    ),
+                    target_duration_seconds=request.duration_seconds,
+                )
+        except ProviderFailure as failure:
+            _record_terminal_structured_failure_usage(context, failure)
+            raise
         payload = {**previous, "learningPlan": _plan_to_dict(plan)}
         return self._persist_stage(
             context,
@@ -729,10 +904,21 @@ class GenerationWorkflow:
         request = _request(parameters)
         context.set_progress(0.12, message="Drafting and reviewing script")
         plan = _plan_from_dict(previous["learningPlan"])
-        result = EducationalWorkflow(self.educational_provider).create_script(
-            plan,
-            grounding=request.grounding_mode,
-        )
+        try:
+            with provider_job_budget_scope(
+                lambda: _remaining_structured_job_budget(context)
+            ), capture_structured_writing_usage(
+                lambda key, provider_result: _record_structured_provider_usage(
+                    context, key, provider_result
+                )
+            ):
+                result = EducationalWorkflow(self.educational_provider).create_script(
+                    plan,
+                    grounding=request.grounding_mode,
+                )
+        except ProviderFailure as failure:
+            _record_terminal_structured_failure_usage(context, failure)
+            raise
         payload = {**previous, "scriptWorkflow": _script_workflow_to_dict(result)}
         return self._persist_stage(
             context,

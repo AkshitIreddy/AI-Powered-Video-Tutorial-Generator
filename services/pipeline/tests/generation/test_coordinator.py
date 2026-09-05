@@ -36,13 +36,15 @@ from alystria.generation.workflow import (
     _presenter_fit,
     _presenters_for_render,
     _provider_neutral_word_timings,
+    _remaining_structured_job_budget,
 )
-from alystria.jobs import JobState
+from alystria.jobs import JobContext, JobState
 from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
 from alystria.project.errors import RevisionConflictError
+from alystria.providers import FailureCode, ProviderFailure
 from alystria.qa import Finding, GateStatus, QualityGate, Severity
-from alystria.research import GroundingMode
+from alystria.research import DeterministicOfflineProvider, GroundingMode
 from alystria.service import _configured_forced_aligner, _configured_local_presenter
 
 
@@ -67,6 +69,121 @@ def request(*, faults: int = 0) -> GenerationRequest:
         repairable_faults=faults,
         metadata={"testOnlyInjectQaFaults": True} if faults else {},
     )
+
+
+class TerminalUsageEducationProvider(DeterministicOfflineProvider):
+    def build_outline(self, *_: Any, **__: Any) -> Any:
+        raise ProviderFailure(
+            FailureCode.MALFORMED_RESPONSE,
+            "Structured-output provider returned JSON outside the requested schema",
+            provider_id="groq",
+            details={
+                "schemaKeyword": "minItems",
+                "schemaPath": "$.sections[4].objectiveIds",
+                "repairAttempted": True,
+                "attemptCount": 2,
+                "billableUsage": {
+                    "model": "openai/gpt-oss-20b",
+                    "inputTokens": 1_950,
+                    "outputTokens": 920,
+                    "actualCostMicros": 423,
+                },
+            },
+        )
+
+
+def test_structured_budget_is_shared_by_stages_in_one_generation(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Shared generation budget", name="Budget")
+    runtime = GenerationCoordinator(store).runtime
+    try:
+        first = runtime.enqueue(
+            project_id=store.manifest.project_id,
+            kind="generation.learning_plan",
+            parameters={"generationId": "generation-a"},
+            budget_micros=1_000,
+        )
+        current = runtime.enqueue(
+            project_id=store.manifest.project_id,
+            kind="generation.script",
+            parameters={"generationId": "generation-a", "stage": "script"},
+            budget_micros=1_000,
+        )
+        separate = runtime.enqueue(
+            project_id=store.manifest.project_id,
+            kind="generation.learning_plan",
+            parameters={"generationId": "generation-b"},
+            budget_micros=1_000,
+        )
+        runtime.record_usage(
+            first.job_id,
+            provider="groq",
+            model="openai/gpt-oss-20b",
+            unit="tokens",
+            quantity=100,
+            cost_micros=300,
+            idempotency_key="generation-a-plan",
+        )
+        runtime.record_usage(
+            separate.job_id,
+            provider="groq",
+            model="openai/gpt-oss-20b",
+            unit="tokens",
+            quantity=100,
+            cost_micros=400,
+            idempotency_key="generation-b-plan",
+        )
+        context = JobContext(runtime, current.job_id, "attempt", 1, current.task_key)
+
+        assert _remaining_structured_job_budget(context) == 700
+        runtime.record_usage(
+            current.job_id,
+            provider="groq",
+            model="openai/gpt-oss-20b",
+            unit="billing-status",
+            quantity=0,
+            cost_micros=0,
+            idempotency_key="generation-a-unknown-billing",
+            metadata={"usageComplete": False, "knownCostMicros": None},
+            incurred=True,
+        )
+        assert _remaining_structured_job_budget(context) == 0
+    finally:
+        store.close()
+
+
+def test_terminal_structured_repair_usage_reaches_the_learning_plan_ledger(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Provider usage", name="Provider usage")
+    coordinator = GenerationCoordinator(
+        store,
+        educational_provider=TerminalUsageEducationProvider(),
+    )
+    try:
+        generation_id = coordinator.start(
+            replace(request(), hard_budget_micros=1_000)
+        ).generation_id
+        failed = coordinator.run_pending()
+        assert failed is not None and failed.state is GenerationState.FAILED
+        learning = next(
+            coordinator.runtime.get_job(stage.job_id)
+            for stage in failed.stages
+            if stage.stage is GenerationStage.LEARNING_PLAN
+        )
+        summary = coordinator.runtime.usage_summary(learning.job_id)
+        assert summary.records == 1
+        assert summary.total_cost_micros == 423
+        assert summary.by_provider == {"groq": 423}
+
+        coordinator.retry(generation_id)
+        failed_again = coordinator.run_pending()
+        assert failed_again is not None and failed_again.state is GenerationState.FAILED
+        cumulative = coordinator.runtime.usage_summary(learning.job_id)
+        assert cumulative.records == 2
+        assert cumulative.total_cost_micros == 846
+        assert cumulative.by_provider == {"groq": 846}
+    finally:
+        store.close()
 
 
 def test_word_timing_normalization_supports_native_forced_and_fallback_routes() -> None:
