@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import base64
+import os
+import shutil
 import sqlite3
 import struct
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
@@ -18,6 +21,7 @@ from alystria.project_assets import (
 from alystria.service import PipelineService
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"safe-synthetic-image"
+WEBM = b"\x1a\x45\xdf\xa3\x8b\x42\x86\x81\x01\x42\x82\x84webm\x18\x53\x80\x67\xff\xa3\x81\x00"
 
 
 def _valid_test_font() -> bytes:
@@ -260,6 +264,7 @@ def test_selection_revalidates_real_person_consent_and_revision_head(tmp_path: P
         ("backgroundImage", "paper.webp", "image/webp", b"RIFF\x10\x00\x00\x00WEBPdata"),
         ("editorImage", "diagram.png", "image/png", PNG),
         ("editorVideo", "lesson.mp4", "video/mp4", b"\x00\x00\x00\x18ftypmp42" + b"video-data"),
+        ("editorVideo", "lesson.webm", "video/webm", WEBM),
         ("editorAudio", "voice.wav", "audio/wav", b"RIFF\x10\x00\x00\x00WAVEfmt " + b"audio-data"),
     ],
 )
@@ -291,6 +296,45 @@ def test_supported_custom_asset_families_import_with_typed_roles(
         assert metadata["familyName"] == "Alystria Test"
         assert metadata["rendererBindingStatus"] == "not-bound"
         assert "path" not in metadata
+
+
+def _ffmpeg() -> Path | None:
+    pinned = Path(r"C:\FFmpeg\bin\ffmpeg.exe")
+    if pinned.is_file():
+        return pinned
+    found = shutil.which("ffmpeg")
+    return None if found is None else Path(found)
+
+
+@pytest.mark.skipif(_ffmpeg() is None, reason="FFmpeg is required for real WebM import proof")
+def test_editor_import_accepts_real_vp9_opus_webm(tmp_path: Path) -> None:
+    ffmpeg = _ffmpeg()
+    assert ffmpeg is not None
+    source = tmp_path / "lesson.webm"
+    subprocess.run(
+        [
+            str(ffmpeg), "-hide_banner", "-nostdin", "-y",
+            "-f", "lavfi", "-i", "color=c=teal:s=64x64:r=10:d=0.3",
+            "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=0.3",
+            "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libvpx-vp9", "-c:a", "libopus", "-shortest", str(source),
+        ],
+        check=True,
+        capture_output=True,
+        creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0,
+    )
+    root, project_id, head = _project(tmp_path / "project")
+    receipt = _import(
+        PipelineService(),
+        root,
+        project_id,
+        head,
+        kind="editorVideo",
+        filename=source.name,
+        mime_type="video/webm",
+        content=source.read_bytes(),
+    )
+    assert receipt["artifact"]["mediaType"] == "video/webm"
+    assert receipt["artifact"]["byteSize"] == source.stat().st_size
 
 
 def test_import_rejects_active_svg_and_unresolved_presenter_rights(tmp_path: Path) -> None:

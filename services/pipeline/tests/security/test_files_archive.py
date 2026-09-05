@@ -38,6 +38,12 @@ def tutorial_archive(
     return target.getvalue()
 
 
+def ebml_container(doc_type: bytes, *, include_segment: bool = True) -> bytes:
+    header_body = b"\x42\x86\x81\x01" + b"\x42\x82" + bytes((0x80 | len(doc_type),)) + doc_type
+    header = b"\x1a\x45\xdf\xa3" + bytes((0x80 | len(header_body),)) + header_body
+    return header + (b"\x18\x53\x80\x67\xff\xa3\x81\x00" if include_segment else b"")
+
+
 class FilenameAndMimeTests(unittest.TestCase):
     def test_safe_cross_platform_filename(self) -> None:
         self.assertEqual(validate_safe_filename("lesson-01.pdf"), "lesson-01.pdf")
@@ -64,6 +70,20 @@ class FilenameAndMimeTests(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             validate_file("voice.mp3", opus, declared_mime="audio/opus")
+
+    def test_webm_requires_its_ebml_doctype_and_segment(self) -> None:
+        webm = ebml_container(b"webm")
+        result = validate_file("lesson.webm", webm, declared_mime="video/webm")
+        self.assertEqual(result.detected_mime, "video/webm")
+
+        for impostor in (
+            ebml_container(b"matroska"),
+            ebml_container(b"webm", include_segment=False),
+            b"\x1a\x45\xdf\xa3\x8b\x42\x86\x81\x01\x42\x82\x84webm",
+            b"\x1a\x45\xdf\xa3\x81\x00webm\x18\x53\x80\x67\xff\x00",
+        ):
+            with self.subTest(impostor=impostor), self.assertRaises(ValidationError):
+                validate_file("renamed.webm", impostor, declared_mime="video/webm")
 
     def test_json_requires_valid_json(self) -> None:
         self.assertEqual(detect_mime(b'{"safe": true}'), "application/json")

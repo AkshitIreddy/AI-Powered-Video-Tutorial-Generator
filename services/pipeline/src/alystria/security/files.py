@@ -63,6 +63,7 @@ EXTENSION_MIMES: dict[str, frozenset[str]] = {
     ".woff": frozenset({"font/woff"}),
     ".woff2": frozenset({"font/woff2"}),
     ".mp4": frozenset({"video/mp4"}),
+    ".webm": frozenset({"video/webm"}),
 }
 
 
@@ -114,6 +115,58 @@ class ValidatedFile:
 
 
 DEFAULT_IMPORT_LIMITS = ImportLimits()
+
+
+def _ebml_vint(data: bytes, offset: int, *, strip_marker: bool, maximum_width: int) -> tuple[int, int, bool]:
+    if offset >= len(data) or data[offset] == 0:
+        raise ValueError("invalid EBML variable integer")
+    first = data[offset]
+    marker = 0x80
+    width = 1
+    while width <= maximum_width and not first & marker:
+        marker >>= 1
+        width += 1
+    if width > maximum_width or offset + width > len(data):
+        raise ValueError("truncated EBML variable integer")
+    value = first & (marker - 1) if strip_marker else first
+    for byte in data[offset + 1 : offset + width]:
+        value = (value << 8) | byte
+    unknown = strip_marker and value == (1 << (7 * width)) - 1
+    return value, offset + width, unknown
+
+
+def _is_webm_container(data: bytes) -> bool:
+    """Require a bounded EBML header with DocType=webm and a following Segment."""
+
+    if not data.startswith(b"\x1a\x45\xdf\xa3"):
+        return False
+    try:
+        header_size, cursor, unknown_header_size = _ebml_vint(data, 4, strip_marker=True, maximum_width=8)
+        if unknown_header_size or header_size > 64 * 1024:
+            return False
+        header_end = cursor + header_size
+        if header_end > len(data):
+            return False
+        found_doc_type = False
+        while cursor < header_end:
+            element_id, cursor, _ = _ebml_vint(data, cursor, strip_marker=False, maximum_width=4)
+            element_size, cursor, unknown_size = _ebml_vint(data, cursor, strip_marker=True, maximum_width=8)
+            if unknown_size or cursor + element_size > header_end:
+                return False
+            if element_id == 0x4282:
+                if found_doc_type or data[cursor : cursor + element_size] != b"webm":
+                    return False
+                found_doc_type = True
+            cursor += element_size
+        if not found_doc_type or cursor != header_end:
+            return False
+        segment_id, cursor, _ = _ebml_vint(data, header_end, strip_marker=False, maximum_width=4)
+        if segment_id != 0x18538067:
+            return False
+        segment_size, cursor, unknown_segment_size = _ebml_vint(data, cursor, strip_marker=True, maximum_width=8)
+        return cursor < len(data) and (unknown_segment_size or cursor + segment_size <= len(data))
+    except ValueError:
+        return False
 
 
 def validate_safe_filename(name: str, *, max_bytes: int = 240) -> str:
@@ -175,6 +228,8 @@ def detect_mime(data: bytes) -> str:
         return "image/gif"
     if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
+    if _is_webm_container(data):
+        return "video/webm"
     if data.startswith(b"%PDF-"):
         return "application/pdf"
     if data.startswith(b"PK\x03\x04") or data.startswith(b"PK\x05\x06"):
