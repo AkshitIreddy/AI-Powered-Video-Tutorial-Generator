@@ -8,10 +8,10 @@ The editor is a browser-rendered React surface inside a Windows desktop shell. I
 
 ## Native composition correction
 
-The current native import/export test passed CAS persistence, UI-driven playback,
+An earlier native import/export run passed CAS persistence, UI-driven playback,
 waveform loading, durable export registration, immediate-close save recovery, and
-worker shutdown. Root inspection of its decoded output still rejected the result:
-the neutral 960 × 540 lesson was cropped inside a 1280 × 720 canvas.
+worker shutdown, but visual inspection rejected its decoded output: the neutral
+960 × 540 lesson was cropped inside a 1280 × 720 canvas.
 
 Two source defects caused the mismatch. Export omitted the preview's
 aspect-preserving contain fit, and its rotation surface used `rotw(iw)` and
@@ -23,11 +23,53 @@ confirms the angle-based bounds calculation.
 
 Commit `664fe60` includes a real FFmpeg regression with colored edges. Decoded
 1280 × 720 output preserves every source edge at neutral scale and at 30-degree
-rotation with half scale. Root inspected both proof images; all nine focused
-export tests, Ruff, and strict mypy passed. The prior native functional pass is
-explicitly separated from its rejected visual result in
-`Evidence/native-editor-smoke/visual-inspection.json`. Rebuilding the worker and
-repeating the real packaged export remain required.
+rotation with half scale. Root inspected both proof images; the focused export
+tests, Ruff, and strict mypy passed.
+
+The corrected packaged Windows run is accepted for its stated three-second
+scope. At `2026-09-05T11:41:19.591Z`, desktop SHA-256
+`5bb7358788d889afde9de11ce503e6a7502173fc0a028358dcebfe1170a4602c`
+and worker SHA-256
+`73804d77da21025465fe5ce1becf9bd04cd4777eca574b577374e37fddb6b2ca`
+imported and reloaded the canonical binary-search WebM, drove real editor
+transport, rendered its CAS waveform, retained the immediate-close edit, and
+shut down cleanly. Its VP9/Opus delivery is 96,409 bytes and 3.004 seconds:
+`E:\temp\AI Video Tutorial Generator Test Sandbox\Projects\native-restart-and-cancellation-1788608309585-mtob82yi\exports\editor\editor-f1c7f40a6d8f45b7ade9021e816f7895.webm`.
+The inspected frame at
+`E:\temp\AI Video Tutorial Generator Test Sandbox\Evidence\native-editor-smoke\rendered-frame-at-1s.png`
+shows the complete fitted lesson, readable left heading and diagram, current
+product credit, and the edited two-line title. Decoded programme audio contains
+143,845 mono samples at 48 kHz (2.99677 seconds), peak 0.80386, RMS 0.14094,
+and zero clipped samples. The machine-readable acceptance records are
+`report.json` and `visual-inspection.json` in that evidence directory. These
+package hashes identify the inspected bundle; a later bundle supersedes this
+checkpoint rather than silently extending its scope.
+
+Commit `51c6208` removes two neutral-path costs without weakening animated
+renders: rotation is omitted only when its base is zero and no rotation
+keyframes exist, and per-pixel alpha multiplication is omitted only when opacity
+is one and no opacity keyframes exist. RGBA conversion remains so transparent image edges still
+composite correctly. On the same canonical source, a single three-second
+1280 × 720 VP9/Opus render fell from 9.950763 seconds to 4.634293 seconds
+(53.4%). The pre-change output is
+`E:\temp\editor-export-neutral-benchmark-before-20260905\exports\editor\editor-f8fe241df72f4dbb8bc32e50bc0f18a6.webm`
+(94,081 bytes; SHA-256
+`6fd249b756474c9a5e65972e22f879bddc3704ce43570e713ab414b6f48e0be4`);
+the optimized output is
+`E:\temp\editor-export-neutral-benchmark-after-20260905\exports\editor\editor-e383f68e84c24cce947625c98bc573ec.webm`
+(93,154 bytes; SHA-256
+`c2d2c852924c716da892c820e1e5a5f872ac1c109c0ff7ac792b5b5f9023cfd5`).
+Against the decoded and fitted source, PSNR improved from 26.70434 dB to
+47.41778 dB; both decoded PCM streams have SHA-256
+`d33dbc4746be241793d7ae885c99083f88683f8400332c31116018387fa0ca0e`.
+The single-run fixture is
+`E:\temp\editor-export-neutral-benchmark-20260905.py`, with inspected frames at
+`E:\temp\editor-neutral-before-frame.png` and
+`E:\temp\editor-neutral-after-frame.png`. Eleven focused tests include neutral
+and rotated edge decoding plus transparent-PNG compositing.
+
+This accepted short journey does not qualify the required edited three-minute
+generated tutorial; that longer native proof remains pending.
 
 ## Findings before this pass
 
@@ -128,17 +170,19 @@ stages, rendered artifacts, candidates, media imports, customization, and editor
 documents. Different generation identities or changes to the immutable scene
 set, timing, or type fail visibly. Receipt-only updates no longer schedule a
 redundant general autosave. Seven lifecycle regressions and seven approval
-regressions pass after this correction. The preceding complete desktop suite
-passed 221 tests; the final packaged immediate-close/reopen journey remains a
-separate acceptance gate until its native report passes.
+regressions pass after this correction. The accepted three-second packaged
+journey now confirms immediate-close persistence and reload against a real
+native project. The edited three-minute tutorial remains the longer durability
+and editing acceptance gate.
 
 ### Corrections from packaged acceptance and final source review
 
-The packaged editor completed FFmpeg rendering but failed when attaching its
-output to a revision: the delivery and subtitle objects existed in CAS without
-artifact-registry rows. Export now registers the output batch atomically before
-revision links are created. Sixteen export/service/store regressions passed;
-the rebuilt worker must still repeat the actual packaged export journey.
+An earlier packaged editor completed FFmpeg rendering but failed when attaching
+its output to a revision: the delivery and subtitle objects existed in CAS
+without artifact-registry rows. Export now registers the output batch atomically
+before revision links are created. Sixteen export/service/store regressions
+passed, and the accepted short native journey confirms that the corrected
+delivery is durably returned from the packaged worker.
 
 Editor bindings now read aligned caption cues from the verified immutable
 caption stage. They expose scene-local ticks and the verified renderer's
@@ -152,8 +196,8 @@ and the complete 235-test desktop suite pass at this checkpoint.
 The timeline has explicit Add title and Add caption controls. They insert text
 at an available playhead position, fit their default duration within an existing
 lesson, respect locked tracks, and participate in undo. Their toolbar wraps in
-narrow windows. Final app-driven media inspection remains separate from these
-source and component checks.
+narrow windows. The accepted short native journey exercises an explicitly added
+two-line title through reload and export; the three-minute edit remains pending.
 
 A separate headless browser proof uses the current 960×540 binary-search
 delivery (SHA-256 `9910915d5291c78acff8666e089c8976cc711649445de18faa83312d4c9e523e`)
@@ -239,6 +283,6 @@ writes, including initial synchronization. Evidence is in
 `E:\temp\avt-audit-2026-09-05\editor-preview-parity`. This does not qualify
 frame-accurate seeking or pixel-identical font metrics in the packaged app.
 
-The later imported-video audit corrected a preview/export mismatch: slide and presenter source audio now follows the same track mute/solo and clip-mute policy in both paths. The inspector exposes source gain and mute, and audible gain automation is retained. Native export probes each verified source before referencing its audio stream, so a silent video remains a valid visual input and produces an explicit warning instead of an invalid FFmpeg graph. Both media inspection and export use hidden Windows subprocesses. The updated editor suite passes 50 tests; the subsequent focused source-audio/manifest run passes 15, and nine Python export/service tests include actual audio-bearing and silent-video renders plus a Windows process-flag regression. These are component and service proofs; final packaged import, reload, playback, and export remain separately required.
+The later imported-video audit corrected a preview/export mismatch: slide and presenter source audio now follows the same track mute/solo and clip-mute policy in both paths. The inspector exposes source gain and mute, and audible gain automation is retained. Native export probes each verified source before referencing its audio stream, so a silent video remains a valid visual input and produces an explicit warning instead of an invalid FFmpeg graph. Both media inspection and export use hidden Windows subprocesses. The updated editor suite passes 50 tests; the subsequent focused source-audio/manifest run passes 15, and nine Python export/service tests include actual audio-bearing and silent-video renders plus a Windows process-flag regression. The accepted short packaged journey now confirms real import, reload, programme-audio playback, waveform analysis, and VP9/Opus export for an audio-bearing WebM.
 
-Focused reducer, adapter, browser bridge, manifest, native bridge, waveform, and React interaction tests cover trim limits, cross-role moves, source-preserving extract, linked reorder, transcript edits, speed, undo/redo, binding precedence/source intervals, saved-document binding merges, programme audio preservation, reviewed generated-asset provenance, durable import, downloads, document validation, OTIO references, job-result validation, waveform source cropping, and callback delivery. Before the source-audio additions above, the editor suite passed 47 tests; desktop TypeScript and editor ESLint also passed. Focused pipeline tests covering render dispatch, bindings, imports, asset resolution, and waveform derivation pass, with Ruff and strict Mypy clean. The waveform proof uses a known two-second PCM source with silence followed by a 220 Hz tone, verifies that the signal half has over eight times the plotted peak pixels, proves the audio-stream duration wins over a longer container duration, rejects silent video, and proves the source-hash/profile cache is reused unchanged. A checked-in real pinned-FFmpeg test produces a VP9/Opus delivery from CAS-bound video, decodes ten output frames, verifies animated x/scale/rotation/opacity at the first, middle, and last frames, detects rendered title and caption pixels, confirms preserved source audio, and validates the matching WebVTT/SRT caption cues. Packaged Windows/WebView behavior remains part of the root native acceptance run.
+Focused reducer, adapter, browser bridge, manifest, native bridge, waveform, and React interaction tests cover trim limits, cross-role moves, source-preserving extract, linked reorder, transcript edits, speed, undo/redo, binding precedence/source intervals, saved-document binding merges, programme audio preservation, reviewed generated-asset provenance, durable import, downloads, document validation, OTIO references, job-result validation, waveform source cropping, and callback delivery. Before the source-audio additions above, the editor suite passed 47 tests; desktop TypeScript and editor ESLint also passed. Focused pipeline tests covering render dispatch, bindings, imports, asset resolution, and waveform derivation pass, with Ruff and strict Mypy clean. The waveform proof uses a known two-second PCM source with silence followed by a 220 Hz tone, verifies that the signal half has over eight times the plotted peak pixels, proves the audio-stream duration wins over a longer container duration, rejects silent video, and proves the source-hash/profile cache is reused unchanged. A checked-in real pinned-FFmpeg test produces a VP9/Opus delivery from CAS-bound video, decodes ten output frames, verifies animated x/scale/rotation/opacity at the first, middle, and last frames, detects rendered title and caption pixels, confirms preserved source audio, and validates the matching WebVTT/SRT caption cues. The accepted short packaged Windows/WebView evidence is recorded above; only the edited three-minute tutorial remains outside this editor acceptance scope.
