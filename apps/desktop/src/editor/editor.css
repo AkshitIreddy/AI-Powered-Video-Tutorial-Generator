@@ -224,7 +224,8 @@
 .aly-editor-proposal > footer button:last-child { margin-left: auto; color: #ffc4cd; }
 
 .aly-editor-timeline { border-top: 1px solid var(--aly-editor-line); background: #0b0e14; }
-.aly-editor-timeline__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; padding: 7px 10px; border-bottom: 1px solid var(--aly-editor-line); background: rgba(20, 24, 33, 0.96); }
+.aly-editor-timeline__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; padding: 7px 10px; border-bottom: 1px solid var(--aly-editor-line); background: rgba(20, 24, 33, 0.96); }
+.aly-editor-timeline__edit-tools { flex-wrap: wrap; max-width: 100%; }
 .aly-editor-timeline__toolbar button[aria-pressed="true"] { border-color: rgba(124, 108, 255, 0.55); background: rgba(124, 108, 255, 0.16); }
 .aly-editor-timeline__zoom { display: flex; align-items: center; gap: 6px; color: var(--aly-editor-muted); font-size: 10px; }
 .aly-editor-timeline__zoom input { width: 92px; accent-color: var(--aly-editor-accent); }
