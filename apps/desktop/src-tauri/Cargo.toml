@@ -49,6 +49,11 @@ zeroize = "1"
 [dev-dependencies]
 tempfile = "3"
 
+# Portable debug builds verify the complete runtime before starting its worker.
+# Keep every hash check while avoiding unoptimized SHA-256's startup penalty.
+[profile.dev.package.sha2]
+opt-level = 3
+
 [profile.release]
 codegen-units = 1
 lto = "thin"
