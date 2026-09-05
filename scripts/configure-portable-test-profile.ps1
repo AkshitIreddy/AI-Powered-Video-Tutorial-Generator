@@ -126,15 +126,18 @@ if ($ImportCredentialFile) {
 
     # The prior Cohere and ElevenLabs values are recorded as compromised and
     # must not be refreshed into the OS vault. This handoff imports only the
-    # independently authorized Groq, Gemini, and NVIDIA test credentials.
+    # independently authorized Groq, Mistral, Gemini, and NVIDIA test credentials.
     $NvidiaKeyName = @($Keys.Keys | Where-Object { $_ -match 'nvidia' -and $_ -match 'nim' } | Select-Object -First 1)
     $GeminiKeyName = @($Keys.Keys | Where-Object { $_ -match 'gemini' } | Select-Object -First 1)
     $GroqKeyName = @($Keys.Keys | Where-Object { $_ -match 'groq' } | Select-Object -First 1)
+    $MistralKeyName = @($Keys.Keys | Where-Object { $_ -match 'mistral' } | Select-Object -First 1)
     $NvidiaSecret = if ($NvidiaKeyName.Count) { $Keys[[string]$NvidiaKeyName[0]] } else { $null }
     $GeminiSecret = if ($GeminiKeyName.Count) { $Keys[[string]$GeminiKeyName[0]] } else { $null }
     $GroqSecret = if ($GroqKeyName.Count) { $Keys[[string]$GroqKeyName[0]] } else { $null }
+    $MistralSecret = if ($MistralKeyName.Count) { $Keys[[string]$MistralKeyName[0]] } else { $null }
     $ProviderSecrets = [ordered]@{
         "groq" = $GroqSecret
+        "mistral" = $MistralSecret
         "gemini" = $GeminiSecret
         "nvidia-nim" = $NvidiaSecret
     }
@@ -210,6 +213,7 @@ $ProviderRoutes = [ordered]@{
     writing = & $Route "groq" "openai/gpt-oss-20b"
     research = $LocalRoutes.research
     images = & $Route "nvidia-nim" "black-forest-labs/flux.2-klein-4b"
+    visualReview = & $Route "nvidia-nim" "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     motion = $LocalRoutes.motion
     voice = & $Route "nvidia-nim" "nvidia/magpie-tts-multilingual" "Magpie-Multilingual.EN-US.Aria"
     transcription = $LocalRoutes.transcription
@@ -222,6 +226,46 @@ $ProviderPresenterRoutes = [ordered]@{
     writing = $ProviderRoutes.writing
     research = $ProviderRoutes.research
     images = $ProviderRoutes.images
+    visualReview = $ProviderRoutes.visualReview
+    motion = $ProviderRoutes.motion
+    voice = $ProviderRoutes.voice
+    transcription = $ProviderRoutes.transcription
+    presenter = $PresenterRoutes.presenter
+    portraitAnimation = $PresenterRoutes.portraitAnimation
+    lipSync = $PresenterRoutes.lipSync
+}
+
+$Groq120ProviderPresenterRoutes = [ordered]@{
+    writing = & $Route "groq" "openai/gpt-oss-120b"
+    research = $ProviderRoutes.research
+    images = $ProviderRoutes.images
+    visualReview = $ProviderRoutes.visualReview
+    motion = $ProviderRoutes.motion
+    voice = $ProviderRoutes.voice
+    transcription = $ProviderRoutes.transcription
+    presenter = $PresenterRoutes.presenter
+    portraitAnimation = $PresenterRoutes.portraitAnimation
+    lipSync = $PresenterRoutes.lipSync
+}
+
+$NvidiaWritingProviderPresenterRoutes = [ordered]@{
+    writing = & $Route "nvidia-nim" "openai/gpt-oss-20b"
+    research = $ProviderRoutes.research
+    images = $ProviderRoutes.images
+    visualReview = $ProviderRoutes.visualReview
+    motion = $ProviderRoutes.motion
+    voice = $ProviderRoutes.voice
+    transcription = $ProviderRoutes.transcription
+    presenter = $PresenterRoutes.presenter
+    portraitAnimation = $PresenterRoutes.portraitAnimation
+    lipSync = $PresenterRoutes.lipSync
+}
+
+$MistralProviderPresenterRoutes = [ordered]@{
+    writing = & $Route "mistral" "mistral-small-2603"
+    research = $ProviderRoutes.research
+    images = $ProviderRoutes.images
+    visualReview = $ProviderRoutes.visualReview
     motion = $ProviderRoutes.motion
     voice = $ProviderRoutes.voice
     transcription = $ProviderRoutes.transcription
@@ -238,7 +282,7 @@ $Profiles = @([ordered]@{
 }, [ordered]@{
     id = "portable-test-groq-nvidia"
     name = "Portable test · Groq + NVIDIA"
-    description = "Public synthetic test content: Groq GPT-OSS instructional design, FLUX supporting art, and hosted Magpie Aria narration through reviewed provider boundaries."
+    description = "Public test content with Groq-authored teaching, FLUX art, Magpie Aria narration, and optional NVIDIA rendered-frame review."
     routes = $ProviderRoutes
 })
 if ($PresenterConfig) {
@@ -250,8 +294,23 @@ if ($PresenterConfig) {
     }, [ordered]@{
         id = "portable-test-groq-nvidia-presenter"
         name = "Portable test · Groq + NVIDIA + Elena"
-        description = "Representative public test route with Groq GPT-OSS-authored teaching, FLUX art, Magpie Aria narration, and the exact installed Elena presenter runtime. Requires the GPU lease."
+        description = "Public test route with Groq-authored teaching, FLUX art, Magpie Aria narration, optional NVIDIA frame review, and the installed Elena presenter. Requires the GPU lease."
         routes = $ProviderPresenterRoutes
+    }, [ordered]@{
+        id = "portable-test-groq-120b-nvidia-presenter"
+        name = "Portable test · Groq 120B + NVIDIA + Elena"
+        description = "Public Groq 120B teaching with FLUX art, Magpie Aria, optional NVIDIA frame review, and the installed Elena presenter. GPU lease required."
+        routes = $Groq120ProviderPresenterRoutes
+    }, [ordered]@{
+        id = "portable-test-nvidia-writing-presenter"
+        name = "Portable test · NVIDIA writing + Elena"
+        description = "Public NVIDIA GPT-OSS teaching with FLUX art, Magpie Aria, optional frame review, and the installed Elena presenter. GPU lease required."
+        routes = $NvidiaWritingProviderPresenterRoutes
+    }, [ordered]@{
+        id = "portable-test-mistral-nvidia-presenter"
+        name = "Portable test · Mistral + NVIDIA + Elena"
+        description = "Public test route with Mistral-authored teaching, FLUX art, Magpie Aria narration, optional NVIDIA frame review, and the installed Elena presenter. Requires the GPU lease."
+        routes = $MistralProviderPresenterRoutes
     }
 }
 
