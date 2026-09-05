@@ -553,10 +553,11 @@ def test_image_edit_builder_uses_multipart_and_never_fetches_remote_input() -> N
 def test_licensed_media_builder_carries_explicit_license_allowlist() -> None:
     adapter = launch_media_adapter("openverse", FakeTransport())
     sent = adapter.build_request(
-        MediaSearchRequest("history", license_allowlist=("cc0", "by")),
+        MediaSearchRequest("history", page_size=80, license_allowlist=("cc0", "by")),
         RequestContext("search-1", "openverse"),
     )
     assert "license=cc0%2Cby" in sent.url
+    assert "page_size=20" in sent.url
     assert "Authorization" not in sent.headers
 
 
@@ -593,6 +594,35 @@ def test_pexels_result_preserves_download_source_attribution_and_license() -> No
     asset = result.value.assets[0]
     assert asset.uri == "https://cdn.test/large.mp4"
     assert asset.source_url == "https://pexels.test/video/1"
+    assert asset.attribution == "Creator"
+    assert asset.license == "Pexels"
+
+
+def test_pexels_photo_prefers_bounded_landscape_review_image() -> None:
+    transport = FakeTransport(
+        response(
+            {
+                "photos": [
+                    {
+                        "url": "https://pexels.test/photo/1",
+                        "width": 6000,
+                        "height": 4000,
+                        "photographer": "Creator",
+                        "src": {
+                            "original": "https://cdn.test/original.jpg",
+                            "large2x": "https://cdn.test/large2x.jpg",
+                            "landscape": "https://cdn.test/landscape.jpg",
+                        },
+                    }
+                ]
+            }
+        )
+    )
+    adapter = launch_media_adapter("pexels", transport)
+    result = adapter.invoke(MediaSearchRequest("ocean"), context("pexels"))
+    asset = result.value.assets[0]
+    assert asset.uri == "https://cdn.test/landscape.jpg"
+    assert asset.source_url == "https://pexels.test/photo/1"
     assert asset.attribution == "Creator"
     assert asset.license == "Pexels"
 
@@ -668,6 +698,31 @@ def test_elevenlabs_launch_prices_are_exact_model_allowlists() -> None:
     assert multilingual[0].micros_per_unit == 100
     assert launch_route_unit_prices("elevenlabs", {Capability.TTS: "unreviewed-future-model"}) == ()
     assert launch_route_unit_prices("openai", {Capability.TTS: "eleven_flash_v2_5"}) == ()
+
+
+@pytest.mark.parametrize("provider_id", ["openverse", "pexels"])
+def test_licensed_media_routes_are_bounded_as_no_charge_api_requests(
+    provider_id: str,
+) -> None:
+    prices = launch_route_unit_prices(
+        provider_id,
+        {Capability.LICENSED_MEDIA: "licensed-media"},
+    )
+    adapter = launch_media_adapter(provider_id, FakeTransport(), prices=prices)
+    estimate = adapter.estimate(MediaSearchRequest("ocean currents"))
+
+    assert estimate.micros == 0
+    assert estimate.bounded is True
+    assert estimate.basis == "1 requests at catalog unit price"
+    built = adapter.build_request(
+        MediaSearchRequest("ocean currents"),
+        context(provider_id, hard_budget_micros=0),
+    )
+    assert built.method == "GET"
+
+
+def test_non_stock_route_does_not_gain_a_zero_price() -> None:
+    assert launch_route_unit_prices("openverse", {Capability.TTS: "licensed-media"}) == ()
 
 
 @dataclass

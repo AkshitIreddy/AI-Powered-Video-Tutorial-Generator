@@ -22,8 +22,14 @@ from alystria.generation import GenerationCoordinator, GenerationState
 from alystria.generation.adapters import GenerationMediaClient, RendererClient
 from alystria.jobs import ActionKey, DependencyGraph, Job, JobContext, JobState
 from alystria.jobs.runtime import SQLiteWorkflowRuntime
+from alystria.licensed_media_workflow import (
+    LicensedMediaInvoker,
+    search_visual_candidates,
+)
 from alystria.project import ProjectStore, Revision
 from alystria.project_assets import validate_approved_presenter_for_export
+from alystria.providers.licensed_media_selection import LicensedMediaVisionSelector
+from alystria.sources.safety import SafeHttpTransport
 from alystria.visual_candidates import (
     accept_visual_candidate,
     generate_visual_candidates,
@@ -60,13 +66,20 @@ class NativeControlCoordinator:
         *,
         renderer: RendererClient | None = None,
         media_client: GenerationMediaClient | None = None,
+        licensed_media_client: LicensedMediaInvoker | None = None,
+        licensed_media_selector: LicensedMediaVisionSelector | None = None,
+        licensed_media_transport: SafeHttpTransport | None = None,
     ) -> None:
         self.store = store
         self.runtime = SQLiteWorkflowRuntime(store.connection)
         self.renderer = renderer
         self.media_client = media_client
+        self.licensed_media_client = licensed_media_client
+        self.licensed_media_selector = licensed_media_selector
+        self.licensed_media_transport = licensed_media_transport
         self.handlers = {
             "native.regenerate_scene": self._regenerate_scene,
+            "native.search_visual_candidates": self._search_visual_candidates,
             "native.render_scene": self._render_scene,
             "native.repair_qa": self._repair_qa,
             "native.export_master": self._export_master,
@@ -129,6 +142,57 @@ class NativeControlCoordinator:
             "target": target,
         }
         return self._enqueue("native.render_scene", parameters, head.root_hash)
+
+    def submit_visual_search(self, params: dict[str, Any]) -> Job:
+        head, scene = self._validate_scene_base(params)
+        instruction = _bounded_text(params.get("instruction"), "instruction", 4_000)
+        locks = _locks(params.get("preservationLocks", []))
+        unsupported_locks = locks - {
+            "narration",
+            "citations",
+            "learningobjective",
+            "timing",
+            "presenter",
+        }
+        if unsupported_locks:
+            raise ValueError(
+                "Licensed-media search cannot preserve unsupported locks: "
+                + ", ".join(sorted(unsupported_locks))
+            )
+        alternatives = _integer(params.get("alternatives", 3), "alternatives", 1, 4)
+        provider_id = _bounded_text(params.get("providerId"), "providerId", 80)
+        if provider_id not in {"openverse", "pexels"}:
+            raise ValueError("providerId must be openverse or pexels")
+        desired_aspect_ratio = _bounded_text(
+            params.get("desiredAspectRatio", "16:9"),
+            "desiredAspectRatio",
+            8,
+        )
+        if desired_aspect_ratio not in {"16:9", "4:3", "1:1", "9:16"}:
+            raise ValueError("desiredAspectRatio must be 16:9, 4:3, 1:1, or 9:16")
+        locale = _bounded_text(params.get("locale", "en-US"), "locale", 40)
+        parameters = {
+            "expectedHeadRevisionId": head.revision_id,
+            "sceneId": scene["id"],
+            "instruction": instruction,
+            "preservationLocks": sorted(locks),
+            "alternatives": alternatives,
+            "providerId": provider_id,
+            "desiredAspectRatio": desired_aspect_ratio,
+            "locale": locale,
+            **(
+                {
+                    "searchQuery": _bounded_text(
+                        params.get("searchQuery"), "searchQuery", 240
+                    )
+                }
+                if "searchQuery" in params
+                else {}
+            ),
+        }
+        return self._enqueue(
+            "native.search_visual_candidates", parameters, head.root_hash
+        )
 
     def submit_qa_repair(self, params: dict[str, Any]) -> Job:
         head = self._validate_head(params)
@@ -288,7 +352,12 @@ class NativeControlCoordinator:
             parameters=parameters,
             job_id=str(uuid.uuid4()),
             action_key=action,
-            max_attempts=1 if kind == "native.regenerate_scene" else 2,
+            max_attempts=(
+                1
+                if kind
+                in {"native.regenerate_scene", "native.search_visual_candidates"}
+                else 2
+            ),
         )
         return job
 
@@ -327,6 +396,22 @@ class NativeControlCoordinator:
         if self.media_client is None:
             raise RuntimeError("Configured image-generation runtime is unavailable")
         return generate_visual_candidates(self.store, self.media_client, context, params)
+
+    def _search_visual_candidates(
+        self, context: JobContext, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        if self.licensed_media_client is None or self.licensed_media_selector is None:
+            raise RuntimeError(
+                "Licensed-media search requires approved stock and visual-review routes"
+            )
+        return search_visual_candidates(
+            self.store,
+            self.licensed_media_client,
+            self.licensed_media_selector,
+            params,
+            context,
+            transport=self.licensed_media_transport,
+        )
 
     def _render_scene(self, context: JobContext, params: dict[str, Any]) -> dict[str, Any]:
         head = self._require_current_head(params)
@@ -964,6 +1049,7 @@ def native_job_receipt(job: Job, message: str | None = None) -> dict[str, Any]:
 def _job_message(job: Job) -> str:
     labels = {
         "native.regenerate_scene": "Scoped scene candidate work persisted",
+        "native.search_visual_candidates": "Licensed visual candidates are ready for review",
         "native.render_scene": "Scene render completed",
         "native.repair_qa": "Selected QA repair work persisted",
         "native.export_master": "Master export completed",

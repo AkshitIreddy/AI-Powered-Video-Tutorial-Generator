@@ -204,6 +204,44 @@ def test_scoped_regeneration_returns_before_work_and_preserves_accepted_scene(
         assert accepted["artifactHash"]
 
 
+def test_licensed_visual_search_is_a_bounded_durable_native_job(tmp_path: Path) -> None:
+    with _project(tmp_path) as store:
+        head = store.head_revision()
+        assert head is not None
+        service = PipelineService()
+
+        receipt = service.dispatch(
+            "control.searchVisualCandidates",
+            {
+                "projectId": store.manifest.project_id,
+                "projectDirectory": str(store.root),
+                "baseRevisionId": head.revision_id,
+                "sceneId": "scene-one",
+                "instruction": "Find a clear photo of a sorted index card set.",
+                "preservationLocks": [
+                    "narration",
+                    "citations",
+                    "learningobjective",
+                    "timing",
+                    "presenter",
+                ],
+                "alternatives": 3,
+                "providerId": "openverse",
+                "searchQuery": "sorted index cards",
+                "desiredAspectRatio": "16:9",
+                "locale": "en-US",
+            },
+        )
+
+        job = SQLiteWorkflowRuntime(store.connection).get_job(receipt["jobId"])
+        assert receipt["state"] == "QUEUED"
+        assert receipt["operation"] == "search_visual_candidates"
+        assert job.kind == "native.search_visual_candidates"
+        assert job.max_attempts == 1
+        assert job.parameters["expectedHeadRevisionId"] == head.revision_id
+        assert job.parameters["providerId"] == "openverse"
+
+
 def test_desktop_candidate_generation_does_not_require_renderer_runtime(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

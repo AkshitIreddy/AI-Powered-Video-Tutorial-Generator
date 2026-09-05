@@ -38,6 +38,9 @@ wheels = [
 name = "alystria-pipeline"
 version = "2.0.0rc0"
 source = { editable = "." }
+dependencies = [
+    { name = "pillow" },
+]
 
 [package.optional-dependencies]
 dbos = [
@@ -72,6 +75,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15,<2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3,<9" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6,<7" },
+    { name = "pillow", specifier = ">=12.3,<13" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.11,<1" },
 ]
 provides-extras = ["dbos", "documents", "signatures", "full", "dev"]

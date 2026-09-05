@@ -306,7 +306,7 @@ def _validate_approval(
             raise ValueError(f"provider {approval.provider_id!r} retention is not approved")
         if not approval.region_approved or not approval.regions:
             raise ValueError(f"provider {approval.provider_id!r} region is not approved")
-        if approval.credential_ref is None:
+        if approval.credential_ref is None and approval.provider_id != "openverse":
             raise ValueError(f"cloud provider {approval.provider_id!r} requires a credentialRef")
 
 

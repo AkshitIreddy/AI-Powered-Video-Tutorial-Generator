@@ -55,11 +55,13 @@ from .project_assets import import_project_asset, select_presenter_profile
 from .project_customization import save_project_customization
 from .providers import (
     Capability,
+    ProviderRuntime,
     ProviderRuntimeFactory,
     TutorialRoutingPolicy,
     parse_routing_policy,
 )
 from .providers.comfyui_local import SDXL_MODEL_ID, ComfyGenerationMediaClient
+from .providers.licensed_media_selection import LicensedMediaVisionSelector
 from .security.files import ImportLimits, validate_file
 
 if TYPE_CHECKING:
@@ -142,6 +144,7 @@ class PipelineService:
             "generation.cancel": self.generation_cancel,
             "generation.retry": self.generation_retry,
             "control.regenerateScene": self.control_regenerate_scene,
+            "control.searchVisualCandidates": self.control_search_visual_candidates,
             "control.acceptVisualCandidate": self.control_accept_visual_candidate,
             "control.rejectVisualCandidate": self.control_reject_visual_candidate,
             "control.renderScene": self.control_render_scene,
@@ -657,28 +660,41 @@ class PipelineService:
         with self._open(params) as store:
             runtime = SQLiteWorkflowRuntime(store.connection)
             mock_workflow = MockGenerationWorkflow(store, runtime)
-            renderer = _production_renderer_client(store)
-            media_client, educational_provider = _production_generation_clients(
+            try:
+                renderer = _production_renderer_client(store)
+            except RendererClientError:
+                renderer = None
+            provider_runtime = _production_provider_runtime(
                 store, provider_runtime_factory=self._provider_runtime_factory
             )
-            generation = GenerationCoordinator(
-                store,
-                runtime,
-                renderer_client=renderer,
-                media_client=media_client,
-                educational_provider=educational_provider,
-                alignment_client=_configured_forced_aligner(store),
+            media_client, educational_provider = _generation_clients_for_runtime(
+                store, provider_runtime
+            )
+            generation = (
+                GenerationCoordinator(
+                    store,
+                    runtime,
+                    renderer_client=renderer,
+                    media_client=media_client,
+                    educational_provider=educational_provider,
+                    alignment_client=_configured_forced_aligner(store),
+                )
+                if renderer is not None
+                else None
             )
             controls = NativeControlCoordinator(
                 store,
                 renderer=renderer,
                 media_client=media_client,
+                licensed_media_client=provider_runtime,
+                licensed_media_selector=_licensed_media_selector(provider_runtime),
             )
             handlers = {
                 **mock_workflow.handlers,
-                **generation.workflow.handlers,
                 **controls.handlers,
             }
+            if generation is not None:
+                handlers.update(generation.workflow.handlers)
             return [
                 job.to_dict()
                 for job in runtime.run_until_idle(
@@ -783,6 +799,9 @@ class PipelineService:
     def control_regenerate_scene(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._submit_native_control(params, "regenerate")
 
+    def control_search_visual_candidates(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._submit_native_control(params, "search")
+
     def control_accept_visual_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
         project_id = _required_uuid(params, "projectId")
         with self._open_desktop_project(params, expected_project_id=project_id) as store:
@@ -822,6 +841,7 @@ class PipelineService:
             control = NativeControlCoordinator(store)
             submit = {
                 "regenerate": control.submit_regeneration,
+                "search": control.submit_visual_search,
                 "render": control.submit_scene_render,
                 "repair": control.submit_qa_repair,
                 "export": control.submit_master_export,
@@ -1047,16 +1067,40 @@ def _production_generation_clients(
 ) -> tuple[GenerationMediaClient, StructuredWritingEducationalProvider | None]:
     """Resolve routed writing/media clients without requiring a renderer runtime."""
 
-    media_client = default_local_media_client()
-    educational_provider = None
+    return _generation_clients_for_runtime(
+        store,
+        _production_provider_runtime(
+            store,
+            provider_runtime_factory=provider_runtime_factory,
+        ),
+    )
+
+
+def _production_provider_runtime(
+    store: ProjectStore,
+    *,
+    provider_runtime_factory: ProviderRuntimeFactory | None,
+) -> ProviderRuntime | None:
     head = store.head_revision()
     routing_value = None if head is None else head.snapshot.get("providerRoutingPolicy")
-    if isinstance(routing_value, dict):
-        if provider_runtime_factory is None:
-            raise ValueError(
-                "Project provider routing requires an authenticated credential runtime"
-            )
-        provider_runtime = provider_runtime_factory.build(parse_routing_policy(routing_value))
+    if not isinstance(routing_value, dict):
+        return None
+    if provider_runtime_factory is None:
+        raise ValueError(
+            "Project provider routing requires an authenticated credential runtime"
+        )
+    return provider_runtime_factory.build(parse_routing_policy(routing_value))
+
+
+def _generation_clients_for_runtime(
+    store: ProjectStore,
+    provider_runtime: ProviderRuntime | None,
+) -> tuple[GenerationMediaClient, StructuredWritingEducationalProvider | None]:
+    """Construct generation clients from one policy runtime shared with native jobs."""
+
+    media_client = default_local_media_client()
+    educational_provider = None
+    if provider_runtime is not None:
         media_client = _configured_local_image_runtime(media_client, provider_runtime.policy)
         if any(
             route.capability in {Capability.IMAGE_GENERATION, Capability.TTS}
@@ -1076,6 +1120,42 @@ def _production_generation_clients(
                 provider_runtime
             )
     return _configured_local_presenter(store, media_client), educational_provider
+
+
+def _licensed_media_selector(
+    provider_runtime: ProviderRuntime | None,
+) -> LicensedMediaVisionSelector | None:
+    if provider_runtime is None:
+        return None
+    media_route = next(
+        (
+            route
+            for route in provider_runtime.policy.routes
+            if route.capability is Capability.LICENSED_MEDIA
+        ),
+        None,
+    )
+    vision_route = next(
+        (
+            route
+            for route in provider_runtime.policy.routes
+            if route.capability is Capability.VISION_LANGUAGE
+        ),
+        None,
+    )
+    if media_route is None or vision_route is None:
+        return None
+    max_preview_bytes = (
+        180 * 1024
+        if vision_route.provider_ids == ("nvidia-nim",)
+        and vision_route.model == "nvidia/nemotron-nano-12b-v2-vl"
+        else 4 * 1024 * 1024
+    )
+    return LicensedMediaVisionSelector(
+        provider_runtime,
+        model=vision_route.model,
+        max_preview_bytes=max_preview_bytes,
+    )
 
 
 def _configured_local_image_runtime(
@@ -1332,11 +1412,16 @@ def desktop_run_one(
         renderer = None
     media_client: GenerationMediaClient | None
     educational_provider: StructuredWritingEducationalProvider | None
+    provider_runtime: ProviderRuntime | None
     try:
-        media_client, educational_provider = _production_generation_clients(
+        provider_runtime = _production_provider_runtime(
             store, provider_runtime_factory=provider_runtime_factory
         )
+        media_client, educational_provider = _generation_clients_for_runtime(
+            store, provider_runtime
+        )
     except ValueError:
+        provider_runtime = None
         media_client = None
         educational_provider = None
     try:
@@ -1360,6 +1445,8 @@ def desktop_run_one(
         store,
         renderer=renderer,
         media_client=media_client,
+        licensed_media_client=provider_runtime,
+        licensed_media_selector=_licensed_media_selector(provider_runtime),
     )
     handlers = {**mock_workflow.handlers, **controls.handlers}
     if generation is not None:

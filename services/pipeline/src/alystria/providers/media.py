@@ -74,6 +74,7 @@ ELEVENLABS_TTS_MICROS_PER_CHARACTER: dict[str, int] = {
     "eleven_v3": 100,
 }
 ELEVENLABS_PRICING_CATALOG_VERSION = "elevenlabs-api-pricing-2026-09-01"
+LICENSED_MEDIA_ACCESS_CATALOG_VERSION = "licensed-media-api-access-2026-09-05"
 
 
 RequestBuilder = Callable[[ProviderRequest, RequestContext], HttpRequest]
@@ -357,6 +358,18 @@ def launch_route_unit_prices(
 ) -> tuple[UnitPrice, ...]:
     """Return reviewed prices only for exact models in this generation policy."""
 
+    if (
+        provider_id in {"openverse", "pexels"}
+        and Capability.LICENSED_MEDIA in route_models
+    ):
+        return (
+            UnitPrice(
+                Capability.LICENSED_MEDIA,
+                "requests",
+                0,
+                LICENSED_MEDIA_ACCESS_CATALOG_VERSION,
+            ),
+        )
     if provider_id != "elevenlabs":
         return ()
     model = route_models.get(Capability.TTS)
@@ -485,7 +498,6 @@ def _launch_configs() -> dict[str, LaunchProviderConfig]:
             {
                 Capability.TTS: OperationSpec(Capability.TTS, _azure_speech),
                 Capability.TRANSCRIPTION: OperationSpec(Capability.TRANSCRIPTION, _azure_speech),
-                Capability.ALIGNMENT: OperationSpec(Capability.ALIGNMENT, _azure_speech),
             },
         ),
         "google-cloud-speech": LaunchProviderConfig(
@@ -497,7 +509,6 @@ def _launch_configs() -> dict[str, LaunchProviderConfig]:
                 Capability.TRANSCRIPTION: OperationSpec(
                     Capability.TRANSCRIPTION, _google_cloud_speech
                 ),
-                Capability.ALIGNMENT: OperationSpec(Capability.ALIGNMENT, _google_cloud_speech),
             },
         ),
         "heygen": LaunchProviderConfig(
@@ -686,7 +697,7 @@ def _openverse(request: ProviderRequest, _context: RequestContext) -> HttpReques
     query = urlencode(
         {
             "q": request.query,
-            "page_size": min(request.page_size, 50),
+            "page_size": min(request.page_size, 20),
             "license": ",".join(request.license_allowlist),
         }
     )
@@ -936,7 +947,7 @@ def _pexels_output(payload: dict[str, Any]) -> MediaOutput:
         if not isinstance(photo, dict):
             continue
         source = _dictionary(photo.get("src"))
-        uri = source.get("original")
+        uri = source.get("landscape") or source.get("large2x") or source.get("original")
         if not isinstance(uri, str):
             continue
         assets.append(
