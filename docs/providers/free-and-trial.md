@@ -4,6 +4,11 @@ Broad signup table last verified: **2026-08-28**. Selected executable routes wer
 
 For the current app, image generation is optional. Twelve included teaching assets and authored slide geometry work without an image API. SDXL Base 1.0 completed on the 12 GB Windows reference GPU and is an on-demand local option. FLUX.2 Klein FP8 and Z-Image Turbo INT8 remain downloadable candidates requiring hardware verification; their file size alone does not prove VRAM fit.
 
+The [additional image API comparison](../research/free-image-api-options-2026-09-05.md)
+checks AI Horde, Pollinations, Hugging Face, Together, Gemini image generation,
+and Cloudflare against current official terms. It distinguishes recurring free
+access, earned credits, conditional promotions, and paid-only image routes.
+
 The latest bounded live checks succeeded for Groq structured writing and Cloudflare FLUX.1 Schnell image generation. Mistral returned a rate limit; Gemini's selected stable endpoint returned HTTP 404 for the tested account; OpenRouter was not used for generation. These observations do not establish a general provider outage or a guaranteed free quota. Hosted NVIDIA narration and illustration, stock search, and optional rendered-frame review have separate evidence and limitations in the linked audits.
 
 This page is a signup guide, not a promise that an adapter is already shipped.
