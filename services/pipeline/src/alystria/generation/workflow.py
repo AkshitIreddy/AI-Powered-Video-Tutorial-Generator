@@ -854,9 +854,32 @@ class GenerationWorkflow:
         assets: list[dict[str, Any]] = []
         links: list[dict[str, str]] = []
         scenes = approved["storyboard"]["scenes"]
+        visual_generation_mode = request.metadata.get(
+            "sceneVisualGeneration", "routed"
+        )
+        if visual_generation_mode not in {"routed", "authored-only"}:
+            raise ValueError("sceneVisualGeneration must be routed or authored-only")
         for index, scene in enumerate(scenes):
             context.check_cancelled()
             selected = _accepted_scene_visual(self.store, str(scene["id"]))
+            if selected is None and visual_generation_mode == "authored-only":
+                authored_fingerprint = _fingerprint(
+                    {
+                        "sceneId": scene["id"],
+                        "mode": "authored-only",
+                        "scene": scene,
+                    }
+                )
+                self._record_scene_node(
+                    str(parameters["generationId"]),
+                    str(scene["id"]),
+                    "asset",
+                    authored_fingerprint,
+                    [GenerationStage.STORYBOARD.value],
+                    None,
+                )
+                context.set_progress((index + 1) / max(1, len(scenes)) * 0.9)
+                continue
             if selected is None:
                 media = self.media_client.create_visual(
                     scene, seed=request.deterministic_seed + index
@@ -908,7 +931,11 @@ class GenerationWorkflow:
         result = self._persist_stage(
             context,
             parameters,
-            {"assets": assets, "storyboard": approved["storyboard"]},
+            {
+                "assets": assets,
+                "storyboard": approved["storyboard"],
+                "visualGenerationMode": visual_generation_mode,
+            },
             upstream_stages=[GenerationStage.APPROVAL],
             linked_artifacts=links,
         )

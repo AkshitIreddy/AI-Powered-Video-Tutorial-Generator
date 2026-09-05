@@ -683,6 +683,96 @@ def test_all_local_policy_uses_local_generation_without_provider_adapter(
     assert {stage["stage"] for stage in status["stages"]} >= {"assets", "narration", "export"}
 
 
+def test_policy_without_image_route_renders_authored_scenes_without_visual_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class AuthoredOnlyMediaClient(DeterministicMediaClient):
+        def __init__(self) -> None:
+            self.visual_calls = 0
+
+        def create_visual(self, scene: dict[str, Any], *, seed: int) -> Any:
+            del scene, seed
+            self.visual_calls += 1
+            raise AssertionError("authored-only generation must not call an image provider")
+
+    policy = _all_local_generation_policy()
+    policy["approvals"][0]["capabilities"].remove("image.generate")
+    policy["routes"] = [
+        route for route in policy["routes"] if route["capability"] != "image.generate"
+    ]
+    project_id = str(uuid.uuid4())
+    project_path = tmp_path / "Authored Visual Generation"
+    initial = {
+        "id": str(uuid.uuid4()),
+        "title": "Stable sorting",
+        "brief": {
+            "topic": "Stable sorting",
+            "audience": "Beginning programmers",
+            "durationSeconds": 30,
+            "locale": "en-US",
+        },
+        "sources": [],
+        "providerRoutingPolicy": policy,
+    }
+    _create_desktop_project(project_path, project_id, title="Stable sorting", snapshot=initial)
+    media = AuthoredOnlyMediaClient()
+    monkeypatch.setattr("alystria.service.default_local_media_client", lambda: media)
+    service = PipelineService(
+        provider_runtime_factory=ProviderRuntimeFactory(
+            transport_factory=lambda provider_id: (_ for _ in ()).throw(
+                AssertionError(provider_id)
+            )
+        )
+    )
+    started = service.dispatch(
+        "generation.start",
+        {
+            "projectId": project_id,
+            "projectDirectory": str(project_path),
+            "scope": {"kind": "project"},
+            "quality": "standard",
+            "privacy": "local",
+            "budget": {
+                "currency": "USD",
+                "hardLimitMinorUnits": 0,
+                "requireKnownPricing": True,
+            },
+            "approvedProviderIds": ["local-runtime"],
+        },
+    )
+    service.dispatch("job.runPending", {"projectPath": str(project_path)})
+    service.dispatch(
+        "generation.approve",
+        {
+            "projectId": project_id,
+            "projectDirectory": str(project_path),
+            "jobId": started["jobId"],
+        },
+    )
+    service.dispatch("job.runPending", {"projectPath": str(project_path)})
+    status = service.dispatch(
+        "job.status",
+        {
+            "projectId": project_id,
+            "projectDirectory": str(project_path),
+            "jobId": started["jobId"],
+        },
+    )
+
+    assert status["state"] == "SUCCEEDED", json.dumps(status, sort_keys=True)
+    assert media.visual_calls == 0
+    assets_stage = next(stage for stage in status["stages"] if stage["stage"] == "assets")
+    with ProjectStore.open(project_path) as store:
+        row = store.connection.execute(
+            "SELECT result_json FROM jobs WHERE job_id=?", (assets_stage["jobId"],)
+        ).fetchone()
+        assert row is not None
+        payload = json.loads(row["result_json"])["payload"]
+        assert payload["visualGenerationMode"] == "authored-only"
+        assert payload["assets"] == []
+
+
 def test_exact_local_sdxl_route_selects_supervised_comfy_runtime(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

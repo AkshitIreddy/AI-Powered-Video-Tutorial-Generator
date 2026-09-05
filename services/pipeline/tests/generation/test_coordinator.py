@@ -918,6 +918,38 @@ def test_accepted_scene_visual_is_reused_by_generation_and_renderer(tmp_path: Pa
         store.close()
 
 
+def test_authored_only_generation_never_calls_an_image_provider(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Authored only", name="Authored only")
+    media = RecordingMediaClient()
+    renderer = RecordingRenderer()
+    coordinator = GenerationCoordinator(store, media_client=media, renderer_client=renderer)
+    try:
+        authored_request = replace(
+            request(),
+            presenter_mode="off",
+            metadata={"sceneVisualGeneration": "authored-only"},
+        )
+        generation_id = coordinator.start(authored_request).generation_id
+        coordinator.run_pending()
+        coordinator.approve(generation_id)
+        completed = coordinator.run_pending()
+
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert media.visual_scene_ids == []
+        assets_job = next(
+            coordinator.runtime.get_job(item.job_id)
+            for item in completed.stages
+            if item.stage is GenerationStage.ASSETS
+        )
+        assert assets_job.result is not None
+        assert assets_job.result["payload"]["visualGenerationMode"] == "authored-only"
+        assert assets_job.result["payload"]["assets"] == []
+        assert renderer.requests[0]["assets"] == []
+        assert renderer.requests[0]["scenes"]
+    finally:
+        store.close()
+
+
 def test_renderer_client_receives_immutable_complete_request(tmp_path: Path) -> None:
     store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
     renderer = RecordingRenderer()

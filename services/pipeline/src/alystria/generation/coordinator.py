@@ -797,6 +797,16 @@ def request_from_desktop(
     routing_policy = (
         parse_routing_policy(routing_value).to_dict() if isinstance(routing_value, dict) else None
     )
+    scene_visual_generation = (
+        "routed"
+        if routing_policy is None
+        or any(
+            route.get("capability") == "image.generate"
+            for route in routing_policy.get("routes", [])
+            if isinstance(route, dict)
+        )
+        else "authored-only"
+    )
     if starter_audio_root is None:
         configured_starter_root = os.environ.get("ALYSTRIA_STARTER_AUDIO_ROOT")
         starter_audio_root = (
@@ -832,6 +842,7 @@ def request_from_desktop(
         "budgetCurrency": budget_value.get("currency", "USD"),
         "requireKnownPricing": bool(budget_value.get("requireKnownPricing", True)),
         "providerRoutingPolicy": routing_policy,
+        "sceneVisualGeneration": scene_visual_generation,
         "audioCustomization": audio_customization,
         "visualCustomization": visual_customization,
         "fontCustomization": font_customization,
