@@ -76,6 +76,10 @@ const PROVIDERS: &[&str] = &[
     "anthropic",
     "cohere",
     "gemini",
+    "groq",
+    "mistral",
+    "openrouter",
+    "cloudflare-workers-ai",
     "nvidia-nim",
     "elevenlabs",
     "azure-speech",
@@ -87,8 +91,6 @@ const PROVIDERS: &[&str] = &[
     "tavus",
     "black-forest-labs",
     "recraft",
-    "openverse",
-    "pexels",
     "openai-compatible-local",
 ];
 
@@ -510,5 +512,19 @@ mod tests {
                 .code,
             "INVALID_INPUT"
         );
+    }
+
+    #[test]
+    fn accepts_every_reviewed_structured_cloud_provider_in_saved_profiles() {
+        for provider in ["groq", "mistral", "openrouter", "cloudflare-workers-ai"] {
+            let mut setup = default_setup();
+            let writing = setup.profiles[0]
+                .routes
+                .get_mut("writing")
+                .expect("writing route");
+            writing.provider_id = provider.into();
+            writing.model_id = "reviewed/model-v1".into();
+            validate_profile(&setup.profiles[0]).expect("reviewed provider");
+        }
     }
 }
