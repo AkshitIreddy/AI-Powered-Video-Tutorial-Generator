@@ -32,6 +32,25 @@ test("frame renderer prepares immutable scene compilation once across frames", (
   assert.equal(first.contentHash, repeated.contentHash);
 });
 
+test("final SceneView applies the approved palette, corner radius, and reduced motion", () => {
+  const manifest = {
+    ...fixtureManifest(),
+    sceneTheme: {
+      paper: "#101820",
+      ink: "#F5F7FA",
+      primary: "#FF6B5F",
+      secondary: "#55D6BE",
+      radius: 9,
+    },
+    reducedMotion: true,
+  } as const;
+  const rendered = new FrameRenderer().render(manifest, 0);
+  assert.match(rendered.svg, /fill="#101820"/u);
+  assert.match(rendered.svg, /fill="#F5F7FA"/u);
+  assert.match(rendered.svg, /fill="#FF6B5F"/u);
+  assert.match(rendered.svg, /style="opacity:1"/u);
+});
+
 test("teaching actions follow normalized narration timing without provider coupling", () => {
   const base = fixtureManifest().scenes[0]!;
   const timedScene = {
@@ -101,6 +120,21 @@ test("production defaults resolve every built-in kind through SceneView", () => 
           title: `Production ${kind}`,
           body: "A manifest-derived explanation, kept inert and deterministic.",
           items: ["First teaching point", "Second teaching point", "Third teaching point"],
+          ...(["graph", "chart", "simulation"].includes(kind) ? { visualBeat: {
+            schemaVersion: 1,
+            semanticIntent: "demonstrate",
+            compositionFamily: "data_canvas",
+            focalAnchor: "measured-series",
+            continuityKey: `production-${kind}`,
+            informationUnits: [
+              { id: "first", role: "measure", text: "First sample", value: 12 },
+              { id: "second", role: "measure", text: "Second sample", value: 21 },
+            ],
+            attentionCue: "measured-series",
+            motionIntent: ["reveal-primary"],
+            textRoles: { title: `Production ${kind}` },
+            avoidRegions: [],
+          } } : {}),
         },
       }],
     };
@@ -821,8 +855,8 @@ test("exact premium binary-search fixture compiles authored values, state, relat
   assert.doesNotMatch(rendered.get("premium-scale")!, />operation<|>checks</u);
   assert.doesNotMatch(rendered.get("premium-scale")!, />linear<|>binary</u);
   assert.match(rendered.get("premium-contract")!, />sorted input</u);
-  assert.match(rendered.get("premium-contract")!, />middle = 23</u);
-  assert.match(rendered.get("premium-contract")!, />left side &lt; 23</u);
+  assert.match(rendered.get("premium-contract")!, />middle = 23(?: ·|<)/u);
+  assert.match(rendered.get("premium-contract")!, /left side &lt; 23/u);
   assert.doesNotMatch(rendered.get("premium-contract")!, />Break<|>Solve similar parts<|>Combine</u);
   assert.match(rendered.get("premium-code")!, /mid = low \+ \(high − low\) ÷ 2/u);
   assert.match(rendered.get("premium-absent")!, /low 7 &gt;/u);

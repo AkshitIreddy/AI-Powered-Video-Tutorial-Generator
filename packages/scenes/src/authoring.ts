@@ -25,6 +25,7 @@ export interface AuthoredSceneVisualAssetReference {
   readonly role: "background" | "primary" | "secondary" | "presenter-portrait";
   readonly alt: string;
   readonly fit?: "cover" | "contain";
+  readonly treatment?: "aperture" | "full-frame";
 }
 
 export interface AuthoredResolvedScene {
@@ -940,6 +941,7 @@ function commonContent(scene: AuthoredResolvedScene, kind: BuiltinSceneKind, bea
       sha256: background.sha256,
       alt: background.alt,
       fit: background.fit ?? "cover" as const,
+      treatment: background.treatment ?? "aperture" as const,
     } } : {}),
   };
 }
@@ -1011,14 +1013,13 @@ export function resolveBuiltinSceneSpec(scene: AuthoredResolvedScene, suppliedBe
     if (typeof unit.middle === "number") return [{ x: index + 1, y: unit.middle, label: targetAwareInformationLabel(unit, semantic) }];
     return [];
   }) ?? [];
+  if (["graph", "chart", "simulation"].includes(kind) && semanticDataValues.length === 0) {
+    throw new TypeError(`Scene ${scene.id} requires authored numeric values for ${kind}`);
+  }
   const dataSeries = [{
     id: child("series-1"),
     label: scene.content.title,
-    values: semanticDataValues.length ? semanticDataValues : lines.map((text, index) => ({
-        x: index + 1,
-        y: Math.max(1, Math.min(100, text.length)),
-        label: text,
-      })),
+    values: semanticDataValues,
   }];
   let content: BuiltinSceneContent;
 
@@ -1199,7 +1200,7 @@ export function resolveBuiltinSceneSpec(scene: AuthoredResolvedScene, suppliedBe
       break;
       }
     case "graph":
-      content = { kind, ...common, series: dataSeries, xLabel: "Step", yLabel: "Relative emphasis" };
+      content = { kind, ...common, series: dataSeries, xLabel: "Step", yLabel: "Value" };
       break;
     case "whiteboard": {
       const boardLines = lines.slice(0, 6);
@@ -1294,7 +1295,7 @@ export function resolveBuiltinSceneSpec(scene: AuthoredResolvedScene, suppliedBe
       content = { kind, ...common, before: { concept: lines[0]! }, after: { concept: lines.at(-1)! }, operation: visualDirectiveLabel(scene.content.body ?? "Transform") };
       break;
     case "chart":
-      content = { kind, ...common, chartType: "bar", series: dataSeries, xLabel: "Step", yLabel: "Relative emphasis" };
+      content = { kind, ...common, chartType: "bar", series: dataSeries, xLabel: "Step", yLabel: "Value" };
       break;
     case "table":
       content = {
@@ -1330,14 +1331,26 @@ export function resolveBuiltinSceneSpec(scene: AuthoredResolvedScene, suppliedBe
       content = { kind, ...common, windowTitle: optionalMetadataString(scene, "windowTitle") ?? "Tutorial workspace", steps: items, activeStep: 0, mockup: "desktop" };
       break;
     case "simulation":
+      {
+        const values = semanticDataValues.map((point) => point.y);
+        const minimum = Math.min(...values);
+        const maximum = Math.max(...values);
+        const padding = Math.max(1, (maximum - minimum) * 0.1);
       content = {
         kind,
         ...common,
-        variables: lines.slice(0, 5).map((text, index) => ({ id: child(`variable-${index + 1}`), label: text, value: index + 1, min: 0, max: Math.max(2, lines.length) })),
+        variables: semanticDataValues.slice(0, 5).map((point, index) => ({
+          id: child(`variable-${index + 1}`),
+          label: point.label ?? `Value ${index + 1}`,
+          value: point.y,
+          min: minimum - padding,
+          max: maximum + padding,
+        })),
         observation: visualDirectiveLabel(scene.content.body ?? lines[0]!),
         series: dataSeries,
       };
       break;
+      }
     case "presenter":
     case "presenter-slide": {
       const requestedPlacement = optionalMetadataString(scene, "presenterPlacement") ?? "picture_in_picture";

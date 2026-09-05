@@ -25,6 +25,16 @@ const portrait = { width: 1080, height: 1920, fps: 30 as const };
 const square = { width: 1080, height: 1080, fps: 30 as const };
 
 describe("built-in scene catalog", () => {
+  it("rejects charts without authored numeric evidence instead of inventing values", () => {
+    expect(() => sceneSpecFromStoryboard({
+      id: "unsupported-chart",
+      type: "chart",
+      title: "Measured outcomes",
+      durationTicks: TIMEBASE_TICKS_PER_SECOND,
+      onScreenText: ["control", "treatment"],
+    })).toThrow(/requires authored numeric values/u);
+  });
+
   it("hydrates provider-authored storyboard content without specimen text", () => {
     const spec = sceneSpecFromStoryboard({
       id: "lesson-search",
@@ -56,6 +66,32 @@ describe("built-in scene catalog", () => {
     expect(JSON.stringify(spec)).toContain("target found");
     expect(JSON.stringify(spec)).not.toContain("karatsuba");
     expect(preflightScene(spec!, landscape).ok).toBe(true);
+  });
+
+  it("preserves an accepted visual binding through the shared storyboard resolver", () => {
+    const spec = sceneSpecFromStoryboard({
+      id: "lesson-visual",
+      type: "definition",
+      title: "A balanced search tree",
+      durationTicks: TIMEBASE_TICKS_PER_SECOND,
+      onScreenText: ["Height stays logarithmic"],
+      visualAssets: [{
+        assetId: "asset-tree",
+        sha256: "a".repeat(64),
+        role: "background",
+        alt: "A balanced binary search tree",
+        fit: "cover",
+        treatment: "full-frame",
+      }],
+    });
+
+    expect("background" in spec!.content ? spec!.content.background : undefined).toEqual({
+      id: "asset-tree",
+      sha256: "a".repeat(64),
+      alt: "A balanced binary search tree",
+      fit: "cover",
+      treatment: "full-frame",
+    });
   });
 
   it("contains one definition and one specimen for every built-in kind", () => {
@@ -167,6 +203,56 @@ describe("built-in scene catalog", () => {
     expect(codeLate).toContain('data-typing-progress="1.0000"');
   });
 
+  it("reveals a derivation in order and keeps its labels inside the step cards", () => {
+    const renderAt = (tick: number) => renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(specimenFor("derivation"), landscape),
+      frame: { tick, reducedMotion: false },
+    }));
+
+    const early = renderAt(TIMEBASE_TICKS_PER_SECOND);
+    expect(early).toContain('data-equation-step="1" data-step-reveal="revealed"');
+    expect(early).toContain('data-equation-step="2" data-step-reveal="pending"');
+    expect(early).toContain('data-result-reveal="pending"');
+    expect(early).toMatch(/data-equation-step="2"[^>]*opacity="0"/u);
+    expect(early).toMatch(/data-result-reveal="pending" opacity="0"/u);
+
+    const middle = renderAt(TIMEBASE_TICKS_PER_SECOND * 4);
+    expect(middle).toContain('data-equation-step="2" data-step-reveal="revealed"');
+    expect(middle).toContain('data-result-reveal="pending"');
+
+    const late = renderAt(TIMEBASE_TICKS_PER_SECOND * 7);
+    expect(late).toContain('data-result-reveal="revealed"');
+    const cardTops = [...late.matchAll(/data-step-card-top="([\d.]+)"/gu)].map((match) => Number(match[1]));
+    const labelBaselines = [...late.matchAll(/data-step-label-y="([\d.]+)"/gu)].map((match) => Number(match[1]));
+    expect(cardTops).toHaveLength(2);
+    expect(labelBaselines).toHaveLength(2);
+    labelBaselines.forEach((baseline, index) => expect(baseline - cardTops[index]!).toBeGreaterThanOrEqual(16));
+  });
+
+  it("keeps live-code line focus synchronized with the narrated action", () => {
+    const renderAt = (tick: number) => renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(specimenFor("live-code"), landscape),
+      frame: { tick, reducedMotion: false },
+    }));
+
+    const waiting = renderAt(0);
+    expect(waiting).toContain('data-active-code-line="1"');
+
+    const define = renderAt(TIMEBASE_TICKS_PER_SECOND * 1.5);
+    expect(define).toContain('data-active-code-line="1"');
+    expect(define).toMatch(/id="line\.1"[^>]*data-code-line-focus="active"/u);
+    expect(define).toMatch(/id="line\.3"[^>]*data-code-line-focus="inactive"/u);
+
+    const guard = renderAt(TIMEBASE_TICKS_PER_SECOND * 3);
+    expect(guard).toContain('data-active-code-line="2"');
+    expect(guard).toMatch(/id="line\.2"[^>]*data-code-line-focus="active"/u);
+
+    const run = renderAt(TIMEBASE_TICKS_PER_SECOND * 6.5);
+    expect(run).toContain('data-active-code-line="3"');
+    expect(run).toMatch(/id="line\.3"[^>]*data-code-line-focus="active"/u);
+    expect(run).toContain("PASS · 8 × 7 = 56");
+  });
+
   it("reflows targets instead of cropping a landscape scene", () => {
     const spec = specimenFor("comparison");
     const wide = compileScene(spec, landscape);
@@ -226,7 +312,7 @@ describe("built-in scene catalog", () => {
   it("composes owned background and presenter assets without a full-frame veil or truncated identity", () => {
     const spec = specimenFor("presenter-slide");
     if (spec.content.kind !== "presenter-slide") throw new Error("Expected presenter-slide specimen");
-    const background = { id: "background.modern-tech-signal-v1", sha256: "b".repeat(64), alt: "Owned modern signal background", fit: "cover" as const };
+    const background = { id: "background.modern-tech-signal-v1", sha256: "b".repeat(64), alt: "Owned modern signal background", fit: "cover" as const, treatment: "full-frame" as const };
     const portrait = { id: "presenter.synthetic.replay", sha256: "c".repeat(64), alt: "Owned fictional synthetic presenter", fit: "cover" as const };
     const presenterName = "Pinned synthetic replay guide for end-to-end validation";
     const scene = compileScene({
@@ -239,7 +325,7 @@ describe("built-in scene catalog", () => {
       resolveAsset: (asset) => `alystria-asset:sha256/${asset.sha256}`,
     }));
 
-    expect(markup).toContain('data-background-treatment="artwork-aperture"');
+    expect(markup).toContain('data-background-treatment="full-frame"');
     expect(markup).toContain('data-readability-surface="header"');
     expect(markup).toContain('data-readability-surface="presenter-insight"');
     expect(markup).not.toContain('data-presenter-disclosure="true"');
@@ -249,7 +335,7 @@ describe("built-in scene catalog", () => {
     expect(markup).not.toContain("Previously generated synthetic presenter replay");
     expect(markup).not.toContain("Pinned synthetic replay gui…");
     expect(markup).not.toContain('fill="#F7F8FC" opacity="0.31"');
-    expect(markup).toContain('data-background-mask="aperture-only"');
+    expect(markup).not.toContain('mask="url(#background-treatment-');
     expect(markup).not.toContain('fill="#FFFFFF" opacity="0.085"');
     expect(markup.match(/alystria-asset:sha256\//g)?.length).toBe(2);
     const insight = markup.match(/data-insight-x="(\d+)" data-insight-width="(\d+)"/);
@@ -336,8 +422,9 @@ describe("built-in scene catalog", () => {
     }));
 
     const definition = render("definition");
-    expect(definition).toContain("HOW THE RELATIONSHIP WORKS");
-    expect(definition).toContain("Solve similar parts");
+    expect(definition).toContain('data-definition-layout="authored-editorial"');
+    expect(definition).toContain("solve them recursively");
+    expect(definition).not.toContain("Solve similar parts");
 
     const comparison = render("comparison");
     expect(comparison).toContain('data-comparison-side="primary"');

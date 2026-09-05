@@ -99,6 +99,7 @@ export interface SceneVisualAssetReference {
   readonly role: SceneVisualAssetRole;
   readonly alt: string;
   readonly fit?: "cover" | "contain";
+  readonly treatment?: "aperture" | "full-frame";
 }
 
 export type VisualAssetMediaType = "image/png" | "image/jpeg" | "image/webp";
@@ -139,6 +140,15 @@ export interface RenderTypography {
   readonly captionFamily: string;
 }
 
+/** User-approved palette and corner geometry carried into final frame capture. */
+export interface RenderSceneTheme {
+  readonly paper: string;
+  readonly ink: string;
+  readonly primary: string;
+  readonly secondary: string;
+  readonly radius: number;
+}
+
 export interface RenderManifest {
   readonly id: string;
   readonly schemaVersion: 1;
@@ -156,6 +166,8 @@ export interface RenderManifest {
   readonly fontAssets?: readonly FontAssetInput[];
   /** Closed family aliases/names used by scene and caption typography. */
   readonly typography?: RenderTypography;
+  readonly sceneTheme?: RenderSceneTheme;
+  readonly reducedMotion?: boolean;
   /**
    * Immutable local presenter clips composited by FFmpeg after authoritative
    * Chromium frame capture. Clips are bound to one presenter scene and their
@@ -320,6 +332,9 @@ export function assertResolvedScene(scene: ResolvedScene): void {
     if (visual.fit !== undefined && visual.fit !== "cover" && visual.fit !== "contain") {
       throw new TypeError(`Scene ${scene.id} visual asset ${visual.assetId} has unsupported fit ${String(visual.fit)}`);
     }
+    if (visual.treatment !== undefined && visual.treatment !== "aperture" && visual.treatment !== "full-frame") {
+      throw new TypeError(`Scene ${scene.id} visual asset ${visual.assetId} has unsupported treatment ${String(visual.treatment)}`);
+    }
     visualIds.add(visual.assetId);
   }
 }
@@ -422,6 +437,20 @@ export function assertRenderManifest(manifest: RenderManifest): void {
         throw new TypeError(`Typography ${role} references an unbound imported font`);
       }
     }
+  }
+  if (manifest.sceneTheme !== undefined) {
+    for (const [role, value] of Object.entries(manifest.sceneTheme)) {
+      if (role === "radius") continue;
+      if (typeof value !== "string" || !/^#[0-9a-f]{6}$/i.test(value)) {
+        throw new TypeError(`Scene theme ${role} must be a six-digit hexadecimal color`);
+      }
+    }
+    if (!Number.isInteger(manifest.sceneTheme.radius) || manifest.sceneTheme.radius < 0 || manifest.sceneTheme.radius > 64) {
+      throw new RangeError("Scene theme radius must be an integer from 0 to 64");
+    }
+  }
+  if (manifest.reducedMotion !== undefined && typeof manifest.reducedMotion !== "boolean") {
+    throw new TypeError("reducedMotion must be boolean");
   }
   if (manifest.captionStyle !== undefined) assertCaptionRenderStyle(manifest.captionStyle);
   if (manifest.captionDeliveryMode !== undefined && !(new Set<CaptionDeliveryMode>(["sidecar", "embedded", "burned", "both"])).has(manifest.captionDeliveryMode)) {

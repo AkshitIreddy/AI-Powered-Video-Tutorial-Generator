@@ -153,18 +153,6 @@ export function DefinitionRenderer(props: SceneRendererProps<DefinitionContent>)
   const body = bodyRect(props);
   const content = props.scene.spec.content;
   const isWide = props.scene.metrics.columns === 2;
-  const copy: Rect = isWide
-    ? { x: body.x, y: body.y + body.height * 0.04, width: body.width * 0.37, height: body.height * 0.68 }
-    : { x: body.x, y: body.y, width: body.width, height: body.height * 0.36 };
-  const stage: Rect = isWide
-    ? { x: body.x + body.width * 0.42, y: body.y + body.height * 0.04, width: body.width * 0.58, height: body.height * 0.68 }
-    : { x: body.x, y: body.y + body.height * 0.4, width: body.width, height: body.height * 0.38 };
-  const flowY = stage.y + stage.height * 0.48;
-  const unit = Math.min(stage.width / 8.4, stage.height / 3.5);
-  const wholeX = stage.x + stage.width * 0.13;
-  const solveX = stage.x + stage.width * 0.5;
-  const resultX = stage.x + stage.width * 0.87;
-  const exampleY = body.y + body.height * 0.83;
   if (content.placeValueRelationship) {
     const relationship = content.placeValueRelationship;
     const relationshipStage: Rect = {
@@ -229,35 +217,25 @@ export function DefinitionRenderer(props: SceneRendererProps<DefinitionContent>)
       </g>
     ));
   }
+  const inset = props.scene.metrics.gutter;
+  const hasExample = Boolean(content.example);
+  const definitionRect: Rect = {
+    x: body.x + inset,
+    y: body.y + body.height * 0.23,
+    width: body.width - inset * 2,
+    height: body.height * (hasExample ? 0.36 : 0.58),
+  };
   return withFrame(props, (
-    <g id="body" data-semantic-role="visual" style={animationStyle(props.scene.choreography, "body", props.frame.tick, props.frame.reducedMotion) as CSSProperties}>
-      <ReadabilitySurface scene={props.scene} rect={{ x: stage.x - props.scene.metrics.gutter * 0.42, y: stage.y - props.scene.metrics.gutter * 0.4, width: stage.width + props.scene.metrics.gutter * 0.84, height: stage.height + props.scene.metrics.gutter * 1.05 }} theme={theme} role="definition-stage" />
-      <path d={`M ${copy.x} ${copy.y} H ${copy.x + copy.width * 0.93} L ${copy.x + copy.width} ${copy.y + copy.height * 0.12} V ${copy.y + copy.height} H ${copy.x} Z`} fill={`url(#ink-field-${safeId(props.scene.spec.id)})`} filter={`url(#shadow-${safeId(props.scene.spec.id)})`} />
-      <text x={copy.x + props.scene.metrics.gutter * 0.72} y={copy.y + legible(props.scene.metrics.smallSize)} fill={theme.accent} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.9)} fontWeight="820" letterSpacing={2.2}>CORE IDEA</text>
-      <WrappedText text={content.term} rect={{ x: copy.x + props.scene.metrics.gutter * 0.72, y: copy.y + copy.height * 0.17, width: copy.width - props.scene.metrics.gutter * 1.5, height: copy.height * 0.3 }} theme={theme} fill={theme.surface} fontSize={props.scene.metrics.titleSize * (isWide ? 1.28 : 0.95)} fontFamily={theme.fontDisplay} fontWeight="790" maxLines={3} lineHeight={0.98} />
-      <WrappedText text={content.definition} rect={{ x: copy.x + props.scene.metrics.gutter * 0.72, y: copy.y + copy.height * 0.55, width: copy.width - props.scene.metrics.gutter * 1.5, height: copy.height * 0.36 }} theme={theme} fill="#D9DEEE" fontSize={legible(props.scene.metrics.bodySize * 0.92)} fontWeight="590" maxLines={5} lineHeight={1.26} />
-
-      <text x={stage.x} y={stage.y + legible(props.scene.metrics.smallSize)} fill={theme.mutedInk} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.88)} fontWeight="800" letterSpacing={1.7}>HOW THE RELATIONSHIP WORKS</text>
-      <line x1={wholeX + unit * 0.66} x2={solveX - unit * 1.08} y1={flowY} y2={flowY} stroke={theme.primary} strokeWidth={Math.max(5, props.scene.metrics.unit * 0.5)} />
-      <path d={`M ${solveX - unit * 1.08} ${flowY} l ${-unit * 0.28} ${-unit * 0.24} v ${unit * 0.48} z`} fill={theme.primary} />
-      <line x1={solveX + unit * 1.08} x2={resultX - unit * 0.72} y1={flowY} y2={flowY} stroke={theme.secondary} strokeWidth={Math.max(5, props.scene.metrics.unit * 0.5)} />
-      <path d={`M ${resultX - unit * 0.72} ${flowY} l ${-unit * 0.28} ${-unit * 0.24} v ${unit * 0.48} z`} fill={theme.secondary} />
-
-      <g id="definition-whole">
-        <rect x={wholeX - unit * 0.62} y={flowY - unit * 0.62} width={unit * 1.24} height={unit * 1.24} fill={theme.primary} transform={`rotate(-5 ${wholeX} ${flowY})`} />
-        <rect x={wholeX - unit * 0.42} y={flowY - unit * 0.42} width={unit * 0.84} height={unit * 0.84} fill="none" stroke={theme.surface} strokeWidth="2" opacity="0.72" />
-        <text x={wholeX} y={stage.y + stage.height * 0.82} textAnchor="middle" fill={theme.ink} fontFamily={theme.fontBody} fontSize={legible(props.scene.metrics.bodySize * 0.88)} fontWeight="760">Break</text>
-      </g>
-      <g id="definition-solve">
-        {[-0.68, 0, 0.68].map((offset, index) => <g key={offset}><circle cx={solveX + offset * unit} cy={flowY + (index % 2 ? -0.16 : 0.16) * unit} r={unit * 0.45} fill={index === 1 ? theme.accent : tint(theme.primary, index ? 0.68 : 0.8)} stroke={index === 1 ? theme.warning : theme.primary} strokeWidth={Math.max(2, props.scene.metrics.unit * 0.24)} /><text x={solveX + offset * unit} y={flowY + (index % 2 ? -0.16 : 0.16) * unit + 5} textAnchor="middle" fill={theme.ink} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.9)} fontWeight="820">{index + 1}</text></g>)}
-        <text x={solveX} y={stage.y + stage.height * 0.82} textAnchor="middle" fill={theme.ink} fontFamily={theme.fontBody} fontSize={legible(props.scene.metrics.bodySize * 0.88)} fontWeight="760">Solve similar parts</text>
-      </g>
-      <g id="definition-combine">
-        <path d={`M ${resultX} ${flowY - unit * 0.7} L ${resultX + unit * 0.72} ${flowY} L ${resultX} ${flowY + unit * 0.7} L ${resultX - unit * 0.72} ${flowY} Z`} fill={theme.secondary} />
-        <path d={`M ${resultX - unit * 0.27} ${flowY} l ${unit * 0.2} ${unit * 0.2} l ${unit * 0.38} ${-unit * 0.42}`} fill="none" stroke={theme.surface} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.38)} strokeLinecap="round" strokeLinejoin="round" />
-        <text x={resultX} y={stage.y + stage.height * 0.82} textAnchor="middle" fill={theme.ink} fontFamily={theme.fontBody} fontSize={legible(props.scene.metrics.bodySize * 0.88)} fontWeight="760">Combine</text>
-      </g>
-      {content.example ? <g data-text-role="paper-secondary"><line x1={body.x} x2={body.x + body.width} y1={exampleY - props.scene.metrics.unit * 1.55} y2={exampleY - props.scene.metrics.unit * 1.55} stroke={theme.secondary} strokeWidth={Math.max(3, props.scene.metrics.unit * 0.34)} /><text x={body.x} y={exampleY + legible(props.scene.metrics.smallSize) * 0.35} fill={paperSecondary(theme)} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.9)} fontWeight="820" letterSpacing={1.8}>IN PRACTICE</text><WrappedText text={content.example} rect={{ x: body.x + body.width * (isWide ? 0.18 : 0), y: isWide ? exampleY - legible(props.scene.metrics.bodySize) * 0.38 : exampleY + legible(props.scene.metrics.smallSize) * 1.35, width: body.width * (isWide ? 0.8 : 1), height: body.height * (isWide ? 0.16 : 0.11) }} theme={theme} fontSize={legible(props.scene.metrics.bodySize)} fontWeight="690" maxLines={2} /></g> : null}
+    <g id="body" data-semantic-role="content" data-definition-layout="authored-editorial" style={animationStyle(props.scene.choreography, "body", props.frame.tick, props.frame.reducedMotion) as CSSProperties}>
+      <line x1={body.x} x2={body.x} y1={body.y + body.height * 0.05} y2={body.y + body.height * 0.83} stroke={theme.primary} strokeWidth={Math.max(5, props.scene.metrics.unit * 0.55)} />
+      <text x={body.x + inset} y={body.y + legible(props.scene.metrics.smallSize)} fill={theme.primary} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="760" letterSpacing="2.5">CORE IDEA</text>
+      <WrappedText text={content.term} rect={{ x: body.x + inset, y: body.y + body.height * 0.08, width: body.width - inset * 2, height: body.height * 0.14 }} theme={theme} fill={theme.ink} fontFamily={theme.fontDisplay} fontSize={legible(props.scene.metrics.subtitleSize * 1.3)} fontWeight="790" maxLines={2} />
+      <WrappedText text={content.definition} rect={definitionRect} theme={theme} fill={theme.ink} fontSize={legible(props.scene.metrics.titleSize * 0.83)} fontWeight="620" maxLines={hasExample ? 4 : 6} lineHeight={1.2} />
+      {content.example ? <g data-text-role="paper-secondary">
+        <line x1={body.x + inset} x2={body.x + body.width - inset} y1={body.y + body.height * 0.67} y2={body.y + body.height * 0.67} stroke={theme.line} strokeWidth="2" />
+        <text x={body.x + inset} y={body.y + body.height * 0.72 + legible(props.scene.metrics.smallSize)} fill={theme.secondary} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="760" letterSpacing="2">IN PRACTICE</text>
+        <WrappedText text={content.example} rect={{ x: body.x + inset, y: body.y + body.height * 0.79, width: body.width - inset * 2, height: body.height * 0.2 }} theme={theme} fill={theme.mutedInk} fontSize={legible(props.scene.metrics.bodySize * 1.05)} fontWeight="580" maxLines={3} />
+      </g> : null}
     </g>
   ));
 }
@@ -513,6 +491,12 @@ export function FormulaRenderer(props: SceneRendererProps<FormulaContent>) {
   const stepRects = horizontalSteps
     ? splitSequenceColumns(stepStage, steps.length, props.scene.metrics.gutter * 0.8)
     : stackRows(stepStage, steps.length, props.scene.metrics.unit * 0.6);
+  const derivationRevealStart = props.scene.spec.durationTicks * 0.08;
+  const derivationRevealStep = Math.min(
+    props.scene.spec.durationTicks * 0.28,
+    props.scene.spec.durationTicks * 0.54 / Math.max(1, steps.length - 1),
+  );
+  const resultRevealTick = props.scene.spec.durationTicks * 0.72;
   return withFrame(props, (
     <g id="body" data-semantic-role="content" data-visual-grammar="equation-transformation-lane">
       <path d={`M ${formulaRect.x} ${formulaRect.y} H ${formulaRect.x + formulaRect.width} V ${formulaRect.y + formulaRect.height} H ${formulaRect.x + props.scene.metrics.unit * 1.1} L ${formulaRect.x} ${formulaRect.y + formulaRect.height - props.scene.metrics.unit * 1.1} Z`} fill={theme.codeBackground} />
@@ -523,18 +507,26 @@ export function FormulaRenderer(props: SceneRendererProps<FormulaContent>) {
         const step = steps[index];
         if (!step) return null;
         const color = index === steps.length - 1 ? theme.secondary : index % 2 ? theme.warning : theme.primary;
+        const labelColor = index === steps.length - 1 ? theme.surface : color;
+        const revealTick = derivationRevealStart + index * derivationRevealStep;
+        const revealed = props.frame.reducedMotion || props.frame.tick >= revealTick;
+        const revealProgress = props.frame.reducedMotion
+          ? 1
+          : clamp((props.frame.tick - revealTick) / Math.max(1, props.scene.spec.durationTicks * 0.08), 0, 1);
+        const cardTop = rect.y + rect.height * 0.08;
+        const labelY = cardTop + legible(props.scene.metrics.smallSize) * 1.3;
         const copyRect = horizontalSteps
           ? { x: rect.x + props.scene.metrics.gutter * 0.55, y: rect.y + rect.height * 0.3, width: rect.width - props.scene.metrics.gutter * 1.1, height: rect.height * 0.5 }
           : { x: rect.x + props.scene.metrics.bodySize * 2.4, y: rect.y + rect.height * 0.18, width: rect.width - props.scene.metrics.bodySize * 3.1, height: rect.height * 0.64 };
-        return <g key={step.id} id={step.id} data-equation-step={index + 1} style={animationStyle(props.scene.choreography, step.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>
+        return <g key={step.id} id={step.id} data-equation-step={index + 1} data-step-reveal={revealed ? "revealed" : "pending"} data-step-card-top={cardTop} data-step-label-y={labelY} opacity={revealProgress} transform={`translate(0 ${(1 - revealProgress) * props.scene.metrics.unit * 1.2})`}>
           <path d={`M ${rect.x} ${rect.y + rect.height * 0.08} H ${rect.x + rect.width} V ${rect.y + rect.height * 0.92} H ${rect.x + props.scene.metrics.unit * 0.8} L ${rect.x} ${rect.y + rect.height * 0.82} Z`} fill={index === steps.length - 1 ? shade(theme.secondary, 0.18) : theme.surface} stroke={color} strokeWidth={Math.max(3, props.scene.metrics.unit * 0.28)} filter={`url(#soft-shadow-${safeId(props.scene.spec.id)})`} />
           <rect x={rect.x} y={rect.y + rect.height * 0.08} width={Math.max(7, props.scene.metrics.unit * 0.62)} height={rect.height * 0.84} fill={color} />
-          <text x={rect.x + props.scene.metrics.gutter * 0.6} y={rect.y + legible(props.scene.metrics.smallSize) * 1.3} fill={color} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.82)} fontWeight="840" letterSpacing="1.4">{String(index + 1).padStart(2, "0")} · {step.reason?.toUpperCase() ?? "TRANSFORM"}</text>
+          <text x={rect.x + props.scene.metrics.gutter * 0.6} y={labelY} fill={labelColor} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize * 0.82)} fontWeight="840" letterSpacing="1.4">{String(index + 1).padStart(2, "0")} · {step.reason?.toUpperCase() ?? "TRANSFORM"}</text>
           <WrappedText text={step.expression} rect={copyRect} theme={theme} fill={index === steps.length - 1 ? theme.surface : theme.ink} fontFamily={theme.fontMono} fontWeight="720" fontSize={legible(props.scene.metrics.bodySize * (horizontalSteps ? 0.84 : 0.96))} textAnchor={horizontalSteps ? "middle" : "start"} maxLines={horizontalSteps ? 4 : 2} lineHeight={1.14} />
-          {horizontalSteps && index < steps.length - 1 ? <g aria-hidden="true"><line x1={rect.x + rect.width} x2={rect.x + rect.width + props.scene.metrics.gutter * 0.68} y1={rect.y + rect.height * 0.5} y2={rect.y + rect.height * 0.5} stroke={theme.accent} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.4)} /><path d={`M ${rect.x + rect.width + props.scene.metrics.gutter * 0.68} ${rect.y + rect.height * 0.5} l ${-props.scene.metrics.unit * 0.9} ${-props.scene.metrics.unit * 0.68} v ${props.scene.metrics.unit * 1.36} z`} fill={theme.accent} /></g> : null}
+          {horizontalSteps && index < steps.length - 1 ? <g aria-hidden="true" opacity={steps[index + 1] && (props.frame.reducedMotion || props.frame.tick >= derivationRevealStart + (index + 1) * derivationRevealStep) ? 1 : 0}><line x1={rect.x + rect.width} x2={rect.x + rect.width + props.scene.metrics.gutter * 0.68} y1={rect.y + rect.height * 0.5} y2={rect.y + rect.height * 0.5} stroke={theme.accent} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.4)} /><path d={`M ${rect.x + rect.width + props.scene.metrics.gutter * 0.68} ${rect.y + rect.height * 0.5} l ${-props.scene.metrics.unit * 0.9} ${-props.scene.metrics.unit * 0.68} v ${props.scene.metrics.unit * 1.36} z`} fill={theme.accent} /></g> : null}
         </g>;
       })}</g> : null}
-      {content.result ? <g><line x1={body.x} x2={body.x + body.width} y1={body.y + body.height * 0.89} y2={body.y + body.height * 0.89} stroke={theme.secondary} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.42)} /><text x={body.x} y={body.y + body.height * 0.945} fill={paperSecondary(theme)} fontFamily={theme.fontMono} fontWeight="820" fontSize={legible(props.scene.metrics.smallSize * 0.82)} letterSpacing="1.8">RESOLVED RELATION</text><WrappedText text={content.result} rect={{ x: body.x + body.width * 0.2, y: body.y + body.height * 0.91, width: body.width * 0.78, height: body.height * 0.08 }} theme={theme} fill={paperSecondary(theme)} fontFamily={theme.fontMono} fontWeight="800" fontSize={legible(props.scene.metrics.bodySize * 0.88)} textAnchor="end" maxLines={2} /></g> : null}
+      {content.result ? <g data-result-reveal={props.frame.reducedMotion || props.frame.tick >= resultRevealTick ? "revealed" : "pending"} opacity={props.frame.reducedMotion ? 1 : clamp((props.frame.tick - resultRevealTick) / Math.max(1, props.scene.spec.durationTicks * 0.08), 0, 1)}><line x1={body.x} x2={body.x + body.width} y1={body.y + body.height * 0.89} y2={body.y + body.height * 0.89} stroke={theme.secondary} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.42)} /><text x={body.x} y={body.y + body.height * 0.945} fill={paperSecondary(theme)} fontFamily={theme.fontMono} fontWeight="820" fontSize={legible(props.scene.metrics.smallSize * 0.82)} letterSpacing="1.8">RESOLVED RELATION</text><WrappedText text={content.result} rect={{ x: body.x + body.width * 0.2, y: body.y + body.height * 0.91, width: body.width * 0.78, height: body.height * 0.08 }} theme={theme} fill={paperSecondary(theme)} fontFamily={theme.fontMono} fontWeight="800" fontSize={legible(props.scene.metrics.bodySize * 0.88)} textAnchor="end" maxLines={2} /></g> : null}
     </g>
   ));
 }
@@ -674,12 +666,16 @@ export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
   const activeActions = content.actions?.filter((action) => props.frame.tick >= action.startTick && props.frame.tick <= action.endTick) ?? [];
   const actionPriority = { run: 4, explain: 3, highlight: 2, type: 1 } as const;
   const activeAction = activeActions.toSorted((left, right) => actionPriority[right.type] - actionPriority[left.type])[0];
-  const actionLineIndex = activeAction?.lineId ? lines.findIndex((line) => line.id === activeAction.lineId) : -1;
+  const upcomingLineAction = content.kind === "live-code"
+    ? content.actions?.find((action) => action.lineId && action.startTick > props.frame.tick)
+    : undefined;
+  const focusAction = activeAction ?? upcomingLineAction;
+  const actionLineIndex = focusAction?.lineId ? lines.findIndex((line) => line.id === focusAction.lineId) : -1;
   const activeIndex = Math.max(0, actionLineIndex >= 0 ? actionLineIndex : lines.findIndex((line) => line.highlight));
   const activeLine = lines[activeIndex] ?? lines[0];
   const functionName = lines.find((line) => /\b(def|function|fn)\b/u.test(line.text))?.text.match(/(?:def|function|fn)\s+([A-Za-z_][\w]*)/u)?.[1] ?? content.filename ?? "program";
   return withFrame(props, (
-    <g id="body" data-semantic-role="code" data-tutorial-mode={content.kind === "live-code" ? "live-code" : undefined}>
+    <g id="body" data-semantic-role="code" data-tutorial-mode={content.kind === "live-code" ? "live-code" : undefined} data-active-code-line={content.kind === "live-code" ? activeIndex + 1 : undefined}>
       <path d={`M ${codeRect.x} ${codeRect.y} H ${codeRect.x + codeRect.width} V ${codeRect.y + codeRect.height} H ${codeRect.x + props.scene.metrics.unit * 1.2} L ${codeRect.x} ${codeRect.y + codeRect.height - props.scene.metrics.unit * 1.2} Z`} fill={theme.codeBackground} filter={`url(#soft-shadow-${safeId(props.scene.spec.id)})`} />
       <rect x={codeRect.x} y={codeRect.y} width={codeRect.width} height={headerHeight} fill="#252A3D" />
       <rect x={codeRect.x} y={codeRect.y} width={Math.max(8, props.scene.metrics.unit * 0.8)} height={headerHeight} fill={theme.primary} />
@@ -699,8 +695,9 @@ export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
         const normalizedText = line.text.replace(/\t/g, "  ");
         const visibleText = typeAction ? normalizedText.slice(0, Math.round(normalizedText.length * typeProgress)) : normalizedText;
         const actionHighlight = content.actions?.some((action) => action.type === "highlight" && action.lineId === line.id && props.frame.tick >= action.startTick && props.frame.tick <= action.endTick);
+        const lineFocused = content.kind === "live-code" ? Boolean(activeAction) && index === activeIndex : Boolean(line.highlight || actionHighlight);
         const typingNow = Boolean(typeAction && typeProgress > 0 && typeProgress < 1 && !props.frame.reducedMotion);
-        return <g key={line.id} id={line.id} data-code-line={index + 1} data-typing-progress={typeAction ? typeProgress.toFixed(4) : undefined} style={animationStyle(props.scene.choreography, line.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>{line.highlight || actionHighlight || diffTone ? <g><rect x={codeRect.x + props.scene.metrics.bodySize * 0.2} y={y - lineHeight * 0.72} width={codeRect.width - props.scene.metrics.bodySize * 0.4} height={lineHeight} fill={diffTone ?? theme.primary} opacity="0.22" /><rect x={codeRect.x} y={y - lineHeight * 0.72} width={Math.max(7, props.scene.metrics.unit * 0.7)} height={lineHeight} fill={diffTone ?? theme.accent} /></g> : null}<text x={codeRect.x + props.scene.metrics.bodySize * 0.95} y={y} textAnchor="end" fill="#949BB1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)}>{index + 1}</text><text x={codeRect.x + props.scene.metrics.bodySize * 1.85} y={y} fill={color} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * 0.92)} xmlSpace="preserve">{truncate(visibleText, props.scene.metrics.profile === "portrait" ? 52 : isWide ? 62 : 92)}{typingNow ? <tspan fill={theme.accent}>▌</tspan> : null}</text>{line.annotation ? <text x={codeRect.x + codeRect.width - props.scene.metrics.gutter} y={y} textAnchor="end" fill="#F4C56A" fontFamily={theme.fontBody} fontSize={legible(props.scene.metrics.smallSize)}>{truncate(line.annotation, 28)}</text> : null}</g>;
+        return <g key={line.id} id={line.id} data-code-line={index + 1} data-code-line-focus={lineFocused ? "active" : "inactive"} data-typing-progress={typeAction ? typeProgress.toFixed(4) : undefined} style={animationStyle(props.scene.choreography, line.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>{lineFocused || diffTone ? <g><rect x={codeRect.x + props.scene.metrics.bodySize * 0.2} y={y - lineHeight * 0.72} width={codeRect.width - props.scene.metrics.bodySize * 0.4} height={lineHeight} fill={diffTone ?? theme.primary} opacity="0.22" /><rect x={codeRect.x} y={y - lineHeight * 0.72} width={Math.max(7, props.scene.metrics.unit * 0.7)} height={lineHeight} fill={diffTone ?? theme.accent} /></g> : null}<text x={codeRect.x + props.scene.metrics.bodySize * 0.95} y={y} textAnchor="end" fill="#949BB1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)}>{index + 1}</text><text x={codeRect.x + props.scene.metrics.bodySize * 1.85} y={y} fill={color} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * 0.92)} xmlSpace="preserve">{truncate(visibleText, props.scene.metrics.profile === "portrait" ? 52 : isWide ? 62 : 92)}{typingNow ? <tspan fill={theme.accent}>▌</tspan> : null}</text>{line.annotation ? <text x={codeRect.x + codeRect.width - props.scene.metrics.gutter} y={y} textAnchor="end" fill="#F4C56A" fontFamily={theme.fontBody} fontSize={legible(props.scene.metrics.smallSize)}>{truncate(line.annotation, 28)}</text> : null}</g>;
       })}
       {lensRect ? <g data-code-lens="execution" data-live-code-action={content.kind === "live-code" ? activeAction?.type ?? "idle" : undefined}>
         <path d={`M ${lensRect.x} ${lensRect.y} H ${lensRect.x + lensRect.width} V ${lensRect.y + lensRect.height} H ${lensRect.x} L ${lensRect.x + props.scene.metrics.unit * 1.2} ${lensRect.y + lensRect.height * 0.5} Z`} fill={shade(theme.primary, 0.28)} />

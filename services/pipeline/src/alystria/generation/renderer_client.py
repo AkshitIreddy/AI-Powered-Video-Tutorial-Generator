@@ -446,7 +446,8 @@ class SubprocessRendererClient:
             manifest_bytes = (_canonical_json(manifest) + "\n").encode()
             manifest_path.write_bytes(manifest_bytes)
             input_manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
-            output_name = _delivery_name(self.options.codec)
+            codec = _renderer_codec(request.get("codec", self.options.codec))
+            output_name = _delivery_name(codec)
             caption_delivery_mode = _caption_delivery_mode(manifest["captionDeliveryMode"])
             caption_language = _caption_language(manifest["metadata"]["locale"])
             argv = self._render_argv(
@@ -455,6 +456,7 @@ class SubprocessRendererClient:
                 output_name,
                 caption_delivery_mode,
                 caption_language,
+                codec,
             )
             result = self.runner.run(
                 argv,
@@ -677,15 +679,23 @@ class SubprocessRendererClient:
         font_inputs, typography = self._materialize_font_assets(
             request.get("fontCustomization"), font_root
         )
+        scene_theme, reduced_motion = _render_scene_customization(request.get("customization"))
         caption_style = {**caption_style, "fontFamily": typography["captionFamily"]}
         generated_assets = request.get("assets", [])
         if not isinstance(generated_assets, list):
             raise ValueError("Renderer assets must be a list")
-        # Explicit project/starter choices take precedence for a semantic role.
-        # Generated candidates remain in provenance, but duplicate backgrounds
-        # and portraits do not silently cover the user's selection.
+        accepted_scene_assets = [
+            item
+            for item in generated_assets
+            if isinstance(item, Mapping) and item.get("provider") == "accepted-project-asset"
+        ]
+        provider_generated_assets = [
+            item for item in generated_assets if item not in accepted_scene_assets
+        ]
+        # A reviewed per-scene choice outranks the global project background.
+        # The project background still outranks unreviewed provider output.
         visual_inputs, visuals_by_scene = self._materialize_visual_assets(
-            [*custom_visual_assets, *generated_assets],
+            [*accepted_scene_assets, *custom_visual_assets, *provider_generated_assets],
             resolved_scenes,
             visual_root,
         )
@@ -722,6 +732,8 @@ class SubprocessRendererClient:
             **({"visualAssets": visual_inputs} if visual_inputs else {}),
             **({"fontAssets": font_inputs} if font_inputs else {}),
             "typography": typography,
+            **({"sceneTheme": scene_theme} if scene_theme is not None else {}),
+            **({"reducedMotion": reduced_motion} if reduced_motion is not None else {}),
             **({"presenterVideos": presenter_videos} if presenter_videos else {}),
             "metadata": {
                 "generationId": generation_id,
@@ -1075,6 +1087,7 @@ class SubprocessRendererClient:
                         "role": role,
                         "alt": _visual_asset_alt(asset, scene),
                         "fit": _visual_asset_fit(asset.get("fit"), role),
+                        "treatment": _visual_asset_treatment(asset.get("treatment"), role),
                     }
                 )
                 continue
@@ -1115,6 +1128,7 @@ class SubprocessRendererClient:
                     "role": role,
                     "alt": _visual_asset_alt(asset, scene),
                     "fit": _visual_asset_fit(asset.get("fit"), role),
+                    "treatment": _visual_asset_treatment(asset.get("treatment"), role),
                 }
             )
         return inputs, references
@@ -1219,6 +1233,7 @@ class SubprocessRendererClient:
         output_name: str,
         caption_delivery_mode: str,
         caption_language: str,
+        codec: str,
     ) -> list[str]:
         argv = [
             _subprocess_command_path(self.runtime.node.path),
@@ -1242,7 +1257,7 @@ class SubprocessRendererClient:
             "--ffprobe",
             _subprocess_command_path(self.runtime.ffprobe.path),
             "--codec",
-            self.options.codec,
+            codec,
             "--captions",
             caption_delivery_mode,
             "--caption-language",
@@ -1884,6 +1899,30 @@ def _detect_visual_media_type(path: Path) -> str | None:
     return None
 
 
+def _render_scene_customization(
+    value: object,
+) -> tuple[dict[str, str | int] | None, bool | None]:
+    """Project the closed visual-bible fields that final SceneView implements."""
+
+    if value is None:
+        return None, None
+    customization = _required_mapping(value, "project customization")
+    colors = _required_mapping(customization.get("colors"), "project customization colors")
+    scene_theme: dict[str, str | int] = {
+        "paper": _hex_color(colors.get("paper"), "customization.colors.paper"),
+        "ink": _hex_color(colors.get("ink"), "customization.colors.ink"),
+        "primary": _hex_color(colors.get("accent"), "customization.colors.accent"),
+        "secondary": _hex_color(colors.get("evidence"), "customization.colors.evidence"),
+        "radius": _bounded_int(
+            customization.get("cornerRadius"), 0, 64, "customization.cornerRadius"
+        ),
+    }
+    reduced_motion = customization.get("reducedMotion")
+    if not isinstance(reduced_motion, bool):
+        raise ValueError("customization.reducedMotion must be boolean")
+    return scene_theme, reduced_motion
+
+
 def _render_visual_customization(
     value: object,
     scenes: Sequence[Mapping[str, Any]],
@@ -1943,6 +1982,7 @@ def _render_visual_customization(
                     "role": role,
                     "alt": _required_string(asset, "alt"),
                     "fit": str(asset.get("fit", "cover")),
+                    "treatment": "full-frame" if role == "background" else "aperture",
                 }
             )
     caption_value = customization.get("captionStyle", default_caption)
@@ -2008,8 +2048,6 @@ def _fallback_families(value: object) -> list[str]:
 
 def _visual_asset_role(value: object, scene_kind: str) -> str:
     if value is None:
-        if scene_kind in {"presenter", "presenter-slide", "presenter-with-slide"}:
-            return "presenter-portrait"
         if scene_kind in {
             "image-focus",
             "image-comparison",
@@ -2030,6 +2068,17 @@ def _visual_asset_fit(value: object, role: str) -> str:
     normalized = str(value).strip().casefold()
     if normalized not in {"cover", "contain"}:
         raise ValueError("Visual asset fit must be cover or contain")
+    return normalized
+
+
+def _visual_asset_treatment(value: object, role: str) -> str:
+    if value is None:
+        return "aperture"
+    normalized = str(value).strip().casefold().replace("_", "-")
+    if normalized not in {"aperture", "full-frame"}:
+        raise ValueError("Visual asset treatment must be aperture or full-frame")
+    if normalized == "full-frame" and role != "background":
+        raise ValueError("Only background assets can use full-frame treatment")
     return normalized
 
 
@@ -2429,8 +2478,8 @@ def _scene_narration_timing(
         "duration-proportional",
     }:
         raise ValueError("Narration timing has an unsupported alignment source")
-    ratio_value = alignment.get("alignedTokenRatio", 1.0)
-    if (
+    ratio_value = alignment.get("alignedTokenRatio")
+    if ratio_value is not None and (
         not isinstance(ratio_value, (int, float))
         or isinstance(ratio_value, bool)
         or not 0 <= float(ratio_value) <= 1
@@ -2460,12 +2509,14 @@ def _scene_narration_timing(
             }
         )
         previous_start_tick = start_tick
-    return {
+    result = {
         "schemaVersion": 1,
         "source": source,
-        "alignedTokenRatio": float(ratio_value),
         "words": words,
     }
+    if ratio_value is not None:
+        result["alignedTokenRatio"] = float(ratio_value)
+    return result
 
 
 def _render_target(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -2495,6 +2546,12 @@ def _render_target(value: Mapping[str, Any]) -> dict[str, Any]:
         "frameRate": frame_rate,
         "colorSpace": "srgb-rec709",
     }
+
+
+def _renderer_codec(value: object) -> str:
+    if not isinstance(value, str) or value not in SUPPORTED_CODECS:
+        raise ValueError(f"Unsupported renderer codec {value!r}")
+    return value
 
 
 def _delivery_name(codec: str) -> str:

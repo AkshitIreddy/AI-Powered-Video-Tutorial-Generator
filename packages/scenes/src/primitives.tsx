@@ -31,6 +31,7 @@ export function SceneCanvas({ scene, frame, theme = PRECISION_THEME, children, r
   const { width, height } = scene.target;
   const random = new SeededRandom(scene.spec.seed);
   const background = "background" in scene.spec.content ? scene.spec.content.background : undefined;
+  const fullFrameBackground = background?.treatment === "full-frame";
   const backgroundHref = background ? resolveAsset?.(background) : undefined;
   const safeBackgroundHref = backgroundHref && (backgroundHref.startsWith("blob:") || backgroundHref.startsWith("alystria-asset:"))
     ? backgroundHref
@@ -73,9 +74,9 @@ export function SceneCanvas({ scene, frame, theme = PRECISION_THEME, children, r
           <stop offset="1" stopColor={theme.paper} />
         </linearGradient>
         <linearGradient id={`ink-field-${safeId(scene.spec.id)}`} x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0" stopColor={shade(theme.codeBackground, 0.05)} />
-          <stop offset="0.58" stopColor={theme.codeBackground} />
-          <stop offset="1" stopColor={shade(theme.primary, 0.42)} />
+          <stop offset="0" stopColor={shade(theme.primary, 0.78)} />
+          <stop offset="0.58" stopColor={shade(theme.primary, 0.7)} />
+          <stop offset="1" stopColor={shade(theme.primary, 0.58)} />
         </linearGradient>
         <linearGradient id={`signal-field-${safeId(scene.spec.id)}`} x1="0" x2="1" y1="0" y2="0">
           <stop offset="0" stopColor={theme.primary} />
@@ -92,7 +93,7 @@ export function SceneCanvas({ scene, frame, theme = PRECISION_THEME, children, r
       </defs>
       <rect width={width} height={height} fill={theme.paper} />
       {safeBackgroundHref ? (
-        <g data-semantic-role="visual" aria-label={background?.alt} data-background-treatment="artwork-aperture">
+        <g data-semantic-role="visual" aria-label={background?.alt} data-background-treatment={fullFrameBackground ? "full-frame" : "artwork-aperture"}>
           {/* Keep generated art inside the editorial aperture. A former faint
               full-frame copy made accidental glyph-like model artifacts look
               like damaged slide text, even underneath authored content. */}
@@ -103,7 +104,7 @@ export function SceneCanvas({ scene, frame, theme = PRECISION_THEME, children, r
             width={width}
             height={height}
             preserveAspectRatio={background?.fit === "contain" ? "xMidYMid meet" : "xMidYMid slice"}
-            mask={`url(#background-treatment-${safeId(scene.spec.id)})`}
+            mask={fullFrameBackground ? undefined : `url(#background-treatment-${safeId(scene.spec.id)})`}
           />
           <path
             d={`M ${width * 0.865} 0 V ${height * 0.52} C ${width * 0.865} ${height * 0.71}, ${width * 0.735} ${height * 0.83}, ${width * 0.57} ${height} H ${width * 0.63} C ${width * 0.79} ${height * 0.84}, ${width * 0.9} ${height * 0.7}, ${width * 0.9} ${height * 0.5} V 0 Z`}

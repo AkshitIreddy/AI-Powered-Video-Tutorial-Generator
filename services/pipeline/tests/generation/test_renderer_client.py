@@ -420,7 +420,9 @@ def test_subprocess_renderer_translates_materializes_invokes_and_cleans(tmp_path
             runner=runner,
         )
 
-        rendered = client.render(render_request(first.hash, second.hash))
+        request = render_request(first.hash, second.hash)
+        request["codec"] = "av1"
+        rendered = client.render(request)
 
         assert rendered.content == b"deterministic-delivery"
         assert rendered.media_type == "video/webm"
@@ -475,6 +477,7 @@ def test_subprocess_renderer_translates_materializes_invokes_and_cleans(tmp_path
         assert render_call[0][2] == "render"
         assert render_call[0][render_call[0].index("--captions") + 1] == "sidecar"
         assert render_call[0][render_call[0].index("--caption-language") + 1] == "en-US"
+        assert render_call[0][render_call[0].index("--codec") + 1] == "av1"
         assert render_call[2] == 42
         assert runner.attempt_root is not None and not runner.attempt_root.exists()
     finally:
@@ -752,9 +755,10 @@ def test_subprocess_renderer_materializes_hash_bound_visual_for_image_and_presen
                 "assetId": "uploaded-explanation",
                 "sha256": image.hash,
                 "role": "primary",
-                "alt": "An owned visual explanation",
-                "fit": "contain",
-            }
+                    "alt": "An owned visual explanation",
+                    "fit": "contain",
+                    "treatment": "aperture",
+                }
         ]
         assert scenes[1]["visualAssets"][0]["role"] == "presenter-portrait"
         assert not Path(visual_inputs[0]["path"]).exists(), "attempt staging must be cleaned"
@@ -894,6 +898,7 @@ def test_renderer_expands_custom_background_presenter_and_caption_style_without_
         second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
         background = store.add_artifact_bytes(ONE_PIXEL_PNG, media_type="image/png")
         portrait = store.add_artifact_bytes(ONE_PIXEL_PNG + b"portrait", media_type="image/png")
+        accepted = store.add_artifact_bytes(ONE_PIXEL_PNG + b"accepted", media_type="image/png")
         request = render_request(first.hash, second.hash)
         request["scenes"][0]["type"] = "presenter-slide"
         request["scenes"][0]["presenterName"] = "Minji"
@@ -934,23 +939,63 @@ def test_renderer_expands_custom_background_presenter_and_caption_style_without_
             },
             "warnings": [],
         }
+        request["assets"] = [
+            {
+                "sceneId": "scene_intro",
+                "artifactHash": accepted.hash,
+                "mediaType": "image/png",
+                "assetId": "accepted-scene-illustration",
+                "provider": "accepted-project-asset",
+                "modelRevision": "provenance-accepted",
+            }
+        ]
+        request["customization"] = {
+            "colors": {
+                "paper": "#101820",
+                "ink": "#F5F7FA",
+                "accent": "#FF6B5F",
+                "evidence": "#55D6BE",
+            },
+            "cornerRadius": 9,
+            "reducedMotion": True,
+        }
 
         SubprocessRendererClient(store, pins, runner=runner).render(request)
         assert runner.render_manifest is not None
         manifest = runner.render_manifest
         assert manifest["captionStyle"]["position"] == "top"
         assert manifest["captionStyle"]["maxLines"] == 3
+        assert manifest["sceneTheme"] == {
+            "paper": "#101820",
+            "ink": "#F5F7FA",
+            "primary": "#FF6B5F",
+            "secondary": "#55D6BE",
+            "radius": 9,
+        }
+        assert manifest["reducedMotion"] is True
         assert manifest["scenes"][0]["metadata"]["presenterName"] == "Minji"
         assert manifest["scenes"][0]["metadata"]["presenterPlacement"] == "right"
         assert [item["id"] for item in manifest["visualAssets"]] == [
+            "accepted-scene-illustration",
             "background-modern-tech-signal-v1",
             "presenter-portrait-modern-tech-minji-v1",
         ]
-        assert [item["role"] for item in manifest["scenes"][0]["visualAssets"]] == [
-            "background",
-            "presenter-portrait",
+        assert [item["assetId"] for item in manifest["scenes"][0]["visualAssets"]] == [
+            "accepted-scene-illustration",
+            "presenter-portrait-modern-tech-minji-v1",
         ]
         assert [item["role"] for item in manifest["scenes"][1]["visualAssets"]] == ["background"]
+        assert next(
+            item
+            for item in manifest["scenes"][0]["visualAssets"]
+            if item["role"] == "background"
+        )["treatment"] == "aperture"
+        assert manifest["scenes"][1]["visualAssets"][0]["treatment"] == "full-frame"
+        assert next(
+            item
+            for item in manifest["scenes"][0]["visualAssets"]
+            if item["role"] == "presenter-portrait"
+        )["treatment"] == "aperture"
         assert (
             not {"path", "url", "uri", "contentBase64"}
             & request["visualCustomization"]["assets"][0].keys()

@@ -246,6 +246,38 @@ function themeWithTypography(
   });
 }
 
+function themeFromManifest(
+  base: SceneTheme,
+  customization: NonNullable<RenderManifest["sceneTheme"]> | undefined,
+): SceneTheme {
+  if (!customization) return base;
+  return Object.freeze({
+    ...base,
+    paper: customization.paper,
+    ink: customization.ink,
+    primary: customization.primary,
+    secondary: customization.secondary,
+    mutedInk: mixHex(customization.ink, customization.paper, 0.34),
+    surface: mixHex(customization.paper, customization.ink, 0.035),
+    surfaceRaised: mixHex(customization.paper, customization.primary, 0.075),
+    line: mixHex(customization.paper, customization.ink, 0.17),
+    codeBackground: mixHex(customization.ink, customization.paper, 0.045),
+    codeInk: customization.paper,
+    radius: customization.radius,
+  });
+}
+
+function mixHex(first: string, second: string, amount: number): string {
+  const channels = (value: string): readonly number[] => [
+    Number.parseInt(value.slice(1, 3), 16),
+    Number.parseInt(value.slice(3, 5), 16),
+    Number.parseInt(value.slice(5, 7), 16),
+  ];
+  const left = channels(first);
+  const right = channels(second);
+  return `#${left.map((value, index) => Math.round(value + (right[index]! - value) * amount).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+}
+
 const FRAME_HTML_TOKEN = "__ALYSTRIA_PREPARED_FRAME_NUMBER__";
 const FRAME_SVG_TOKEN = "<!--__ALYSTRIA_PREPARED_FRAME_SVG__-->";
 
@@ -396,12 +428,17 @@ export class FrameRenderer {
     if (fontPayloads.size !== (manifest.fontAssets ?? []).length) {
       throw new TypeError("Renderer received font bytes that are not bound by the manifest");
     }
+    const customizedTheme = themeFromManifest(
+      this.#sceneViewOptions.theme ?? PRECISION_THEME,
+      manifest.sceneTheme,
+    );
     const typographyTheme = manifest.typography
-      ? themeWithTypography(this.#sceneViewOptions.theme ?? PRECISION_THEME, manifest.typography)
-      : this.#sceneViewOptions.theme;
+      ? themeWithTypography(customizedTheme, manifest.typography)
+      : customizedTheme;
     const sceneView = new SceneViewStaticAdapter({
       ...this.#sceneViewOptions,
-      ...(typographyTheme ? { theme: typographyTheme } : {}),
+      theme: typographyTheme,
+      ...(manifest.reducedMotion === undefined ? {} : { reducedMotion: manifest.reducedMotion }),
       ...(manifestResolver ? { resolveAsset: manifestResolver } : {}),
     });
     let startTick = 0;

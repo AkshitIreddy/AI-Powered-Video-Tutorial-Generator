@@ -1,6 +1,7 @@
 import {
   resolveBuiltinSceneSpec,
   type AuthoredResolvedScene,
+  type AuthoredSceneVisualAssetReference,
 } from "./authoring.js";
 import { stableHashNumber } from "./random.js";
 import { TIMEBASE_TICKS_PER_SECOND, type SceneSpec } from "./types.js";
@@ -20,6 +21,7 @@ export interface AuthoredStoryboardScene {
   readonly accessibilityDescription?: string;
   readonly onScreenText?: readonly string[];
   readonly visualBeat?: unknown;
+  readonly visualAssets?: readonly AuthoredSceneVisualAssetReference[];
 }
 
 export interface StoryboardSceneSpecOptions {
@@ -56,6 +58,7 @@ export function sceneSpecFromStoryboard(
     ...(scene.accessibilityDescription?.trim()
       ? { accessibilityDescription: cleanText(scene.accessibilityDescription, "") }
       : {}),
+    ...(scene.visualAssets?.length ? { visualAssets: [...scene.visualAssets] } : {}),
   };
   const spec = resolveBuiltinSceneSpec(resolved);
   if (!spec) return undefined;

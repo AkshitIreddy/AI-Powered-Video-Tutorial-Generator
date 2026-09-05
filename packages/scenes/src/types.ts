@@ -200,6 +200,7 @@ export interface AssetReference {
   readonly sha256?: string;
   readonly alt: string;
   readonly fit?: "contain" | "cover";
+  readonly treatment?: "aperture" | "full-frame";
 }
 
 export interface SourceItem {
