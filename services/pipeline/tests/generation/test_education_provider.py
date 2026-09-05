@@ -282,8 +282,19 @@ def test_structured_provider_authors_exact_timed_plan_and_semantic_slides() -> N
     assert draft.sections[1].visual_beat["compositionFamily"] == "worked_example"
     assert draft.metadata["provider"] == "nvidia-nim"
     assert draft.metadata["actualCostMicros"] == 123
-    assert "text-free" in script_client.requests[0].prompt
-    assert "spoken expansion" in script_client.requests[0].prompt
+    script_request = script_client.requests[0]
+    assert "text-free" in script_request.prompt
+    assert "spoken expansion" in script_request.prompt
+    assert script_request.json_schema is not None
+    role_enum = script_request.json_schema["properties"]["sections"]["items"][
+        "properties"
+    ]["informationUnits"]["items"]["properties"]["role"]["enum"]
+    script_prompt = json.loads(script_request.prompt)
+    assert script_prompt["informationUnitRoleVocabulary"] == role_enum
+    assert any(
+        "never invent, rename, or reclassify a role" in requirement
+        for requirement in script_prompt["requirements"]
+    )
     assert len(script_client.requests) == 1
 
 
@@ -311,6 +322,10 @@ def test_structured_provider_repairs_math_that_expands_past_spoken_pacing() -> N
         locale="en-US",
         revision=1,
     ).word_count
+    original_roles = [
+        [unit["role"] for unit in section["informationUnits"]]
+        for section in initial["sections"]
+    ]
     client = FakeTextClient(
         [initial, _paced_narration_response([section.id for section in outline])]
     )
@@ -334,6 +349,22 @@ def test_structured_provider_repairs_math_that_expands_past_spoken_pacing() -> N
     assert round(60 * 2.05 * 0.94) <= initial_authored_words <= round(60 * 2.05 * 1.08)
     assert previous_total > initial_authored_words
     assert "words a narrator will speak" in rewrite_prompt
+    rewrite_payload = json.loads(rewrite_prompt)
+    assert client.requests[0].json_schema is not None
+    role_enum = client.requests[0].json_schema["properties"]["sections"]["items"][
+        "properties"
+    ]["informationUnits"]["items"]["properties"]["role"]["enum"]
+    assert rewrite_payload["preservedInformationUnitRoleVocabulary"] == role_enum
+    assert any(
+        "preserves every existing informationUnits object and its role" in requirement
+        and "never return, rename, replace, or reclassify those roles" in requirement
+        for requirement in rewrite_payload["requirements"]
+    )
+    assert [
+        [unit["role"] for unit in section.visual_beat["informationUnits"]]
+        for section in draft.sections
+        if section.visual_beat is not None
+    ] == original_roles
     assert _pacing_word_count(draft) <= round(60 * 2.05 * 1.08)
 
 

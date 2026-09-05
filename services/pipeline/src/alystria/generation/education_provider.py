@@ -189,6 +189,23 @@ _NARRATION_REWRITE_SCHEMA: dict[str, Any] = {
     },
 }
 
+
+def _script_information_unit_roles() -> tuple[str, ...]:
+    """Read the trusted information-unit vocabulary from the output schema."""
+
+    role_schema = _SCRIPT_SCHEMA["properties"]["sections"]["items"]["properties"][
+        "informationUnits"
+    ]["items"]["properties"]["role"]
+    raw_roles = role_schema.get("enum")
+    if (
+        not isinstance(raw_roles, list)
+        or not raw_roles
+        or not all(isinstance(role, str) and role for role in raw_roles)
+        or len(set(raw_roles)) != len(raw_roles)
+    ):
+        raise RuntimeError("Script schema has no valid information-unit role vocabulary")
+    return tuple(raw_roles)
+
 _StructuredUsageSink = Callable[[str, ProviderResult[TextOutput]], None]
 _structured_usage_sink: ContextVar[_StructuredUsageSink | None] = ContextVar(
     "alystria_structured_writing_usage_sink",
@@ -439,6 +456,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
         )
 
     def draft_script(self, plan: LearningPlan, grounding: GroundingMode) -> ScriptDraft:
+        information_unit_roles = _script_information_unit_roles()
         prompt = json.dumps(
             {
                 "task": "Write the narration and semantic slide plan for this tutorial.",
@@ -451,6 +469,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                 "targetNarrationWords": round(
                     plan.target_duration_seconds * NARRATION_WORDS_PER_SECOND
                 ),
+                "informationUnitRoleVocabulary": list(information_unit_roles),
                 "objectives": [
                     {
                         "id": objective.id,
@@ -482,6 +501,8 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                     "Keep every section's narration within ten percent of its targetWords value and the complete narration within six percent of targetNarrationWords.",
                     "Every section must advance the explanation with subject-specific facts or reasoning.",
                     "On-screen text must be short, exact, and useful; never repeat a word accidentally.",
+                    "Every informationUnits role must exactly match one entry in "
+                    "informationUnitRoleVocabulary; never invent, rename, or reclassify a role.",
                     "Information units must encode the actual concepts, steps, evidence, formula, or result.",
                     "Use whiteboard when a derivation or spatial explanation should be revealed stroke by stroke.",
                     "Use live_code when code should be typed and explained in narration-timed steps; use code for a static listing.",
@@ -558,8 +579,15 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             "targetTotalWords": round(
                 plan.target_duration_seconds * NARRATION_WORDS_PER_SECOND
             ),
+            "preservedInformationUnitRoleVocabulary": list(
+                _script_information_unit_roles()
+            ),
             "requirements": [
                 "Return exactly one narration for every supplied outline ID in the same order.",
+                "Rewrite narration only. Alystria preserves every existing informationUnits "
+                "object and its role; never return, rename, replace, or reclassify those roles. "
+                "Their exact trusted values are listed in "
+                "preservedInformationUnitRoleVocabulary.",
                 "Keep each narration within five words of its targetWords value.",
                 "For English narration, count equations, operators, numbers, and symbols as the words a narrator will speak.",
                 "Preserve every fact and worked value already present; introduce no new numerical claim.",
