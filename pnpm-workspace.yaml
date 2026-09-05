@@ -2,3 +2,5 @@ packages:
   - apps/*
   - services/renderer
   - packages/*
+allowBuilds:
+  esbuild: true
