@@ -21,6 +21,8 @@ from alystria.research import (
     ScriptSection,
 )
 
+from .spoken_text import normalize_spoken_text
+
 _SCENE_TYPES = {
     "question",
     "definition",
@@ -337,6 +339,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                     "Return exactly one section for every supplied outline ID, in the same order.",
                     "Open with a concrete learner-facing question, then answer it rather than lingering.",
                     "Narration must be natural spoken prose at roughly 123 words per minute.",
+                    "For English narration, pace the spoken expansion of equations, operators, numbers, and symbols rather than treating each written expression as one word.",
                     "Keep every section's narration within ten percent of its targetWords value and the complete narration within six percent of targetNarrationWords.",
                     "Every section must advance the explanation with subject-specific facts or reasoning.",
                     "On-screen text must be short, exact, and useful; never repeat a word accidentally.",
@@ -376,18 +379,21 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
         )
         payload = _parsed_object(result.value.parsed, "script")
         draft = _draft_from_payload(plan, grounding, payload, result)
-        if target_words * 0.94 <= draft.word_count <= target_words * 1.08:
+        pacing_word_count = _pacing_word_count(draft)
+        if target_words * 0.94 <= pacing_word_count <= target_words * 1.08:
             return draft
         for attempt in range(2):
             payload, result = self._rewrite_narration_to_pacing(
-                plan, payload, previous_word_count=draft.word_count, attempt=attempt
+                plan, payload, previous_word_count=pacing_word_count, attempt=attempt
             )
             draft = _draft_from_payload(plan, grounding, payload, result)
-            if target_words * 0.94 <= draft.word_count <= target_words * 1.08:
+            pacing_word_count = _pacing_word_count(draft)
+            if target_words * 0.94 <= pacing_word_count <= target_words * 1.08:
                 return draft
+        pacing_unit = "spoken words" if draft.locale.casefold().startswith("en") else "words"
         raise ValueError(
             "Writing provider narration is outside the safe pacing range after two corrective passes "
-            f"({draft.word_count} words for a {target_words}-word target)"
+            f"({pacing_word_count} {pacing_unit} for a {target_words}-word target)"
         )
 
     def _rewrite_narration_to_pacing(
@@ -414,6 +420,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             "requirements": [
                 "Return exactly one narration for every supplied outline ID in the same order.",
                 "Keep each narration within five words of its targetWords value.",
+                "For English narration, count equations, operators, numbers, and symbols as the words a narrator will speak.",
                 "Preserve every fact and worked value already present; introduce no new numerical claim.",
                 "Add useful reasoning, connective explanation, misconception checks, or verification—not repetition, filler, or production commentary.",
                 "Write natural spoken prose and do not copy slide labels as a list.",
@@ -479,6 +486,22 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             )
         corrected["sections"] = corrected_sections
         return corrected, result
+
+
+def _pacing_word_count(draft: ScriptDraft) -> int:
+    """Count the exact English text sent to TTS; preserve legacy locale behavior."""
+
+    if not draft.locale.casefold().startswith("en"):
+        return draft.word_count
+    return sum(
+        len(
+            re.findall(
+                r"\b\w+[\w'-]*\b",
+                normalize_spoken_text(section.narration, locale=draft.locale).spoken_text,
+            )
+        )
+        for section in draft.sections
+    )
 
 
 def _draft_from_payload(

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from typing import Any
 
 import pytest
 
-from alystria.generation.education_provider import StructuredWritingEducationalProvider
+from alystria.generation.education_provider import (
+    StructuredWritingEducationalProvider,
+    _pacing_word_count,
+)
 from alystria.generation.workflow import _fit_storyboard_to_narration, _paced_scene_ticks
 from alystria.providers import ProviderResult, TextOutput, TextRequest, Usage
 from alystria.research import (
@@ -16,6 +20,8 @@ from alystria.research import (
     LearningPlan,
     ObjectiveLevel,
     PrerequisiteDag,
+    ScriptDraft,
+    ScriptSection,
 )
 
 
@@ -184,6 +190,74 @@ def test_structured_provider_authors_exact_timed_plan_and_semantic_slides() -> N
     assert draft.metadata["provider"] == "nvidia-nim"
     assert draft.metadata["actualCostMicros"] == 123
     assert "text-free" in script_client.requests[0].prompt
+    assert "spoken expansion" in script_client.requests[0].prompt
+    assert len(script_client.requests) == 1
+
+
+def test_structured_provider_repairs_math_that_expands_past_spoken_pacing() -> None:
+    learner = LearnerProfile("curious beginners", ExperienceLevel.BEGINNER)
+    outline_provider = StructuredWritingEducationalProvider(
+        FakeTextClient([_outline_response()]), model="writer-v1"
+    )
+    outline = tuple(
+        outline_provider.build_outline("Karatsuba multiplication", learner, _objectives(), 60)
+    )
+    initial = _script_response([section.id for section in outline])
+    mathematical_narration = (
+        "We compare O(n^2) with O(n^1.585), so 1234 inputs avoid 25% of the recursive "
+        "products. This comparison shows why the faster recurrence saves work as inputs grow "
+        "and the recursive tree becomes wider in each level."
+    )
+    for section in initial["sections"]:
+        section["narration"] = mathematical_narration
+    initial_authored_words = ScriptDraft.create(
+        tuple(
+            ScriptSection(section["outlineSectionId"], section["narration"], "test intent")
+            for section in initial["sections"]
+        ),
+        locale="en-US",
+        revision=1,
+    ).word_count
+    client = FakeTextClient(
+        [initial, _paced_narration_response([section.id for section in outline])]
+    )
+    provider = StructuredWritingEducationalProvider(client, model="writer-v1")
+    plan = LearningPlan(
+        "Karatsuba multiplication",
+        learner,
+        _objectives(),
+        PrerequisiteDag(()),
+        (),
+        outline,
+        60,
+    )
+
+    draft = provider.draft_script(plan, GroundingMode.CREATIVE)
+
+    assert len(client.requests) == 2
+    rewrite_prompt = client.requests[1].prompt
+    previous_total = json.loads(rewrite_prompt)["previousTotalWords"]
+    assert isinstance(previous_total, int)
+    assert round(60 * 2.05 * 0.94) <= initial_authored_words <= round(60 * 2.05 * 1.08)
+    assert previous_total > initial_authored_words
+    assert "words a narrator will speak" in rewrite_prompt
+    assert _pacing_word_count(draft) <= round(60 * 2.05 * 1.08)
+
+
+def test_pacing_count_preserves_plain_prose_and_non_english_behavior() -> None:
+    plain = ScriptDraft.create(
+        (ScriptSection("outline-1", "Plain narration keeps the same ordinary word count.", "test"),),
+        locale="en-US",
+        revision=1,
+    )
+    non_english = ScriptDraft.create(
+        (ScriptSection("outline-1", "La valeur 12 + 34 reste ecrite ici.", "test"),),
+        locale="fr-FR",
+        revision=1,
+    )
+
+    assert _pacing_word_count(plain) == plain.word_count
+    assert _pacing_word_count(non_english) == non_english.word_count
 
 
 def test_structured_provider_repairs_only_narration_when_pacing_is_short() -> None:
