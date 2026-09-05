@@ -206,6 +206,12 @@ def _script_information_unit_roles() -> tuple[str, ...]:
         raise RuntimeError("Script schema has no valid information-unit role vocabulary")
     return tuple(raw_roles)
 
+
+_SPOKEN_MATH_REQUIREMENT = (
+    "Write narration as natural spoken wording: verbalize arithmetic, and keep symbolic "
+    "equations in informationUnits for the visual rather than reading raw notation aloud."
+)
+
 _StructuredUsageSink = Callable[[str, ProviderResult[TextOutput]], None]
 _structured_usage_sink: ContextVar[_StructuredUsageSink | None] = ContextVar(
     "alystria_structured_writing_usage_sink",
@@ -497,6 +503,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                     "Return exactly one section for every supplied outline ID, in the same order.",
                     "Open with a concrete learner-facing question, then answer it rather than lingering.",
                     "Narration must be natural spoken prose at roughly 123 words per minute.",
+                    _SPOKEN_MATH_REQUIREMENT,
                     "For English narration, pace the spoken expansion of equations, operators, numbers, and symbols rather than treating each written expression as one word.",
                     "Keep every section's narration within ten percent of its targetWords value and the complete narration within six percent of targetNarrationWords.",
                     "Every section must advance the explanation with subject-specific facts or reasoning.",
@@ -588,6 +595,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                 "object and its role; never return, rename, replace, or reclassify those roles. "
                 "Their exact trusted values are listed in "
                 "preservedInformationUnitRoleVocabulary.",
+                _SPOKEN_MATH_REQUIREMENT,
                 "Keep each narration within five words of its targetWords value.",
                 "For English narration, count equations, operators, numbers, and symbols as the words a narrator will speak.",
                 "Preserve every fact and worked value already present; introduce no new numerical claim.",

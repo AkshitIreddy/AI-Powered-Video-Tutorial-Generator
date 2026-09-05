@@ -120,7 +120,7 @@ from .narration_cache import fingerprint as narration_cache_fingerprint
 from .spoken_text import normalize_spoken_text
 
 IMPLEMENTATION_VERSION = "generation-v11-reusable-narration-clips"
-PROMPT_VERSION = "offline-education-v3-exact-role-vocabulary"
+PROMPT_VERSION = "offline-education-v4-spoken-math-and-exact-roles"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
 MAX_UNAUTHORED_VISUAL_TAIL_MS = 2_000

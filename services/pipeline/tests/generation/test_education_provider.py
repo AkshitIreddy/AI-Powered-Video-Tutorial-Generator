@@ -295,6 +295,11 @@ def test_structured_provider_authors_exact_timed_plan_and_semantic_slides() -> N
         "never invent, rename, or reclassify a role" in requirement
         for requirement in script_prompt["requirements"]
     )
+    assert any(
+        "verbalize arithmetic" in requirement
+        and "keep symbolic equations in informationUnits" in requirement
+        for requirement in script_prompt["requirements"]
+    )
     assert len(script_client.requests) == 1
 
 
@@ -358,6 +363,11 @@ def test_structured_provider_repairs_math_that_expands_past_spoken_pacing() -> N
     assert any(
         "preserves every existing informationUnits object and its role" in requirement
         and "never return, rename, replace, or reclassify those roles" in requirement
+        for requirement in rewrite_payload["requirements"]
+    )
+    assert any(
+        "verbalize arithmetic" in requirement
+        and "keep symbolic equations in informationUnits" in requirement
         for requirement in rewrite_payload["requirements"]
     )
     assert [
