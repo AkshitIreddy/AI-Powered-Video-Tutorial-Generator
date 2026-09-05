@@ -329,7 +329,7 @@ def review_rendered_frames(
             frames=frames,
         )
         findings = _parse_findings(provider_record["text"], frames)
-    except ProviderFailure:
+    except ProviderFailure as error:
         return _persist_not_reviewed(
             store,
             request,
@@ -337,6 +337,14 @@ def review_rendered_frames(
             "provider_unavailable",
             frames=frames,
             contact_sheet_hash=sheet.hash,
+            provider_invocation_attempted=True,
+            provider_failure={
+                "code": error.code.value,
+                "providerId": error.provider_id,
+                "retryable": error.retryable,
+                "httpStatus": error.http_status,
+                "requestId": error.request_id,
+            },
         )
     except RenderedFrameReviewResponseError:
         return _persist_not_reviewed(
@@ -346,6 +354,7 @@ def review_rendered_frames(
             "invalid_provider_response",
             frames=frames,
             contact_sheet_hash=sheet.hash,
+            provider_invocation_attempted=True,
         )
 
     report = {
@@ -809,6 +818,8 @@ def _persist_not_reviewed(
     *,
     frames: Sequence[SampledFrame] = (),
     contact_sheet_hash: str | None = None,
+    provider_invocation_attempted: bool = False,
+    provider_failure: Mapping[str, Any] | None = None,
 ) -> RenderedFrameReviewResult:
     report = {
         "schemaVersion": 1,
@@ -824,6 +835,8 @@ def _persist_not_reviewed(
         "sampledFrames": [item.to_dict() for item in frames],
         "sampleCoverage": _sample_coverage(frames, request.expected_duration_seconds),
         "contactSheetArtifactHash": contact_sheet_hash,
+        "providerInvocationAttempted": provider_invocation_attempted,
+        "providerFailure": dict(provider_failure) if provider_failure is not None else None,
         "visionReview": None,
         "findings": [],
         "criticalFindingCount": 0,

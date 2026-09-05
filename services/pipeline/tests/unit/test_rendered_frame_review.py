@@ -11,6 +11,7 @@ import pytest
 from PIL import Image
 
 from alystria.project import ProjectStore
+from alystria.providers.errors import FailureCode, ProviderFailure
 from alystria.providers.policy import (
     BudgetApproval,
     CapabilityRoute,
@@ -101,6 +102,21 @@ class VisionRuntime:
                 request_id="request-one",
             ),
             "request-one",
+        )
+
+
+class FailingVisionRuntime(VisionRuntime):
+    def invoke(
+        self, request: VisionLanguageRequest, *, idempotency_key: str
+    ) -> ProviderResult[Any]:
+        self.calls.append((request, idempotency_key))
+        raise ProviderFailure(
+            FailureCode.RATE_LIMITED,
+            "Sanitized provider failure",
+            provider_id="vision-provider",
+            retryable=True,
+            http_status=429,
+            request_id="request-rate-limited",
         )
 
 
@@ -342,6 +358,42 @@ def test_non_public_project_never_extracts_or_invokes_vlm(tmp_path: Path) -> Non
         assert result.reason == "vlm_review_requires_public_project"
         assert runtime.calls == []
         assert extractor.probes == 0
+    finally:
+        store.close()
+
+
+def test_provider_failure_is_persisted_as_sanitized_diagnostic_without_retry(
+    tmp_path: Path,
+) -> None:
+    store, video_hash = _project(tmp_path)
+    ffmpeg, ffprobe = _tools(tmp_path)
+    runtime = FailingVisionRuntime("", classification=DataClassification.PUBLIC)
+    try:
+        result = review_rendered_frames(
+            store,
+            _request(video_hash),
+            Context(),
+            runtime=runtime,
+            ffmpeg_path=ffmpeg,
+            ffprobe_path=ffprobe,
+            extractor=FakeExtractor(),
+        )
+
+        assert result.status == "not_reviewed"
+        assert result.reason == "provider_unavailable"
+        assert len(runtime.calls) == 1
+        with store.cas.open(result.report_artifact_hash) as stream:
+            report = json.load(stream)
+        assert report["providerInvocationAttempted"] is True
+        assert report["providerFailure"] == {
+            "code": "RATE_LIMITED",
+            "httpStatus": 429,
+            "providerId": "vision-provider",
+            "requestId": "request-rate-limited",
+            "retryable": True,
+        }
+        assert "message" not in report["providerFailure"]
+        assert "details" not in report["providerFailure"]
     finally:
         store.close()
 
