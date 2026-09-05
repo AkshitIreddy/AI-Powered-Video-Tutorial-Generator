@@ -4,7 +4,14 @@ Current audit: **2026-09-05**, local `main`. The historical checklist below reco
 
 See [Product](docs/research/product-audit-2026-09-05.md), [Generation](docs/research/generation-audit-2026-09-05.md), [Editor](docs/research/editor-audit-2026-09-05.md), [Onboarding](docs/research/onboarding-audit-2026-09-05.md), [Catalog](docs/research/catalog-audit-2026-09-05.md), [Presenter and voice](docs/research/presenter-voice-audit-2026-09-05.md), and [Windows integration](docs/research/windows-integration-audit-2026-09-05.md) for current findings, fixes, measurements, and remaining gates.
 
-Current source evidence: **200 desktop tests**, **25 Playwright journeys** (3 intentional viewport skips), **63 Rust tests**, desktop typecheck, and lint passed. A separate real authored binary-search example is 84.008 seconds and has inspected teaching frames. The current final provider-generated three-minute tutorial, native editor journey, and recovery qualification are tracked in the Windows report; earlier counts and media below must not be substituted for them.
+Current source evidence: the complete desktop checkpoint passed **221 tests**;
+the subsequent autosave correction passed **14 focused save/approval tests**.
+The browser matrix passed **25 Playwright journeys** (3 intentional viewport
+skips), and the Rust source passed **65 tests**. Desktop typecheck and lint
+passed. A separate real authored binary-search example is 84.008 seconds and
+has inspected teaching frames. Final provider-generated three-minute media,
+native editor behavior, and recovery qualification are tracked in the Windows
+report; these source checks and earlier media must not be substituted for them.
 
 This ledger preserves the historical implementation checklist for the 2.0 worktree. A checked item means
 the implementation exists and its relevant local verification passed. It does
