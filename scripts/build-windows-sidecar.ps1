@@ -2,7 +2,8 @@
 param(
     [string]$OutputDirectory,
     [string]$BuildRootDirectory,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$PreserveBuildWorkRoot
 )
 
 $ErrorActionPreference = "Stop"
@@ -114,6 +115,11 @@ try {
 }
 finally {
     if (Test-Path $WorkRoot) {
-        Remove-Item -LiteralPath $WorkRoot -Recurse -Force
+        if ($PreserveBuildWorkRoot) {
+            Write-Host "Preserved sidecar build work root for review: $WorkRoot"
+        }
+        else {
+            Remove-Item -LiteralPath $WorkRoot -Recurse -Force
+        }
     }
 }
