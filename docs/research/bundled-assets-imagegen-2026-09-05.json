@@ -1,0 +1,65 @@
+{
+  "generator": "built-in image_gen",
+  "date": "2026-09-05",
+  "status": "generated and visually inspected; six subject illustrations included as supplemental elements; both teacher experiments rejected and not included",
+  "assets": [
+    {
+      "id": "biology-seedling",
+      "prompt": "Use case: scientific-educational. Asset type: bundled offline teaching illustration in a video tutorial app. Create one polished original landscape 3:2 illustration of a healthy young bean seedling in a neat cutaway mound of soil: recognizable paired seed leaves, a few true green leaves, one central stem, branching roots below the soil, small soil grains. Clear physically plausible separation between above-ground leaves and underground roots. Warm tactile painted-paper editorial illustration, crisp readable silhouettes, muted forest green, ochre earth and soft lavender accents, generous clean ivory negative space. No text, labels, numbers, arrows, border, logo, watermark, or invented anatomy. The app will add editable explanatory labels over the image. This is a reusable teaching asset, not a slide with headings.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-de294693-d2e9-4089-8914-5d93f10af67c.png",
+      "destination": "apps/desktop/src/assets/teaching/biology-seedling-v1.png",
+      "status": "supplemental-element-included"
+    },
+    {
+      "id": "science-lab",
+      "prompt": "Use case: scientific-educational. Asset type: bundled offline teaching illustration. Create one original landscape 3:2 editorial illustration of a small inviting science laboratory workbench with a realistic microscope, two clear glass beakers, a capped test-tube rack and a simple blank notebook. Instruments must have coherent geometry and rest naturally on the bench. No people. Sophisticated tactile gouache and paper-cut illustration, restrained teal, plum, amber accents, soft daylight, pale ivory backdrop with generous negative space. No text, numbers, scale markings, labels, logos, captions or watermark. Calm classroom illustration suitable for science introductions, not an authoritative experimental result.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-81272b22-6fae-4160-9c26-4b57f38d8cdc.png",
+      "destination": "apps/desktop/src/assets/teaching/science-lab-v1.png",
+      "status": "supplemental-element-included"
+    },
+    {
+      "id": "computing-workbench",
+      "prompt": "Use case: scientific-educational. Asset type: reusable offline teaching illustration for computing lessons. Create one original landscape 3:2 educational editorial illustration of a disassembled desktop computer arranged neatly on a table: open metal chassis, recognizable motherboard, two separate RAM sticks, small processor chip, solid-state drive and monitor with a completely blank dark display. Natural believable hardware geometry, no branded designs. Crisp tactile painted paper mixed with refined soft 3D form, ink-plum, steel gray, teal and restrained lavender accents against an ivory studio background. Clear object separation for later editable callout labels. No words, numbers, code, arrows, text, logos or watermarks.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-d84e2b4c-a738-4684-8e0f-0086808719c1.png",
+      "destination": "apps/desktop/src/assets/teaching/computing-workbench-v1.png",
+      "status": "supplemental-element-included"
+    },
+    {
+      "id": "energy-landscape",
+      "prompt": "Use case: scientific-educational. Asset type: reusable offline teaching landscape illustration. Create one original wide 3:2 editorial illustration of a small green valley with a river, a compact village, a few solar panels on roofs, two realistic three-bladed wind turbines on a ridge and bright morning sunlight. Plausible perspective and coherent landscape. Charming but mature painted-paper illustration with crisp shapes and subtle grain, soft greens, warm yellow, restrained lavender shadows. Leave uncluttered pale sky for editable labels. No people, text, arrows, numbers, legends, logos or watermark. This is conceptual scenery for energy and sustainability lessons, not a quantitative diagram.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-89c7c42c-fe39-435f-a42f-ea8b46eb48e5.png",
+      "destination": "apps/desktop/src/assets/teaching/energy-landscape-v1.png",
+      "status": "supplemental-element-included"
+    },
+    {
+      "id": "history-excavation",
+      "prompt": "Use case: historical-scene. Asset type: reusable bundled teaching illustration for archaeology and evidence literacy. Create one original landscape 3:2 painterly editorial scene of a careful archaeological excavation with a small rectangular soil trench showing visible earth layers, several unbroken pottery fragments resting beside it, soft brush and trowel placed on a cloth, distant weathered stone foundations and low hills. No people, no real named historical site, no readable writing or claim about exact civilization. Elegant warm ochre and muted teal watercolor-paper style, clear composition, generous pale sky for editable teaching labels. No text, labels, numbers, rulers, arrows, logos or watermark. Emphasize patient observation, not treasure fantasy.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-b8edef08-bbf1-4579-8600-5d755ba22adc.png",
+      "destination": "apps/desktop/src/assets/teaching/history-excavation-v1.png",
+      "status": "supplemental-element-included"
+    },
+    {
+      "id": "geometry-objects",
+      "prompt": "Use case: scientific-educational. Asset type: bundled reusable teaching illustration. Create one landscape 3:2 illustration of six clearly separated physical classroom geometry manipulatives arranged on a pale ivory tabletop: one cube, one sphere, one cylinder, one triangular prism, one cone, and one rectangular cuboid. Each recognizable shape has correct planar or curved geometry and natural contact shadow; no impossible edges, no intersecting objects. Mature tactile painted wood and clay illustration, lavender, teal, warm amber, coral, dusty blue and plum. Slight elevated perspective, balanced arrangement with generous spacing for editable callouts. No words, labels, letters, numbers, formulae, arrows, logos or watermark.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-64d0cd5c-1144-45e5-82f4-e982c97c709e.png",
+      "destination": "apps/desktop/src/assets/teaching/geometry-objects-v1.png",
+      "status": "supplemental-element-included"
+    },
+    {
+      "id": "teacher-nadia",
+      "prompt": "Use case: photorealistic-natural. Asset type: original fictional teacher portrait included offline in educational video software. Create one high-quality square head-and-shoulders portrait of a warm adult Arab woman mathematics tutor in her early thirties, modest ivory blouse and muted forest-green hijab neatly framing her face. Completely original fictional identity, calm capable expression, relaxed CLOSED lips, straight-on gaze, level head, both shoulders visible, realistic eyes and skin texture, soft studio daylight, clean pale ivory background. Symmetrical teaching-avatar framing, face comfortably centered with generous margin above head and around shoulders. No hands, accessories obscuring face, blemish emphasis, celebrity likeness, text, logo or watermark. Natural professional photography, not fashion glamour, not a news anchor.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-c088c8aa-0e0b-4ee7-9cb2-e7fe6ebf2a0d.png",
+      "destination": "apps/desktop/src/assets/presenters/teacher-nadia-v1.png",
+      "status": "rejected-not-included",
+      "decision": "Owner rejected the head-covering portrait; the app copy is absent."
+    },
+    {
+      "id": "teacher-mateo",
+      "prompt": "Use case: photorealistic-natural. Asset type: original fictional teacher portrait included offline in educational video software. Create one high-quality square head-and-shoulders portrait of a friendly adult Latino male computing instructor in his early thirties, short curly dark hair and neat short beard, wearing a casual plum overshirt over a plain cream t-shirt. Completely original fictional identity, calm confident expression, relaxed CLOSED lips, straight-on gaze, level head, both shoulders visible, realistic brown eyes and natural skin texture, soft studio daylight, clean pale ivory background. Symmetrical teaching-avatar framing, face comfortably centered with generous margin above head and around shoulders. No hands, eyeglasses, celebrity likeness, text, logos or watermark. Natural professional photography, approachable teacher, not fashion glamour or a news anchor.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-de61d5f4-0ef3-46fb-b96a-bb8e61b339a0.png",
+      "destination": "apps/desktop/src/assets/presenters/teacher-mateo-v1.png",
+      "status": "rejected-not-included",
+      "decision": "New teacher portraits were removed from scope in favor of the existing presenter collection."
+    }
+  ]
+}

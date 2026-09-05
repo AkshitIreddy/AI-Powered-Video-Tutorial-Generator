@@ -1,0 +1,92 @@
+{
+  "schema": "alystria.bundled-slide-assets.imagegen.v1",
+  "generatedAt": "2026-09-05T11:36:25.7314583+05:30",
+  "generator": {
+    "mode": "Codex built-in image_gen tool",
+    "apiKeyUsed": false,
+    "sourceDirectory": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb6-df05-7ce3-943e-daf821422057",
+    "selectionPolicy": "Each asset was generated independently, visually inspected at original resolution, and copied without resampling or recompression. The two transparent elements were regenerated with stricter safe-padding constraints before selection."
+  },
+  "sharedRights": {
+    "creator": "OpenAI built-in image generation for Alystria",
+    "license": "Project use and export allowed",
+    "attribution": "Generated and visually reviewed 2026-09-05",
+    "rightsStatus": "cleared"
+  },
+  "assets": [
+    {
+      "id": "slide-paper-v1",
+      "outputPath": "apps/desktop/src/assets/teaching/slide-paper-v1.png",
+      "generatorOutput": "exec-a8409fd1-5614-462d-b41e-765d2b07e01b.png",
+      "sha256": "8bda5d7b9a5332d3d6f2ea0f48adc8721f253641b1be0934ccd819b9a572edf9",
+      "byteSize": 1664653,
+      "width": 1672,
+      "height": 941,
+      "alpha": false,
+      "prompt": "Use case: productivity-visual\nAsset type: editable 16:9 tutorial slide background\nPrimary request: Create a refined blank editorial background in warm ivory paper with extremely subtle warm folded-paper relief near the far outer edges.\nScene/backdrop: flat wide presentation canvas only, no depicted room or objects.\nStyle/medium: high-end tactile editorial paper, understated and natural, soft photographic paper grain with delicate crease geometry.\nComposition/framing: exact landscape 16:9; keep the central 75 percent visually blank, calm, low contrast, and evenly illuminated for legible editable lesson content; place sparse fold cues only along the extreme corners and perimeter.\nLighting/mood: soft diffuse warm daylight, scholarly and quiet.\nColor palette: ivory, oat, warm cream, the faintest clay shadow.\nMaterials/textures: fine uncoated paper fiber, subtle layered edge, barely visible folds.\nConstraints: background only; no text, letters, numbers, symbols, logos, watermark, charts, diagrams, borders, frames, people, hands, faces, objects, illustrations, icons, stationery, or UI; no focal subject; no high contrast behind the central content region.",
+      "inspection": "Pass: clean warm paper center; folds and layered edges remain at the perimeter; no text, object, person, logo, chart, or focal subject."
+    },
+    {
+      "id": "slide-ink-v1",
+      "outputPath": "apps/desktop/src/assets/teaching/slide-ink-v1.png",
+      "generatorOutput": "exec-60034b82-a6b4-402e-b160-5ee1d91ace4c.png",
+      "sha256": "1bb76ffac08f2624be6281c55b97d58dcce4a6472894cf210553b5b16264f0d7",
+      "byteSize": 1862857,
+      "width": 1672,
+      "height": 941,
+      "alpha": false,
+      "prompt": "Use case: productivity-visual\nAsset type: editable 16:9 tutorial slide background\nPrimary request: Create a blank dark ink-blue tutorial slide surface with a restrained teal undertone, subtle natural fiber, and a trace of diffuse chalk atmosphere only at the far periphery.\nScene/backdrop: flat wide presentation canvas only, no depicted room or objects.\nStyle/medium: sophisticated matte ink wash on fibrous paper, premium educational finishing background, quiet and contemporary.\nComposition/framing: exact landscape 16:9; preserve the central 75 percent as a nearly uniform, empty dark field for bright editable content; confine faint teal bloom, chalk dust, and texture variation to the outermost edges and corners.\nLighting/mood: deep, focused, low-glare, calm studio darkness.\nColor palette: midnight ink, deep navy, muted teal, a whisper of desaturated aqua.\nMaterials/textures: fine paper fiber, velvety pigment, barely perceptible chalk haze.\nConstraints: background only; no text, letters, numbers, symbols, logos, watermark, charts, diagrams, borders, frames, people, faces, objects, illustrations, icons, blackboard drawings, or UI; no focal subject; no bright patch behind the central content region.",
+      "inspection": "Pass: quiet uniform ink center; teal fiber and chalk atmosphere stay peripheral; no marks that read as text, diagrams, or objects."
+    },
+    {
+      "id": "slide-watercolor-v1",
+      "outputPath": "apps/desktop/src/assets/teaching/slide-watercolor-v1.png",
+      "generatorOutput": "exec-78825b9b-d6d1-4848-861e-2b51b1c25145.png",
+      "sha256": "8f3722548a79ce39914777a42773a67e4cc7887a653198b0c19bf26f9a985f8d",
+      "byteSize": 1764142,
+      "width": 1672,
+      "height": 941,
+      "alpha": false,
+      "prompt": "Use case: productivity-visual\nAsset type: editable 16:9 tutorial slide background\nPrimary request: Create an airy blank watercolor paper background in pale mint and soft lavender, with translucent color washes touching only the corners and outer edges.\nScene/backdrop: flat wide presentation canvas only, no depicted room or objects.\nStyle/medium: refined hand-painted watercolor on luminous cold-press paper, gentle, modern, and educational.\nComposition/framing: exact landscape 16:9; keep the central 75 percent clean, pale, empty, and low contrast for editable lesson content; use asymmetrical feathered washes at the extreme corners with generous white space.\nLighting/mood: diffuse daylight, fresh, thoughtful, serene.\nColor palette: milk white, pale mint, mist lavender, a minute hint of cool gray.\nMaterials/textures: subtle cold-press paper tooth, watery blooms, soft pigment granulation at the perimeter.\nConstraints: background only; no text, letters, numbers, symbols, logos, watermark, charts, diagrams, borders, frames, people, faces, objects, flowers, leaves, illustrations, icons, stationery, or UI; no focal subject; no pigment crossing the central content region.",
+      "inspection": "Pass: luminous blank central field; mint and lavender washes remain in the corners; no floral or object-like forms."
+    },
+    {
+      "id": "slide-chapter-v1",
+      "outputPath": "apps/desktop/src/assets/teaching/slide-chapter-v1.png",
+      "generatorOutput": "exec-fca36baf-3507-4fcd-b935-59a45adb93c6.png",
+      "sha256": "c796a9eb40a415676572ed61385d3c3ce617d5521fc71303408a846e1964dbe8",
+      "byteSize": 1982397,
+      "width": 1672,
+      "height": 941,
+      "alpha": false,
+      "prompt": "Use case: productivity-visual\nAsset type: editable 16:9 cinematic tutorial section-divider background\nPrimary request: Create a rich abstract amber-and-indigo chapter-divider background with sophisticated cinematic light and layered atmospheric color, while leaving a broad blank center for editable content.\nScene/backdrop: abstract flat presentation canvas, not a photographed environment and no objects.\nStyle/medium: premium cinematic color field, subtle film grain, restrained luminous pigment and soft depth, elegant rather than flashy.\nComposition/framing: exact landscape 16:9; reserve the central 75 percent as a quiet, dark, mostly uniform empty indigo field; concentrate warm amber radiance and richer color movement along the far left and right edges and corners, with restrained diagonal flow that never becomes a shape or subject.\nLighting/mood: dramatic but calm, polished chapter transition, controlled contrast.\nColor palette: deep indigo, midnight blue, burnished amber, small touches of muted copper.\nMaterials/textures: fine film grain, soft atmospheric glow, subtle layered pigment.\nConstraints: background only; no text, letters, numbers, symbols, logos, watermark, charts, diagrams, borders, frames, people, faces, objects, landscapes, architecture, illustrations, icons, lens flare or UI; no focal subject; keep the center blank and highly legible.",
+      "inspection": "Pass: cinematic amber energy is confined to the perimeter; central indigo field remains blank; no representational subject or text."
+    },
+    {
+      "id": "slide-callout-v1",
+      "outputPath": "apps/desktop/src/assets/teaching/slide-callout-v1.png",
+      "generatorOutput": "exec-c7745660-579a-44f2-a063-e82fa7795803.png",
+      "sha256": "bec8f528f715a87a75bb1e20697a82f898362ed2430f23475f23b08ae60b9af4",
+      "byteSize": 1141258,
+      "width": 2079,
+      "height": 756,
+      "alpha": true,
+      "visibleAlphaBoundsAt64": [113, 190, 1965, 577],
+      "prompt": "Use case: productivity-visual\nAsset type: reusable transparent PNG material for editable tutorial slides\nPrimary request: Create one wide horizontal ivory torn-paper callout panel with a refined natural deckle edge and an entirely empty center.\nScene/backdrop: isolated paper material only on a genuinely transparent background.\nSubject: a single wide, low-profile rectangular sheet of warm ivory paper for editable text.\nStyle/medium: photoreal tactile handmade paper, restrained editorial quality.\nComposition/framing: center the paper; it must occupy no more than 82 percent of canvas width and 38 percent of canvas height, leaving at least 9 percent fully transparent margin at left and right and at least 28 percent fully transparent margin above and below; approximately 4.5:1 width-to-height; the inner 80 percent of the paper is blank and low contrast.\nLighting/mood: soft diffuse top light with a very subtle contact shadow contained close to the torn edge.\nColor palette: warm ivory, oat, faint cream shadows.\nMaterials/textures: fine uncoated fiber, delicately irregular torn deckle edge, barely visible paper grain.\nConstraints: true alpha transparency outside the paper including all corners; one isolated continuous panel only; no checkerboard or visible background rectangle; no text, letters, numbers, symbols, logos, watermark, charts, diagrams, people, hands, tape, pins, clips, stationery, flowers, icons, or other objects; no fold across the content center; preserve a clean empty center.",
+      "inspection": "Pass after one padding-focused regeneration: RGBA with alpha range 0-254; visible edge at alpha 64 stays inside [113,190]-[1965,577]; clean empty paper center and intact deckle."
+    },
+    {
+      "id": "slide-underline-v1",
+      "outputPath": "apps/desktop/src/assets/teaching/slide-underline-v1.png",
+      "generatorOutput": "exec-81d5e98c-5f6b-40c9-a10a-d2fa90a19988.png",
+      "sha256": "f0fdc8101f8212a2c5a1495c58d6d0246e1b4e210cd680b311b7b3b5f69651c4",
+      "byteSize": 486676,
+      "width": 2172,
+      "height": 724,
+      "alpha": true,
+      "visibleAlphaBoundsAt64": [130, 278, 2023, 433],
+      "prompt": "Use case: productivity-visual\nAsset type: reusable transparent PNG material for editable tutorial slides\nPrimary request: Create one hand-painted teal brush underline as a single broad dry-brush stroke.\nScene/backdrop: isolated paint stroke only on a genuinely transparent background.\nSubject: one long horizontal muted-teal brush stroke, subtly organic and slightly tapered, designed to sit beneath editable title text.\nStyle/medium: authentic hand-painted dry brush with visible bristle gaps and pigment texture, sophisticated educational editorial accent.\nComposition/framing: center the stroke; it must occupy no more than 82 percent of canvas width and 24 percent of canvas height, leaving at least 9 percent fully transparent margin at left and right and at least 36 percent fully transparent margin above and below; approximately 6:1 width-to-height; mostly straight with gentle human variation and no flourish.\nLighting/mood: matte pigment, crisp clean isolation.\nColor palette: deep muted teal with slight tonal variation, no additional colors.\nMaterials/textures: dry-brush bristle marks, feathered pigment edge, controlled paint density.\nConstraints: true alpha transparency everywhere outside the paint; exactly one stroke; no checkerboard, paper, canvas, background, shadow, text, letters, numbers, symbols, logos, watermark, icons, objects, people, hands, distant splatters, frames, diagrams, arrows, or decorative flourish.",
+      "inspection": "Pass after one padding-focused regeneration: RGBA with alpha range 0-255; visible paint at alpha 64 stays inside [130,278]-[2023,433]; one clean teal stroke with bristle texture and no background."
+    }
+  ]
+}
