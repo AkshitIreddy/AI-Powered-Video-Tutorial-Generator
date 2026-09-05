@@ -1,9 +1,9 @@
-//! Download-only local model staging.
+//! Pinned local model downloads and managed local-image installation.
 //!
-//! This manager deliberately stops before activation. It owns a tiny curated
-//! catalog of immutable HTTPS artifacts, resumes `.part` files, verifies exact
-//! sizes and SHA-256 digests, and records the accepted license hash. Runtime
-//! activation remains a separate Python model-manager responsibility.
+//! Quarantined presenter packs deliberately stop before activation. The
+//! hardware-reviewed SDXL path delegates installation and preflight to the
+//! packaged pipeline's `ComfyBundleInstaller`; candidate image bundles remain
+//! non-executable after their exact files are installed.
 
 use crate::error::CommandError;
 use crate::types::{
@@ -18,11 +18,30 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 const STATUS_FILE: &str = "download-status.json";
 const MAX_ARTIFACT_BYTES: u64 = 16 * 1024 * 1024 * 1024;
+const MAX_INSTALLER_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
+const COMFYUI_RUNTIME_BYTES: u64 = 1_803_412_624;
+const COMFYUI_RUNTIME_REVISION: &str = "8f40b43e0204d5b9780f3e9618e140e929e80594";
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InstallStrategy {
+    Quarantine,
+    ManagedComfy {
+        bundle_bytes: u64,
+        artifact_count: usize,
+        executable: bool,
+    },
+}
 
 #[derive(Debug, Clone, Copy)]
 struct ArtifactSpec {
@@ -47,6 +66,7 @@ struct PackageSpec {
     license_scope: &'static str,
     download_only_reason: &'static str,
     artifacts: &'static [ArtifactSpec],
+    strategy: InstallStrategy,
 }
 
 // This exact artifact set was hash-verified during the RC MuseTalk spike. Some
@@ -165,30 +185,104 @@ const MUSETALK: PackageSpec = PackageSpec {
     license_scope: "MuseTalk source code only; model-card and dependency terms remain separate activation gates.",
     download_only_reason: "Hash-verified quarantine download only. This acknowledgement covers the pinned MuseTalk code license, not a combined pack license. Model-card and dependency terms remain separate, and upstream .pth files are not activated or executed until dependency-license, runtime-trust, and hardware reviews pass.",
     artifacts: MUSETALK_ARTIFACTS,
+    strategy: InstallStrategy::Quarantine,
 };
 
-const PACKAGES: &[PackageSpec] = &[MUSETALK];
+const SDXL: PackageSpec = PackageSpec {
+    model_id: "local/sdxl-base-1.0",
+    display_name: "Stable Diffusion XL Base 1.0 + optional offset LoRA",
+    immutable_revision: "comfyui-8f40b43e+sdxl-46216598",
+    code_revision: COMFYUI_RUNTIME_REVISION,
+    weight_revision: "462165984030d82259a11f4367a4eed129e94a7b",
+    license_id: "CreativeML Open RAIL++-M",
+    license_url: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/462165984030d82259a11f4367a4eed129e94a7b/LICENSE.md",
+    license_sha256: "19b6998b569b53ac1fc2158a8a3202c8699a9a4605b47075715d9c96be7fb6d0",
+    license_scope: "Pinned SDXL base and official offset-example LoRA weights. The pinned ComfyUI runtime and its bundled dependencies retain their own upstream terms.",
+    download_only_reason: "One-click managed install. The packaged installer verifies the ComfyUI v0.9.2 archive, SDXL base, and optional official offset LoRA by exact byte count and SHA-256, then runs the hardware-reviewed SDXL preflight. The LoRA stays optional in generation because the reference proof showed a minor out-of-crop artifact.",
+    artifacts: &[],
+    strategy: InstallStrategy::ManagedComfy {
+        bundle_bytes: 6_987_631_938,
+        artifact_count: 3,
+        executable: true,
+    },
+};
+
+const FLUX_KLEIN: PackageSpec = PackageSpec {
+    model_id: "local/flux.2-klein-4b-fp8",
+    display_name: "FLUX.2 Klein 4B FP8 bundle",
+    immutable_revision: "comfyui-8f40b43e+flux-5b4408e5+assets-5f526678",
+    code_revision: COMFYUI_RUNTIME_REVISION,
+    weight_revision: "5b4408e59397a4a37ccb46afe426d8ed86379441",
+    license_id: "Apache-2.0",
+    license_url: "https://www.apache.org/licenses/LICENSE-2.0.txt",
+    license_sha256: "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    license_scope: "Pinned BFL diffusion weight plus the pinned Comfy companion text encoder and VAE, each published as Apache-2.0. The ComfyUI runtime and bundled dependencies retain their own upstream terms.",
+    download_only_reason: "Advanced download candidate. Exact FP8 diffusion, FP4 text encoder, VAE, and ComfyUI v0.9.2 files are installed and verified, but this roughly 13 GB workflow has not passed the reference 12 GB Windows preflight. It remains unavailable for generation until a reviewed CPU-offload recipe passes.",
+    artifacts: &[],
+    strategy: InstallStrategy::ManagedComfy {
+        bundle_bytes: 8_255_049_810,
+        artifact_count: 4,
+        executable: false,
+    },
+};
+
+const Z_IMAGE: PackageSpec = PackageSpec {
+    model_id: "local/z-image-turbo-int8",
+    display_name: "Z-Image Turbo INT8 + FP4 bundle",
+    immutable_revision: "comfyui-8f40b43e+z-image-08d04455",
+    code_revision: COMFYUI_RUNTIME_REVISION,
+    weight_revision: "08d04455279082882deaabc8d0d09fc914c071e1",
+    license_id: "Apache-2.0",
+    license_url: "https://www.apache.org/licenses/LICENSE-2.0.txt",
+    license_sha256: "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    license_scope: "Pinned Comfy-Org INT8 diffusion weight, FP4 text encoder, and VAE published as Apache-2.0. The ComfyUI runtime and bundled dependencies retain their own upstream terms.",
+    download_only_reason: "Advanced download candidate. Exact INT8 diffusion, FP4 text encoder, VAE, and ComfyUI v0.9.2 files are installed and verified, but this workflow has not passed the reference 12 GB Windows preflight. It remains unavailable for generation until a reviewed offload recipe passes.",
+    artifacts: &[],
+    strategy: InstallStrategy::ManagedComfy {
+        bundle_bytes: 10_015_721_877,
+        artifact_count: 4,
+        executable: false,
+    },
+};
+
+const PACKAGES: &[PackageSpec] = &[MUSETALK, SDXL, FLUX_KLEIN, Z_IMAGE];
 
 #[derive(Debug, Clone)]
 pub struct ModelDownloadManager {
     root: PathBuf,
+    comfy_root: PathBuf,
+    installer_executable: Option<PathBuf>,
     statuses: Arc<RwLock<BTreeMap<String, ModelDownloadStatus>>>,
 }
 
 impl ModelDownloadManager {
     pub fn at(models_root: PathBuf) -> Result<Self, CommandError> {
         let root = models_root.join("download-quarantine");
+        let comfy_root = models_root.join("comfyui-local");
         fs::create_dir_all(&root).map_err(|_| CommandError::io("model download cache setup"))?;
         let manager = Self {
             root,
+            comfy_root,
+            installer_executable: None,
             statuses: Arc::new(RwLock::new(BTreeMap::new())),
         };
         manager.load_statuses();
         Ok(manager)
     }
 
+    /// Bind the verified packaged pipeline executable used to run the exact
+    /// Python installer. The app state supplies the active runtime-pack worker;
+    /// no executable is discovered from PATH.
+    pub fn with_installer_executable(mut self, executable: Option<PathBuf>) -> Self {
+        self.installer_executable = executable.filter(|path| path.is_absolute() && path.is_file());
+        self
+    }
+
     pub fn catalog(&self) -> Vec<ModelDownloadCatalogEntry> {
-        PACKAGES.iter().map(catalog_entry).collect()
+        PACKAGES
+            .iter()
+            .map(|spec| catalog_entry(spec, self.installer_executable.is_some()))
+            .collect()
     }
 
     pub fn statuses(&self) -> Vec<ModelDownloadStatus> {
@@ -216,20 +310,27 @@ impl ModelDownloadManager {
                 false,
             ));
         }
-        if self
-            .statuses
-            .read()
-            .get(spec.model_id)
-            .is_some_and(|status| {
-                status.phase == ModelDownloadPhase::Downloading
-                    || status.phase == ModelDownloadPhase::Verifying
-            })
-        {
+        if self.statuses.read().values().any(|status| {
+            active_download_phase(&status.phase)
+                && (status.model_id == spec.model_id
+                    || matches!(spec.strategy, InstallStrategy::ManagedComfy { .. })
+                        && package(&status.model_id).is_ok_and(|active| {
+                            matches!(active.strategy, InstallStrategy::ManagedComfy { .. })
+                        }))
+        }) {
             return Err(CommandError::conflict(
                 "This model pack download is already running.",
             ));
         }
+        if matches!(spec.strategy, InstallStrategy::ManagedComfy { .. })
+            && self.installer_executable.is_none()
+        {
+            return Err(CommandError::unavailable(
+                "The verified pipeline runtime required for local image installation",
+            ));
+        }
         let downloaded_bytes = existing_bytes(&self.package_root(spec), spec);
+        let managed = matches!(spec.strategy, InstallStrategy::ManagedComfy { .. });
         let status = ModelDownloadStatus {
             model_id: spec.model_id.into(),
             immutable_revision: Some(spec.immutable_revision.into()),
@@ -237,12 +338,14 @@ impl ModelDownloadManager {
             downloaded_bytes,
             total_bytes: total_bytes(spec),
             verified_artifacts: 0,
-            artifact_count: spec.artifacts.len(),
+            artifact_count: artifact_count(spec),
             license_id: Some(spec.license_id.into()),
             license_url: Some(spec.license_url.into()),
             license_sha256: Some(spec.license_sha256.into()),
             license_accepted_at: Some(Utc::now()),
-            detail: if downloaded_bytes > 0 {
+            detail: if managed {
+                "Starting the pinned local image installer. Runtime and model files will be verified before use.".into()
+            } else if downloaded_bytes > 0 {
                 "Resuming hash-bound artifacts in the download-only quarantine.".into()
             } else {
                 "Downloading hash-bound artifacts into the download-only quarantine.".into()
@@ -269,7 +372,10 @@ impl ModelDownloadManager {
     }
 
     fn run(&self, spec: &'static PackageSpec) {
-        let result = self.download(spec);
+        let result = match spec.strategy {
+            InstallStrategy::Quarantine => self.download(spec),
+            InstallStrategy::ManagedComfy { .. } => self.install_comfy(spec),
+        };
         if let Err(error) = result {
             let mut status = self.current(spec);
             status.phase = ModelDownloadPhase::Failed;
@@ -277,6 +383,74 @@ impl ModelDownloadManager {
             status.updated_at = Utc::now();
             self.update(status);
         }
+    }
+
+    fn install_comfy(&self, spec: &'static PackageSpec) -> Result<(), CommandError> {
+        validate_spec(spec)?;
+        let executable = self.installer_executable.as_ref().ok_or_else(|| {
+            CommandError::unavailable(
+                "The verified pipeline runtime required for local image installation",
+            )
+        })?;
+        let mut status = self.current(spec);
+        status.phase = ModelDownloadPhase::Installing;
+        status.detail = "Installing the pinned ComfyUI runtime and exact model bundle under the Alystria Models directory. No GPU is used during installation.".into();
+        status.updated_at = Utc::now();
+        self.update(status);
+
+        let output = hidden_command(executable)
+            .args([
+                "local-image",
+                "install",
+                "--runtime-root",
+                self.comfy_root
+                    .to_str()
+                    .ok_or_else(|| CommandError::invalid("models root", "is not valid Unicode"))?,
+                "--model-id",
+                spec.model_id,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|_| download_error("The managed local image installer could not start."))?;
+        if !output.status.success() {
+            return Err(download_error(
+                "The managed local image installer rejected the runtime or model bundle. Start again to retry verified files.",
+            ));
+        }
+        if output.stdout.len() > MAX_INSTALLER_OUTPUT_BYTES
+            || output.stderr.len() > MAX_INSTALLER_OUTPUT_BYTES
+        {
+            return Err(download_error(
+                "The managed local image installer returned too much output.",
+            ));
+        }
+        let result: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| {
+            download_error("The managed local image installer returned an invalid result.")
+        })?;
+        validate_comfy_result(spec, &self.comfy_root, &result)?;
+
+        let InstallStrategy::ManagedComfy { executable, .. } = spec.strategy else {
+            unreachable!("managed install strategy was checked above")
+        };
+        let mut ready = self.current(spec);
+        ready.phase = if executable {
+            ModelDownloadPhase::Ready
+        } else {
+            ModelDownloadPhase::DownloadedQuarantined
+        };
+        ready.downloaded_bytes = ready.total_bytes;
+        ready.verified_artifacts = ready.artifact_count;
+        ready.activation_blocked = !executable;
+        ready.detail = if executable {
+            "Runtime and model hashes passed the managed preflight. The reviewed SDXL recipe is ready for local generation.".into()
+        } else {
+            "Every pinned runtime and model file passed verification. This candidate remains unavailable for generation because no hardware-reviewed recipe is installed.".into()
+        };
+        ready.updated_at = Utc::now();
+        self.update(ready);
+        Ok(())
     }
 
     fn download(&self, spec: &'static PackageSpec) -> Result<(), CommandError> {
@@ -411,10 +585,16 @@ impl ModelDownloadManager {
             }
             if matches!(
                 status.phase,
-                ModelDownloadPhase::Downloading | ModelDownloadPhase::Verifying
+                ModelDownloadPhase::Downloading
+                    | ModelDownloadPhase::Verifying
+                    | ModelDownloadPhase::Installing
             ) {
                 status.phase = ModelDownloadPhase::Failed;
-                status.detail = "The previous app session ended during download. Start again to resume the existing .part files.".into();
+                status.detail = if matches!(spec.strategy, InstallStrategy::ManagedComfy { .. }) {
+                    "The previous app session ended during installation. Start again to verify existing files and finish setup.".into()
+                } else {
+                    "The previous app session ended during download. Start again to resume the existing .part files.".into()
+                };
                 status.updated_at = Utc::now();
             } else if status.phase == ModelDownloadPhase::DownloadedQuarantined
                 && spec.artifacts.iter().any(|artifact| {
@@ -581,8 +761,7 @@ fn verify_file(path: &Path, spec: &ArtifactSpec) -> Result<(), CommandError> {
 }
 
 fn validate_spec(spec: &PackageSpec) -> Result<(), CommandError> {
-    if spec.artifacts.is_empty()
-        || !spec.license_url.starts_with("https://")
+    if !spec.license_url.starts_with("https://")
         || !is_sha256(spec.license_sha256)
         || !is_git_revision(spec.code_revision)
         || !is_git_revision(spec.weight_revision)
@@ -591,6 +770,23 @@ fn validate_spec(spec: &PackageSpec) -> Result<(), CommandError> {
         return Err(download_error(
             "The curated model declaration is incomplete.",
         ));
+    }
+    match spec.strategy {
+        InstallStrategy::Quarantine if spec.artifacts.is_empty() => {
+            return Err(download_error(
+                "The curated quarantine declaration has no artifacts.",
+            ));
+        }
+        InstallStrategy::ManagedComfy {
+            bundle_bytes,
+            artifact_count,
+            ..
+        } if !spec.artifacts.is_empty() || bundle_bytes == 0 || artifact_count < 2 => {
+            return Err(download_error(
+                "The managed local image declaration is invalid.",
+            ));
+        }
+        _ => {}
     }
     for artifact in spec.artifacts {
         safe_relative(artifact.relative_path)?;
@@ -614,25 +810,25 @@ fn is_git_revision(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn catalog_entry(spec: &PackageSpec) -> ModelDownloadCatalogEntry {
+fn catalog_entry(spec: &PackageSpec, installer_available: bool) -> ModelDownloadCatalogEntry {
     ModelDownloadCatalogEntry {
         model_id: spec.model_id.into(),
         display_name: spec.display_name.into(),
         immutable_revision: spec.immutable_revision.into(),
         total_bytes: total_bytes(spec),
-        artifact_count: spec.artifacts.len(),
+        artifact_count: artifact_count(spec),
         license_id: spec.license_id.into(),
         license_url: spec.license_url.into(),
         license_sha256: spec.license_sha256.into(),
         license_scope: spec.license_scope.into(),
         code_revision: spec.code_revision.into(),
         weight_revision: spec.weight_revision.into(),
-        available: true,
+        available: matches!(spec.strategy, InstallStrategy::Quarantine) || installer_available,
         download_only_reason: spec.download_only_reason.into(),
     }
 }
 fn manifest_status(spec: &PackageSpec) -> ModelDownloadStatus {
-    ModelDownloadStatus { model_id: spec.model_id.into(), immutable_revision: Some(spec.immutable_revision.into()), phase: ModelDownloadPhase::ManifestRequired, downloaded_bytes: existing_bytes_placeholder(), total_bytes: total_bytes(spec), verified_artifacts: 0, artifact_count: spec.artifacts.len(), license_id: Some(spec.license_id.into()), license_url: Some(spec.license_url.into()), license_sha256: Some(spec.license_sha256.into()), license_accepted_at: None, detail: "A pinned download-only declaration is available. Review and accept its exact license record to begin.".into(), activation_blocked: true, updated_at: Utc::now() }
+    ModelDownloadStatus { model_id: spec.model_id.into(), immutable_revision: Some(spec.immutable_revision.into()), phase: ModelDownloadPhase::ManifestRequired, downloaded_bytes: existing_bytes_placeholder(), total_bytes: total_bytes(spec), verified_artifacts: 0, artifact_count: artifact_count(spec), license_id: Some(spec.license_id.into()), license_url: Some(spec.license_url.into()), license_sha256: Some(spec.license_sha256.into()), license_accepted_at: None, detail: "A pinned immutable declaration is available. Review and accept its exact license record to begin.".into(), activation_blocked: true, updated_at: Utc::now() }
 }
 const fn existing_bytes_placeholder() -> u64 {
     0
@@ -646,7 +842,18 @@ fn package(model_id: &str) -> Result<&'static PackageSpec, CommandError> {
         })
 }
 fn total_bytes(spec: &PackageSpec) -> u64 {
-    spec.artifacts.iter().map(|value| value.size_bytes).sum()
+    match spec.strategy {
+        InstallStrategy::Quarantine => spec.artifacts.iter().map(|value| value.size_bytes).sum(),
+        InstallStrategy::ManagedComfy { bundle_bytes, .. } => {
+            COMFYUI_RUNTIME_BYTES.saturating_add(bundle_bytes)
+        }
+    }
+}
+fn artifact_count(spec: &PackageSpec) -> usize {
+    match spec.strategy {
+        InstallStrategy::Quarantine => spec.artifacts.len(),
+        InstallStrategy::ManagedComfy { artifact_count, .. } => artifact_count,
+    }
 }
 fn existing_bytes(root: &Path, spec: &PackageSpec) -> u64 {
     spec.artifacts
@@ -710,6 +917,92 @@ fn is_sha256(value: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
+
+fn active_download_phase(phase: &ModelDownloadPhase) -> bool {
+    matches!(
+        phase,
+        ModelDownloadPhase::Downloading
+            | ModelDownloadPhase::Verifying
+            | ModelDownloadPhase::Installing
+    )
+}
+
+fn hidden_command(program: &Path) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
+fn validate_comfy_result(
+    spec: &PackageSpec,
+    runtime_root: &Path,
+    value: &serde_json::Value,
+) -> Result<(), CommandError> {
+    let InstallStrategy::ManagedComfy {
+        artifact_count,
+        executable,
+        ..
+    } = spec.strategy
+    else {
+        return Err(download_error(
+            "A quarantine package returned a managed installer result.",
+        ));
+    };
+    let object = value.as_object().ok_or_else(|| {
+        download_error("The managed local image installer result is not an object.")
+    })?;
+    let expected_root = runtime_root
+        .canonicalize()
+        .map_err(|_| download_error("The managed local image root was not created."))?;
+    let returned_root = object
+        .get("runtimeRoot")
+        .and_then(serde_json::Value::as_str)
+        .map(PathBuf::from)
+        .and_then(|path| path.canonicalize().ok());
+    let expected_recipe = executable.then_some("comfy-sdxl-1.0-portrait-v1");
+    let returned_recipe = object.get("recipeId").and_then(serde_json::Value::as_str);
+    let files = object
+        .get("files")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| download_error("The managed preflight omitted its file results."))?;
+    if object.get("ok").and_then(serde_json::Value::as_bool) != Some(true)
+        || object.get("operation").and_then(serde_json::Value::as_str) != Some("install")
+        || object.get("modelId").and_then(serde_json::Value::as_str) != Some(spec.model_id)
+        || object
+            .get("runtimeReady")
+            .and_then(serde_json::Value::as_bool)
+            != Some(true)
+        || object
+            .get("executable")
+            .and_then(serde_json::Value::as_bool)
+            != Some(executable)
+        || returned_recipe != expected_recipe
+        || returned_root.as_deref() != Some(expected_root.as_path())
+        || files.len().saturating_add(1) != artifact_count
+    {
+        return Err(download_error(
+            "The managed local image installer result did not match the pinned declaration.",
+        ));
+    }
+    for file in files {
+        let path = file
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .map(PathBuf::from)
+            .ok_or_else(|| download_error("The managed preflight returned an invalid path."))?;
+        if file.get("verified").and_then(serde_json::Value::as_bool) != Some(true)
+            || !path.is_absolute()
+            || !path.starts_with(&expected_root)
+        {
+            return Err(download_error(
+                "The managed preflight did not verify every contained model file.",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn human_bytes(value: u64) -> String {
     if value >= 1024 * 1024 * 1024 {
         format!("{:.2} GiB", value as f64 / (1024.0 * 1024.0 * 1024.0))
@@ -737,7 +1030,7 @@ mod tests {
     #[test]
     fn catalog_is_pinned_and_explicitly_download_only() {
         validate_spec(&MUSETALK).expect("valid pinned declaration");
-        let entry = catalog_entry(&MUSETALK);
+        let entry = catalog_entry(&MUSETALK, false);
         assert_eq!(entry.model_id, "local/musetalk-1.5");
         assert!(entry.total_bytes > 4_000_000_000);
         assert!(entry.download_only_reason.contains("not activated"));
@@ -792,6 +1085,58 @@ mod tests {
         assert_eq!(
             manager.statuses()[0].phase,
             ModelDownloadPhase::ManifestRequired
+        );
+    }
+
+    #[test]
+    fn managed_image_catalog_is_available_only_with_a_verified_installer() {
+        for spec in [&SDXL, &FLUX_KLEIN, &Z_IMAGE] {
+            validate_spec(spec).expect("valid managed declaration");
+            let unavailable = catalog_entry(spec, false);
+            let available = catalog_entry(spec, true);
+            assert!(!unavailable.available);
+            assert!(available.available);
+            assert_eq!(available.artifact_count, artifact_count(spec));
+            assert_eq!(available.total_bytes, total_bytes(spec));
+            assert!(available.total_bytes > COMFYUI_RUNTIME_BYTES);
+        }
+        assert_eq!(SDXL.model_id, "local/sdxl-base-1.0");
+        assert_eq!(FLUX_KLEIN.model_id, "local/flux.2-klein-4b-fp8");
+        assert_eq!(Z_IMAGE.model_id, "local/z-image-turbo-int8");
+    }
+
+    #[test]
+    fn managed_preflight_result_must_match_the_exact_model_and_contained_files() {
+        let directory = tempdir().expect("tempdir");
+        let runtime_root = directory.path().join("comfyui-local");
+        let checkpoint = runtime_root.join("ComfyUI/models/checkpoints/sdxl.safetensors");
+        let lora = runtime_root.join("ComfyUI/models/loras/offset.safetensors");
+        fs::create_dir_all(checkpoint.parent().unwrap()).expect("checkpoint directory");
+        fs::create_dir_all(lora.parent().unwrap()).expect("lora directory");
+        fs::write(&checkpoint, b"checkpoint").expect("checkpoint");
+        fs::write(&lora, b"lora").expect("lora");
+        let result = serde_json::json!({
+            "ok": true,
+            "operation": "install",
+            "runtimeRoot": runtime_root.canonicalize().unwrap(),
+            "runtimeReady": true,
+            "modelId": SDXL.model_id,
+            "recipeId": "comfy-sdxl-1.0-portrait-v1",
+            "executable": true,
+            "files": [
+                {"path": checkpoint.canonicalize().unwrap(), "verified": true},
+                {"path": lora.canonicalize().unwrap(), "verified": true}
+            ]
+        });
+        validate_comfy_result(&SDXL, &runtime_root, &result).expect("valid result");
+
+        let mut wrong_model = result;
+        wrong_model["modelId"] = serde_json::json!("local/unreviewed");
+        assert_eq!(
+            validate_comfy_result(&SDXL, &runtime_root, &wrong_model)
+                .expect_err("wrong model")
+                .code,
+            "MODEL_DOWNLOAD_FAILED"
         );
     }
 }
