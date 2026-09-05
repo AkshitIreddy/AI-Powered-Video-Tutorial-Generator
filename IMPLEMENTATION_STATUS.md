@@ -4,15 +4,19 @@ Current audit: **2026-09-05**, local `main`. The historical checklist below reco
 
 See [Product](docs/research/product-audit-2026-09-05.md), [Generation](docs/research/generation-audit-2026-09-05.md), [Editor](docs/research/editor-audit-2026-09-05.md), [Onboarding](docs/research/onboarding-audit-2026-09-05.md), [Catalog](docs/research/catalog-audit-2026-09-05.md), [Presenter and voice](docs/research/presenter-voice-audit-2026-09-05.md), and [Windows integration](docs/research/windows-integration-audit-2026-09-05.md) for current findings, fixes, measurements, and remaining gates.
 
-Current source evidence: the complete desktop suite passed **235 tests** after
-the durable autosave, aligned editor captions, explicit text controls, and
-setup-replay exit corrections.
-The browser matrix passed **25 Playwright journeys** (3 intentional viewport
-skips), and the Rust source passed **65 tests**. Desktop typecheck and lint
-passed. A separate real authored binary-search example is 84.008 seconds and
-has inspected teaching frames. Final provider-generated three-minute media,
-native editor behavior, and recovery qualification are tracked in the Windows
-report; these source checks and earlier media must not be substituted for them.
+Current source evidence: the complete desktop suite passed **238 tests** after
+the catalog writing-profile integration. Production build, typecheck, lint,
+and the final staged-profile browser check passed under Node 24.20. The combined
+narration-cache, coordinator, education, and NVIDIA accounting selection passed
+**89 tests**; the subsequent visual-receipt adapter selection passed **19**.
+An earlier browser matrix passed **25 Playwright journeys** (3 intentional
+viewport skips), and the Rust source passed **65 tests** at that checkpoint.
+A separate real authored binary-search example is 84.008 seconds with inspected
+teaching frames. Actual packaged-native three-second editor export, reload,
+playback, waveform, and close-save evidence is recorded in the Windows report.
+The final provider-generated three-minute media and final-package recovery
+checks remain separate requirements; source checks and short media do not
+substitute for them.
 
 This ledger preserves the historical implementation checklist for the 2.0 worktree. A checked item means
 the implementation exists and its relevant local verification passed. It does
@@ -133,10 +137,12 @@ or release distribution have been approved or verified.
   privacy/security, accessibility, evaluation, troubleshooting, contributing,
   roadmap, and release-policy documentation.
 
-## Latest local verification evidence
+## Historical local verification evidence — August 28
 
-These are the most recent completed checks in this implementation pass. They
-are correctness evidence, not release benchmarks.
+These are the completed checks from the historical implementation baseline.
+They are retained for comparison, not presented as current counts, binary
+hashes, tool versions, or release benchmarks. Use the September 5 audits above
+for subsequent verification and fixes.
 
 | Area | Result | Scope |
 |---|---:|---|
@@ -170,7 +176,11 @@ checks under that profile prove behavior only; there is no canonical RTX 4080
 Laptop performance benchmark yet, and UI time/cost ranges are estimates rather
 than measured release numbers.
 
-## Implemented surfaces that still need release-grade proof
+## Historical release checklist — August 28
+
+This preserved checklist describes the earlier gaps. Some have subsequent
+bounded evidence in the September 5 audits; an unchecked historical item does
+not override those newer results or establish full release qualification.
 
 - [x] Generate drift-checked Rust, Python, and TypeScript schema registries from
   the canonical JSON Schemas. Rich domain models remain hand-authored over the
@@ -218,7 +228,11 @@ than measured release numbers.
   notice resolution, FFmpeg license report, provenance/C2PA packet, and the final
   release-candidate evidence bundle.
 
-## External and release blockers
+## Historical external findings — August 28
+
+These findings record that earlier environment and credential review. They
+must be rechecked before release; they do not describe the current portable
+test package or authorize reuse of exposed credentials.
 
 1. **Rotate the previously exposed non-NVIDIA BYOK credentials.** Cohere
    trial/production, ElevenLabs, and AssemblyAI values from the earlier user
