@@ -95,7 +95,7 @@ Primary evidence:
   layers, programme audio, audio gain/fades, codec, and output containment.
 - [x] Real waveforms are generated from the selected CAS audio stream, cached by
   source hash and profile, and cropped according to source offsets and trims.
-- [x] The focused editor suite passes 50 tests; its TypeScript build and editor
+- [x] The focused editor suite passes 54 tests; its TypeScript build and editor
   lint pass. A pinned-FFmpeg proof verifies decoded first/middle/last keyframed
   frames, source audio, title/caption pixels, and matching VTT/SRT cues.
 
@@ -140,9 +140,12 @@ tests or the older portable binary cannot substitute for them.
 - [x] Produce and inspect the current complex live-code proof: the 84.008-second
   binary-search lesson uses independently checked Python/JavaScript traces,
   timed code writing, found/missing cases, eight narration clips, and ten
-  inspected checkpoints. The video is
-  `E:\temp\avt-audit-2026-09-05\teaching-proof\binary-search-teaching-proof.webm`,
-  SHA-256 `8a2599b8d8bef813446ac1e33896a2a2bd3040f52122f75ed5d4215b79f743b7`.
+  inspected decoded-delivery checkpoints. The video uses the current product name:
+  `E:\temp\avt-audit-2026-09-05\teaching-proof-current\binary-search-teaching-proof.webm`,
+  SHA-256 `9910915d5291c78acff8666e089c8976cc711649445de18faa83312d4c9e523e`.
+  Full audio decode measures -16.5 LUFS, -1.5 dBTP, no clipped samples, and
+  8 ms audio/video endpoint drift. WebM reports BT.709 matrix metadata, while
+  transfer and primaries are unknown; this is not full color-tag qualification.
   This is distinct from the required native three-minute provider tutorial.
 - [ ] Reconcile final documentation and Git status after the coordinated native
   run. Preserve the owner-owned `see me`, release our GPU lease only when owned, and record
