@@ -4,8 +4,9 @@ Current audit: **2026-09-05**, local `main`. The historical checklist below reco
 
 See [Product](docs/research/product-audit-2026-09-05.md), [Generation](docs/research/generation-audit-2026-09-05.md), [Editor](docs/research/editor-audit-2026-09-05.md), [Onboarding](docs/research/onboarding-audit-2026-09-05.md), [Catalog](docs/research/catalog-audit-2026-09-05.md), [Presenter and voice](docs/research/presenter-voice-audit-2026-09-05.md), and [Windows integration](docs/research/windows-integration-audit-2026-09-05.md) for current findings, fixes, measurements, and remaining gates.
 
-Current source evidence: the complete desktop checkpoint passed **221 tests**;
-the subsequent autosave correction passed **14 focused save/approval tests**.
+Current source evidence: the complete desktop suite passed **235 tests** after
+the durable autosave, aligned editor captions, explicit text controls, and
+setup-replay exit corrections.
 The browser matrix passed **25 Playwright journeys** (3 intentional viewport
 skips), and the Rust source passed **65 tests**. Desktop typecheck and lint
 passed. A separate real authored binary-search example is 84.008 seconds and

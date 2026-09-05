@@ -109,6 +109,29 @@ regressions pass after this correction. The preceding complete desktop suite
 passed 221 tests; the final packaged immediate-close/reopen journey remains a
 separate acceptance gate until its native report passes.
 
+### Corrections from packaged acceptance and final source review
+
+The packaged editor completed FFmpeg rendering but failed when attaching its
+output to a revision: the delivery and subtitle objects existed in CAS without
+artifact-registry rows. Export now registers the output batch atomically before
+revision links are created. Sixteen export/service/store regressions passed;
+the rebuilt worker must still repeat the actual packaged export journey.
+
+Editor bindings now read aligned caption cues from the verified immutable
+caption stage. They expose scene-local ticks and the verified renderer's
+burned-caption flag, keeping unknown historical flags distinct from false.
+The adapter uses short timed cues instead of painting a whole narration
+paragraph, avoids synthetic titles over composited lessons, and preserves
+explicit saved text edits. Cue offsets survive linked scene reordering;
+editing one cue does not replace neighboring cues. Nine backend binding tests
+and the complete 235-test desktop suite pass at this checkpoint.
+
+The timeline has explicit Add title and Add caption controls. They insert text
+at an available playhead position, fit their default duration within an existing
+lesson, respect locked tracks, and participate in undo. Their toolbar wraps in
+narrow windows. Final app-driven media inspection remains separate from these
+source and component checks.
+
 ## Gates that remain open
 
 - **Proxy generation:** create, cache, invalidate, and select lower-resolution video proxies based on source hash and preview profile.
