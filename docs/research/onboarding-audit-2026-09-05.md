@@ -96,6 +96,18 @@ target.
 
 ## Verification strategy
 
+The later packaged clean-profile run traversed all nine setup chapters,
+detected existing provider/model configuration, and reached an empty Home
+without creating projects or jobs. It exposed a separate replay-exit defect:
+exiting replay persisted `in-progress`, making setup reopen on the next launch.
+The persisted `replayReturnStatus` now restores prior completed/skipped status
+on Exit without firing setup completion or applying unfinished choices.
+An interrupted replay also remains distinct from unfinished first setup,
+which stays resumable. Twenty-three onboarding component/state checks and
+the full 235-test desktop suite pass. The final package must repeat the
+Settings → Replay setup → Exit → restart journey before native acceptance
+is marked complete.
+
 The component seam now has deterministic tests that fail on the original bug:
 
 - Next and Right Arrow stay blocked before the taught event.

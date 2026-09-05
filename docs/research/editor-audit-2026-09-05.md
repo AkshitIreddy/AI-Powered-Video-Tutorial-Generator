@@ -132,6 +132,17 @@ lesson, respect locked tracks, and participate in undo. Their toolbar wraps in
 narrow windows. Final app-driven media inspection remains separate from these
 source and component checks.
 
+A separate headless browser proof uses the current 960×540 binary-search
+delivery (SHA-256 `9910915d5291c78acff8666e089c8976cc711649445de18faa83312d4c9e523e`)
+inside the actual editor canvas and timeline. At 760×1100, two inspected
+playheads show the correct short cues after scene reorder and source offsets,
+one caption element, no synthetic title element, no whole-narration overlay,
+and a wrapped toolbar. The preview preserves aspect ratio with `contain` and
+an identity transform. Editing guides remain visible in these captures.
+Evidence: `E:\temp\alystria-clean-caption-preview-proof-2026-09-05-1700`.
+An earlier diagnostic capture used an older composited test clip; it remains
+historical timing evidence and is not the current visual-quality reference.
+
 ## Gates that remain open
 
 - **Proxy generation:** create, cache, invalidate, and select lower-resolution video proxies based on source hash and preview profile.
