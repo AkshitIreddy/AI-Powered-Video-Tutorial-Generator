@@ -64,7 +64,10 @@ fn discover_blocking(
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
-        .user_agent(concat!("AI-Video-Tutorial-Generator/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!(
+            "AI-Video-Tutorial-Generator/",
+            env!("CARGO_PKG_VERSION")
+        ))
         .build()
         .map_err(|_| discovery_error("The catalog HTTP client could not be initialized."))?;
 
@@ -156,9 +159,11 @@ fn discovery_url(input: &CatalogDiscoveryRequest) -> Result<Url, CommandError> {
                 .append_pair("query", input.query.trim());
         }
     } else if input.source == "cohere" {
-        url.query_pairs_mut().append_pair("page_size", &input.limit.to_string());
+        url.query_pairs_mut()
+            .append_pair("page_size", &input.limit.to_string());
         if !input.query.trim().is_empty() {
-            url.query_pairs_mut().append_pair("endpoint", input.query.trim());
+            url.query_pairs_mut()
+                .append_pair("endpoint", input.query.trim());
         }
     }
     Ok(url)
@@ -243,11 +248,15 @@ fn extract_items(source: &str, body: Value) -> Result<(Vec<Value>, Option<String
             .map(|items| (items, None)),
         "cohere" => {
             let items = body.get("models").and_then(Value::as_array).cloned();
-            let cursor = body.get("next_page_token").and_then(Value::as_str).map(|token| {
-                let mut url = Url::parse("https://api.cohere.com/v1/models").expect("static Cohere URL");
-                url.query_pairs_mut().append_pair("page_token", token);
-                url.to_string()
-            });
+            let cursor = body
+                .get("next_page_token")
+                .and_then(Value::as_str)
+                .map(|token| {
+                    let mut url =
+                        Url::parse("https://api.cohere.com/v1/models").expect("static Cohere URL");
+                    url.query_pairs_mut().append_pair("page_token", token);
+                    url.to_string()
+                });
             items.map(|items| (items, cursor))
         }
         _ => None,
