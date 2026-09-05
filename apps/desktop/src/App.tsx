@@ -1229,7 +1229,7 @@ function App() {
       receipt = (await importBundledAsset(asset, { ...identity, expectedHeadRevisionId: head.headRevisionId })).receipt;
     }
     const id = receipt?.artifact.id ?? `bundled-${asset.id}`;
-    const reference: StudioAssetReference = { id, kind: "background", label: asset.label, source: "generated", filename: asset.filename, mediaType: "image/png", byteSize: asset.byteSize, sha256: asset.sha256, creator: "Alystria included image library", license: "Included generated asset · project use and export allowed", attribution: "Built-in artwork · generated and visually reviewed 2026-09-05", rightsStatus: "cleared" };
+    const reference: StudioAssetReference = { id, kind: "background", label: asset.label, source: "generated", filename: asset.filename, mediaType: "image/png", byteSize: asset.byteSize, sha256: asset.sha256, creator: "AI Video Tutorial Generator included image library", license: "Included generated asset · project use and export allowed", attribution: "Built-in artwork · generated and visually reviewed 2026-09-05", rightsStatus: "cleared" };
     const customization = canvasCustomization(project);
     const next: CanvasCustomization = { ...customization, assets: [...customization.assets.filter((item) => item.id !== id), reference] };
 
