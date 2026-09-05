@@ -149,7 +149,9 @@ export function evaluateResourceFit(demandInput: ResourceDemand, hardware: Hardw
   const policy = normalizeResourcePolicy(policyInput);
   const demand = sanitizeDemand(demandInput);
   const availableVramBytes = computeAvailableVram(hardware, policy);
-  const availableRamBytes = Math.max(0, Math.min(hardware.systemRamFreeBytes, hardware.systemRamBytes * policy.ramTargetFraction) - policy.ramReserveBytes);
+  const availableRamBytes = hardware.systemRamBytes == null || hardware.systemRamFreeBytes == null
+    ? null
+    : Math.max(0, Math.min(hardware.systemRamFreeBytes, hardware.systemRamBytes * policy.ramTargetFraction) - policy.ramReserveBytes);
   const messages: string[] = [];
   const adaptations: ResourceAdaptation[] = [];
   let hardFailure = false;
@@ -197,6 +199,9 @@ export function evaluateResourceFit(demandInput: ResourceDemand, hardware: Hardw
   if (demand.ramBytes == null) {
     unknown = true;
     messages.push("The model did not publish a reliable system-memory estimate.");
+  } else if (availableRamBytes == null) {
+    unknown = true;
+    messages.push("Live system-memory availability is unavailable; run a low-cost preflight before loading.");
   } else if (demand.ramBytes > availableRamBytes) {
     pressure = true;
     const excess = demand.ramBytes - availableRamBytes;

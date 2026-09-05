@@ -99,5 +99,8 @@ describe("federated catalog adapters", () => {
     expect(local.availability).toBe("installed");
     expect(cloud.execution.endpoint?.operationIds).toEqual(["chat"]);
     expect(cloud.identity.providerId).toBe("cloud-provider");
+    expect(cloud.trust.gated).toBe(false);
+    expect(cloud.trust.termsAccepted).toBeNull();
+    expect(cloud.availability).toBe("gated");
   });
 });

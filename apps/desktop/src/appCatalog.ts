@@ -1,4 +1,4 @@
-import { adaptCuratedEntry, type CatalogCapability, type CatalogItem, type HardwareSnapshot } from "./catalog";
+import { adaptCloudEndpoint, adaptCuratedEntry, type CatalogCapability, type CatalogItem, type HardwareSnapshot } from "./catalog";
 import type { DiagnosticReport } from "./native";
 
 const GIB = 1024 ** 3;
@@ -11,6 +11,9 @@ interface RecipeCandidate {
   runtime: string;
   vramGb: number | null;
   tags: readonly string[];
+  publisher?: string;
+  revision?: string;
+  sourceUrl?: string;
 }
 
 const recipeCandidates: readonly RecipeCandidate[] = [
@@ -21,8 +24,18 @@ const recipeCandidates: readonly RecipeCandidate[] = [
   { id: "qwen3-embedding-0.6b", name: "Qwen3 Embedding 0.6B", description: "Small local retrieval-index worker.", capabilities: ["retrieval.embed"], runtime: "transformers", vramGb: 2, tags: ["embedding", "retrieval"] },
   { id: "bge-m3", name: "BGE-M3", description: "Multilingual dense and sparse retrieval candidate.", capabilities: ["retrieval.embed"], runtime: "transformers", vramGb: 3, tags: ["embedding", "multilingual"] },
   { id: "bge-reranker-v2-m3", name: "BGE Reranker v2 M3", description: "Local evidence-ranking companion for retrieval workflows.", capabilities: ["retrieval.embed"], runtime: "transformers", vramGb: 3, tags: ["reranker", "retrieval"] },
-  { id: "flux2-klein-4b", name: "FLUX.2 Klein 4B", description: "Local illustration, editing and masked-repair workflow candidate.", capabilities: ["image.generate", "image.edit", "image.inpaint", "image.reference"], runtime: "comfyui", vramGb: 12, tags: ["image", "flux", "inpaint"] },
-  { id: "qwen3-tts-0.6b", name: "Qwen3 TTS 0.6B", description: "Local multilingual narration candidate.", capabilities: ["audio.tts"], runtime: "python", vramGb: 4, tags: ["voice", "tts"] },
+  {
+    id: "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+    name: "Qwen3-TTS 12 Hz 0.6B CustomVoice",
+    description: "Official 0.6B CustomVoice checkpoint candidate for local multilingual narration through the qwen-tts package. Hardware fit remains unknown until a measured preflight.",
+    capabilities: ["audio.tts"],
+    runtime: "qwen-tts",
+    vramGb: null,
+    tags: ["voice", "tts", "custom-voice", "multilingual"],
+    publisher: "Qwen",
+    revision: "unpinned",
+    sourceUrl: "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+  },
   { id: "kokoro", name: "Kokoro", description: "Small CPU-first draft narration route.", capabilities: ["audio.tts"], runtime: "onnxruntime", vramGb: null, tags: ["voice", "cpu"] },
   { id: "piper-voice-pack", name: "Piper Voice Pack", description: "Legacy draft voice route with per-voice rights review.", capabilities: ["audio.tts"], runtime: "onnxruntime", vramGb: null, tags: ["voice", "legacy"] },
   { id: "whisper-large-v3-turbo", name: "Whisper Large v3 Turbo", description: "Local transcription and timestamp candidate.", capabilities: ["audio.transcribe", "audio.align"], runtime: "faster-whisper", vramGb: 6, tags: ["asr", "captions"] },
@@ -36,12 +49,12 @@ const recipeCandidates: readonly RecipeCandidate[] = [
   { id: "latentsync-1.5", name: "LatentSync 1.5", description: "Diffusion lip-sync quality-comparison route.", capabilities: ["lipsync.generate"], runtime: "python", vramGb: 12, tags: ["lipsync", "diffusion"] },
 ];
 
-export const alystriaCatalogItems: readonly CatalogItem[] = recipeCandidates.map((candidate) => adaptCuratedEntry({
+const localRecipeCatalogItems: readonly CatalogItem[] = recipeCandidates.map((candidate) => adaptCuratedEntry({
   id: `local/${candidate.id}`,
   providerId: "local",
-  publisher: "Upstream publisher pending manifest sync",
+  publisher: candidate.publisher ?? "Upstream publisher pending manifest sync",
   name: candidate.name,
-  revision: "unpinned",
+  revision: candidate.revision ?? "unpinned",
   capabilities: candidate.capabilities,
   artifactType: "workflow",
   modalities: modalities(candidate.capabilities),
@@ -64,11 +77,443 @@ export const alystriaCatalogItems: readonly CatalogItem[] = recipeCandidates.map
     notes: ["This is an AI Video Tutorial Generator recipe candidate, not an installed model. Sync and review the exact upstream license before use."],
   },
   description: candidate.description,
-  sourceUrl: `https://huggingface.co/models?search=${encodeURIComponent(candidate.name)}`,
+  sourceUrl: candidate.sourceUrl ?? `https://huggingface.co/models?search=${encodeURIComponent(candidate.name)}`,
   testedRecipeIds: [],
   publisherVerifiedBySource: null,
   retrievedAt: "2026-09-02T00:00:00.000Z",
 }));
+
+const COMFYUI_RUNTIME_REVISION = "8f40b43e0204d5b9780f3e9618e140e929e80594";
+
+const apacheModelLicense = {
+  identifier: "Apache-2.0",
+  name: "Apache License 2.0",
+  url: "https://www.apache.org/licenses/LICENSE-2.0",
+  commercialUse: "allowed",
+  attributionRequired: true,
+  derivativesAllowed: true,
+  hostingAllowed: true,
+  status: "known",
+  notes: ["Preserve the license and required notices when redistributing model artifacts or derivatives."],
+} as const;
+
+const sdxlOpenRailLicense = {
+  identifier: "openrail++",
+  name: "CreativeML Open RAIL++-M",
+  url: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/462165984030d82259a11f4367a4eed129e94a7b/LICENSE.md",
+  commercialUse: "allowed",
+  attributionRequired: true,
+  derivativesAllowed: true,
+  hostingAllowed: true,
+  status: "custom",
+  notes: ["Use remains subject to the license's use-based restrictions. Preserve the license and model attribution when redistributing the model or derivatives."],
+} as const;
+
+/**
+ * Downloadable image bundles whose revision, file size and LFS SHA-256 were
+ * checked against their publisher repositories. They remain setup candidates
+ * until the exact workflow is installed and measured on this machine.
+ */
+export const pinnedLocalImageCatalogItems: readonly CatalogItem[] = Object.freeze([
+  adaptCuratedEntry({
+    id: "local/sdxl-base-1.0",
+    providerId: "local",
+    publisher: "Stability AI",
+    name: "Stable Diffusion XL Base 1.0",
+    revision: "462165984030d82259a11f4367a4eed129e94a7b",
+    immutableHash: "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+    capabilities: ["image.generate"],
+    artifactType: "checkpoint",
+    modalities: ["image"],
+    architecture: "Stable Diffusion XL",
+    baseFamilies: ["sdxl-1.0"],
+    tags: ["image", "sdxl", "safetensors", "pinned-download", "hardware-verified-reference-pc"],
+    boundaries: ["local"],
+    runtimes: ["comfyui"],
+    formats: ["safetensors"],
+    precisions: ["fp16"],
+    requirements: {
+      downloadBytes: 6_938_078_334,
+      installedBytes: 6_938_078_334,
+      estimatedRamBytes: null,
+      estimatedVramBytes: null,
+      requiredArtifacts: [{
+        kind: "checkpoint",
+        identifier: "models/checkpoints/sd_xl_base_1.0.safetensors sha256:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+        optional: false,
+      }],
+    },
+    license: sdxlOpenRailLicense,
+    description: "Pinned official SDXL 1.0 checkpoint. A 1024×1024 low-VRAM ComfyUI generation passed on the 12,282 MiB RTX 4080 Laptop reference PC; every new install still requires its own preflight.",
+    documentationUrl: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
+    sourceUrl: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+    testedRecipeIds: ["comfy-sdxl-1.0-portrait-v1"],
+    publisherVerifiedBySource: true,
+    retrievedAt: "2026-09-05T00:00:00.000Z",
+  }),
+  adaptCuratedEntry({
+    id: "local/sdxl-offset-lora-1.0",
+    providerId: "local",
+    publisher: "Stability AI",
+    name: "SDXL 1.0 Offset Example LoRA",
+    revision: "462165984030d82259a11f4367a4eed129e94a7b",
+    immutableHash: "4852686128f953d0277d0793e2f0335352f96a919c9c16a09787d77f55cbdf6f",
+    capabilities: ["image.generate"],
+    artifactType: "lora",
+    modalities: ["image"],
+    architecture: "Stable Diffusion XL LoRA",
+    baseFamilies: ["sdxl-1.0"],
+    tags: ["image", "sdxl", "lora", "safetensors", "pinned-download", "hardware-verified-reference-pc", "optional"],
+    boundaries: ["local"],
+    runtimes: ["comfyui"],
+    formats: ["safetensors"],
+    precisions: ["fp16"],
+    requirements: {
+      downloadBytes: 49_553_604,
+      installedBytes: 49_553_604,
+      estimatedRamBytes: null,
+      estimatedVramBytes: null,
+      requiredArtifacts: [
+        {
+          kind: "lora",
+          identifier: "models/loras/sd_xl_offset_example-lora_1.0.safetensors sha256:4852686128f953d0277d0793e2f0335352f96a919c9c16a09787d77f55cbdf6f",
+          optional: false,
+        },
+        {
+          kind: "checkpoint",
+          identifier: "local/sdxl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+          optional: false,
+        },
+      ],
+    },
+    license: sdxlOpenRailLicense,
+    description: "Official SDXL offset-example LoRA pinned to its own file hash. Its 1024×1024 reference-PC proof passed but showed a minor hand/watch artifact outside the intended headshot crop, so it stays optional. It may attach only to SDXL 1.0.",
+    documentationUrl: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
+    sourceUrl: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/462165984030d82259a11f4367a4eed129e94a7b/sd_xl_offset_example-lora_1.0.safetensors",
+    testedRecipeIds: ["comfy-sdxl-1.0-portrait-v1"],
+    publisherVerifiedBySource: true,
+    retrievedAt: "2026-09-05T00:00:00.000Z",
+  }),
+  adaptCuratedEntry({
+    id: "local/flux.2-klein-4b-fp8",
+    providerId: "local",
+    publisher: "Black Forest Labs",
+    name: "FLUX.2 Klein 4B FP8 bundle",
+    revision: "5b4408e59397a4a37ccb46afe426d8ed86379441",
+    immutableHash: "97ed34fe0567e436200f2faee3939b88f2b5d99f8af2a4dc16532c4245c0ccb6",
+    capabilities: ["image.generate"],
+    artifactType: "workflow",
+    modalities: ["image"],
+    architecture: "FLUX.2 Klein 4B",
+    baseFamilies: ["flux.2-klein-4b"],
+    tags: ["image", "flux.2", "fp8", "fp4", "safetensors", "cpu-offload-required", "12gb-candidate", "pinned-download"],
+    boundaries: ["local"],
+    runtimes: ["comfyui"],
+    formats: ["safetensors"],
+    precisions: ["fp8", "fp4"],
+    quantizations: ["fp8", "fp4"],
+    requirements: {
+      downloadBytes: 8_255_049_810,
+      installedBytes: 8_255_049_810,
+      estimatedRamBytes: null,
+      estimatedVramBytes: null,
+      requiredArtifacts: [
+        {
+          kind: "checkpoint",
+          identifier: "models/diffusion_models/flux-2-klein-4b-fp8.safetensors sha256:97ed34fe0567e436200f2faee3939b88f2b5d99f8af2a4dc16532c4245c0ccb6 repo:black-forest-labs/FLUX.2-klein-4b-fp8@5b4408e59397a4a37ccb46afe426d8ed86379441",
+          optional: false,
+        },
+        {
+          kind: "text-encoder",
+          identifier: "models/text_encoders/qwen_3_4b_fp4_flux2.safetensors sha256:3eab03a77adb0ee5304a4e677d5c10ac22f9049c1d7c894adca4f8bb39206ca8 repo:Comfy-Org/vae-text-encorder-for-flux-klein-4b@5f526678002e43af5551dadb73ce2e8c91b43afe",
+          optional: false,
+        },
+        {
+          kind: "vae",
+          identifier: "models/vae/flux2-vae.safetensors sha256:868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3 repo:Comfy-Org/vae-text-encorder-for-flux-klein-4b@5f526678002e43af5551dadb73ce2e8c91b43afe",
+          optional: false,
+        },
+        {
+          kind: "runtime",
+          identifier: `Comfy-Org/ComfyUI@${COMFYUI_RUNTIME_REVISION}`,
+          optional: false,
+        },
+      ],
+    },
+    license: apacheModelLicense,
+    description: "Pinned FP8 diffusion, FP4 text-encoder and VAE bundle. This is a 12 GB candidate only: the publisher's roughly 13 GB guidance means CPU offload is required and hardware fit remains unverified.",
+    documentationUrl: "https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8",
+    sourceUrl: "https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8/tree/5b4408e59397a4a37ccb46afe426d8ed86379441",
+    testedRecipeIds: [],
+    publisherVerifiedBySource: true,
+    retrievedAt: "2026-09-05T00:00:00.000Z",
+  }),
+  adaptCuratedEntry({
+    id: "local/z-image-turbo-int8",
+    providerId: "local",
+    publisher: "Tongyi-MAI / Comfy-Org packaging",
+    name: "Z-Image Turbo INT8 + FP4 bundle",
+    revision: "08d04455279082882deaabc8d0d09fc914c071e1",
+    immutableHash: "be517ebd47c912a5626a588e1aeea43e6be4a43c0cdcd2b48a2a780d9f358635",
+    capabilities: ["image.generate"],
+    artifactType: "workflow",
+    modalities: ["image"],
+    architecture: "Z-Image Turbo",
+    baseFamilies: ["z-image-turbo"],
+    tags: ["image", "z-image", "int8", "fp4", "safetensors", "cpu-offload-required", "12gb-candidate", "pinned-download"],
+    boundaries: ["local"],
+    runtimes: ["comfyui"],
+    formats: ["safetensors"],
+    precisions: ["int8", "fp4"],
+    quantizations: ["int8-convrot", "fp4"],
+    requirements: {
+      downloadBytes: 10_015_721_877,
+      installedBytes: 10_015_721_877,
+      estimatedRamBytes: null,
+      estimatedVramBytes: null,
+      requiredArtifacts: [
+        {
+          kind: "checkpoint",
+          identifier: "models/diffusion_models/z_image_turbo_int8_convrot.safetensors sha256:be517ebd47c912a5626a588e1aeea43e6be4a43c0cdcd2b48a2a780d9f358635 repo:Comfy-Org/z_image_turbo@08d04455279082882deaabc8d0d09fc914c071e1",
+          optional: false,
+        },
+        {
+          kind: "text-encoder",
+          identifier: "models/text_encoders/qwen_3_4b_fp4_mixed.safetensors sha256:7ca32dcf07dfe7692945d80fff86e3a74cb83c6206b9b223ac6836b939bb85d6 repo:Comfy-Org/z_image_turbo@08d04455279082882deaabc8d0d09fc914c071e1",
+          optional: false,
+        },
+        {
+          kind: "vae",
+          identifier: "models/vae/ae.safetensors sha256:afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38 repo:Comfy-Org/z_image_turbo@08d04455279082882deaabc8d0d09fc914c071e1",
+          optional: false,
+        },
+        {
+          kind: "runtime",
+          identifier: `Comfy-Org/ComfyUI@${COMFYUI_RUNTIME_REVISION}`,
+          optional: false,
+        },
+      ],
+    },
+    license: apacheModelLicense,
+    description: "Pinned INT8 conv-rotation diffusion, FP4 text-encoder and VAE bundle for broad NVIDIA hardware. It is a 12 GB candidate only and requires CPU offload; the 12.31 GB BF16 diffusion file is deliberately excluded.",
+    documentationUrl: "https://huggingface.co/Comfy-Org/z_image_turbo",
+    sourceUrl: "https://huggingface.co/Comfy-Org/z_image_turbo/tree/08d04455279082882deaabc8d0d09fc914c071e1",
+    testedRecipeIds: [],
+    publisherVerifiedBySource: true,
+    retrievedAt: "2026-09-05T00:00:00.000Z",
+  }),
+]);
+
+export const cloudflareCatalogItem = adaptCloudEndpoint({
+  id: "@cf/black-forest-labs/flux-1-schnell",
+  providerId: "cloudflare-workers-ai",
+  publisher: "Black Forest Labs",
+  name: "FLUX.1 Schnell on Workers AI",
+  revision: "cloudflare-hosted",
+  capabilities: ["image.generate"],
+  modalities: ["image"],
+  operationIds: ["POST /client/v4/accounts/{account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell"],
+  endpointBaseUrl: "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
+  openAiCompatible: false,
+  tags: ["image", "flux", "hosted", "free-allocation"],
+  license: {
+    identifier: "Apache-2.0",
+    name: "Apache License 2.0",
+    url: "https://github.com/black-forest-labs/flux/blob/main/model_cards/FLUX.1-schnell.md",
+    commercialUse: "allowed",
+    attributionRequired: true,
+    derivativesAllowed: true,
+    hostingAllowed: true,
+    status: "known",
+    notes: ["Cloudflare service terms and the model license both apply. Current provider terms must be reviewed when the connection is approved."],
+  },
+  credentialConfigured: false,
+  reachable: null,
+  description: "Exact Cloudflare Workers AI text-to-image route for FLUX.1 Schnell. The REST adapter accepts prompt, four steps and an optional seed; Account ID and an OS-vault API token are required.",
+  documentationUrl: "https://developers.cloudflare.com/workers-ai/models/flux-1-schnell/",
+  sourceUrl: "https://developers.cloudflare.com/workers-ai/models/flux-1-schnell/",
+  retrievedAt: "2026-09-05T00:00:00.000Z",
+});
+
+export const structuredCloudCatalogItems: readonly CatalogItem[] = Object.freeze([
+  adaptCloudEndpoint({
+    id: "openai/gpt-oss-20b",
+    providerId: "groq",
+    publisher: "OpenAI on GroqCloud",
+    name: "GPT-OSS 20B on Groq",
+    revision: "groq-production-2026-09-05",
+    capabilities: ["llm.text", "llm.structured"],
+    modalities: ["text"],
+    operationIds: ["POST /openai/v1/chat/completions"],
+    endpointBaseUrl: "https://api.groq.com/openai/v1",
+    openAiCompatible: true,
+    tags: ["writing", "structured-output", "json-schema", "production-model"],
+    license: apacheModelLicense,
+    credentialConfigured: false,
+    reachable: null,
+    description: "Exact Groq structured-writing route. Strict JSON Schema is limited to the reviewed GPT-OSS model allowlist; this row selects the lower-cost 20B production model.",
+    documentationUrl: "https://console.groq.com/docs/model/openai/gpt-oss-20b",
+    sourceUrl: "https://console.groq.com/docs/structured-outputs",
+    retrievedAt: "2026-09-05T00:00:00.000Z",
+  }),
+  adaptCloudEndpoint({
+    id: "mistral-small-2603",
+    providerId: "mistral",
+    publisher: "Mistral AI",
+    name: "Mistral Small 4 (26.03)",
+    revision: "26.03",
+    capabilities: ["llm.text", "llm.structured"],
+    modalities: ["text"],
+    operationIds: ["POST /v1/chat/completions"],
+    endpointBaseUrl: "https://api.mistral.ai/v1",
+    openAiCompatible: true,
+    tags: ["writing", "structured-output", "json-schema", "pinned-model-id"],
+    license: apacheModelLicense,
+    credentialConfigured: false,
+    reachable: null,
+    description: "Pinned Mistral Small 4 route with provider-documented custom structured outputs through Chat Completions. Free-mode limits remain account controlled.",
+    documentationUrl: "https://docs.mistral.ai/models/mistral-small-4-0-26-03",
+    sourceUrl: "https://docs.mistral.ai/api/endpoint/chat",
+    retrievedAt: "2026-09-05T00:00:00.000Z",
+  }),
+  adaptCloudEndpoint({
+    id: "z-ai/glm-5.2:free",
+    providerId: "openrouter",
+    publisher: "Z.ai through OpenRouter",
+    name: "GLM 5.2 (free) on OpenRouter",
+    revision: "openrouter-model-list-2026-09-05",
+    capabilities: ["llm.text", "llm.structured"],
+    modalities: ["text"],
+    operationIds: ["POST /api/v1/chat/completions"],
+    endpointBaseUrl: "https://openrouter.ai/api/v1",
+    openAiCompatible: true,
+    tags: ["writing", "structured-output", "json-schema", "free-endpoint", "live-model-list"],
+    license: {
+      identifier: "MIT",
+      name: "MIT License",
+      url: "https://huggingface.co/zai-org/GLM-5.2/blob/main/LICENSE",
+      commercialUse: "allowed",
+      attributionRequired: true,
+      derivativesAllowed: true,
+      hostingAllowed: true,
+      status: "known",
+      notes: ["OpenRouter service terms and the upstream model license both apply."],
+    },
+    credentialConfigured: false,
+    reachable: null,
+    description: "Free OpenRouter route observed in the 2026-09-05 model list with both response_format and structured_outputs. Requests require parameter-compatible upstream routing.",
+    documentationUrl: "https://openrouter.ai/docs/guides/features/structured-outputs",
+    sourceUrl: "https://openrouter.ai/z-ai/glm-5.2:free",
+    retrievedAt: "2026-09-05T00:00:00.000Z",
+  }),
+]);
+
+/**
+ * Optional production routes used after generation. Stock providers share the
+ * adapter's exact `licensed-media` request model; the provider ID and pinned API
+ * revision keep their catalog identities distinct.
+ */
+export const stockAndReviewCloudCatalogItems: readonly CatalogItem[] = Object.freeze([
+  adaptCloudEndpoint({
+    id: "licensed-media",
+    providerId: "openverse",
+    publisher: "Openverse",
+    name: "Openverse CC0 image search",
+    revision: "openverse-api-v1-cc0",
+    capabilities: ["media.licensed.search"],
+    modalities: ["image"],
+    operationIds: ["GET /v1/images/?q={query}&page_size<=20&license=cc0"],
+    endpointBaseUrl: "https://api.openverse.org/v1",
+    openAiCompatible: false,
+    tags: ["stock", "cc0", "image-search", "no-api-key"],
+    license: {
+      identifier: "CC0-1.0",
+      name: "CC0 1.0 Universal",
+      url: "https://creativecommons.org/publicdomain/zero/1.0/",
+      commercialUse: "allowed",
+      attributionRequired: false,
+      derivativesAllowed: true,
+      hostingAllowed: true,
+      status: "known",
+      notes: ["Alystria requests and accepts only results whose normalized license is CC0; retained source metadata remains part of project provenance."],
+    },
+    // This public route needs no credential, so its connection prerequisite is already satisfied.
+    credentialConfigured: true,
+    reachable: null,
+    description: "Searches Openverse images and admits only CC0 results through Alystria's bounded, review-first stock workflow. Every candidate still requires explicit user acceptance.",
+    documentationUrl: "https://docs.openverse.org/api/reference.html",
+    sourceUrl: "https://api.openverse.org/v1/",
+    retrievedAt: "2026-09-05T00:00:00.000Z",
+  }),
+  adaptCloudEndpoint({
+    id: "licensed-media",
+    providerId: "pexels",
+    publisher: "Pexels",
+    name: "Pexels image search",
+    revision: "pexels-api-v1",
+    capabilities: ["media.licensed.search"],
+    modalities: ["image"],
+    operationIds: ["GET /v1/search?query={query}&per_page<=20"],
+    endpointBaseUrl: "https://api.pexels.com",
+    openAiCompatible: false,
+    tags: ["stock", "pexels-license", "image-search", "api-key"],
+    license: {
+      identifier: "Pexels-License",
+      name: "Pexels License",
+      url: "https://www.pexels.com/license/",
+      commercialUse: "allowed",
+      attributionRequired: false,
+      derivativesAllowed: true,
+      hostingAllowed: false,
+      status: "custom",
+      notes: ["Alystria retains photographer and source attribution, blocks stock-library redistribution, and requires explicit review for faces, brands, and endorsement risk."],
+    },
+    credentialConfigured: false,
+    reachable: null,
+    description: "Searches Pexels images through the keyed production adapter, preserves photographer and source provenance, and holds every candidate for review before project use.",
+    documentationUrl: "https://www.pexels.com/api/documentation/",
+    sourceUrl: "https://www.pexels.com/api/",
+    retrievedAt: "2026-09-05T00:00:00.000Z",
+  }),
+  adaptCloudEndpoint({
+    id: "nvidia/nemotron-nano-12b-v2-vl",
+    providerId: "nvidia-nim",
+    publisher: "NVIDIA",
+    name: "Nemotron Nano 12B V2 VL",
+    revision: "nvidia-api-model-2026-09-05",
+    capabilities: ["vlm.chat"],
+    modalities: ["text", "image", "multimodal"],
+    operationIds: ["POST /v1/chat/completions"],
+    endpointBaseUrl: "https://integrate.api.nvidia.com/v1",
+    openAiCompatible: true,
+    tags: ["visual-review", "multimodal", "public-synthetic-only", "reviewed-model"],
+    license: {
+      identifier: null,
+      name: "NVIDIA hosted API terms",
+      url: "https://build.nvidia.com/terms-of-use",
+      commercialUse: "unknown",
+      attributionRequired: null,
+      derivativesAllowed: null,
+      hostingAllowed: false,
+      status: "custom",
+      notes: ["This hosted review route is approved only for public or synthetic project content. Review current service and model terms before public export."],
+    },
+    credentialConfigured: false,
+    reachable: null,
+    description: "The exact NVIDIA vision-language model supported by Alystria's production review adapter. It reviews public or synthetic visual candidates; it does not decide copyright, consent, or publicity rights.",
+    documentationUrl: "https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl",
+    sourceUrl: "https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl",
+    retrievedAt: "2026-09-05T00:00:00.000Z",
+  }),
+]);
+
+export const alystriaCatalogItems: readonly CatalogItem[] = Object.freeze([
+  ...localRecipeCatalogItems,
+  ...pinnedLocalImageCatalogItems,
+  ...structuredCloudCatalogItems,
+  ...stockAndReviewCloudCatalogItems,
+  cloudflareCatalogItem,
+]);
 
 export function catalogHardwareFromDiagnostics(report: DiagnosticReport | null): HardwareSnapshot {
   const primary = report?.system.gpu[0];
@@ -77,12 +522,12 @@ export function catalogHardwareFromDiagnostics(report: DiagnosticReport | null):
     operatingSystem: "windows",
     gpuVendor: /nvidia/iu.test(gpuName) ? "nvidia" : /amd|radeon/iu.test(gpuName) ? "amd" : /intel/iu.test(gpuName) ? "intel" : gpuName ? "unknown" : "none",
     gpuNames: report?.system.gpu.map((gpu) => gpu.name) ?? [],
-    dedicatedVramBytes: primary?.dedicatedMemoryBytes ?? null,
+    dedicatedVramBytes: positiveOrNull(primary?.dedicatedMemoryBytes),
     dedicatedVramFreeBytes: null,
     dxgiBudgetBytes: null,
     dxgiCurrentUsageBytes: null,
-    systemRamBytes: report?.system.totalMemoryBytes ?? 0,
-    systemRamFreeBytes: report?.system.availableMemoryBytes ?? 0,
+    systemRamBytes: positiveOrNull(report?.system.totalMemoryBytes),
+    systemRamFreeBytes: positiveOrNull(report?.system.availableMemoryBytes),
     driverVersion: primary?.driverVersion ?? null,
     installedRuntimes: {},
     providerConnectionIds: [],
@@ -90,14 +535,18 @@ export function catalogHardwareFromDiagnostics(report: DiagnosticReport | null):
   };
 }
 
+function positiveOrNull(value: number | null | undefined): number | null {
+  return value != null && Number.isFinite(value) && value > 0 ? value : null;
+}
+
 function modalities(capabilities: readonly CatalogCapability[]): ("text" | "image" | "audio" | "video" | "multimodal")[] {
   const values = new Set<"text" | "image" | "audio" | "video" | "multimodal">();
   for (const capability of capabilities) {
     if (capability.startsWith("llm") || capability.startsWith("research") || capability.startsWith("retrieval")) values.add("text");
-    if (capability.startsWith("image")) values.add("image");
+    if (capability.startsWith("image") || capability === "media.licensed.search") values.add("image");
     if (capability.startsWith("audio")) values.add("audio");
     if (capability.startsWith("video") || capability.startsWith("presenter") || capability.startsWith("portrait") || capability.startsWith("lipsync")) values.add("video");
-    if (capability === "vlm.review") values.add("multimodal");
+    if (capability.startsWith("vlm.")) values.add("multimodal");
   }
   return [...values];
 }

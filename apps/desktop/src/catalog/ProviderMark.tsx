@@ -15,13 +15,13 @@ export function ProviderMark({ providerId, compact = false }: ProviderMarkProps)
     .toUpperCase();
 
   return (
-    <span className="aly-catalog-provider" data-provider={brand.providerId} title={`Provider: ${brand.displayName}`}>
+    <span className={`aly-catalog-provider${compact ? " aly-catalog-provider--compact" : ""}`} data-provider={brand.providerId} data-variant={brand.variant} title={`Provider: ${brand.displayName}`}>
       {brand.mayRender && brand.assetPath ? (
         <img className="aly-catalog-provider__art" src={brand.assetPath} alt="" />
       ) : (
         <span className="aly-catalog-provider__monogram" aria-hidden="true">{initials || "AI"}</span>
       )}
-      {!compact && <span className="aly-catalog-provider__name">{brand.displayName}</span>}
+      {!compact && brand.variant !== "wordmark" && <span className="aly-catalog-provider__name">{brand.displayName}</span>}
       <span className="aly-catalog-sr-only">
         {brand.mayRender ? "Governed provider artwork" : "Text identifier; no provider artwork bundled"}
       </span>

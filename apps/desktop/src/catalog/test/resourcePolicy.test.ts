@@ -64,6 +64,17 @@ describe("resource policy", () => {
     expect(result.messages.join(" ")).toMatch(/VRAM.*RAM/);
   });
 
+  it("keeps unprobed system memory unknown instead of treating it as zero", () => {
+    const result = evaluateResourceFit(
+      demand,
+      hardwareFixture({ systemRamBytes: null, systemRamFreeBytes: null }),
+      resourcePolicyPresets.balanced,
+    );
+    expect(result.level).toBe("unknown");
+    expect(result.availableRamBytes).toBeNull();
+    expect(result.messages.join(" ")).toMatch(/system-memory availability is unavailable/i);
+  });
+
   it("sums overlapping stages but takes the peak of exclusive stages", () => {
     const stage = (id: string, vram: number, canOverlap: boolean): WorkflowStageDemand => ({
       ...demand,

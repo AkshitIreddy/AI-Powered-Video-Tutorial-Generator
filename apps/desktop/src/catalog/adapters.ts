@@ -585,8 +585,8 @@ export function adaptCloudEndpoint(raw: CloudCatalogEndpoint): CatalogItem<Cloud
     trust: {
       publisherClaim: "provider",
       publisherVerifiedBySource: null,
-      gated: !raw.credentialConfigured,
-      termsAccepted: raw.credentialConfigured ? null : false,
+      gated: false,
+      termsAccepted: null,
       sha256: null,
       virusScan: "not-run",
       pickleScan: "not-run",

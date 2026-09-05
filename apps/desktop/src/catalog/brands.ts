@@ -2,6 +2,10 @@ import type { ProviderBrandAsset } from "./types";
 import huggingFaceLogo from "../assets/providers/hugging-face.svg";
 import nvidiaLogo from "../assets/providers/nvidia.svg";
 import cohereLogo from "../assets/providers/cohere.svg";
+import openAiLogo from "../assets/providers/openai.svg";
+import anthropicLogo from "../assets/providers/anthropic.svg";
+import geminiLogo from "../assets/providers/gemini.svg";
+import elevenLabsLogo from "../assets/providers/elevenlabs.svg";
 
 /**
  * Metadata references are intentionally separate from binary artwork. A brand may
@@ -11,6 +15,50 @@ export const providerBrandAssets: Readonly<Record<string, ProviderBrandAsset>> =
   alystria: internalBrand("alystria", "AI Video Tutorial Generator", "catalog/brands/alystria.json"),
   local: internalBrand("local", "Local runtime", "catalog/brands/local-runtime.json"),
   cloud: internalBrand("cloud", "Cloud endpoint", "catalog/brands/cloud-endpoint.json"),
+  openai: reviewedBrand({
+    id: "openai",
+    displayName: "OpenAI",
+    metadataPath: "catalog/brands/openai.json",
+    assetPath: openAiLogo,
+    officialSourceUrl: "https://cdn.openai.com/brand/openai-logos.zip",
+    trademarkGuidelinesUrl: "https://openai.com/brand/",
+    artworkLicense: "Official OpenAI black wordmark; use is governed by OpenAI Marks usage terms",
+    attributionText: "OpenAI and the OpenAI logo are trademarks of OpenAI.",
+    variant: "wordmark",
+  }),
+  anthropic: reviewedBrand({
+    id: "anthropic",
+    displayName: "Anthropic",
+    metadataPath: "catalog/brands/anthropic.json",
+    assetPath: anthropicLogo,
+    officialSourceUrl: "https://www.anthropic.com/press-kit",
+    trademarkGuidelinesUrl: "https://www.anthropic.com/legal/commercial-terms",
+    artworkLicense: "Official Anthropic slate symbol from the Anthropic press kit",
+    attributionText: "Anthropic and its symbol belong to Anthropic PBC.",
+    variant: "symbol",
+  }),
+  gemini: reviewedBrand({
+    id: "gemini",
+    displayName: "Google Gemini",
+    metadataPath: "catalog/brands/gemini.json",
+    assetPath: geminiLogo,
+    officialSourceUrl: "https://ai.google.dev/_static/googledevai/images/gemini-api-logo.svg",
+    trademarkGuidelinesUrl: "https://about.google/brand-resource-center/guidance/",
+    artworkLicense: "Official Gemini API product logo; use is governed by Google API and brand terms",
+    attributionText: "Google, Gemini, and the Gemini API logo are trademarks of Google LLC.",
+    variant: "wordmark",
+  }),
+  elevenlabs: reviewedBrand({
+    id: "elevenlabs",
+    displayName: "ElevenLabs",
+    metadataPath: "catalog/brands/elevenlabs.json",
+    assetPath: elevenLabsLogo,
+    officialSourceUrl: "https://elevenlabs.io/press",
+    trademarkGuidelinesUrl: "https://elevenlabs.io/terms-of-use",
+    artworkLicense: "Official ElevenLabs black wordmark from the provider press page",
+    attributionText: "ElevenLabs and its logo belong to Eleven Labs, Inc.",
+    variant: "wordmark",
+  }),
   "hugging-face": reviewedBrand({
     id: "hugging-face",
     displayName: "Hugging Face",
@@ -125,6 +173,7 @@ function reviewedBrand(input: {
   trademarkGuidelinesUrl?: string;
   artworkLicense: string;
   attributionText: string;
+  variant?: ProviderBrandAsset["variant"];
 }): ProviderBrandAsset {
   return {
     id: input.id,
@@ -136,10 +185,10 @@ function reviewedBrand(input: {
     trademarkGuidelinesUrl: input.trademarkGuidelinesUrl ?? input.officialSourceUrl,
     artworkLicense: input.artworkLicense,
     attributionText: input.attributionText,
-    variant: "full-color",
+    variant: input.variant ?? "full-color",
     reviewState: "approved",
-    reviewedAt: "2026-09-02T00:00:00.000Z",
-    reviewAfter: "2027-03-02T00:00:00.000Z",
+    reviewedAt: "2026-09-05T00:00:00.000Z",
+    reviewAfter: "2027-03-05T00:00:00.000Z",
     mayRender: true,
     notes: [
       "Bundled unchanged from the provider-controlled brand source.",

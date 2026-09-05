@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, Cloud, GripVertical, Plus, Route, Trash2 } from "lucide-react";
 import { ProviderMark } from "./ProviderMark";
+import { evaluateCatalogCompatibility } from "./compatibility";
 import {
   appendFallback,
   findCatalogItem,
@@ -25,6 +26,34 @@ export interface ModelRoutingSettingsProps {
   now?: () => string;
 }
 
+const optionalRoutes = [
+  {
+    capability: "media.licensed.search",
+    label: "Stock image search",
+    action: "Add stock image search",
+    description: "Find CC0 Openverse images or licensed Pexels photos, then hold every result for your review.",
+  },
+  {
+    capability: "vlm.chat",
+    label: "Visual review",
+    action: "Add visual review",
+    description: "Check generated or stock visuals for prompt fit and visible risks before you choose them.",
+  },
+] as const satisfies readonly { capability: CatalogCapability; label: string; action: string; description: string }[];
+
+const routeDetails: Readonly<Partial<Record<CatalogCapability, { label: string; description: string; selector: string }>>> = {
+  "media.licensed.search": {
+    label: "Stock image search",
+    description: "Searches a rights-bounded source and keeps results pending until you accept one.",
+    selector: "Choose a stock source…",
+  },
+  "vlm.chat": {
+    label: "Visual review",
+    description: "Reviews public or synthetic visuals for prompt fit and visible concerns; rights decisions remain with you.",
+    selector: "Choose a visual review model…",
+  },
+};
+
 export function ModelRoutingSettings({ profile, items, contextFor, onChange, now = () => new Date().toISOString() }: ModelRoutingSettingsProps) {
   const updateRoute = (route: CapabilityRoute) => onChange(upsertCapabilityRoute(profile, route, now()));
 
@@ -39,16 +68,50 @@ export function ModelRoutingSettings({ profile, items, contextFor, onChange, now
         </div>
       </header>
 
+      <section className="aly-catalog-optional-routes" aria-labelledby="aly-catalog-optional-routes-title">
+        <div className="aly-catalog-optional-routes__copy">
+          <p className="aly-catalog-eyebrow">Optional finishing tools</p>
+          <h3 id="aly-catalog-optional-routes-title">Add sources only when this project needs them</h3>
+          <p>Use these optional steps when you want licensed photography or an extra visual quality check.</p>
+        </div>
+        <div className="aly-catalog-optional-routes__grid">
+          {optionalRoutes.map((optional) => {
+            const present = profile.routes.some((route) => route.capability === optional.capability);
+            return (
+              <article key={optional.capability}>
+                <div>
+                  <strong>{optional.label}</strong>
+                  <p>{optional.description}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={present}
+                  onClick={() => updateRoute({ capability: optional.capability, enabled: true, fallbackConsent: false, selections: [] })}
+                >
+                  <Plus size={15} aria-hidden="true" />
+                  {present ? "Configured below" : optional.action}
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
       <div className="aly-catalog-route-list">
         {profile.routes.map((route) => {
-          const issues = validateCapabilityRoute(route, items, contextFor(route.capability));
-          const candidates = items.filter((item) => item.classification.capabilities.includes(route.capability));
+          const details = routeDetails[route.capability];
+          const routeContext = contextFor(route.capability);
+          const issues = validateCapabilityRoute(route, items, routeContext);
+          const candidates = items
+            .filter((item) => item.classification.capabilities.includes(route.capability))
+            .map((item) => ({ item, compatibility: evaluateCatalogCompatibility(item, { ...routeContext, capability: route.capability }) }));
           return (
             <article className="aly-catalog-route-card" key={route.capability}>
               <header>
                 <div>
                   <p className="aly-catalog-route-card__kicker">Pipeline capability</p>
-                  <h3>{route.capability}</h3>
+                  <h3>{details?.label ?? route.capability}</h3>
+                  {details && <p className="aly-catalog-route-card__description">{details.description}</p>}
                 </div>
                 <label className="aly-catalog-switch">
                   <input type="checkbox" checked={route.enabled} onChange={(event) => updateRoute({ ...route, enabled: event.currentTarget.checked })} />
@@ -87,12 +150,12 @@ export function ModelRoutingSettings({ profile, items, contextFor, onChange, now
                   <select
                     value=""
                     onChange={(event) => {
-                      const selected = candidates.find((item) => `${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}` === event.currentTarget.value);
-                      if (selected) updateRoute(appendFallback(route, selectionFromCatalogItem(selected)));
+                      const selected = candidates.find(({ item }) => `${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}` === event.currentTarget.value);
+                      if (selected?.compatibility.canSelect) updateRoute(appendFallback(route, selectionFromCatalogItem(selected.item)));
                     }}
                   >
-                    <option value="">Choose a compatible catalog item…</option>
-                    {candidates.map((item) => <option key={`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`} value={`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`}>{item.identity.name} — {item.identity.source}</option>)}
+                    <option value="">{details?.selector ?? "Choose a compatible catalog item…"}</option>
+                    {candidates.map(({ item, compatibility }) => <option disabled={!compatibility.canSelect} key={`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`} value={`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`}>{item.identity.name} — {item.identity.source} · {compatibility.canSelect ? compatibility.selectedBoundary ?? "ready" : compatibility.level}</option>)}
                   </select>
                 </label>
                 <span className="aly-catalog-route-add"><Plus size={14} aria-hidden="true" /> Added models become the final fallback</span>

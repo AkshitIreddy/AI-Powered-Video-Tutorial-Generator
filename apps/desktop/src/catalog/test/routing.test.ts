@@ -11,7 +11,13 @@ import type { CapabilityRoute } from "../types";
 import { catalogFixture, contextFixture } from "./fixtures";
 
 describe("capability routing", () => {
-  const local = catalogFixture({ name: "Local image", source: "local", sourceId: "local/image" });
+  const local = catalogFixture({
+    name: "Local image",
+    source: "local",
+    sourceId: "local/image",
+    availability: "installed",
+    localInstall: { path: "E:\\models\\local-image", fingerprint: "sha", installedAt: null, lastVerifiedAt: null, status: "verified" },
+  });
   const cloud = catalogFixture({ name: "Cloud image", source: "cloud", sourceId: "cloud/image", providerId: "cloud-provider", boundaries: ["cloud"], runtimes: [] });
 
   it("reports duplicates, missing entries, and cloud fallbacks without consent", () => {

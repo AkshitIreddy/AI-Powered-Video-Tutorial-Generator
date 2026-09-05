@@ -16,6 +16,8 @@ export const catalogCapabilities = [
   "llm.structured",
   "research.web",
   "vlm.review",
+  "vlm.chat",
+  "media.licensed.search",
   "retrieval.embed",
   "image.generate",
   "image.edit",
@@ -225,8 +227,8 @@ export interface HardwareSnapshot {
   dedicatedVramFreeBytes: number | null;
   dxgiBudgetBytes: number | null;
   dxgiCurrentUsageBytes: number | null;
-  systemRamBytes: number;
-  systemRamFreeBytes: number;
+  systemRamBytes: number | null;
+  systemRamFreeBytes: number | null;
   driverVersion: string | null;
   installedRuntimes: Readonly<Record<string, string>>;
   providerConnectionIds: readonly string[];
@@ -256,6 +258,7 @@ export interface CompatibilityReason {
     | "terms-required"
     | "credential-required"
     | "artifact-required"
+    | "local-install-required"
     | "unverified-install"
     | "resource-adaptation"
     | "resource-exceeded"
@@ -273,6 +276,7 @@ export interface CompatibilityResult {
   reasons: readonly CompatibilityReason[];
   resource: ResourceFitResult;
   license: LicenseDecision;
+  selectedBoundary: ExecutionBoundary | null;
   canSelect: boolean;
 }
 
@@ -321,7 +325,7 @@ export interface ResourceDemand {
 export interface ResourceFitResult {
   level: ResourceFitLevel;
   availableVramBytes: number | null;
-  availableRamBytes: number;
+  availableRamBytes: number | null;
   demand: ResourceDemand;
   adaptations: readonly ResourceAdaptation[];
   messages: readonly string[];

@@ -207,14 +207,14 @@ export function ModelLibrary({
                 </div>
               </div>
               <dl className="aly-catalog-metrics">
-                <div><dt>{item.execution.boundaries.includes("local") ? <HardDrive size={14} aria-hidden="true" /> : <Cloud size={14} aria-hidden="true" />} Boundary</dt><dd>{item.execution.boundaries.join(" + ")}</dd></div>
+                <div><dt>{compatibility.selectedBoundary === "cloud" ? <Cloud size={14} aria-hidden="true" /> : <HardDrive size={14} aria-hidden="true" />} Usable path</dt><dd>{compatibility.selectedBoundary ?? "None yet"}</dd></div>
                 <div><dt>VRAM estimate</dt><dd>{formatBytes(item.requirements.estimatedVramBytes)}</dd></div>
                 <div><dt>License</dt><dd>{item.license.identifier ?? item.license.status}</dd></div>
               </dl>
               {compatibility.reasons[0] && <p className="aly-catalog-card__reason">{compatibility.reasons[0].message}</p>}
               <div className="aly-catalog-card__actions">
                 <button type="button" className="aly-catalog-button aly-catalog-button--quiet" onClick={() => onInspect?.(item)}>Inspect details</button>
-                {onAddToRoute && <button type="button" className="aly-catalog-button aly-catalog-button--quiet" onClick={() => onAddToRoute(selectionFromCatalogItem(item))}>Add to route</button>}
+                {onAddToRoute && <button type="button" className="aly-catalog-button aly-catalog-button--quiet" disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Add this ready item to a capability route" : "Resolve compatibility checks before routing this item"} onClick={() => onAddToRoute(selectionFromCatalogItem(item))}>Add to route</button>}
                 <button type="button" className="aly-catalog-button" disabled={!compatibility.canSelect} onClick={() => onSelect?.(item)}>Select model</button>
               </div>
             </li>
