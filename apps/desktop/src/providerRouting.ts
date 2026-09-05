@@ -108,7 +108,7 @@ const reviewedStructuredCloudModels: Readonly<Record<string, string>> = {
 const reviewedOptionalRouteModels: Readonly<Record<string, Readonly<Partial<Record<ProviderCapability, string>>>>> = {
   openverse: { "media.licensed.search": "licensed-media" },
   pexels: { "media.licensed.search": "licensed-media" },
-  "nvidia-nim": { "vlm.chat": "nvidia/nemotron-nano-12b-v2-vl" },
+  "nvidia-nim": { "vlm.chat": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" },
 };
 
 export interface ProviderRoutingReview {

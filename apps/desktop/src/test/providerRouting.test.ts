@@ -212,7 +212,7 @@ describe("provider routing review", () => {
         routes: {
           ...profile.routes,
           stock: { providerId: "openverse", modelId: "licensed-media" },
-          visualReview: { providerId: "nvidia-nim", modelId: "nvidia/nemotron-nano-12b-v2-vl" },
+          visualReview: { providerId: "nvidia-nim", modelId: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" },
         },
       },
       secretRefs: { ...secrets, "nvidia-nim": secret("nvidia-nim") },
@@ -227,7 +227,7 @@ describe("provider routing review", () => {
     expect(review.errors).toEqual([]);
     expect(review.policy?.routes).toEqual(expect.arrayContaining([
       expect.objectContaining({ capability: "media.licensed.search", providerIds: ["openverse"], model: "licensed-media" }),
-      expect.objectContaining({ capability: "vlm.chat", providerIds: ["nvidia-nim"], model: "nvidia/nemotron-nano-12b-v2-vl" }),
+      expect.objectContaining({ capability: "vlm.chat", providerIds: ["nvidia-nim"], model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" }),
     ]));
     expect(review.policy?.approvals.find((approval) => approval.providerId === "openverse")?.credentialRef).toBeNull();
     expect(review.profileSnapshot?.routes).toEqual(expect.arrayContaining([
@@ -255,7 +255,7 @@ describe("provider routing review", () => {
 
   it.each([
     ["stock", "openverse", "latest", "openverse stock media currently supports only the reviewed licensed-media route."],
-    ["visualReview", "nvidia-nim", "latest", "nvidia-nim visual review currently supports only the reviewed nvidia/nemotron-nano-12b-v2-vl route."],
+    ["visualReview", "nvidia-nim", "latest", "nvidia-nim visual review currently supports only the reviewed nvidia/nemotron-3-nano-omni-30b-a3b-reasoning route."],
   ] as const)("rejects unreviewed %s route model IDs", (medium, providerId, modelId, expectedError) => {
     const review = buildProviderRoutingReview({
       profile: {

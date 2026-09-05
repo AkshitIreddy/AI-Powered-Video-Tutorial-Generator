@@ -62,6 +62,7 @@ from .providers import (
 )
 from .providers.comfyui_local import SDXL_MODEL_ID, ComfyGenerationMediaClient
 from .providers.licensed_media_selection import LicensedMediaVisionSelector
+from .providers.nvidia_nim import NVIDIA_VLM_MODEL
 from .security.files import ImportLimits, validate_file
 
 if TYPE_CHECKING:
@@ -1157,7 +1158,7 @@ def _licensed_media_selector(
     max_preview_bytes = (
         180 * 1024
         if vision_route.provider_ids == ("nvidia-nim",)
-        and vision_route.model == "nvidia/nemotron-nano-12b-v2-vl"
+        and vision_route.model == NVIDIA_VLM_MODEL
         else 4 * 1024 * 1024
     )
     return LicensedMediaVisionSelector(

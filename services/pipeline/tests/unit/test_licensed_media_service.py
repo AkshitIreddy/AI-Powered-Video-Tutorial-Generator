@@ -65,7 +65,7 @@ def test_nvidia_visual_review_route_selects_its_inline_byte_limit() -> None:
             SimpleNamespace(
                 capability=Capability.VISION_LANGUAGE,
                 provider_ids=("nvidia-nim",),
-                model="nvidia/nemotron-nano-12b-v2-vl",
+                model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
             ),
         )
     )
@@ -74,5 +74,5 @@ def test_nvidia_visual_review_route_selects_its_inline_byte_limit() -> None:
     selector = _licensed_media_selector(runtime)
 
     assert selector is not None
-    assert selector.model == "nvidia/nemotron-nano-12b-v2-vl"
+    assert selector.model == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     assert selector.max_preview_bytes == 180 * 1024

@@ -97,6 +97,13 @@ describe("desktop curated cloud routes", () => {
       },
       {
         providerId: "nvidia-nim",
+        sourceId: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        revision: "nvidia-api-model-2026-09-05",
+        capabilities: ["vlm.chat"],
+        operationIds: ["POST /v1/chat/completions"],
+      },
+      {
+        providerId: "nvidia-nim",
         sourceId: "nvidia/nemotron-nano-12b-v2-vl",
         revision: "nvidia-api-model-2026-09-05",
         capabilities: ["vlm.chat"],
@@ -106,6 +113,8 @@ describe("desktop curated cloud routes", () => {
     expect(stockAndReviewCloudCatalogItems[0]?.availability).toBe("available");
     expect(stockAndReviewCloudCatalogItems[1]?.availability).toBe("gated");
     expect(stockAndReviewCloudCatalogItems[2]?.availability).toBe("gated");
+    expect(stockAndReviewCloudCatalogItems[3]?.availability).toBe("unavailable");
+    expect(stockAndReviewCloudCatalogItems[3]?.classification.tags).toContain("deprecated");
   });
 });
 

@@ -54,7 +54,9 @@ NVIDIA_MAGPIE_ENDPOINT = (
 )
 
 NVIDIA_CHAT_MODELS = frozenset({"openai/gpt-oss-20b"})
-NVIDIA_VLM_MODELS = frozenset({"nvidia/nemotron-nano-12b-v2-vl"})
+NVIDIA_VLM_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+NVIDIA_VLM_MODELS = frozenset({NVIDIA_VLM_MODEL})
+NVIDIA_RETIRED_VLM_MODELS = frozenset({"nvidia/nemotron-nano-12b-v2-vl"})
 NVIDIA_EMBEDDING_MODELS = frozenset({"nvidia/nemotron-3-embed-1b"})
 NVIDIA_RETIRED_EMBEDDING_MODELS = frozenset({"nvidia/nv-embed-v1"})
 NVIDIA_RERANK_MODELS = frozenset({"nvidia/nv-rerankqa-mistral-4b-v3"})
@@ -197,6 +199,12 @@ class NvidiaNimAdapter(GuardedAdapter):
                 timeout_seconds=300.0 if request.json_schema is not None else 120.0,
             )
         if isinstance(request, VisionLanguageRequest):
+            if request.model in NVIDIA_RETIRED_VLM_MODELS:
+                raise ProviderFailure(
+                    FailureCode.PROVIDER_UNAVAILABLE,
+                    "The selected NVIDIA hosted VLM endpoint is retired; explicitly select an audited active hosted model or a local NIM",
+                    provider_id="nvidia-nim",
+                )
             _require_model(request.model, NVIDIA_VLM_MODELS, "vision-language")
             return HttpRequest(
                 "POST",
@@ -394,6 +402,12 @@ class NvidiaNimAdapter(GuardedAdapter):
         }
         if request.temperature is not None:
             body["temperature"] = request.temperature
+        if request.model == NVIDIA_VLM_MODEL:
+            # NVIDIA documents thinking as enabled by default for this model.
+            # Sparse visual QA needs its bounded completion budget for the
+            # closed JSON response, so use the documented instruct-mode switch.
+            body["chat_template_kwargs"] = {"enable_thinking": False}
+            body["top_k"] = 1
         return body
 
     def _visual_request(

@@ -235,12 +235,46 @@ def test_vlm_never_turns_nvidia_into_a_remote_asset_fetcher() -> None:
     adapter = NvidiaNimAdapter(FakeTransport())
     request = VisionLanguageRequest(
         "Describe this image",
-        "nvidia/nemotron-nano-12b-v2-vl",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
         (AssetInput("image/png", uri="https://internal.example/image.png"),),
     )
     with pytest.raises(ProviderFailure, match="inline image bytes") as caught:
         adapter.build_request(request, preview_context())
     assert caught.value.code is FailureCode.INVALID_REQUEST
+
+
+def test_active_vlm_uses_bounded_instruct_mode_and_retired_route_is_a_tombstone() -> None:
+    transport = FakeTransport()
+    adapter = NvidiaNimAdapter(transport)
+    encoded = base64.b64encode(b"small inspected jpeg").decode("ascii")
+    active = adapter.build_request(
+        VisionLanguageRequest(
+            "Return the closed visual review JSON",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            (AssetInput("image/jpeg", data_base64=encoded),),
+            max_output_tokens=1024,
+            temperature=0.0,
+        ),
+        preview_context(),
+    )
+    assert active.url == "https://integrate.api.nvidia.com/v1/chat/completions"
+    assert active.json_body is not None
+    assert active.json_body["model"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+    assert active.json_body["max_tokens"] == 1024
+    assert active.json_body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert active.json_body["top_k"] == 1
+
+    with pytest.raises(ProviderFailure, match="retired") as retired:
+        adapter.build_request(
+            VisionLanguageRequest(
+                "Review this image",
+                "nvidia/nemotron-nano-12b-v2-vl",
+                (AssetInput("image/jpeg", data_base64=encoded),),
+            ),
+            preview_context(),
+        )
+    assert retired.value.code is FailureCode.PROVIDER_UNAVAILABLE
+    assert transport.requests == []
 
 
 def test_retired_embedding_and_unclassified_models_fail_before_network() -> None:

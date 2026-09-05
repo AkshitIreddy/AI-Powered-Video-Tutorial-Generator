@@ -134,7 +134,9 @@ Preserve model ID and model-version ID separately. AIR, base model, file format,
 The desktop profile contract now exposes two optional media names. Writing and narration remain required; image generation is optional because the production compiler can render authored layouts and included project visuals without invoking an image provider:
 
 - `stock` maps exactly to `media.licensed.search`. Openverse and Pexels both use the production adapter's model identity `licensed-media`; their provider IDs and API revisions keep them distinct. Openverse requires no credential and the workflow accepts only normalized CC0 results. Pexels requires an OS-vault API key and preserves its photographer, source, and Pexels-license record.
-- `visualReview` maps exactly to `vlm.chat`. The only enabled hosted model is `nvidia/nemotron-nano-12b-v2-vl`, which is the sole model allowlisted by the current NVIDIA visual-language adapter. The route remains restricted to public or synthetic inputs and does not decide copyright, consent, or publicity rights.
+- `visualReview` maps exactly to `vlm.chat`. The enabled hosted model is `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, which is the sole model allowlisted by the current NVIDIA visual-language adapter. NVIDIA's current model page advertises a free hosted endpoint, image-and-text input, and JSON output. Its one authorized smoke reached the current transport but returned transient HTTP 503, so live semantic review remains unproven. The route remains restricted to public or synthetic inputs and does not decide copyright, consent, or publicity rights.
+
+The retired `nvidia/nemotron-nano-12b-v2-vl` identity remains visible as unavailable so older saved profiles can explain what was selected. It is excluded from new routing and fails closed in the provider adapter because NVIDIA now reports its hosted endpoint as deprecated.
 
 No local candidate was promoted from the legacy `vlm.review` catalog label. Those unpinned recipe candidates do not establish a working `vlm.chat` adapter. Profiles saved before these optional media existed remain valid because absent optional routes are skipped.
 
@@ -212,4 +214,5 @@ The latest focused desktop run on Node 24.20.0 passed all 53 catalog tests plus 
 55. [Creative Commons CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) — rights statement used by the strict Openverse result allowlist.
 56. [Pexels API documentation](https://www.pexels.com/api/documentation/) — keyed search request, result attribution fields, and API integration requirements.
 57. [Pexels license](https://www.pexels.com/license/) — permitted uses and restrictions retained by the stock workflow.
-58. [NVIDIA Nemotron Nano 12B V2 VL](https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl) — exact hosted visual-language model identity and operation family.
+58. [NVIDIA Nemotron 3 Nano Omni 30B A3B Reasoning](https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning) — current hosted visual-language model identity, image-and-text support, JSON support, terms, and free-endpoint availability.
+59. [NVIDIA Nemotron Nano 12B V2 VL](https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl) — preserved retired identity; the hosted endpoint is marked deprecated and is no longer a selectable route.
