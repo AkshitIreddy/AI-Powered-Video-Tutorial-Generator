@@ -10,6 +10,7 @@ import re
 from collections.abc import Mapping
 from contextlib import nullcontext
 from dataclasses import asdict, replace
+from pathlib import Path
 from typing import Any
 
 from alystria.audio import WordTiming, captions_from_words, to_srt, to_webvtt
@@ -36,6 +37,14 @@ from alystria.qa.visual import (
     VisualElement,
     VisualSnapshot,
     check_visual_snapshot,
+)
+from alystria.rendered_frame_review import (
+    FrameExtractor,
+    RenderedFrameReviewRequest,
+    RoutedVisionRuntime,
+    SceneWindow,
+    critical_review_findings,
+    review_rendered_frames,
 )
 from alystria.research import (
     AtomicClaim,
@@ -96,7 +105,7 @@ from .models import (
     SourceSpec,
 )
 
-IMPLEMENTATION_VERSION = "generation-v6-verified-forced-alignment"
+IMPLEMENTATION_VERSION = "generation-v7-rendered-frame-review"
 PROMPT_VERSION = "offline-education-v1"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
@@ -120,6 +129,74 @@ def _fingerprint(value: Any) -> str:
     return hashlib.sha256(_canonical(value).encode()).hexdigest()
 
 
+def _render_scene_windows(scenes: object) -> list[dict[str, Any]]:
+    if not isinstance(scenes, list) or not scenes:
+        raise ValueError("Render request requires scenes for temporal QA")
+    running_ticks = 0
+    windows: list[dict[str, Any]] = []
+    for scene in scenes:
+        if not isinstance(scene, dict) or not isinstance(scene.get("id"), str):
+            raise ValueError("Render scene identity is invalid")
+        duration_ticks = scene.get("durationTicks")
+        if (
+            isinstance(duration_ticks, bool)
+            or not isinstance(duration_ticks, int)
+            or duration_ticks <= 0
+        ):
+            raise ValueError("Render scene duration is invalid")
+        end_ticks = running_ticks + duration_ticks
+        windows.append(
+            {
+                "sceneId": scene["id"],
+                "startTicks": running_ticks,
+                "endTicks": end_ticks,
+            }
+        )
+        running_ticks = end_ticks
+    return windows
+
+
+def _rendered_frame_review_request(
+    parameters: dict[str, Any], candidate: dict[str, Any]
+) -> RenderedFrameReviewRequest:
+    values = candidate.get("renderSceneWindows")
+    if not isinstance(values, list) or not values:
+        raise ValueError("Render candidate has no immutable scene windows for visual review")
+    windows: list[SceneWindow] = []
+    for value in values:
+        if not isinstance(value, dict):
+            raise ValueError("Render candidate scene window is invalid")
+        scene_id = value.get("sceneId")
+        start_ticks = value.get("startTicks")
+        end_ticks = value.get("endTicks")
+        if (
+            not isinstance(scene_id, str)
+            or isinstance(start_ticks, bool)
+            or not isinstance(start_ticks, int)
+            or isinstance(end_ticks, bool)
+            or not isinstance(end_ticks, int)
+        ):
+            raise ValueError("Render candidate scene window is invalid")
+        windows.append(
+            SceneWindow(
+                scene_id,
+                start_ticks / TICKS_PER_SECOND,
+                end_ticks / TICKS_PER_SECOND,
+            )
+        )
+    render_hash = candidate.get("renderArtifactHash")
+    render_media_type = candidate.get("renderMediaType")
+    if not isinstance(render_hash, str) or not isinstance(render_media_type, str):
+        raise ValueError("Render candidate identity is invalid")
+    return RenderedFrameReviewRequest(
+        generation_id=str(parameters["generationId"]),
+        render_artifact_hash=render_hash,
+        render_media_type=render_media_type,
+        expected_duration_seconds=windows[-1].end_seconds,
+        scenes=tuple(windows),
+    )
+
+
 class GenerationWorkflow:
     """Production coordinator task graph with deterministic offline defaults.
 
@@ -138,6 +215,10 @@ class GenerationWorkflow:
         renderer_client: RendererClient | None = None,
         educational_provider: EducationalProvider | None = None,
         alignment_client: ForcedAlignmentClient | None = None,
+        vision_runtime: RoutedVisionRuntime | None = None,
+        rendered_frame_ffmpeg_path: Path | None = None,
+        rendered_frame_ffprobe_path: Path | None = None,
+        rendered_frame_extractor: FrameExtractor | None = None,
     ) -> None:
         self.store = store
         self.runtime = runtime
@@ -145,6 +226,10 @@ class GenerationWorkflow:
         self.renderer_client = renderer_client or DeterministicRendererClient()
         self.educational_provider = educational_provider or DeterministicOfflineProvider()
         self.alignment_client = alignment_client
+        self.vision_runtime = vision_runtime
+        self.rendered_frame_ffmpeg_path = rendered_frame_ffmpeg_path
+        self.rendered_frame_ffprobe_path = rendered_frame_ffprobe_path
+        self.rendered_frame_extractor = rendered_frame_extractor
 
     @property
     def handlers(self) -> dict[str, TaskHandler]:
@@ -376,6 +461,10 @@ class GenerationWorkflow:
                 "payload": payload,
             }
         )
+        if isinstance(payload.get("renderedFrameReview"), dict):
+            snapshot["renderedFrameReview"] = copy.deepcopy(
+                payload["renderedFrameReview"]
+            )
         revision = self.store.create_revision(
             snapshot=snapshot,
             kind="generation",
@@ -1409,6 +1498,7 @@ class GenerationWorkflow:
             "provenanceManifest": provenance_manifest,
             "provenanceManifestHash": provenance_artifact.hash,
             "provenanceRecords": provenance_records,
+            "renderSceneWindows": _render_scene_windows(render_request["scenes"]),
             "remainingFaults": request.repairable_faults,
             "repairAttempts": 0,
         }
@@ -1462,6 +1552,24 @@ class GenerationWorkflow:
         remaining = int(candidate.get("remainingFaults", 0))
         gates = self._candidate_quality_gates(candidate, approved, request)
         findings = [finding for gate in gates for finding in gate.findings]
+        rendered_frame_review: dict[str, Any] | None = None
+        if parameters["stage"] == GenerationStage.QA_FINAL.value:
+            review_result = review_rendered_frames(
+                self.store,
+                _rendered_frame_review_request(parameters, candidate),
+                context,
+                runtime=self.vision_runtime,
+                ffmpeg_path=self.rendered_frame_ffmpeg_path,
+                ffprobe_path=self.rendered_frame_ffprobe_path,
+                extractor=self.rendered_frame_extractor,
+            )
+            rendered_frame_review = {
+                "generationId": str(parameters["generationId"]),
+                "renderArtifactHash": str(candidate["renderArtifactHash"]),
+                **review_result.to_dict(),
+            }
+            candidate["renderedFrameReview"] = rendered_frame_review
+            findings.extend(critical_review_findings(review_result))
         if remaining:
             findings.append(
                 Finding(
@@ -1490,6 +1598,7 @@ class GenerationWorkflow:
                 ],
                 "qaEvidenceHash": candidate.get("qaEvidenceHash"),
                 "provenanceManifestHash": candidate.get("provenanceManifestHash"),
+                "renderedFrameReview": rendered_frame_review,
             },
         )
         payload = {
@@ -1497,6 +1606,11 @@ class GenerationWorkflow:
             "qualityGate": gate.to_dict(),
             "passed": gate.permits_export,
             "requiresHumanReview": gate.status in {GateStatus.FAIL, GateStatus.BLOCKED},
+            **(
+                {"renderedFrameReview": rendered_frame_review}
+                if rendered_frame_review is not None
+                else {}
+            ),
         }
         upstream = (
             [GenerationStage.RENDER]
@@ -1657,6 +1771,11 @@ class GenerationWorkflow:
             "videoArtifactHash": video_artifact_hash,
             "path": str(output_path),
             "mediaType": video_media_type,
+            **(
+                {"renderedFrameReview": copy.deepcopy(candidate["renderedFrameReview"])}
+                if isinstance(candidate.get("renderedFrameReview"), dict)
+                else {}
+            ),
         }
         return self._persist_stage(
             context,

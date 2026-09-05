@@ -316,13 +316,21 @@ def test_staged_workflow_pauses_for_approval_then_exports(tmp_path: Path) -> Non
             "captions-srt",
             "transcript",
         }
+        rendered_review = export_job.result["payload"]["renderedFrameReview"]
+        assert rendered_review["status"] == "not_reviewed"
+        assert rendered_review["reason"] == "no_explicit_vlm_route"
+        assert rendered_review["generationId"] == completed.generation_id
+        assert rendered_review["renderArtifactHash"] == completed.video_artifact_hash
+        head = store.head_revision()
+        assert head is not None
+        assert head.snapshot["renderedFrameReview"] == rendered_review
 
         generation_revisions = [
             revision
             for revision in store.list_revisions(limit=100)
             if revision.snapshot.get("generationId") == completed.generation_id
         ]
-        assert len(generation_revisions) == len(ALL_STAGES) + 1
+        assert len(generation_revisions) == len(ALL_STAGES) + 2
         assert all(
             revision.snapshot.get("stageArtifactHash")
             for revision in generation_revisions

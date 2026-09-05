@@ -678,6 +678,9 @@ class PipelineService:
                     media_client=media_client,
                     educational_provider=educational_provider,
                     alignment_client=_configured_forced_aligner(store),
+                    vision_runtime=provider_runtime,
+                    rendered_frame_ffmpeg_path=_rendered_frame_ffmpeg_path(),
+                    rendered_frame_ffprobe_path=_rendered_frame_ffprobe_path(),
                 )
                 if renderer is not None
                 else None
@@ -1046,8 +1049,11 @@ def _production_generation_coordinator(
     """
 
     renderer = _production_renderer_client(store)
-    media_client, educational_provider = _production_generation_clients(
+    provider_runtime = _production_provider_runtime(
         store, provider_runtime_factory=provider_runtime_factory
+    )
+    media_client, educational_provider = _generation_clients_for_runtime(
+        store, provider_runtime
     )
     alignment_client = _configured_forced_aligner(store)
     return GenerationCoordinator(
@@ -1057,6 +1063,9 @@ def _production_generation_coordinator(
         renderer_client=renderer,
         educational_provider=educational_provider,
         alignment_client=alignment_client,
+        vision_runtime=provider_runtime,
+        rendered_frame_ffmpeg_path=_rendered_frame_ffmpeg_path(),
+        rendered_frame_ffprobe_path=_rendered_frame_ffprobe_path(),
     )
 
 
@@ -1230,6 +1239,16 @@ def _configured_forced_aligner(store: ProjectStore) -> ForcedAlignmentClient | N
     if not config_path.exists() and not config_path.is_symlink():
         return None
     return load_pinned_onnx_ctc_aligner(store, config_path)
+
+
+def _rendered_frame_ffmpeg_path() -> Path | None:
+    value = os.environ.get("ALYSTRIA_FFMPEG_PATH")
+    return Path(value) if value else None
+
+
+def _rendered_frame_ffprobe_path() -> Path | None:
+    value = os.environ.get("ALYSTRIA_FFPROBE_PATH")
+    return Path(value) if value else None
 
 
 def _production_renderer_client(store: ProjectStore) -> RendererClient:
@@ -1433,6 +1452,9 @@ def desktop_run_one(
                 media_client=media_client,
                 educational_provider=educational_provider,
                 alignment_client=_configured_forced_aligner(store),
+                vision_runtime=provider_runtime,
+                rendered_frame_ffmpeg_path=_rendered_frame_ffmpeg_path(),
+                rendered_frame_ffprobe_path=_rendered_frame_ffprobe_path(),
             )
             if renderer is not None and media_client is not None
             else None

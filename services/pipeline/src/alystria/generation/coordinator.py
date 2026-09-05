@@ -20,6 +20,7 @@ from alystria.project.database import transaction
 from alystria.project.models import utc_now
 from alystria.project_customization import validate_customization
 from alystria.providers import parse_routing_policy
+from alystria.rendered_frame_review import FrameExtractor, RoutedVisionRuntime
 from alystria.research import EducationalProvider
 from alystria.security.files import detect_mime
 from alystria.sources import (
@@ -168,6 +169,10 @@ class GenerationCoordinator:
         renderer_client: RendererClient | None = None,
         educational_provider: EducationalProvider | None = None,
         alignment_client: ForcedAlignmentClient | None = None,
+        vision_runtime: RoutedVisionRuntime | None = None,
+        rendered_frame_ffmpeg_path: Path | None = None,
+        rendered_frame_ffprobe_path: Path | None = None,
+        rendered_frame_extractor: FrameExtractor | None = None,
     ) -> None:
         self.store = store
         self.runtime = runtime or SQLiteWorkflowRuntime(store.connection)
@@ -178,6 +183,10 @@ class GenerationCoordinator:
             renderer_client=renderer_client,
             educational_provider=educational_provider,
             alignment_client=alignment_client,
+            vision_runtime=vision_runtime,
+            rendered_frame_ffmpeg_path=rendered_frame_ffmpeg_path,
+            rendered_frame_ffprobe_path=rendered_frame_ffprobe_path,
+            rendered_frame_extractor=rendered_frame_extractor,
         )
         self._media_cancel = getattr(self.workflow.media_client, "cancel", None)
         self._media_reset_cancellation = getattr(
