@@ -30,6 +30,8 @@ _SCENE_TYPES = {
     "recap",
     "formula",
     "code",
+    "whiteboard",
+    "live_code",
 }
 
 # Alice's measured long-form delivery varies with equations and punctuation.
@@ -46,6 +48,8 @@ _SCENE_SEMANTICS = {
     "recap": ("recap", "editorial_type", "resolve-hold"),
     "formula": ("prove", "worked_example", "emphasize-result"),
     "code": ("demonstrate", "document_focus", "evidence-focus"),
+    "whiteboard": ("demonstrate", "worked_example", "trace-relationship"),
+    "live_code": ("demonstrate", "document_focus", "evidence-focus"),
 }
 
 _OUTLINE_SCHEMA: dict[str, Any] = {
@@ -337,6 +341,8 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                     "Every section must advance the explanation with subject-specific facts or reasoning.",
                     "On-screen text must be short, exact, and useful; never repeat a word accidentally.",
                     "Information units must encode the actual concepts, steps, evidence, formula, or result.",
+                    "Use whiteboard when a derivation or spatial explanation should be revealed stroke by stroke.",
+                    "Use live_code when code should be typed and explained in narration-timed steps; use code for a static listing.",
                     "Visual intent describes text-free supporting imagery only. Never ask image models to draw letters, numbers, equations, captions, UI, logos, or watermarks.",
                     "Do not include production directions, placeholders, URLs, paths, HTML, or generic filler.",
                 ],

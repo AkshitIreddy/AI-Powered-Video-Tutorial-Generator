@@ -19,6 +19,15 @@ from alystria.research import (
 )
 
 
+def test_structured_scene_schema_can_author_progressive_teaching_modes() -> None:
+    from alystria.generation.education_provider import _SCRIPT_SCHEMA
+
+    scene_types = set(
+        _SCRIPT_SCHEMA["properties"]["sections"]["items"]["properties"]["sceneType"]["enum"]
+    )
+    assert {"whiteboard", "live_code"} <= scene_types
+
+
 class FakeTextClient:
     def __init__(self, responses: Sequence[dict[str, Any]]) -> None:
         self.responses = list(responses)
