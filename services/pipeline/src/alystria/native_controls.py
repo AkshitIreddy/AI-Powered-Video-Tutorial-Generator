@@ -267,6 +267,7 @@ class NativeControlCoordinator:
         narration, narration_stage_hash = self._verified_stage_payload(
             validated_generation_id, "narration"
         )
+        captions, _ = self._verified_stage_payload(validated_generation_id, "captions")
         presenter, presenter_stage_hash = self._verified_stage_payload(
             validated_generation_id, "presenter"
         )
@@ -276,6 +277,7 @@ class NativeControlCoordinator:
         return {
             "projectId": self.store.manifest.project_id,
             "generationId": validated_generation_id,
+            "captions": _editor_caption_bindings(captions, narration),
             "assets": self._verified_generated_bindings(
                 assets.get("assets"),
                 generation_id=validated_generation_id,
@@ -898,6 +900,11 @@ class NativeControlCoordinator:
             return []
         bindings: list[dict[str, Any]] = []
         source_start = 0
+        manifest = candidate.get("renderManifest")
+        delivery = manifest.get("captionDelivery") if isinstance(manifest, dict) else None
+        burned = delivery.get("burnedIntoVideo") if isinstance(delivery, dict) else None
+        if not isinstance(burned, bool):
+            burned = None
         for scene in scenes:
             if not isinstance(scene, dict):
                 raise ValueError("Completed render stage has an invalid storyboard scene")
@@ -918,6 +925,7 @@ class NativeControlCoordinator:
                     "mediaType": media_type,
                     "sourceStartTicks": source_start,
                     "durationTicks": duration,
+                    "captionsBurnedIntoPixels": burned,
                 }
             )
             source_start += duration
@@ -1180,6 +1188,60 @@ def _codec_preference(params: dict[str, Any]) -> tuple[str, str]:
     if not isinstance(value, str) or value not in CODEC_PREFERENCES:
         raise ValueError("codecPreference must be h264-hardware, hevc-hardware, or av1")
     return value, CODEC_PREFERENCES[value]
+
+
+def _editor_caption_bindings(
+    captions: dict[str, Any], narration: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Expose verified aligned cues on each scene's local clock, never raw prose."""
+    if captions.get("captionsEnabled") is False:
+        return []
+    by_scene = captions.get("byScene")
+    storyboard = narration.get("storyboard")
+    scenes = storyboard.get("scenes") if isinstance(storyboard, dict) else None
+    if not isinstance(by_scene, dict) or not isinstance(scenes, list):
+        raise ValueError("Completed caption stage has no aligned scene timeline")
+    bindings: list[dict[str, Any]] = []
+    scene_ids: set[str] = set()
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            raise ValueError("Completed caption stage has an invalid scene")
+        scene_id = _bounded_text(scene.get("id"), "caption scene id", 128)
+        if not SCENE_ID_PATTERN.fullmatch(scene_id) or scene_id in scene_ids:
+            raise ValueError("Completed caption stage has an invalid scene identity")
+        scene_ids.add(scene_id)
+        duration = _integer(scene.get("durationTicks"), "caption scene duration", 1, 2**53 - 1)
+        cues = by_scene.get(scene_id, [])
+        if not isinstance(cues, list):
+            raise ValueError("Completed caption stage has invalid aligned cues")
+        cue_ids: set[str] = set()
+        previous_end = 0
+        for cue in cues:
+            if not isinstance(cue, dict):
+                raise ValueError("Completed caption stage has an invalid cue")
+            cue_id = _bounded_text(cue.get("cue_id"), "caption cue id", 180)
+            text = _bounded_text(cue.get("text"), "caption cue text", 10_000)
+            start = _integer(cue.get("start_ms"), "caption cue start", 0, 2**40) * 240
+            end = _integer(cue.get("end_ms"), "caption cue end", 1, 2**40) * 240
+            # Captions use integer milliseconds; permit only the existing
+            # half-millisecond scene-end rounding, then retain the exact end.
+            if cue_id in cue_ids or start < previous_end or start >= end or end > duration + 120:
+                raise ValueError("Completed caption stage has an invalid cue interval")
+            end = min(end, duration)
+            if start >= end:
+                raise ValueError("Completed caption stage has a cue outside its scene")
+            cue_ids.add(cue_id)
+            previous_end = end
+            bindings.append({
+                "sceneId": scene_id,
+                "id": cue_id,
+                "startTicks": start,
+                "endTicks": end,
+                "text": text,
+            })
+    if set(by_scene).difference(scene_ids):
+        raise ValueError("Completed caption stage references an unknown scene")
+    return bindings
 
 
 def _locks(value: Any) -> set[str]:
