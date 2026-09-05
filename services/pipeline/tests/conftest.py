@@ -12,3 +12,4 @@ if str(SOURCE_ROOT) not in sys.path:
 # Tests deliberately opt into the deterministic fixture renderer instead of
 # receiving it as a silent fallback.
 os.environ.setdefault("ALYSTRIA_RENDERER_MODE", "fixture")
+os.environ.setdefault("ALYSTRIA_MEDIA_MODE", "fixture")

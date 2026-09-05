@@ -189,15 +189,17 @@ def test_customization_rejects_paths_code_and_unbound_selections(
         _save(PipelineService(), root, project_id, head, value)
 
 
-def test_uploaded_asset_reference_must_match_durable_ledger(tmp_path: Path) -> None:
+@pytest.mark.parametrize("source", ["user-upload", "generated", "licensed-media"])
+def test_durable_asset_reference_must_match_durable_ledger(
+    tmp_path: Path, source: str
+) -> None:
     root, project_id, head = _project(tmp_path)
     value = _customization()
-    value["assets"] = [
-        {
+    asset = {
             "id": "asset_forged",
             "kind": "background",
             "label": "Forged",
-            "source": "user-upload",
+            "source": source,
             "filename": "background.png",
             "mediaType": "image/png",
             "byteSize": 10,
@@ -206,8 +208,10 @@ def test_uploaded_asset_reference_must_match_durable_ledger(tmp_path: Path) -> N
             "license": "User owned",
             "attribution": "No attribution required",
             "rightsStatus": "cleared",
-        }
-    ]
+    }
+    if source == "licensed-media":
+        asset["sourceUrl"] = "https://example.test/photo"
+    value["assets"] = [asset]
     value["backgroundAssetId"] = "asset_forged"
     value["backgroundMode"] = "image"
 

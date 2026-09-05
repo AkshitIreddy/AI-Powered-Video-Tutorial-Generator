@@ -1,13 +1,73 @@
 from __future__ import annotations
 
+import binascii
+import struct
+import uuid
+import zlib
 from pathlib import Path
 
 import pytest
 
-from alystria.generation import GenerationCoordinator, GenerationRequest, GenerationState
-from alystria.generation.adapters import RenderedTutorial
-from alystria.native_controls import NativeControlCoordinator, _caption_delivery_mode
+from alystria.generation import (
+    GenerationCoordinator,
+    GenerationRequest,
+    GenerationState,
+    RendererRuntimeError,
+)
+from alystria.generation.adapters import GeneratedMedia, RenderedTutorial
+from alystria.jobs import SQLiteWorkflowRuntime
+from alystria.native_controls import (
+    NativeControlCoordinator,
+    _caption_delivery_mode,
+    _renderer_scene,
+)
 from alystria.project import ProjectHistory, ProjectStore
+from alystria.service import PipelineService, desktop_run_one
+
+
+def _candidate_png() -> bytes:
+    pixels = b"".join(b"\x00" + b"\x66\x88\xaa" * 8 for _ in range(8))
+
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", binascii.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 8, 8, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(pixels, 9))
+        + chunk(b"IEND", b"")
+    )
+
+
+class CandidateMediaClient:
+    provider_id = "comfyui-local"
+    model_revision = "local/sdxl-base-1.0"
+
+    def create_visual(self, scene: dict[str, object], *, seed: int) -> GeneratedMedia:
+        del scene, seed
+        return GeneratedMedia(
+            _candidate_png(),
+            "image/png",
+            "candidate.png",
+            "comfyui-local",
+            "local/sdxl-base-1.0",
+            {
+                "rightsStatus": "verified",
+                "licenseId": "CreativeML-OpenRAIL++-M",
+                "sourceUri": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
+            },
+        )
+
+    def synthesize_narration(self, *_: object, **__: object) -> GeneratedMedia:
+        raise AssertionError("candidate generation must not synthesize narration")
+
+    def create_presenter(self, *_: object, **__: object) -> GeneratedMedia:
+        raise AssertionError("candidate generation must not animate a presenter")
 
 
 class RecordingRenderer:
@@ -42,6 +102,7 @@ def _project(tmp_path: Path) -> ProjectStore:
     return ProjectStore.create(
         tmp_path / "Native Controls",
         name="Native controls",
+        project_id=str(uuid.uuid4()),
         initial_snapshot={
             "id": "temporary",
             "title": "Native controls",
@@ -104,7 +165,7 @@ def test_scoped_regeneration_returns_before_work_and_preserves_accepted_scene(
     with _project(tmp_path) as store:
         head = store.head_revision()
         assert head is not None
-        control = NativeControlCoordinator(store)
+        control = NativeControlCoordinator(store, media_client=CandidateMediaClient())
         job = control.submit_regeneration(
             {
                 "baseRevisionId": head.revision_id,
@@ -129,6 +190,81 @@ def test_scoped_regeneration_returns_before_work_and_preserves_accepted_scene(
             candidate["acceptedSceneUnchanged"]
             for candidate in current.snapshot["sceneCandidates"]
         )
+        candidate_id = completed.result["candidateIds"][0]
+        accepted = PipelineService().dispatch(
+            "control.acceptVisualCandidate",
+            {
+                "projectId": store.manifest.project_id,
+                "projectDirectory": str(store.root),
+                "expectedHeadRevisionId": current.revision_id,
+                "candidateId": candidate_id,
+            },
+        )
+        assert accepted["candidateId"] == candidate_id
+        assert accepted["artifactHash"]
+
+
+def test_desktop_candidate_generation_does_not_require_renderer_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with _project(tmp_path) as store:
+        head = store.head_revision()
+        assert head is not None
+        control = NativeControlCoordinator(store)
+        job = control.submit_regeneration(
+            {
+                "baseRevisionId": head.revision_id,
+                "sceneId": "scene-one",
+                "instruction": "Show the invariant as a clear diagram.",
+                "preservationLocks": ["narration", "citations", "learningobjective"],
+                "alternatives": 1,
+            }
+        )
+        monkeypatch.setattr(
+            "alystria.service._production_renderer_client",
+            lambda _store: (_ for _ in ()).throw(RendererRuntimeError("renderer missing")),
+        )
+        monkeypatch.setattr(
+            "alystria.service.default_local_media_client", lambda: CandidateMediaClient()
+        )
+
+        completed = desktop_run_one(store, SQLiteWorkflowRuntime(store.connection))
+
+        assert completed is not None and completed.job_id == job.job_id
+        assert completed.state.value == "SUCCEEDED"
+        assert completed.result is not None
+        assert completed.result["readyCount"] == 1
+
+
+def test_candidate_acceptance_invalidates_only_the_role_specific_generation_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed: list[tuple[str, str]] = []
+
+    def record_scope(
+        _coordinator: GenerationCoordinator, generation_id: str, scope: str
+    ) -> tuple[str, ...]:
+        observed.append((generation_id, scope))
+        return (scope,)
+
+    monkeypatch.setattr(GenerationCoordinator, "invalidate_scope", record_scope)
+    with _project(tmp_path) as store:
+        control = NativeControlCoordinator(store)
+        locked = {"narration", "citations", "learningobjective", "timing"}
+
+        scene_invalidated = control._invalidate_scene(
+            "scene-one", "generation-one", locked, "scene-hash", role="scene"
+        )
+        presenter_invalidated = control._invalidate_scene(
+            "scene-one", "generation-one", locked, "presenter-hash", role="presenter"
+        )
+
+    assert observed == [
+        ("generation-one", "scene-asset:scene-one"),
+        ("generation-one", "presenter"),
+    ]
+    assert scene_invalidated == ["scene-asset:scene-one"]
+    assert presenter_invalidated == ["presenter"]
 
 
 def test_scene_render_is_queued_then_promotes_real_renderer_bytes(tmp_path: Path) -> None:
@@ -177,6 +313,35 @@ def test_scene_render_fails_closed_without_pinned_runtime(tmp_path: Path) -> Non
         failed = control.status(job.job_id)
         assert failed.state.value == "FAILED"
         assert "Pinned renderer runtime is unavailable" in failed.error["message"]
+
+
+def test_renderer_scene_preserves_authoritative_storyboard_ticks() -> None:
+    scene = _renderer_scene(
+        {
+            "id": "timed-scene",
+            "type": "worked_example",
+            "title": "Measured explanation",
+            "narration": "The rendered preview must keep the measured narration duration.",
+            "durationTicks": 2_913_600,
+            "duration": 1,
+        }
+    )
+
+    assert scene["type"] == "worked-example"
+    assert scene["durationTicks"] == 2_913_600
+
+
+@pytest.mark.parametrize("duration_ticks", [True, 0, -1, 1.5, 2**53])
+def test_renderer_scene_rejects_invalid_authoritative_ticks(duration_ticks: object) -> None:
+    with pytest.raises(ValueError, match="durationTicks"):
+        _renderer_scene(
+            {
+                "id": "invalid-timing",
+                "title": "Invalid timing",
+                "narration": "This preview should fail closed.",
+                "durationTicks": duration_ticks,
+            }
+        )
 
 
 def test_selected_qa_repair_and_master_export_use_completed_generation(
@@ -254,6 +419,7 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
                 "aspect": "1:1",
                 "resolution": "1080p",
                 "fps": 24,
+                "codecPreference": "av1",
                 "captionDeliveryMode": "sidecar",
                 "transcript": True,
                 "bibliography": True,
@@ -267,6 +433,7 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
         assert len(renderer.requests) == calls_before + 1
         assert "presenters" in renderer.requests[-1]
         assert renderer.requests[-1]["captionDeliveryMode"] == "sidecar"
+        assert renderer.requests[-1]["codec"] == "av1"
         assert renderer.requests[-1]["captions"]["captionsEnabled"] is True
         assert Path(completed.result["path"]).is_file()
         assert len(completed.result["sidecarPaths"]) == 4
@@ -280,6 +447,32 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
             "burnedIntoPixels": False,
             "embeddedInContainer": False,
         }
+        assert completed.result["codecPreference"] == "av1"
+        assert completed.result["rendererCodec"] == "av1"
+
+
+@pytest.mark.parametrize(
+    ("preference", "renderer_codec"),
+    [
+        ("h264-hardware", "h264_nvenc"),
+        ("hevc-hardware", "hevc_nvenc"),
+        ("av1", "av1"),
+    ],
+)
+def test_master_codec_preference_maps_to_closed_renderer_codec(
+    preference: str,
+    renderer_codec: str,
+) -> None:
+    from alystria.native_controls import _codec_preference
+
+    assert _codec_preference({"codecPreference": preference}) == (preference, renderer_codec)
+
+
+def test_master_codec_preference_rejects_unknown_values() -> None:
+    from alystria.native_controls import _codec_preference
+
+    with pytest.raises(ValueError, match="codecPreference"):
+        _codec_preference({"codecPreference": "automatic"})
 
 
 @pytest.mark.parametrize("value", ["sidecar", "embedded", "burned", "both"])

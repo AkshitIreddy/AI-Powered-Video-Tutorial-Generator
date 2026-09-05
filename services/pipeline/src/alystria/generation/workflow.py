@@ -86,6 +86,7 @@ from .adapters import (
     GenerationMediaClient,
     RendererClient,
 )
+from .forced_alignment import AlignmentInput, ForcedAlignmentClient
 from .models import (
     PRE_APPROVAL_STAGES,
     ClaimSpec,
@@ -95,7 +96,7 @@ from .models import (
     SourceSpec,
 )
 
-IMPLEMENTATION_VERSION = "generation-v5-authored-fixture-visuals"
+IMPLEMENTATION_VERSION = "generation-v6-verified-forced-alignment"
 PROMPT_VERSION = "offline-education-v1"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
@@ -136,12 +137,14 @@ class GenerationWorkflow:
         media_client: GenerationMediaClient | None = None,
         renderer_client: RendererClient | None = None,
         educational_provider: EducationalProvider | None = None,
+        alignment_client: ForcedAlignmentClient | None = None,
     ) -> None:
         self.store = store
         self.runtime = runtime
         self.media_client = media_client or DeterministicMediaClient()
         self.renderer_client = renderer_client or DeterministicRendererClient()
         self.educational_provider = educational_provider or DeterministicOfflineProvider()
+        self.alignment_client = alignment_client
 
     @property
     def handlers(self) -> dict[str, TaskHandler]:
@@ -853,38 +856,53 @@ class GenerationWorkflow:
         scenes = approved["storyboard"]["scenes"]
         for index, scene in enumerate(scenes):
             context.check_cancelled()
-            media = self.media_client.create_visual(scene, seed=request.deterministic_seed + index)
-            self._record_media_usage(context, media, scene_id=str(scene["id"]), kind="visual")
-            artifact = self.store.add_artifact_bytes(
-                media.content,
-                media_type=media.media_type,
-                original_name=media.original_name,
-                metadata={
-                    **media.metadata,
-                    "provider": media.provider_id,
-                    "modelRevision": media.model_revision,
-                    "sceneId": scene["id"],
-                },
-            )
+            selected = _accepted_scene_visual(self.store, str(scene["id"]))
+            if selected is None:
+                media = self.media_client.create_visual(
+                    scene, seed=request.deterministic_seed + index
+                )
+                self._record_media_usage(
+                    context, media, scene_id=str(scene["id"]), kind="visual"
+                )
+                artifact = self.store.add_artifact_bytes(
+                    media.content,
+                    media_type=media.media_type,
+                    original_name=media.original_name,
+                    metadata={
+                        **media.metadata,
+                        "provider": media.provider_id,
+                        "modelRevision": media.model_revision,
+                        "sceneId": scene["id"],
+                    },
+                )
+                provider = media.provider_id
+                model_revision = media.model_revision
+                media_type = media.media_type
+                artifact_hash = artifact.hash
+            else:
+                artifact_hash = str(selected["artifactHash"])
+                provider = "accepted-project-asset"
+                model_revision = str(selected["provenanceId"])
+                media_type = str(selected["mediaType"])
             assets.append(
                 {
                     "sceneId": scene["id"],
-                    "artifactHash": artifact.hash,
-                    "mediaType": media.media_type,
-                    "provider": media.provider_id,
-                    "modelRevision": media.model_revision,
+                    "artifactHash": artifact_hash,
+                    "mediaType": media_type,
+                    "provider": provider,
+                    "modelRevision": model_revision,
                 }
             )
             links.append(
-                {"artifactHash": artifact.hash, "role": "scene-visual", "stableId": scene["id"]}
+                {"artifactHash": artifact_hash, "role": "scene-visual", "stableId": scene["id"]}
             )
             self._record_scene_node(
                 str(parameters["generationId"]),
                 str(scene["id"]),
                 "asset",
-                artifact.hash,
+                artifact_hash,
                 [GenerationStage.STORYBOARD.value],
-                artifact.hash,
+                artifact_hash,
             )
             context.set_progress((index + 1) / max(1, len(scenes)) * 0.9)
         result = self._persist_stage(
@@ -925,7 +943,9 @@ class GenerationWorkflow:
             ),
             upstream_keys=[self.logical_key(generation_id, GenerationStage.SCRIPT.value)],
         )
-        for index, scene in enumerate(approved["storyboard"]["scenes"]):
+        pending: list[dict[str, Any]] = []
+        scenes = approved["storyboard"]["scenes"]
+        for index, scene in enumerate(scenes):
             context.check_cancelled()
             media = self.media_client.synthesize_narration(
                 scene,
@@ -955,29 +975,78 @@ class GenerationWorkflow:
                 duration_ms=duration_ms,
                 metadata=media.metadata,
             )
+            pending.append(
+                {
+                    "scene": scene,
+                    "media": media,
+                    "artifact": artifact,
+                    "durationMs": duration_ms,
+                    "wordTimings": word_timings,
+                    "alignment": alignment,
+                }
+            )
+            context.set_progress((index + 1) / max(1, len(scenes)) * 0.55)
+
+        needs_alignment = [
+            item for item in pending if item["alignment"].get("status") != "COMPLETE"
+        ]
+        if needs_alignment and self.alignment_client is not None:
+            context.set_progress(0.6, message="Running pinned local forced alignment")
+            aligned = self.alignment_client.align_batch(
+                [
+                    AlignmentInput(
+                        scene_id=str(item["scene"]["id"]),
+                        audio=item["media"].content,
+                        media_type=item["media"].media_type,
+                        text=str(item["scene"]["narration"]),
+                        locale=request.locale,
+                        duration_ms=int(item["durationMs"]),
+                    )
+                    for item in needs_alignment
+                ]
+            )
+            for item in needs_alignment:
+                scene_id = str(item["scene"]["id"])
+                evidence = aligned.get(scene_id)
+                if not isinstance(evidence, dict):
+                    raise ValueError(f"Forced alignment omitted narration scene {scene_id}")
+                word_timings, alignment = _provider_neutral_word_timings(
+                    str(item["scene"]["narration"]),
+                    duration_ms=int(item["durationMs"]),
+                    metadata={**item["media"].metadata, **evidence},
+                )
+                if alignment.get("status") != "COMPLETE":
+                    raise ValueError(f"Forced alignment did not cover narration scene {scene_id}")
+                item["wordTimings"] = word_timings
+                item["alignment"] = alignment
+
+        for index, item in enumerate(pending):
+            scene = item["scene"]
+            media = item["media"]
+            artifact = item["artifact"]
             narration.append(
                 {
                     "sceneId": scene["id"],
                     "artifactHash": artifact.hash,
                     "mediaType": media.media_type,
-                    "durationMs": duration_ms,
+                    "durationMs": item["durationMs"],
                     "sampleRateHz": media.metadata.get("sampleRateHz", 48_000),
-                    "words": [asdict(word) for word in word_timings],
-                    "alignment": alignment,
+                    "words": [asdict(word) for word in item["wordTimings"]],
+                    "alignment": item["alignment"],
                 }
             )
             links.append(
                 {"artifactHash": artifact.hash, "role": "scene-narration", "stableId": scene["id"]}
             )
             self._record_scene_node(
-                str(parameters["generationId"]),
+                generation_id,
                 str(scene["id"]),
                 "narration",
                 artifact.hash,
                 [GenerationStage.SCRIPT.value, "pronunciation"],
                 artifact.hash,
             )
-            context.set_progress((index + 1) / max(1, len(approved["storyboard"]["scenes"])) * 0.9)
+            context.set_progress(0.65 + (index + 1) / max(1, len(scenes)) * 0.25)
         fitted_storyboard = _fit_storyboard_to_narration(approved["storyboard"], narration)
         result = self._persist_stage(
             context,
@@ -1275,6 +1344,14 @@ class GenerationWorkflow:
             "captionCues": _global_caption_cues(
                 narration["storyboard"]["scenes"], captions.get("byScene", {})
             ),
+            "narrationAlignments": [
+                {
+                    "sceneId": item.get("sceneId"),
+                    "alignment": copy.deepcopy(item.get("alignment")),
+                }
+                for item in narration.get("narration", [])
+                if isinstance(item, dict)
+            ],
             "contentEvidence": {
                 key: approved[key]
                 for key in (
@@ -1296,6 +1373,8 @@ class GenerationWorkflow:
         )
         candidate = {
             "renderArtifactHash": artifact.hash,
+            "renderMediaType": rendered.media_type,
+            "renderOriginalName": rendered.original_name,
             "renderManifest": rendered.manifest,
             "metrics": rendered.metrics,
             "qaEvidence": qa_evidence,
@@ -1526,13 +1605,32 @@ class GenerationWorkflow:
                 "qaEvidenceArtifactHash": candidate["qaEvidenceHash"],
             },
         }
+        video_artifact_hash = str(candidate["renderArtifactHash"])
+        video_media_type = str(candidate.get("renderMediaType", "video/webm"))
+        extension = {
+            "video/webm": ".webm",
+            "video/mp4": ".mp4",
+            "application/vnd.alystria.render+json": ".render.json",
+        }.get(video_media_type, ".bin")
+        output_path = self.store.root / "exports" / (
+            f"generation-{parameters['generationId']}{extension}"
+        )
+        self.store.cas.copy_to(video_artifact_hash, output_path)
+        manifest["files"][0]["mediaType"] = video_media_type
+        manifest["files"][0]["path"] = str(output_path)
         export_artifact = self.store.add_artifact_bytes(
             (_canonical(manifest) + "\n").encode(),
             media_type="application/vnd.alystria.export-manifest+json",
             original_name="export-manifest.json",
             metadata={"rightsStatus": "owned", "generationId": parameters["generationId"]},
         )
-        payload = {"exportManifest": manifest, "exportArtifactHash": export_artifact.hash}
+        payload = {
+            "exportManifest": manifest,
+            "exportArtifactHash": export_artifact.hash,
+            "videoArtifactHash": video_artifact_hash,
+            "path": str(output_path),
+            "mediaType": video_media_type,
+        }
         return self._persist_stage(
             context,
             parameters,
@@ -1911,9 +2009,58 @@ def _renderer_quality_gates(candidate: dict[str, Any]) -> tuple[QualityGate, ...
     visual_gates = [_visual_snapshot_gate(item) for item in metrics.get("visualSnapshots", [])]
     return (
         audio_gate,
+        _caption_alignment_quality_gate(evidence),
         timeline_gate,
         QualityGate.from_findings("visual.renderer", "visual", visual_findings),
         *visual_gates,
+    )
+
+
+def _caption_alignment_quality_gate(evidence: dict[str, Any]) -> QualityGate:
+    """Block caption certification when word times are estimates.
+
+    Duration-proportional timestamps are useful for an editor placeholder, but
+    they are not observed speech alignment and must never satisfy final media
+    QA. Provider-native timestamps and explicit forced alignment both require
+    complete token identity and coverage earlier in the narration stage.
+    """
+
+    values = evidence.get("narrationAlignments")
+    findings: list[Finding] = []
+    if not isinstance(values, list) or not values:
+        findings.append(
+            Finding(
+                "audio.alignment_not_verified",
+                "Narration has no verified word-alignment evidence.",
+                Severity.MAJOR,
+                "render:master",
+                repairable=True,
+            )
+        )
+    else:
+        for value in values:
+            scene_id = value.get("sceneId") if isinstance(value, dict) else None
+            alignment = value.get("alignment") if isinstance(value, dict) else None
+            if (
+                not isinstance(alignment, dict)
+                or alignment.get("status") != "COMPLETE"
+                or alignment.get("source") not in {"provider-native", "forced-alignment"}
+                or alignment.get("alignedTokenRatio") != 1.0
+            ):
+                findings.append(
+                    Finding(
+                        "audio.alignment_not_verified",
+                        "Caption timing is estimated; provider timestamps or forced alignment are required.",
+                        Severity.MAJOR,
+                        f"scene:{scene_id}" if isinstance(scene_id, str) else "render:master",
+                        repairable=True,
+                    )
+                )
+    return QualityGate.from_findings(
+        "media.caption_alignment",
+        "audio",
+        findings,
+        summary="Every caption interval must be derived from observed narration timing.",
     )
 
 
@@ -2709,6 +2856,74 @@ def _deterministic_word_timings(
     return tuple(timings)
 
 
+def _accepted_scene_visual(store: ProjectStore, scene_id: str) -> dict[str, Any] | None:
+    """Resolve one user-accepted raster binding from the current durable project head."""
+
+    head = store.head_revision()
+    if head is None:
+        return None
+    scene_values = head.snapshot.get("scenes")
+    if not isinstance(scene_values, list):
+        return None
+    scenes = [
+        value
+        for value in scene_values
+        if isinstance(value, dict) and value.get("id") == scene_id
+    ]
+    if len(scenes) != 1:
+        return None
+    scene = scenes[0]
+    asset_id = scene.get("visualAssetId")
+    digest = scene.get("visualArtifactHash")
+    if asset_id is None and digest is None:
+        return None
+    if not isinstance(asset_id, str) or not isinstance(digest, str):
+        raise ValueError(f"Accepted visual binding for scene {scene_id} is incomplete")
+    assets = head.snapshot.get("mediaAssets")
+    provenances = head.snapshot.get("assetProvenance")
+    if not isinstance(assets, list) or not isinstance(provenances, list):
+        raise ValueError(f"Accepted visual binding for scene {scene_id} lacks provenance")
+    matching_assets = [
+        value
+        for value in assets
+        if isinstance(value, dict) and value.get("id") == asset_id
+    ]
+    if len(matching_assets) != 1:
+        raise ValueError(f"Accepted visual asset for scene {scene_id} is not unique")
+    asset = matching_assets[0]
+    media_type = asset.get("mediaType")
+    if (
+        asset.get("artifactHash") != digest
+        or asset.get("state") != "promoted"
+        or media_type not in {"image/png", "image/jpeg", "image/webp"}
+    ):
+        raise ValueError(f"Accepted visual asset for scene {scene_id} is invalid")
+    provenance_id = asset.get("provenanceId")
+    matching_provenance = [
+        value
+        for value in provenances
+        if isinstance(value, dict)
+        and value.get("id") == provenance_id
+        and value.get("assetId") == asset_id
+    ]
+    if (
+        len(matching_provenance) != 1
+        or matching_provenance[0].get("exportEligible") is not True
+        or matching_provenance[0].get("blockers") not in (None, [])
+    ):
+        raise ValueError(f"Accepted visual asset for scene {scene_id} is not export eligible")
+    row = store.connection.execute(
+        "SELECT media_type FROM artifacts WHERE hash=?", (digest,)
+    ).fetchone()
+    if row is None or row["media_type"] != media_type or not store.cas.verify(digest):
+        raise ValueError(f"Accepted visual artifact for scene {scene_id} is missing or corrupt")
+    return {
+        "artifactHash": digest,
+        "mediaType": media_type,
+        "provenanceId": provenance_id,
+    }
+
+
 def _provider_neutral_word_timings(
     text: str,
     *,
@@ -2776,7 +2991,22 @@ def _provider_neutral_word_timings(
                 match.group()
                 for match in re.finditer(r"\b[\w'-]+\b", text, re.UNICODE)
             ]
-            aligned_ratio = min(1.0, len(parsed) / max(1, len(expected_tokens)))
+            normalized_expected = [token.casefold() for token in expected_tokens]
+            normalized_actual = [
+                token.casefold()
+                for timing in parsed
+                for token in re.findall(r"[\w'-]+", timing.token, re.UNICODE)
+            ]
+            actual_index = 0
+            matched = 0
+            for expected in normalized_expected:
+                while actual_index < len(normalized_actual):
+                    actual = normalized_actual[actual_index]
+                    actual_index += 1
+                    if actual == expected:
+                        matched += 1
+                        break
+            aligned_ratio = min(1.0, matched / max(1, len(normalized_expected)))
             if aligned_ratio < 0.5:
                 raise ValueError("word timing coverage is too low")
             source = (
@@ -2804,8 +3034,8 @@ def _provider_neutral_word_timings(
     fallback = _deterministic_word_timings(text, duration_ms=duration_ms)
     return fallback, {
         "schemaVersion": 1,
-        "status": "COMPLETE",
+        "status": "ESTIMATED",
         "source": "duration-proportional",
         "engine": "duration-proportional-v1",
-        "alignedTokenRatio": 1.0,
+        "alignedTokenRatio": None,
     }

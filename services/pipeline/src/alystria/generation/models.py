@@ -209,6 +209,9 @@ class GenerationStatus:
     export_artifact_hash: str | None
     stages: tuple[StageStatus, ...]
     invalidated_scopes: tuple[str, ...] = ()
+    output_path: str | None = None
+    output_media_type: str | None = None
+    video_artifact_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -219,6 +222,9 @@ class GenerationStatus:
             "approvalRevisionId": self.approval_revision_id,
             "finalRevisionId": self.final_revision_id,
             "exportArtifactHash": self.export_artifact_hash,
+            "outputPath": self.output_path,
+            "outputMediaType": self.output_media_type,
+            "videoArtifactHash": self.video_artifact_hash,
             "stages": [stage.to_dict() for stage in self.stages],
             "invalidatedScopes": list(self.invalidated_scopes),
         }

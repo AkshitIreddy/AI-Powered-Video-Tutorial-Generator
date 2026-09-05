@@ -12,6 +12,7 @@ import re
 import unicodedata
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlsplit
 
 from .project import ProjectHistory, ProjectStore
 
@@ -257,7 +258,7 @@ def _validate_assets(value: Any) -> list[dict[str, Any]]:
         _exact_keys(
             asset,
             required={"id", "kind", "label", "source", "creator", "license", "attribution", "rightsStatus"},
-            optional={"filename", "mediaType", "byteSize", "sha256"},
+            optional={"filename", "mediaType", "byteSize", "sha256", "sourceUrl"},
             label=f"assets[{index}]",
         )
         asset_id = _identifier(asset.get("id"), f"assets[{index}].id")
@@ -265,7 +266,11 @@ def _validate_assets(value: Any) -> list[dict[str, Any]]:
             raise ValueError(f"customization.assets contains duplicate ID {asset_id}")
         seen.add(asset_id)
         kind = _enum(asset, "kind", _ASSET_KINDS)
-        source = _enum(asset, "source", {"starter-pack", "user-upload"})
+        source = _enum(
+            asset,
+            "source",
+            {"generated", "licensed-media", "starter-pack", "user-upload"},
+        )
         entry: dict[str, Any] = {
             "id": asset_id,
             "kind": kind,
@@ -293,8 +298,21 @@ def _validate_assets(value: Any) -> list[dict[str, Any]]:
             if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
                 raise ValueError(f"assets[{index}].sha256 must be lowercase SHA-256")
             entry["sha256"] = digest
-        if source == "user-upload" and not {"filename", "mediaType", "byteSize", "sha256"} <= entry.keys():
-            raise ValueError(f"assets[{index}] user upload lacks immutable media metadata")
+        if "sourceUrl" in asset:
+            source_url = _printable(asset.get("sourceUrl"), f"assets[{index}].sourceUrl", 2_000)
+            parsed = urlsplit(source_url)
+            if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+                raise ValueError(f"assets[{index}].sourceUrl must be an HTTPS source URL")
+            entry["sourceUrl"] = source_url
+        if source in {"generated", "licensed-media", "user-upload"} and not {
+            "filename",
+            "mediaType",
+            "byteSize",
+            "sha256",
+        } <= entry.keys():
+            raise ValueError(f"assets[{index}] durable media lacks immutable metadata")
+        if source == "licensed-media" and "sourceUrl" not in entry:
+            raise ValueError(f"assets[{index}] licensed media lacks its source URL")
         result.append(entry)
     return result
 
@@ -328,15 +346,15 @@ def _validate_asset_bindings(customization: Mapping[str, Any], snapshot: Mapping
         if isinstance(raw, Mapping) and isinstance(raw.get("id"), str):
             durable_assets[str(raw["id"])] = raw
     for asset in customization["assets"]:
-        if asset["source"] != "user-upload":
+        if asset["source"] not in {"generated", "licensed-media", "user-upload"}:
             continue
         durable = durable_assets.get(asset["id"])
         if durable is None:
-            raise ValueError(f"Uploaded asset {asset['id']} is not present in the project ledger")
+            raise ValueError(f"Durable asset {asset['id']} is not present in the project ledger")
         if durable.get("kind") != _DURABLE_KINDS[asset["kind"]]:
-            raise ValueError(f"Uploaded asset {asset['id']} has a mismatched durable kind")
+            raise ValueError(f"Durable asset {asset['id']} has a mismatched durable kind")
         if durable.get("artifactHash") != asset.get("sha256"):
-            raise ValueError(f"Uploaded asset {asset['id']} has a mismatched immutable hash")
+            raise ValueError(f"Durable asset {asset['id']} has a mismatched immutable hash")
 
 
 def _exact_keys(

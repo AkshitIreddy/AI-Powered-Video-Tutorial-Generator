@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import __version__
+from .editor_waveform import parse_waveform_profile, render_editor_waveform
 from .generation import (
     DeterministicRendererClient,
     GenerationCoordinator,
@@ -36,6 +37,10 @@ from .generation import (
     load_local_presenter_media_client,
     request_from_desktop,
 )
+from .generation.forced_alignment import (
+    ForcedAlignmentClient,
+    load_pinned_onnx_ctc_aligner,
+)
 from .jobs import (
     ActionKey,
     DependencyGraph,
@@ -48,7 +53,13 @@ from .native_controls import NativeControlCoordinator, native_job_receipt
 from .project import ProjectHistory, ProjectStore, export_project, import_project
 from .project_assets import import_project_asset, select_presenter_profile
 from .project_customization import save_project_customization
-from .providers import Capability, ProviderRuntimeFactory, parse_routing_policy
+from .providers import (
+    Capability,
+    ProviderRuntimeFactory,
+    TutorialRoutingPolicy,
+    parse_routing_policy,
+)
+from .providers.comfyui_local import SDXL_MODEL_ID, ComfyGenerationMediaClient
 from .security.files import ImportLimits, validate_file
 
 if TYPE_CHECKING:
@@ -109,6 +120,9 @@ class PipelineService:
             "project.import": self.project_import,
             "source.import": self.source_import,
             "asset.import": self.asset_import,
+            "asset.resolve": self.asset_resolve,
+            "editor.bindings.get": self.editor_bindings_get,
+            "editor.waveform.get": self.editor_waveform_get,
             "presenter.profile.select": self.presenter_profile_select,
             "provider.routingPolicy.get": self.provider_routing_policy_get,
             "provider.routingPolicy.save": self.provider_routing_policy_save,
@@ -128,9 +142,12 @@ class PipelineService:
             "generation.cancel": self.generation_cancel,
             "generation.retry": self.generation_retry,
             "control.regenerateScene": self.control_regenerate_scene,
+            "control.acceptVisualCandidate": self.control_accept_visual_candidate,
+            "control.rejectVisualCandidate": self.control_reject_visual_candidate,
             "control.renderScene": self.control_render_scene,
             "control.repairQa": self.control_repair_qa,
             "control.exportMaster": self.control_export_master,
+            "editor.timeline.export": self.editor_timeline_export,
             "job.status": self.desktop_job_status,
         }
 
@@ -158,6 +175,63 @@ class PipelineService:
             "workflowRuntime": "sqlite",
             "executable": sys.executable,
         }
+
+    def asset_resolve(self, params: dict[str, Any]) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        digest = _required_string(params, "artifactHash")
+        if len(digest) != 64 or any(value not in "0123456789abcdef" for value in digest):
+            raise ValueError("artifactHash must be 64 lowercase hexadecimal characters")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            row = store.connection.execute(
+                "SELECT media_type,byte_size FROM artifacts WHERE hash=?",
+                (digest,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("artifactHash is not registered in this project")
+            media_type = str(row["media_type"])
+            if not _preview_media_type(media_type):
+                raise ValueError("artifactHash is not a supported preview media artifact")
+            if not store.cas.verify(digest):
+                raise ValueError("Registered project artifact is missing or corrupt")
+            path = store.cas.object_path(digest)
+            resolved = path.resolve(strict=True)
+            object_root = (store.root / "objects" / "sha256").resolve(strict=True)
+            try:
+                resolved.relative_to(object_root)
+            except ValueError as error:
+                raise ValueError("Resolved artifact path escapes the project object store") from error
+            if path.is_symlink() or not resolved.is_file():
+                raise ValueError("Resolved artifact must be a regular project object")
+            if resolved.stat().st_size != int(row["byte_size"]):
+                raise ValueError("Registered project artifact size does not match its object")
+            return {
+                "projectId": project_id,
+                "artifactHash": digest,
+                "path": str(resolved),
+                "mediaType": media_type,
+                "byteSize": int(row["byte_size"]),
+            }
+
+    def editor_bindings_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        generation_id = _required_uuid(params, "generationId")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return NativeControlCoordinator(store).editor_bindings(generation_id)
+
+    def editor_waveform_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        digest = _required_string(params, "artifactHash")
+        ffmpeg_value = os.environ.get("ALYSTRIA_FFMPEG_PATH")
+        if not ffmpeg_value:
+            raise RuntimeError("Pinned FFmpeg runtime is missing for editor waveform rendering")
+        profile = parse_waveform_profile(params.get("profile"))
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return render_editor_waveform(
+                store,
+                digest,
+                ffmpeg_path=Path(ffmpeg_value),
+                profile=profile,
+            )
 
     def project_create(self, params: dict[str, Any]) -> dict[str, Any]:
         with ProjectStore.create(
@@ -583,12 +657,28 @@ class PipelineService:
         with self._open(params) as store:
             runtime = SQLiteWorkflowRuntime(store.connection)
             mock_workflow = MockGenerationWorkflow(store, runtime)
-            generation = _production_generation_coordinator(
+            renderer = _production_renderer_client(store)
+            media_client, educational_provider = _production_generation_clients(
+                store, provider_runtime_factory=self._provider_runtime_factory
+            )
+            generation = GenerationCoordinator(
                 store,
                 runtime,
-                provider_runtime_factory=self._provider_runtime_factory,
+                renderer_client=renderer,
+                media_client=media_client,
+                educational_provider=educational_provider,
+                alignment_client=_configured_forced_aligner(store),
             )
-            handlers = {**mock_workflow.handlers, **generation.workflow.handlers}
+            controls = NativeControlCoordinator(
+                store,
+                renderer=renderer,
+                media_client=media_client,
+            )
+            handlers = {
+                **mock_workflow.handlers,
+                **generation.workflow.handlers,
+                **controls.handlers,
+            }
             return [
                 job.to_dict()
                 for job in runtime.run_until_idle(
@@ -693,6 +783,16 @@ class PipelineService:
     def control_regenerate_scene(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._submit_native_control(params, "regenerate")
 
+    def control_accept_visual_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return NativeControlCoordinator(store).accept_candidate(params)
+
+    def control_reject_visual_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return NativeControlCoordinator(store).reject_candidate(params)
+
     def control_render_scene(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._submit_native_control(params, "render")
 
@@ -701,6 +801,16 @@ class PipelineService:
 
     def control_export_master(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._submit_native_control(params, "export")
+
+    def editor_timeline_export(self, params: dict[str, Any]) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        project_path = Path(_required_string(params, "projectDirectory"))
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            receipt = native_job_receipt(
+                NativeControlCoordinator(store).submit_editor_timeline_export(params)
+            )
+        self._notify_background(project_path)
+        return receipt
 
     def _submit_native_control(self, params: dict[str, Any], operation: str) -> dict[str, Any]:
         project_id = _required_uuid(params, "projectId")
@@ -853,25 +963,9 @@ def _enqueue_generation_coordinator(
 ) -> GenerationCoordinator:
     """Build task keys without hashing/probing the renderer on an RPC thread."""
 
-    media_client = default_local_media_client()
-    educational_provider = None
-    head = store.head_revision()
-    routing_value = None if head is None else head.snapshot.get("providerRoutingPolicy")
-    if isinstance(routing_value, dict):
-        if provider_runtime_factory is None:
-            raise ValueError(
-                "Project provider routing requires an authenticated credential runtime"
-            )
-        provider_runtime = provider_runtime_factory.build(parse_routing_policy(routing_value))
-        media_client = RuntimeGenerationMediaClient(provider_runtime)
-        if any(
-            route.capability is Capability.LLM_STRUCTURED
-            for route in provider_runtime.policy.routes
-        ):
-            educational_provider = StructuredWritingEducationalProvider.from_runtime(
-                provider_runtime
-            )
-    media_client = _configured_local_presenter(store, media_client)
+    media_client, educational_provider = _production_generation_clients(
+        store, provider_runtime_factory=provider_runtime_factory
+    )
     return GenerationCoordinator(
         store,
         runtime,
@@ -932,6 +1026,27 @@ def _production_generation_coordinator(
     """
 
     renderer = _production_renderer_client(store)
+    media_client, educational_provider = _production_generation_clients(
+        store, provider_runtime_factory=provider_runtime_factory
+    )
+    alignment_client = _configured_forced_aligner(store)
+    return GenerationCoordinator(
+        store,
+        runtime,
+        media_client=media_client,
+        renderer_client=renderer,
+        educational_provider=educational_provider,
+        alignment_client=alignment_client,
+    )
+
+
+def _production_generation_clients(
+    store: ProjectStore,
+    *,
+    provider_runtime_factory: ProviderRuntimeFactory | None,
+) -> tuple[GenerationMediaClient, StructuredWritingEducationalProvider | None]:
+    """Resolve routed writing/media clients without requiring a renderer runtime."""
+
     media_client = default_local_media_client()
     educational_provider = None
     head = store.head_revision()
@@ -942,21 +1057,65 @@ def _production_generation_coordinator(
                 "Project provider routing requires an authenticated credential runtime"
             )
         provider_runtime = provider_runtime_factory.build(parse_routing_policy(routing_value))
-        media_client = RuntimeGenerationMediaClient(provider_runtime)
+        media_client = _configured_local_image_runtime(media_client, provider_runtime.policy)
+        if any(
+            route.capability in {Capability.IMAGE_GENERATION, Capability.TTS}
+            and route.provider_ids != ("local-runtime",)
+            for route in provider_runtime.policy.routes
+        ):
+            media_client = RuntimeGenerationMediaClient(
+                provider_runtime,
+                local_fallback=media_client,
+            )
         if any(
             route.capability is Capability.LLM_STRUCTURED
+            and route.provider_ids != ("local-runtime",)
             for route in provider_runtime.policy.routes
         ):
             educational_provider = StructuredWritingEducationalProvider.from_runtime(
                 provider_runtime
             )
-    media_client = _configured_local_presenter(store, media_client)
-    return GenerationCoordinator(
-        store,
-        runtime,
-        media_client=media_client,
-        renderer_client=renderer,
-        educational_provider=educational_provider,
+    return _configured_local_presenter(store, media_client), educational_provider
+
+
+def _configured_local_image_runtime(
+    media_client: GenerationMediaClient,
+    policy: TutorialRoutingPolicy,
+) -> GenerationMediaClient:
+    route = next(
+        (
+            item
+            for item in policy.routes
+            if item.capability is Capability.IMAGE_GENERATION
+            and item.provider_ids == ("local-runtime",)
+        ),
+        None,
+    )
+    if route is None or route.model != SDXL_MODEL_ID:
+        return media_client
+    runtime_value = os.environ.get("ALYSTRIA_COMFYUI_RUNTIME_ROOT")
+    lock_value = os.environ.get("ALYSTRIA_GPU_LOCK_PATH")
+    if not runtime_value or not lock_value:
+        raise ValueError(
+            "Local SDXL generation requires ALYSTRIA_COMFYUI_RUNTIME_ROOT and ALYSTRIA_GPU_LOCK_PATH"
+        )
+    runtime_root = Path(runtime_value).resolve(strict=True)
+    gpu_lock = Path(lock_value).resolve(strict=True)
+    if not runtime_root.is_dir() or runtime_root.is_symlink():
+        raise ValueError("Local SDXL runtime root is unsafe")
+    if not gpu_lock.is_file() or gpu_lock.is_symlink():
+        raise ValueError("Local SDXL GPU lock is unsafe")
+    try:
+        port = int(os.environ.get("ALYSTRIA_COMFYUI_PORT", "8192"))
+    except ValueError as error:
+        raise ValueError("ALYSTRIA_COMFYUI_PORT must be an integer") from error
+    if not 1_024 <= port <= 65_535:
+        raise ValueError("ALYSTRIA_COMFYUI_PORT is outside the allowed range")
+    return ComfyGenerationMediaClient(
+        media_client,
+        runtime_root,
+        gpu_lock=gpu_lock,
+        port=port,
     )
 
 
@@ -981,6 +1140,16 @@ def _configured_local_presenter(
     if not config_path.exists() and not config_path.is_symlink():
         return media_client
     return load_local_presenter_media_client(store, media_client, config_path)
+
+
+def _configured_forced_aligner(store: ProjectStore) -> ForcedAlignmentClient | None:
+    config_value = os.environ.get("ALYSTRIA_FORCED_ALIGNER_CONFIG_PATH")
+    if not config_value:
+        return None
+    config_path = Path(config_value)
+    if not config_path.exists() and not config_path.is_symlink():
+        return None
+    return load_pinned_onnx_ctc_aligner(store, config_path)
 
 
 def _production_renderer_client(store: ProjectStore) -> RendererClient:
@@ -1087,6 +1256,18 @@ def _native_control_for_job(store: ProjectStore, job_id: str) -> NativeControlCo
     return NativeControlCoordinator(store)
 
 
+def _preview_media_type(media_type: str) -> bool:
+    """Allow browser-safe raster/audio/video artifacts, never active SVG or documents."""
+
+    return media_type.startswith(("audio/", "video/")) or media_type in {
+        "image/avif",
+        "image/gif",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }
+
+
 def _generation_receipt(
     status: GenerationStatus,
     message: str,
@@ -1125,6 +1306,13 @@ def _generation_receipt(
     }
     if coordinator is not None:
         value["events"] = coordinator.events(status.generation_id, limit=200)
+    if status.state is GenerationState.SUCCEEDED and status.output_path is not None:
+        value["result"] = {
+            "path": status.output_path,
+            "mediaType": status.output_media_type,
+            "artifactHash": status.video_artifact_hash,
+            "exportManifestArtifactHash": status.export_artifact_hash,
+        }
     return value
 
 
@@ -1142,18 +1330,38 @@ def desktop_run_one(
         renderer = _production_renderer_client(store)
     except RendererClientError:
         renderer = None
-    controls = NativeControlCoordinator(store, renderer=renderer)
-    handlers = {**mock_workflow.handlers, **controls.handlers}
+    media_client: GenerationMediaClient | None
+    educational_provider: StructuredWritingEducationalProvider | None
     try:
-        generation = _production_generation_coordinator(
-            store,
-            runtime,
-            provider_runtime_factory=provider_runtime_factory,
+        media_client, educational_provider = _production_generation_clients(
+            store, provider_runtime_factory=provider_runtime_factory
         )
-    except (RendererClientError, ValueError):
+    except ValueError:
+        media_client = None
+        educational_provider = None
+    try:
+        generation = (
+            GenerationCoordinator(
+                store,
+                runtime,
+                renderer_client=renderer,
+                media_client=media_client,
+                educational_provider=educational_provider,
+                alignment_client=_configured_forced_aligner(store),
+            )
+            if renderer is not None and media_client is not None
+            else None
+        )
+    except ValueError:
         # Generation jobs fail with NO_HANDLER while native render/export jobs
         # execute their own actionable missing-runtime gate.
         generation = None
+    controls = NativeControlCoordinator(
+        store,
+        renderer=renderer,
+        media_client=media_client,
+    )
+    handlers = {**mock_workflow.handlers, **controls.handlers}
     if generation is not None:
         handlers.update(generation.workflow.handlers)
     return runtime.run_once(handlers)

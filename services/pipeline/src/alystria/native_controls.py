@@ -11,20 +11,30 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import re
 import uuid
+from pathlib import Path
 from typing import Any
 
+from alystria.editor_export import render_editor_timeline
 from alystria.generation import GenerationCoordinator, GenerationState
-from alystria.generation.adapters import RendererClient
+from alystria.generation.adapters import GenerationMediaClient, RendererClient
 from alystria.jobs import ActionKey, DependencyGraph, Job, JobContext, JobState
 from alystria.jobs.runtime import SQLiteWorkflowRuntime
 from alystria.project import ProjectStore, Revision
 from alystria.project_assets import validate_approved_presenter_for_export
+from alystria.visual_candidates import (
+    accept_visual_candidate,
+    generate_visual_candidates,
+    normalize_image_recipe,
+    reject_visual_candidate,
+)
 
 TICKS_PER_SECOND = 240_000
 CONTROL_IMPLEMENTATION_VERSION = "native-controls-v2-caption-delivery"
 SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 ALLOWED_LOCKS = frozenset(
     {"narration", "citations", "learningobjective", "timing", "assets", "presenter"}
 )
@@ -36,6 +46,11 @@ RESOLUTIONS = {
 ASPECTS = frozenset({"16:9", "9:16", "1:1"})
 FPS_VALUES = frozenset({24, 25, 30, 50, 60})
 CAPTION_DELIVERY_MODES = frozenset({"sidecar", "embedded", "burned", "both"})
+CODEC_PREFERENCES = {
+    "h264-hardware": "h264_nvenc",
+    "hevc-hardware": "hevc_nvenc",
+    "av1": "av1",
+}
 
 
 class NativeControlCoordinator:
@@ -44,15 +59,18 @@ class NativeControlCoordinator:
         store: ProjectStore,
         *,
         renderer: RendererClient | None = None,
+        media_client: GenerationMediaClient | None = None,
     ) -> None:
         self.store = store
         self.runtime = SQLiteWorkflowRuntime(store.connection)
         self.renderer = renderer
+        self.media_client = media_client
         self.handlers = {
             "native.regenerate_scene": self._regenerate_scene,
             "native.render_scene": self._render_scene,
             "native.repair_qa": self._repair_qa,
             "native.export_master": self._export_master,
+            "native.editor_timeline_export": self._editor_timeline_export,
         }
 
     def submit_regeneration(self, params: dict[str, Any]) -> Job:
@@ -60,6 +78,26 @@ class NativeControlCoordinator:
         instruction = _bounded_text(params.get("instruction"), "instruction", 4_000)
         locks = _locks(params.get("preservationLocks", []))
         alternatives = _integer(params.get("alternatives", 1), "alternatives", 1, 4)
+        role = params.get("role", "scene")
+        if role not in {"scene", "presenter"}:
+            raise ValueError("role must be scene or presenter")
+        requested_seed = params.get("seed")
+        if "seed" in params and (
+            not isinstance(requested_seed, int)
+            or isinstance(requested_seed, bool)
+            or not 0 <= requested_seed < 2**63
+        ):
+            raise ValueError("seed must be an integer between 0 and 2^63-1")
+        seed = requested_seed if isinstance(requested_seed, int) else int(
+                hashlib.sha256(
+                    f"{head.revision_id}:{scene['id']}:{instruction}".encode()
+                ).hexdigest()[:15],
+                16,
+        )
+        if (role == "scene" and "assets" in locks) or (
+            role == "presenter" and "presenter" in locks
+        ):
+            raise ValueError(f"Cannot regenerate a {role} visual with its target locked")
         base_generation_id = self._validate_base_generation(params.get("baseJobId"))
         parameters = {
             "expectedHeadRevisionId": head.revision_id,
@@ -69,6 +107,13 @@ class NativeControlCoordinator:
             "instruction": instruction,
             "preservationLocks": sorted(locks),
             "alternatives": alternatives,
+            "role": role,
+            "seed": seed,
+            **(
+                {"imageRecipe": normalize_image_recipe(params["imageRecipe"], local_provider=True)}
+                if "imageRecipe" in params
+                else {}
+            ),
         }
         return self._enqueue("native.regenerate_scene", parameters, head.root_hash)
 
@@ -114,16 +159,89 @@ class NativeControlCoordinator:
             raise ValueError("Master export requires a completed, approved generation job")
         target = _target(params)
         caption_delivery_mode = _caption_delivery_mode(params)
+        codec_preference, renderer_codec = _codec_preference(params)
         parameters = {
             "expectedHeadRevisionId": head.revision_id,
             "baseRevisionId": _required_text(params, "baseRevisionId"),
             "baseGenerationId": base_generation_id,
             "target": target,
             "captionDeliveryMode": caption_delivery_mode,
+            "codecPreference": codec_preference,
+            "rendererCodec": renderer_codec,
             "transcript": bool(params.get("transcript", True)),
             "bibliography": bool(params.get("bibliography", True)),
         }
         return self._enqueue("native.export_master", parameters, head.root_hash)
+
+    def submit_editor_timeline_export(self, params: dict[str, Any]) -> Job:
+        head = self._validate_head({"baseRevisionId": params.get("expectedHeadRevisionId")})
+        manifest = params.get("manifest")
+        if not isinstance(manifest, dict):
+            raise ValueError("manifest must be an editor render object")
+        encoded = json.dumps(manifest, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        if len(encoded) > 4 * 1024 * 1024:
+            raise ValueError("Editor render manifest exceeds its 4 MiB safety limit")
+        parameters = {
+            "expectedHeadRevisionId": head.revision_id,
+            "manifest": copy.deepcopy(manifest),
+        }
+        return self._enqueue("native.editor_timeline_export", parameters, head.root_hash)
+
+    def editor_bindings(self, generation_id: str) -> dict[str, Any]:
+        """Return verified CAS bindings from completed generation stages.
+
+        A job row's inline result is only an index.  The generation-stage CAS
+        object and its revision links are the authority, so an editor cannot
+        receive a hash that was merely inserted into mutable JSON.
+        """
+
+        validated_generation_id = self._validate_base_generation(generation_id, required=True)
+        assert validated_generation_id is not None
+        assets, assets_stage_hash = self._verified_stage_payload(
+            validated_generation_id, "assets"
+        )
+        narration, narration_stage_hash = self._verified_stage_payload(
+            validated_generation_id, "narration"
+        )
+        presenter, presenter_stage_hash = self._verified_stage_payload(
+            validated_generation_id, "presenter"
+        )
+        render, render_stage_hash = self._verified_stage_payload(
+            validated_generation_id, "render"
+        )
+        return {
+            "projectId": self.store.manifest.project_id,
+            "generationId": validated_generation_id,
+            "assets": self._verified_generated_bindings(
+                assets.get("assets"),
+                generation_id=validated_generation_id,
+                stage="assets",
+                stage_hash=assets_stage_hash,
+                role="scene-visual",
+            ),
+            "narration": self._verified_generated_bindings(
+                narration.get("narration"),
+                generation_id=validated_generation_id,
+                stage="narration",
+                stage_hash=narration_stage_hash,
+                role="scene-narration",
+                duration_key="durationMs",
+            ),
+            "presenters": self._verified_generated_bindings(
+                presenter.get("presenters"),
+                generation_id=validated_generation_id,
+                stage="presenter",
+                stage_hash=presenter_stage_hash,
+                role="scene-presenter",
+                duration_key="activeDurationTicks",
+            ),
+            "renders": self._verified_render_bindings(
+                render,
+                narration,
+                generation_id=validated_generation_id,
+                stage_hash=render_stage_hash,
+            ),
+        }
 
     def status(self, job_id: str) -> Job:
         return self.runtime.get_job(job_id)
@@ -133,6 +251,25 @@ class NativeControlCoordinator:
 
     def retry(self, job_id: str) -> Job:
         return self.runtime.retry(job_id)
+
+    def accept_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        result = accept_visual_candidate(self.store, params)
+        base_generation_id = result.pop("baseGenerationId", None)
+        preservation_locks = result.pop("preservationLocks", [])
+        head = self.store.head_revision()
+        if head is None:
+            raise RuntimeError("Accepted visual candidate did not create a project revision")
+        result["invalidated"] = self._invalidate_scene(
+            str(result["sceneId"]),
+            base_generation_id,
+            set(preservation_locks),
+            head.root_hash,
+            role=str(result["role"]),
+        )
+        return result
+
+    def reject_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        return reject_visual_candidate(self.store, params)
 
     def _enqueue(self, kind: str, parameters: dict[str, Any], root_hash: str) -> Job:
         action = ActionKey(
@@ -151,7 +288,7 @@ class NativeControlCoordinator:
             parameters=parameters,
             job_id=str(uuid.uuid4()),
             action_key=action,
-            max_attempts=2,
+            max_attempts=1 if kind == "native.regenerate_scene" else 2,
         )
         return job
 
@@ -187,65 +324,9 @@ class NativeControlCoordinator:
         return generation_id
 
     def _regenerate_scene(self, context: JobContext, params: dict[str, Any]) -> dict[str, Any]:
-        head = self._require_current_head(params)
-        scene = _scene(head.snapshot, str(params["sceneId"]))
-        context.set_progress(0.2, message="Recording scoped candidate work")
-        candidates = []
-        for index in range(int(params["alternatives"])):
-            candidate_id = f"candidate_{uuid.uuid4().hex}"
-            candidates.append(
-                {
-                    "id": candidate_id,
-                    "sceneId": scene["id"],
-                    "baseRevisionId": head.revision_id,
-                    "baseGenerationId": params.get("baseGenerationId"),
-                    "instruction": params["instruction"],
-                    "preservationLocks": params["preservationLocks"],
-                    "alternativeIndex": index,
-                    "status": "queued_for_configured_generator",
-                    "acceptedSceneUnchanged": True,
-                }
-            )
-        artifact = self.store.add_artifact_bytes(
-            (json.dumps({"candidates": candidates}, sort_keys=True, separators=(",", ":")) + "\n").encode(),
-            media_type="application/vnd.alystria.scene-candidates+json",
-            original_name=f"{scene['id']}-candidates.json",
-            metadata={"sceneId": scene["id"], "rightsStatus": "owned"},
-        )
-        snapshot = copy.deepcopy(head.snapshot)
-        existing = snapshot.get("sceneCandidates")
-        snapshot["sceneCandidates"] = [*(existing if isinstance(existing, list) else []), *candidates]
-        revision = self.store.create_revision(
-            snapshot=snapshot,
-            kind="generation",
-            message=f"Scoped candidate request for scene {scene['id']}",
-            expected_head=head.revision_id,
-            artifact_links=[
-                {
-                    "artifactHash": artifact.hash,
-                    "role": "scene-candidate-request",
-                    "stableId": str(scene["id"]),
-                }
-            ],
-        )
-        invalidated = self._invalidate_scene(
-            str(scene["id"]),
-            params.get("baseGenerationId"),
-            set(params["preservationLocks"]),
-            head.root_hash,
-        )
-        context.set_progress(1, message="Candidate work persisted without replacing the accepted scene")
-        return {
-            "operation": "regenerate_scene",
-            "sceneId": scene["id"],
-            "baseRevisionId": head.revision_id,
-            "headRevisionId": revision.revision_id,
-            "revisionNumber": revision.number,
-            "candidateIds": [item["id"] for item in candidates],
-            "candidateArtifactHash": artifact.hash,
-            "candidateStatus": "queued_for_configured_generator",
-            "invalidated": invalidated,
-        }
+        if self.media_client is None:
+            raise RuntimeError("Configured image-generation runtime is unavailable")
+        return generate_visual_candidates(self.store, self.media_client, context, params)
 
     def _render_scene(self, context: JobContext, params: dict[str, Any]) -> dict[str, Any]:
         head = self._require_current_head(params)
@@ -382,6 +463,7 @@ class NativeControlCoordinator:
                 "narration": narration_payload["narration"],
                 "captions": captions_payload,
                 "captionDeliveryMode": caption_delivery_mode,
+                "codec": params["rendererCodec"],
                 "presenters": presenter_payload.get("presenters", []),
                 "locale": storyboard.get("locale", "en-US"),
             }
@@ -397,6 +479,8 @@ class NativeControlCoordinator:
                 "qualityGate": gate,
                 "rightsStatus": "owned",
                 "captionDeliveryMode": caption_delivery_mode,
+                "codecPreference": params["codecPreference"],
+                "rendererCodec": params["rendererCodec"],
                 "captionsBurnedIntoPixels": caption_delivery_mode in {"burned", "both"},
                 "captionsEmbeddedInContainer": caption_delivery_mode in {"embedded", "both"},
                 "captionSidecars": ["vtt", "srt"],
@@ -428,9 +512,70 @@ class NativeControlCoordinator:
                 "burnedIntoPixels": caption_delivery_mode in {"burned", "both"},
                 "embeddedInContainer": caption_delivery_mode in {"embedded", "both"},
             },
+            "codecPreference": params["codecPreference"],
+            "rendererCodec": params["rendererCodec"],
             "qualityGate": gate,
             "renderManifest": rendered.manifest,
             "metrics": rendered.metrics,
+        }
+
+    def _editor_timeline_export(
+        self,
+        context: JobContext,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        head = self._require_current_head(params)
+        ffmpeg_value = os.environ.get("ALYSTRIA_FFMPEG_PATH")
+        if not ffmpeg_value:
+            raise RuntimeError("Pinned FFmpeg runtime is missing for editor export")
+        context.set_progress(0.05, message="Validating content-addressed editor timeline")
+        self._require_exportable_editor_assets(head.snapshot, params["manifest"])
+        result = render_editor_timeline(
+            self.store,
+            params["manifest"],
+            ffmpeg_path=Path(ffmpeg_value),
+        )
+        snapshot = copy.deepcopy(head.snapshot)
+        previous = snapshot.get("editorExports")
+        snapshot["editorExports"] = [
+            *(previous if isinstance(previous, list) else []),
+            dict(result),
+        ]
+        sidecar_links = [
+            {
+                "artifactHash": str(item["artifactHash"]),
+                "role": "editor-caption-sidecar",
+                "stableId": f"{result['manifestHash']}:{item['format']}",
+            }
+            for item in result.get("captionSidecars", [])
+            if isinstance(item, dict)
+            and isinstance(item.get("artifactHash"), str)
+            and item.get("format") in {"vtt", "srt"}
+        ]
+        try:
+            revision = self.store.create_revision(
+                snapshot=snapshot,
+                kind="generation",
+                message="Rendered editor timeline",
+                expected_head=head.revision_id,
+                artifact_links=[
+                    {
+                        "artifactHash": str(result["artifactHash"]),
+                        "role": "editor-timeline-export",
+                        "stableId": str(result["manifestHash"]),
+                    },
+                    *sidecar_links,
+                ],
+            )
+        except Exception:
+            Path(str(result["outputPath"])).unlink(missing_ok=True)
+            raise
+        context.set_progress(1, message="Editor timeline rendered and saved")
+        return {
+            **result,
+            "operation": "editor_timeline_export",
+            "headRevisionId": revision.revision_id,
+            "revisionNumber": revision.number,
         }
 
     def _require_current_head(self, params: dict[str, Any]) -> Revision:
@@ -469,6 +614,12 @@ class NativeControlCoordinator:
         return found
 
     def _stage_payload(self, generation_id: str, stage: str) -> dict[str, Any]:
+        payload, _ = self._verified_stage_payload(generation_id, stage)
+        return payload
+
+    def _verified_stage_payload(
+        self, generation_id: str, stage: str
+    ) -> tuple[dict[str, Any], str]:
         rows = self.store.connection.execute(
             "SELECT result_json FROM jobs WHERE project_id=? AND kind=? AND state='SUCCEEDED' "
             "AND json_extract(parameters_json,'$.generationId')=? ORDER BY completed_at DESC LIMIT 1",
@@ -477,10 +628,211 @@ class NativeControlCoordinator:
         if rows is None or rows["result_json"] is None:
             raise ValueError(f"Completed generation stage {stage} is unavailable")
         result = json.loads(rows["result_json"])
-        payload = result.get("payload") if isinstance(result, dict) else None
-        if not isinstance(payload, dict):
-            raise ValueError(f"Generation stage {stage} has no durable payload")
-        return payload
+        artifact_hash = result.get("artifactHash") if isinstance(result, dict) else None
+        if not isinstance(artifact_hash, str) or not SHA256_PATTERN.fullmatch(artifact_hash):
+            raise ValueError(f"Generation stage {stage} has no durable artifact")
+        linked = self.store.connection.execute(
+            "SELECT a.media_type FROM revision_artifacts AS ra "
+            "JOIN revisions AS r ON r.revision_id=ra.revision_id "
+            "JOIN artifacts AS a ON a.hash=ra.artifact_hash "
+            "WHERE r.project_id=? AND ra.artifact_hash=? AND ra.role=? AND ra.stable_id=? "
+            "LIMIT 1",
+            (
+                self.store.manifest.project_id,
+                artifact_hash,
+                f"generation-stage:{stage}",
+                generation_id,
+            ),
+        ).fetchone()
+        if linked is None or linked["media_type"] != "application/vnd.alystria.generation-stage+json":
+            raise ValueError(f"Generation stage {stage} artifact is not linked to this generation")
+        if not self.store.cas.verify(artifact_hash):
+            raise ValueError(f"Generation stage {stage} artifact is missing or corrupt")
+        try:
+            persisted = json.loads(self.store.cas.object_path(artifact_hash).read_bytes())
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError(f"Generation stage {stage} artifact is invalid") from error
+        if not isinstance(persisted, dict):
+            raise ValueError(f"Generation stage {stage} artifact is not an object")
+        inline_payload = result.get("payload") if isinstance(result, dict) else None
+        if inline_payload != persisted:
+            raise ValueError(f"Generation stage {stage} result does not match its immutable artifact")
+        return persisted, artifact_hash
+
+    def _verified_generated_bindings(
+        self,
+        values: Any,
+        *,
+        generation_id: str,
+        stage: str,
+        stage_hash: str,
+        role: str,
+        duration_key: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not isinstance(values, list):
+            raise ValueError(f"Completed generation stage {stage} has an invalid media payload")
+        bindings: list[dict[str, Any]] = []
+        for value in values:
+            if not isinstance(value, dict):
+                raise ValueError(f"Completed generation stage {stage} has an invalid media binding")
+            scene_id = value.get("sceneId")
+            digest = value.get("artifactHash")
+            if not isinstance(scene_id, str) or not SCENE_ID_PATTERN.fullmatch(scene_id):
+                raise ValueError(f"Completed generation stage {stage} has an invalid scene id")
+            if not isinstance(digest, str) or not SHA256_PATTERN.fullmatch(digest):
+                raise ValueError(f"Completed generation stage {stage} has an invalid artifact hash")
+            row = self.store.connection.execute(
+                "SELECT a.media_type FROM revision_artifacts AS media "
+                "JOIN revision_artifacts AS stage_link ON stage_link.revision_id=media.revision_id "
+                "JOIN artifacts AS a ON a.hash=media.artifact_hash "
+                "WHERE media.artifact_hash=? AND media.role=? AND media.stable_id=? "
+                "AND stage_link.artifact_hash=? AND stage_link.role=? AND stage_link.stable_id=? "
+                "LIMIT 1",
+                (
+                    digest,
+                    role,
+                    scene_id,
+                    stage_hash,
+                    f"generation-stage:{stage}",
+                    generation_id,
+                ),
+            ).fetchone()
+            if row is None or not self.store.cas.verify(digest):
+                raise ValueError(
+                    f"Completed generation stage {stage} references an unverified scene artifact"
+                )
+            media_type = str(row["media_type"])
+            declared_media_type = value.get("mediaType")
+            if declared_media_type is not None and declared_media_type != media_type:
+                raise ValueError(
+                    f"Completed generation stage {stage} media type does not match its artifact"
+                )
+            binding: dict[str, Any] = {
+                "sceneId": scene_id,
+                "artifactHash": digest,
+                "mediaType": media_type,
+            }
+            if duration_key is not None:
+                duration = value.get(duration_key)
+                if not isinstance(duration, int) or isinstance(duration, bool) or duration <= 0:
+                    raise ValueError(
+                        f"Completed generation stage {stage} has an invalid {duration_key}"
+                    )
+                binding[duration_key] = duration
+            bindings.append(binding)
+        return bindings
+
+    def _require_exportable_editor_assets(
+        self, snapshot: dict[str, Any], manifest: dict[str, Any]
+    ) -> None:
+        values = manifest.get("assets")
+        if not isinstance(values, list):
+            raise ValueError("Editor render manifest assets must be a list")
+        imported = _exportable_imported_artifacts(snapshot)
+        for value in values:
+            if not isinstance(value, dict):
+                raise ValueError("Editor render manifest assets must contain objects")
+            digest = value.get("artifactHash")
+            if not isinstance(digest, str) or not SHA256_PATTERN.fullmatch(digest):
+                raise ValueError("Editor render manifest asset has an invalid artifact hash")
+            row = self.store.connection.execute(
+                "SELECT media_type FROM artifacts WHERE hash=?", (digest,)
+            ).fetchone()
+            if row is None or not self.store.cas.verify(digest):
+                raise ValueError("Editor render manifest references an unverified project artifact")
+            declared_media_type = value.get("mediaType")
+            if declared_media_type != row["media_type"]:
+                raise ValueError("Editor render manifest asset media type does not match its artifact")
+            generated = self.store.connection.execute(
+                "SELECT 1 FROM revision_artifacts AS ra JOIN revisions AS r "
+                "ON r.revision_id=ra.revision_id WHERE r.project_id=? AND ra.artifact_hash=? "
+                "AND r.kind='generation' AND (ra.role IN "
+                "('scene-visual','scene-narration','scene-presenter','render-output',"
+                "'editor-timeline-export')) LIMIT 1",
+                (self.store.manifest.project_id, digest),
+            ).fetchone()
+            if generated is None:
+                imported_binding = imported.get(digest)
+                linked = None
+                if imported_binding is not None:
+                    artifact_id, kind = imported_binding
+                    linked = self.store.connection.execute(
+                        "SELECT 1 FROM revision_artifacts AS ra JOIN revisions AS r "
+                        "ON r.revision_id=ra.revision_id WHERE r.project_id=? "
+                        "AND ra.artifact_hash=? AND ra.role=? AND ra.stable_id=? LIMIT 1",
+                        (
+                            self.store.manifest.project_id,
+                            digest,
+                            f"asset-{kind}",
+                            artifact_id,
+                        ),
+                    ).fetchone()
+                if linked is None:
+                    raise ValueError(
+                        "Editor render manifest asset is not cleared for export by durable provenance"
+                    )
+
+    def _verified_render_bindings(
+        self,
+        render: dict[str, Any],
+        narration: dict[str, Any],
+        *,
+        generation_id: str,
+        stage_hash: str,
+    ) -> list[dict[str, Any]]:
+        candidate = render.get("candidate")
+        storyboard = narration.get("storyboard")
+        scenes = storyboard.get("scenes") if isinstance(storyboard, dict) else None
+        if not isinstance(candidate, dict) or not isinstance(scenes, list):
+            raise ValueError("Completed render stage has no durable scene timeline")
+        digest = candidate.get("renderArtifactHash")
+        declared_media_type = candidate.get("renderMediaType")
+        if not isinstance(digest, str) or not SHA256_PATTERN.fullmatch(digest):
+            raise ValueError("Completed render stage has an invalid render artifact hash")
+        row = self.store.connection.execute(
+            "SELECT a.media_type FROM revision_artifacts AS media "
+            "JOIN revision_artifacts AS stage_link ON stage_link.revision_id=media.revision_id "
+            "JOIN artifacts AS a ON a.hash=media.artifact_hash "
+            "WHERE media.artifact_hash=? AND media.role='render-output' "
+            "AND media.stable_id='master' AND stage_link.artifact_hash=? "
+            "AND stage_link.role='generation-stage:render' AND stage_link.stable_id=? LIMIT 1",
+            (digest, stage_hash, generation_id),
+        ).fetchone()
+        if row is None or not self.store.cas.verify(digest):
+            raise ValueError("Completed render stage references an unverified master artifact")
+        media_type = str(row["media_type"])
+        if declared_media_type != media_type:
+            raise ValueError("Completed render stage media type does not match its artifact")
+        # Deterministic unit fixtures intentionally persist a JSON render
+        # receipt. Only actual playable render media can initialize the editor.
+        if not media_type.startswith("video/"):
+            return []
+        bindings: list[dict[str, Any]] = []
+        source_start = 0
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                raise ValueError("Completed render stage has an invalid storyboard scene")
+            scene_id = scene.get("id")
+            duration = scene.get("durationTicks")
+            if (
+                not isinstance(scene_id, str)
+                or not SCENE_ID_PATTERN.fullmatch(scene_id)
+                or not isinstance(duration, int)
+                or isinstance(duration, bool)
+                or duration <= 0
+            ):
+                raise ValueError("Completed render stage has an invalid scene interval")
+            bindings.append(
+                {
+                    "sceneId": scene_id,
+                    "artifactHash": digest,
+                    "mediaType": media_type,
+                    "sourceStartTicks": source_start,
+                    "durationTicks": duration,
+                }
+            )
+            source_start += duration
+        return bindings
 
     def _scene_media(
         self, generation_id: Any, scene_id: str
@@ -521,26 +873,37 @@ class NativeControlCoordinator:
         generation_id: Any,
         locks: set[str],
         root_hash: str,
+        *,
+        role: str = "scene",
     ) -> list[str]:
         if isinstance(generation_id, str):
-            return list(GenerationCoordinator(self.store).invalidate_scope(generation_id, f"scene:{scene_id}"))
+            scope = f"scene-asset:{scene_id}" if role == "scene" else "presenter"
+            return list(GenerationCoordinator(self.store).invalidate_scope(generation_id, scope))
         graph = DependencyGraph(self.store.connection, self.store.manifest.project_id)
         prefix = f"project:{self.store.manifest.project_id}:scene:{scene_id}"
+        if role == "presenter":
+            presenter = f"{prefix}:presenter-animation"
+            composition = f"{prefix}:final-composition"
+            graph.record_node(
+                presenter,
+                hashlib.sha256(f"{root_hash}:{presenter}".encode()).hexdigest(),
+            )
+            graph.record_node(
+                composition,
+                hashlib.sha256(f"{root_hash}:{composition}".encode()).hexdigest(),
+                upstream_keys=[presenter],
+            )
+            return graph.invalidate_from([presenter])
         nodes = [
             (f"{prefix}:visual-layout", []),
             (f"{prefix}:scene-render", [f"{prefix}:visual-layout"]),
             (f"{prefix}:visual-qa", [f"{prefix}:scene-render"]),
             (f"{prefix}:final-composition", [f"{prefix}:visual-qa"]),
         ]
-        if "narration" not in locks:
-            nodes.insert(0, (f"{prefix}:narration", []))
-            nodes[2][1].append(f"{prefix}:narration")
         for key, upstream in nodes:
             graph.record_node(key, hashlib.sha256(f"{root_hash}:{key}".encode()).hexdigest(), upstream_keys=upstream)
-        roots = [f"{prefix}:visual-layout"]
-        if "narration" not in locks:
-            roots.append(f"{prefix}:narration")
-        return graph.invalidate_from(roots)
+        del locks
+        return graph.invalidate_from([f"{prefix}:visual-layout"])
 
     def _copy_export_sidecars(
         self,
@@ -604,6 +967,7 @@ def _job_message(job: Job) -> str:
         "native.render_scene": "Scene render completed",
         "native.repair_qa": "Selected QA repair work persisted",
         "native.export_master": "Master export completed",
+        "native.editor_timeline_export": "Editor timeline export completed",
     }
     if job.state is JobState.SUCCEEDED:
         return labels.get(job.kind, "Native operation completed")
@@ -621,16 +985,60 @@ def _scene(snapshot: dict[str, Any], scene_id: str) -> dict[str, Any]:
 
 
 def _renderer_scene(scene: dict[str, Any]) -> dict[str, Any]:
-    duration = scene.get("duration", 1)
-    if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration <= 0:
-        raise ValueError("Scene duration must be positive")
+    if "durationTicks" in scene:
+        duration_ticks = scene["durationTicks"]
+        if (
+            not isinstance(duration_ticks, int)
+            or isinstance(duration_ticks, bool)
+            or duration_ticks <= 0
+            or duration_ticks > 2**53 - 1
+        ):
+            raise ValueError("Scene durationTicks must be a positive safe integer")
+    else:
+        duration = scene.get("duration", 1)
+        if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration <= 0:
+            raise ValueError("Scene duration must be positive")
+        duration_ticks = int(float(duration) * TICKS_PER_SECOND)
     return {
         **scene,
         "type": str(scene.get("type", scene.get("kind", "bullets"))).replace("_", "-"),
         "title": _bounded_text(scene.get("title"), "scene.title", 500),
         "narration": _bounded_text(scene.get("narration", "Preview"), "scene.narration", 20_000),
-        "durationTicks": int(float(duration) * TICKS_PER_SECOND),
+        "durationTicks": duration_ticks,
     }
+
+
+def _exportable_imported_artifacts(snapshot: dict[str, Any]) -> dict[str, tuple[str, str]]:
+    assets = snapshot.get("mediaAssets")
+    provenances = snapshot.get("assetProvenance")
+    if not isinstance(assets, list) or not isinstance(provenances, list):
+        return {}
+    by_id = {
+        value.get("id"): value
+        for value in provenances
+        if isinstance(value, dict) and isinstance(value.get("id"), str)
+    }
+    exportable: dict[str, tuple[str, str]] = {}
+    for asset in assets:
+        if not isinstance(asset, dict) or asset.get("state") != "promoted":
+            continue
+        digest = asset.get("artifactHash")
+        artifact_id = asset.get("id")
+        kind = asset.get("kind")
+        provenance = by_id.get(asset.get("provenanceId"))
+        if (
+            isinstance(digest, str)
+            and SHA256_PATTERN.fullmatch(digest)
+            and isinstance(artifact_id, str)
+            and isinstance(kind, str)
+            and isinstance(provenance, dict)
+            and provenance.get("assetId") == asset.get("id")
+            and provenance.get("contentHash") == digest
+            and provenance.get("exportEligible") is True
+            and provenance.get("blockers") in (None, [])
+        ):
+            exportable[digest] = (artifact_id, kind)
+    return exportable
 
 
 def _target(params: dict[str, Any]) -> dict[str, Any]:
@@ -673,6 +1081,15 @@ def _caption_delivery_mode(params: dict[str, Any]) -> str:
             "captionDeliveryMode must be sidecar, embedded, burned, or both"
         )
     return value
+
+
+def _codec_preference(params: dict[str, Any]) -> tuple[str, str]:
+    """Resolve the product-level choice to the renderer's closed codec name."""
+
+    value = params.get("codecPreference", "h264-hardware")
+    if not isinstance(value, str) or value not in CODEC_PREFERENCES:
+        raise ValueError("codecPreference must be h264-hardware, hevc-hardware, or av1")
+    return value, CODEC_PREFERENCES[value]
 
 
 def _locks(value: Any) -> set[str]:

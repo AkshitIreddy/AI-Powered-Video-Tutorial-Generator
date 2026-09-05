@@ -32,6 +32,7 @@ from alystria.sources import (
 from .adapters import GenerationMediaClient, RendererClient
 from .audio_assets import resolve_audio_customization
 from .font_customization import resolve_font_customization
+from .forced_alignment import ForcedAlignmentClient
 from .models import (
     ALL_STAGES,
     POST_APPROVAL_STAGES,
@@ -166,6 +167,7 @@ class GenerationCoordinator:
         media_client: GenerationMediaClient | None = None,
         renderer_client: RendererClient | None = None,
         educational_provider: EducationalProvider | None = None,
+        alignment_client: ForcedAlignmentClient | None = None,
     ) -> None:
         self.store = store
         self.runtime = runtime or SQLiteWorkflowRuntime(store.connection)
@@ -175,6 +177,7 @@ class GenerationCoordinator:
             media_client=media_client,
             renderer_client=renderer_client,
             educational_provider=educational_provider,
+            alignment_client=alignment_client,
         )
         self._media_cancel = getattr(self.workflow.media_client, "cancel", None)
         self._media_reset_cancellation = getattr(
@@ -276,6 +279,11 @@ class GenerationCoordinator:
         )
         approval_revision = self._approval_revision(generation_id)
         export_result = export_job.result if export_job is not None else None
+        export_payload: dict[str, Any] = {}
+        if isinstance(export_result, dict):
+            payload_value = export_result.get("payload")
+            if isinstance(payload_value, dict):
+                export_payload = payload_value
         return GenerationStatus(
             generation_id,
             self.store.manifest.project_id,
@@ -294,6 +302,9 @@ class GenerationCoordinator:
             ),
             tuple(stage_statuses),
             self._invalidated_scopes(generation_id),
+            _optional_string(export_payload.get("path")),
+            _optional_string(export_payload.get("mediaType")),
+            _optional_string(export_payload.get("videoArtifactHash")),
         )
 
     def approve(
@@ -522,7 +533,10 @@ class GenerationCoordinator:
         self.status(generation_id)
         graph = DependencyGraph(self.store.connection, self.store.manifest.project_id)
         roots: list[str]
-        if scope.startswith("scene:"):
+        if scope.startswith("scene-asset:"):
+            scene_id = scope.removeprefix("scene-asset:")
+            roots = [self.workflow.logical_key(generation_id, f"scene:{scene_id}:asset")]
+        elif scope.startswith("scene:"):
             scene_id = scope.removeprefix("scene:")
             roots = [
                 self.workflow.logical_key(generation_id, f"scene:{scene_id}:asset"),
@@ -824,9 +838,7 @@ def request_from_desktop(
         "customization": customization,
     }
     presenter_mode = (
-        "auto"
-        if customization is None or bool(visual_customization.get("presenter", {}).get("enabled"))
-        else "off"
+        "auto" if bool(visual_customization.get("presenter", {}).get("enabled")) else "off"
     )
     canonical_fixture_value = snapshot.get("canonicalFixtureId")
     if canonical_fixture_value is not None and not isinstance(canonical_fixture_value, str):

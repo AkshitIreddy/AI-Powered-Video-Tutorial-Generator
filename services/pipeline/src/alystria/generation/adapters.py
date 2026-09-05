@@ -6,6 +6,7 @@ import base64
 import hashlib
 import html
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -127,6 +128,15 @@ class DeterministicMediaClient:
         content = generate_sine_wav(
             WavFixtureSpec(duration_ms=duration_ms, frequency_hz=float(frequency), amplitude=0.15)
         )
+        tokens = str(scene["narration"]).split()
+        word_timings = [
+            {
+                "word": token,
+                "startMs": round(index * duration_ms / len(tokens)),
+                "endMs": round((index + 1) * duration_ms / len(tokens)),
+            }
+            for index, token in enumerate(tokens)
+        ]
         return GeneratedMedia(
             content,
             "audio/wav",
@@ -138,6 +148,9 @@ class DeterministicMediaClient:
                 "sampleRateHz": 48_000,
                 "channels": 1,
                 "durationMs": duration_ms,
+                "wordTimings": word_timings,
+                "alignmentSource": "provider-native",
+                "alignmentEngine": "deterministic-fixture-clock-v1",
                 "rightsStatus": "owned",
             },
         )
@@ -283,6 +296,9 @@ def _select_default_local_media_client(
     windows_speech: WindowsNarrationAdapter | None = None,
     platform_name: str | None = None,
 ) -> GenerationMediaClient:
+
+    if os.environ.get("ALYSTRIA_MEDIA_MODE") == "fixture" and windows_speech is None:
+        return DeterministicMediaClient()
 
     current_platform = platform_name or sys.platform
     if not current_platform.casefold().startswith("win"):
@@ -613,20 +629,50 @@ class RuntimeGenerationMediaClient:
         runtime: ProviderRuntime,
         *,
         windows_speech: WindowsNarrationAdapter | None = None,
+        local_fallback: GenerationMediaClient | None = None,
     ) -> None:
         self.runtime = runtime
         self.client = ProviderMediaClient(runtime)
-        image_route = runtime.policy.route_for(Capability.IMAGE_GENERATION)
-        speech_route = runtime.policy.route_for(Capability.TTS)
-        provider_ids = tuple(dict.fromkeys((*image_route.provider_ids, *speech_route.provider_ids)))
+        image_route = next(
+            (
+                route
+                for route in runtime.policy.routes
+                if route.capability is Capability.IMAGE_GENERATION
+            ),
+            None,
+        )
+        speech_route = next(
+            (route for route in runtime.policy.routes if route.capability is Capability.TTS),
+            None,
+        )
+        if image_route is None and local_fallback is None:
+            raise ValueError("no approved route exists for image.generate")
+        if speech_route is None and local_fallback is None:
+            raise ValueError("no approved route exists for audio.tts")
+        provider_ids = tuple(
+            dict.fromkeys(
+                (
+                    *(image_route.provider_ids if image_route is not None else ()),
+                    *(speech_route.provider_ids if speech_route is not None else ()),
+                )
+            )
+        )
         self.provider_id = "approved:" + "+".join(provider_ids)
-        self.model_revision = f"{image_route.model}+{speech_route.model}"
-        self._image_model = image_route.model
-        self._speech_model = speech_route.model
-        self._speech_provider_ids = speech_route.provider_ids
-        self._voice = speech_route.voice or "default"
+        self.model_revision = "+".join(
+            route.model for route in (image_route, speech_route) if route is not None
+        )
+        self._local_fallback = local_fallback
+        self._image_model = None if image_route is None else image_route.model
+        self._image_provider_ids = () if image_route is None else image_route.provider_ids
+        self._speech_model = None if speech_route is None else speech_route.model
+        self._speech_provider_ids = () if speech_route is None else speech_route.provider_ids
+        self._voice = "default" if speech_route is None else speech_route.voice or "default"
         self._local_narration: WindowsNarrationAdapter | None = None
-        if "local-runtime" in speech_route.provider_ids:
+        if (
+            speech_route is not None
+            and "local-runtime" in speech_route.provider_ids
+            and local_fallback is None
+        ):
             if speech_route.provider_ids != ("local-runtime",):
                 raise ValueError(
                     "The local narration route must be an explicit single-provider route"
@@ -664,6 +710,11 @@ class RuntimeGenerationMediaClient:
             self._local_narration = adapter
 
     def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
+        if self._image_provider_ids in {(), ("local-runtime",)}:
+            if self._local_fallback is None:
+                raise ValueError("The local image route has no installed local media runtime")
+            return self._local_fallback.create_visual(scene, seed=seed)
+        assert self._image_model is not None
         is_nvidia_flux_klein = self._image_model == "black-forest-labs/flux.2-klein-4b"
         # This explicitly audited NVIDIA preview endpoint accepts only its
         # documented square shape. The scene renderer places the returned asset
@@ -696,6 +747,8 @@ class RuntimeGenerationMediaClient:
     def synthesize_narration(
         self, scene: dict[str, Any], *, locale: str, seed: int
     ) -> GeneratedMedia:
+        if self._speech_provider_ids in {(), ("local-runtime",)} and self._local_fallback is not None:
+            return self._local_fallback.synthesize_narration(scene, locale=locale, seed=seed)
         if self._local_narration is not None:
             narration = str(scene["narration"])
             audio = self._local_narration.synthesize(
@@ -727,6 +780,7 @@ class RuntimeGenerationMediaClient:
                 0,
                 {"characters": float(len(narration))},
             )
+        assert self._speech_model is not None
         result = self.client.generate(
             ProviderSpeechRequest(
                 text=str(scene["narration"]),
@@ -753,8 +807,13 @@ class RuntimeGenerationMediaClient:
         narration_hash: str,
         seed: int,
     ) -> GeneratedMedia | None:
-        del scene, narration_hash, seed
-        return None
+        if self._local_fallback is None:
+            return None
+        return self._local_fallback.create_presenter(
+            scene,
+            narration_hash=narration_hash,
+            seed=seed,
+        )
 
     @staticmethod
     def _idempotency(kind: str, scene: dict[str, Any], seed: int) -> str:

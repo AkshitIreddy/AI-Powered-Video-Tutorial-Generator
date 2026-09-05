@@ -319,6 +319,21 @@ def test_runtime_client_composes_only_explicit_local_narration_route() -> None:
     assert client.provider_id == "approved:mock+local-runtime"
 
 
+def test_runtime_client_routes_each_local_capability_to_installed_fallback() -> None:
+    runtime, _ = _hybrid_runtime(_hybrid_media_policy())
+    client = RuntimeGenerationMediaClient(
+        runtime,
+        windows_speech=FakeWindowsSpeech(available=False),
+        local_fallback=DeterministicMediaClient(),
+    )
+
+    visual = client.create_visual(_scene(), seed=11)
+    narration = client.synthesize_narration(_scene(), locale="en-US", seed=12)
+
+    assert visual.provider_id == "mock"
+    assert narration.provider_id == DeterministicMediaClient.provider_id
+
+
 def test_runtime_client_rejects_unapproved_local_model_substitution() -> None:
     runtime, _ = _hybrid_runtime(_hybrid_media_policy(speech_model="some-other-local-tts"))
 

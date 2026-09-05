@@ -494,6 +494,10 @@ def test_acceptance_desktop_worker_creates_approves_generates_and_exports(
         assert completed["state"] == "SUCCEEDED", completed
         assert completed["progress"] == pytest.approx(1)
         assert completed["finalRevisionId"]
+        assert completed["result"]["path"]
+        assert Path(completed["result"]["path"]).is_file()
+        assert completed["result"]["mediaType"]
+        assert completed["result"]["artifactHash"]
         assert all(stage["state"] == "SUCCEEDED" for stage in completed["stages"])
 
         durable = worker.call(

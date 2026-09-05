@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import socket
 import uuid
@@ -15,6 +16,7 @@ from alystria.generation import (
     ClaimSpec,
     DeterministicMediaClient,
     DeterministicRendererClient,
+    GeneratedMedia,
     GenerationCoordinator,
     GenerationRequest,
     GenerationStage,
@@ -24,7 +26,9 @@ from alystria.generation import (
     request_from_desktop,
     request_from_fixture,
 )
+from alystria.generation.forced_alignment import AlignmentInput
 from alystria.generation.workflow import (
+    _caption_alignment_quality_gate,
     _presenter_direction,
     _presenter_fit,
     _presenters_for_render,
@@ -32,7 +36,7 @@ from alystria.generation.workflow import (
 )
 from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
-from alystria.qa import Finding, QualityGate, Severity
+from alystria.qa import Finding, GateStatus, QualityGate, Severity
 from alystria.research import GroundingMode
 from alystria.service import _configured_local_presenter
 
@@ -106,7 +110,126 @@ def test_word_timing_normalization_supports_native_forced_and_fallback_routes() 
         metadata={"wordTimings": [{"word": "bad", "startMs": 900, "endMs": 901}]},
     )
     assert fallback_alignment["source"] == "duration-proportional"
+    assert fallback_alignment["status"] == "ESTIMATED"
+    assert fallback_alignment["alignedTokenRatio"] is None
     assert fallback_words[-1].end_ms == 900
+
+    wrong_words, wrong_alignment = _provider_neutral_word_timings(
+        "Every model works",
+        duration_ms=900,
+        metadata={
+            "wordTimings": [
+                {"word": "Completely", "startMs": 20, "endMs": 220},
+                {"word": "different", "startMs": 250, "endMs": 500},
+                {"word": "tokens", "startMs": 540, "endMs": 860},
+            ]
+        },
+    )
+    assert [word.token for word in wrong_words] == ["Every", "model", "works"]
+    assert wrong_alignment["status"] == "ESTIMATED"
+    assert wrong_alignment["alignedTokenRatio"] is None
+
+
+def test_estimated_caption_timing_blocks_final_media_quality() -> None:
+    gate = _caption_alignment_quality_gate(
+        {
+            "narrationAlignments": [
+                {
+                    "sceneId": "scene-one",
+                    "alignment": {
+                        "status": "ESTIMATED",
+                        "source": "duration-proportional",
+                        "alignedTokenRatio": None,
+                    },
+                }
+            ]
+        }
+    )
+
+    assert gate.status is GateStatus.FAIL
+    assert gate.findings[0].code == "audio.alignment_not_verified"
+
+
+class _UntimedMediaClient:
+    provider_id = "test-untimed"
+    model_revision = "1"
+
+    def __init__(self) -> None:
+        self.inner = DeterministicMediaClient()
+
+    def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
+        return self.inner.create_visual(scene, seed=seed)
+
+    def synthesize_narration(
+        self, scene: dict[str, Any], *, locale: str, seed: int
+    ) -> GeneratedMedia:
+        media = self.inner.synthesize_narration(scene, locale=locale, seed=seed)
+        return replace(
+            media,
+            metadata={
+                key: value
+                for key, value in media.metadata.items()
+                if key not in {"wordTimings", "alignmentSource", "alignmentEngine"}
+            },
+        )
+
+    def create_presenter(
+        self, scene: dict[str, Any], *, narration_hash: str, seed: int
+    ) -> GeneratedMedia | None:
+        return self.inner.create_presenter(scene, narration_hash=narration_hash, seed=seed)
+
+
+class _MeasuredBatchAligner:
+    def __init__(self) -> None:
+        self.calls: list[tuple[AlignmentInput, ...]] = []
+
+    def align_batch(self, values: tuple[AlignmentInput, ...] | list[AlignmentInput]) -> dict[str, dict[str, Any]]:
+        self.calls.append(tuple(values))
+        output: dict[str, dict[str, Any]] = {}
+        for value in values:
+            tokens = value.text.split()
+            output[value.scene_id] = {
+                "wordTimings": [
+                    {
+                        "word": token,
+                        "startMs": round(index * value.duration_ms / len(tokens)),
+                        "endMs": round((index + 1) * value.duration_ms / len(tokens)),
+                    }
+                    for index, token in enumerate(tokens)
+                ],
+                "alignmentSource": "forced-alignment",
+                "alignmentEngine": "test-measured-aligner",
+            }
+        return output
+
+
+def test_narration_runs_one_forced_alignment_batch_before_caption_export(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Aligned", name="Aligned")
+    aligner = _MeasuredBatchAligner()
+    try:
+        coordinator = GenerationCoordinator(
+            store,
+            media_client=_UntimedMediaClient(),
+            alignment_client=aligner,
+        )
+        started = coordinator.start(request())
+        coordinator.run_pending()
+        coordinator.approve(started.generation_id)
+        completed = coordinator.run_pending()
+        assert completed is not None
+        assert completed.state is GenerationState.SUCCEEDED
+        assert len(aligner.calls) == 1
+        narration_stage = next(
+            item for item in completed.stages if item.stage is GenerationStage.NARRATION
+        )
+        result = coordinator.runtime.get_job(narration_stage.job_id).result
+        assert result is not None
+        assert all(
+            item["alignment"]["source"] == "forced-alignment"
+            for item in result["payload"]["narration"]
+        )
+    finally:
+        store.close()
 
 
 def open_coordinator(tmp_path: Path) -> tuple[ProjectStore, GenerationCoordinator]:
@@ -173,6 +296,11 @@ def test_staged_workflow_pauses_for_approval_then_exports(tmp_path: Path) -> Non
         assert completed.export_artifact_hash is not None
         assert store.cas.verify(completed.export_artifact_hash)
         assert completed.final_revision_id is not None
+        assert completed.output_path is not None
+        assert Path(completed.output_path).is_file()
+        assert completed.output_media_type == "application/vnd.alystria.render+json"
+        assert completed.video_artifact_hash is not None
+        assert store.cas.verify(completed.video_artifact_hash)
 
         export = next(item for item in completed.stages if item.stage is GenerationStage.EXPORT)
         export_job = coordinator.runtime.get_job(export.job_id)
@@ -180,6 +308,8 @@ def test_staged_workflow_pauses_for_approval_then_exports(tmp_path: Path) -> Non
         manifest = export_job.result["payload"]["exportManifest"]
         assert manifest["title"] == "Binary search invariants"
         assert manifest["qualityGate"]["status"] == "PASS"
+        assert manifest["files"][0]["path"] == completed.output_path
+        assert manifest["files"][0]["mediaType"] == completed.output_media_type
         assert {item["role"] for item in manifest["files"]} == {
             "video",
             "captions",
@@ -671,6 +801,9 @@ def test_scope_invalidation_is_transitive_and_scene_local(tmp_path: Path) -> Non
         )
         assert storyboard_job.result is not None
         scene_id = storyboard_job.result["payload"]["storyboard"]["scenes"][0]["id"]
+        scene_asset = coordinator.invalidate_scope(generation_id, f"scene-asset:{scene_id}")
+        assert any(f"scene:{scene_id}:asset" in item for item in scene_asset)
+        assert not any(f"scene:{scene_id}:narration" in item for item in scene_asset)
         scene = coordinator.invalidate_scope(generation_id, f"scene:{scene_id}")
         assert any(f"scene:{scene_id}:asset" in item for item in scene)
         assert any(f"scene:{scene_id}:narration" in item for item in scene)
@@ -686,6 +819,103 @@ class RecordingRenderer(DeterministicRendererClient):
     def render(self, request: dict[str, Any]) -> RenderedTutorial:
         self.requests.append(json.loads(json.dumps(request)))
         return super().render(request)
+
+
+class RecordingMediaClient(DeterministicMediaClient):
+    def __init__(self) -> None:
+        self.visual_scene_ids: list[str] = []
+
+    def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
+        self.visual_scene_ids.append(str(scene["id"]))
+        return super().create_visual(scene, seed=seed)
+
+
+def test_accepted_scene_visual_is_reused_by_generation_and_renderer(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Accepted visual", name="Accepted visual")
+    media = RecordingMediaClient()
+    renderer = RecordingRenderer()
+    coordinator = GenerationCoordinator(store, media_client=media, renderer_client=renderer)
+    try:
+        generation_id = coordinator.start(request()).generation_id
+        waiting = coordinator.run_pending()
+        assert waiting is not None and waiting.state is GenerationState.WAITING_APPROVAL
+        approval_job = next(
+            coordinator.runtime.get_job(item.job_id)
+            for item in waiting.stages
+            if item.stage is GenerationStage.APPROVAL
+        )
+        assert approval_job.result is not None
+        storyboard = approval_job.result["payload"]["storyboard"]
+        selected_scene = storyboard["scenes"][0]
+
+        selected_bytes = b"\x89PNG\r\n\x1a\naccepted-project-visual"
+        artifact = store.add_artifact_bytes(
+            selected_bytes,
+            media_type="image/png",
+            original_name="accepted.png",
+            metadata={
+                "rightsStatus": "owned",
+                "licenseId": "USER-OWNED",
+                "provider": "test-accepted-visual",
+                "modelRevision": "1",
+            },
+        )
+        asset_id = "asset-accepted-scene"
+        provenance_id = "provenance-accepted-scene"
+        head = store.head_revision()
+        assert head is not None
+        snapshot = copy.deepcopy(head.snapshot)
+        snapshot["scenes"] = [
+            {
+                **selected_scene,
+                "visualAssetId": asset_id,
+                "visualArtifactHash": artifact.hash,
+            }
+        ]
+        snapshot["mediaAssets"] = [
+            {
+                "id": asset_id,
+                "artifactHash": artifact.hash,
+                "mediaType": "image/png",
+                "state": "promoted",
+                "provenanceId": provenance_id,
+            }
+        ]
+        snapshot["assetProvenance"] = [
+            {
+                "id": provenance_id,
+                "assetId": asset_id,
+                "exportEligible": True,
+                "blockers": [],
+            }
+        ]
+        store.create_revision(
+            snapshot=snapshot,
+            expected_head=head.revision_id,
+            message="Accept a generated scene visual",
+        )
+
+        coordinator.approve(generation_id)
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert str(selected_scene["id"]) not in media.visual_scene_ids
+
+        assets_job = next(
+            coordinator.runtime.get_job(item.job_id)
+            for item in completed.stages
+            if item.stage is GenerationStage.ASSETS
+        )
+        assert assets_job.result is not None
+        selected = next(
+            item
+            for item in assets_job.result["payload"]["assets"]
+            if item["sceneId"] == selected_scene["id"]
+        )
+        assert selected["artifactHash"] == artifact.hash
+        assert selected["provider"] == "accepted-project-asset"
+        assert renderer.requests[0]["assets"][0]["artifactHash"] == artifact.hash
+    finally:
+        store.close()
 
 
 def test_renderer_client_receives_immutable_complete_request(tmp_path: Path) -> None:
@@ -910,7 +1140,7 @@ def test_desktop_flagship_identity_loads_the_bundled_karatsuba_contract(
             {"name": "portrait", "width": 1080, "height": 1920, "fps": 30},
             {"name": "square", "width": 1080, "height": 1080, "fps": 30},
         )
-        assert converted.presenter_mode == "auto"
+        assert converted.presenter_mode == "off"
         assert converted.metadata["fixtureId"] == "fixture.karatsuba.undergraduate.en"
         assert converted.metadata["quality"] == "studio"
         generation_id = coordinator.start(converted).generation_id
@@ -923,7 +1153,7 @@ def test_desktop_flagship_identity_loads_the_bundled_karatsuba_contract(
         )
         assert storyboard_job.result is not None
         storyboard = storyboard_job.result["payload"]["storyboard"]
-        assert storyboard["scenes"][0]["type"] == "presenter-slide"
+        assert storyboard["scenes"][0]["type"] == "title"
         assert storyboard["scenes"][1]["type"] == "definition"
         assert all("visualBeat" in scene for scene in storyboard["scenes"])
         assert all("onScreenText" in scene for scene in storyboard["scenes"])

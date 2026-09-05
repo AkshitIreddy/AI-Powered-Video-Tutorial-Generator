@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from alystria.generation.adapters import DeterministicMediaClient
 from alystria.project import ProjectStore
 from alystria.providers import (
     Capability,
@@ -25,7 +26,13 @@ from alystria.providers import (
     load_and_validate_root_catalog,
     parse_routing_policy,
 )
-from alystria.service import PipelineService
+from alystria.providers.comfyui_local import SDXL_MODEL_ID, ComfyGenerationMediaClient
+from alystria.providers.openai_compatible_structured import (
+    GROQ_STRUCTURED_MODEL,
+    MISTRAL_STRUCTURED_MODEL,
+    OPENROUTER_STRUCTURED_MODEL,
+)
+from alystria.service import PipelineService, _configured_local_image_runtime
 
 
 class FixtureTransport:
@@ -40,6 +47,22 @@ class FixtureTransport:
             "model": "gpt-fixture",
             "output_text": "approved fixture response",
             "usage": {"input_tokens": 4, "output_tokens": 3},
+        }
+        return HttpResponse(200, {"content-type": "application/json"}, json.dumps(payload).encode())
+
+
+class StructuredFixtureTransport:
+    def __init__(self) -> None:
+        self.requests: list[HttpRequest] = []
+
+    def send(self, request: HttpRequest) -> HttpResponse:
+        self.requests.append(request)
+        model = str((request.json_body or {}).get("model", "fixture-structured"))
+        payload = {
+            "id": "structured_fixture",
+            "model": model,
+            "choices": [{"message": {"content": '{"lesson":"verified"}'}}],
+            "usage": {"prompt_tokens": 8, "completion_tokens": 4},
         }
         return HttpResponse(200, {"content-type": "application/json"}, json.dumps(payload).encode())
 
@@ -79,6 +102,39 @@ def _cloud_policy() -> dict[str, Any]:
                 "capability": "llm.text",
                 "providerIds": ["openai"],
                 "model": "gpt-fixture",
+                "voice": None,
+            }
+        ],
+    }
+
+
+def _structured_cloud_policy(provider_id: str, model: str) -> dict[str, Any]:
+    credential_ref = f"keyring://alystria/{provider_id}/api_key"
+    return {
+        "version": 1,
+        "privacyMode": "hybrid",
+        "dataClassification": "project",
+        "budget": _budget(),
+        "approvals": [
+            {
+                "providerId": provider_id,
+                "capabilities": ["llm.structured"],
+                "credentialRef": credential_ref,
+                "boundary": "cloud",
+                "retention": "provider_default",
+                "regions": ["provider-managed"],
+                "dataClasses": ["project"],
+                "privacyApproved": True,
+                "retentionApproved": True,
+                "regionApproved": True,
+                "budgetApproved": True,
+            }
+        ],
+        "routes": [
+            {
+                "capability": "llm.structured",
+                "providerIds": [provider_id],
+                "model": model,
                 "voice": None,
             }
         ],
@@ -162,6 +218,49 @@ def _local_presenter_component_policy() -> dict[str, Any]:
                 "model": "local/musetalk-1.5",
                 "voice": None,
             },
+        ],
+    }
+
+
+def _all_local_generation_policy() -> dict[str, Any]:
+    capabilities = ["llm.structured", "image.generate", "audio.tts"]
+    return {
+        "version": 1,
+        "privacyMode": "local",
+        "dataClassification": "project",
+        "budget": {
+            "currency": "USD",
+            "hardLimitMicros": 0,
+            "requireKnownPricing": True,
+            "approved": True,
+        },
+        "approvals": [
+            {
+                "providerId": "local-runtime",
+                "capabilities": capabilities,
+                "credentialRef": None,
+                "boundary": "local",
+                "retention": "local_only",
+                "regions": ["local"],
+                "dataClasses": ["project"],
+                "privacyApproved": True,
+                "retentionApproved": True,
+                "regionApproved": True,
+                "budgetApproved": True,
+            }
+        ],
+        "routes": [
+            {
+                "capability": capability,
+                "providerIds": ["local-runtime"],
+                "model": model,
+                "voice": None,
+            }
+            for capability, model in (
+                ("llm.structured", "local/writer"),
+                ("image.generate", "local/procedural-visuals"),
+                ("audio.tts", "local/default-narration"),
+            )
         ],
     }
 
@@ -256,6 +355,58 @@ def test_approved_credential_reference_selects_adapter_without_persisting_value(
     assert transport.requests[0].redacted_headers()["Authorization"] == "[REDACTED]"
     assert "fixture-credential-never-persist" not in json.dumps(policy.to_dict())
     assert "fixture-credential-never-persist" not in repr(transport.requests[0])
+
+
+@pytest.mark.parametrize(
+    ("provider_id", "model"),
+    (
+        ("groq", GROQ_STRUCTURED_MODEL),
+        ("mistral", MISTRAL_STRUCTURED_MODEL),
+        ("openrouter", OPENROUTER_STRUCTURED_MODEL),
+    ),
+)
+def test_reviewed_structured_cloud_routes_execute_through_runtime_factory(
+    provider_id: str,
+    model: str,
+) -> None:
+    policy = parse_routing_policy(_structured_cloud_policy(provider_id, model))
+    broker = EphemeralCredentialBroker()
+    credential_ref = f"keyring://alystria/{provider_id}/api_key"
+    grant = broker.issue(provider_id, credential_ref, "fixture-runtime-credential")
+    transport = StructuredFixtureTransport()
+    runtime = ProviderRuntimeFactory(
+        transport_factory=lambda selected: transport
+        if selected == provider_id
+        else (_ for _ in ()).throw(AssertionError(f"unexpected provider {selected}")),
+        credential_resolver=broker,
+        credential_grants={provider_id: grant},
+    ).build(policy)
+
+    result = ProviderTextClient(runtime).generate(
+        TextRequest(
+            "Create a grounded lesson plan.",
+            model,
+            json_schema={
+                "type": "object",
+                "properties": {"lesson": {"type": "string"}},
+                "required": ["lesson"],
+                "additionalProperties": False,
+            },
+            schema_name="lesson_plan",
+        ),
+        idempotency_key=f"{provider_id}-structured-runtime",
+    )
+
+    assert result.provider_id == provider_id
+    assert result.value.parsed == {"lesson": "verified"}
+    assert len(transport.requests) == 1
+    request = transport.requests[0]
+    assert request.url.endswith("/chat/completions")
+    assert request.json_body is not None
+    assert request.json_body["model"] == model
+    assert request.json_body["response_format"]["json_schema"]["strict"] is True
+    if provider_id == "openrouter":
+        assert request.json_body["provider"] == {"require_parameters": True}
 
 
 def test_desktop_keyring_callback_uses_fresh_one_call_nonces() -> None:
@@ -461,8 +612,104 @@ def test_mock_policy_reaches_durable_generation_media_stages(tmp_path: Path) -> 
             "jobId": started["jobId"],
         },
     )
+    assert status["state"] == "SUCCEEDED", json.dumps(status, sort_keys=True)
+    assert {stage["stage"] for stage in status["stages"]} >= {"assets", "narration", "export"}
+
+
+def test_all_local_policy_uses_local_generation_without_provider_adapter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_id = str(uuid.uuid4())
+    project_path = tmp_path / "All Local Generation"
+    initial = {
+        "id": str(uuid.uuid4()),
+        "title": "Stable sorting",
+        "brief": {
+            "topic": "Stable sorting",
+            "audience": "Beginning programmers",
+            "durationSeconds": 30,
+            "locale": "en-US",
+        },
+        "sources": [],
+        "providerRoutingPolicy": _all_local_generation_policy(),
+    }
+    _create_desktop_project(project_path, project_id, title="Stable sorting", snapshot=initial)
+    monkeypatch.setattr(
+        "alystria.service.default_local_media_client",
+        lambda: DeterministicMediaClient(),
+    )
+    factory = ProviderRuntimeFactory(
+        transport_factory=lambda _provider_id: (_ for _ in ()).throw(
+            AssertionError("local-runtime must not construct a provider transport")
+        )
+    )
+    service = PipelineService(provider_runtime_factory=factory)
+    started = service.dispatch(
+        "generation.start",
+        {
+            "projectId": project_id,
+            "projectDirectory": str(project_path),
+            "scope": {"kind": "project"},
+            "quality": "standard",
+            "privacy": "local",
+            "budget": {
+                "currency": "USD",
+                "hardLimitMinorUnits": 0,
+                "requireKnownPricing": True,
+            },
+            "approvedProviderIds": ["local-runtime"],
+        },
+    )
+    service.dispatch("job.runPending", {"projectPath": str(project_path)})
+    service.dispatch(
+        "generation.approve",
+        {
+            "projectId": project_id,
+            "projectDirectory": str(project_path),
+            "jobId": started["jobId"],
+        },
+    )
+    service.dispatch("job.runPending", {"projectPath": str(project_path)})
+    status = service.dispatch(
+        "job.status",
+        {
+            "projectId": project_id,
+            "projectDirectory": str(project_path),
+            "jobId": started["jobId"],
+        },
+    )
     assert status["state"] == "SUCCEEDED"
     assert {stage["stage"] for stage in status["stages"]} >= {"assets", "narration", "export"}
+
+
+def test_exact_local_sdxl_route_selects_supervised_comfy_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_root = tmp_path / "ComfyUI"
+    runtime_root.mkdir()
+    gpu_lock = tmp_path / "gpu-use.txt"
+    gpu_lock.write_text("available", encoding="utf-8")
+    monkeypatch.setenv("ALYSTRIA_COMFYUI_RUNTIME_ROOT", str(runtime_root))
+    monkeypatch.setenv("ALYSTRIA_GPU_LOCK_PATH", str(gpu_lock))
+    monkeypatch.setenv("ALYSTRIA_COMFYUI_PORT", "8292")
+    policy_value = _all_local_generation_policy()
+    for route in policy_value["routes"]:
+        if route["capability"] == "image.generate":
+            route["model"] = SDXL_MODEL_ID
+    policy = parse_routing_policy(policy_value)
+    fallback = DeterministicMediaClient()
+
+    configured = _configured_local_image_runtime(fallback, policy)
+
+    assert isinstance(configured, ComfyGenerationMediaClient)
+    assert configured.fallback is fallback
+    assert configured.runtime_root == runtime_root.resolve()
+    assert configured.gpu_lock == gpu_lock.resolve()
+    assert configured.port == 8292
+
+    procedural_policy = parse_routing_policy(_all_local_generation_policy())
+    assert _configured_local_image_runtime(fallback, procedural_policy) is fallback
 
 
 def test_missing_credential_grant_fails_before_generation_enqueue(tmp_path: Path) -> None:
