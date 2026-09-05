@@ -49,6 +49,33 @@ from alystria.generation.spoken_text import SpokenTextError, normalize_spoken_te
             "versus big O of n squared.",
         ),
         (
+            "Karatsuba expands (a+b)(c+d) \N{EN DASH} ac \N{EN DASH} bd = ad + bc.",
+            "Karatsuba expands open parenthesis a plus b close parenthesis times open "
+            "parenthesis c plus d close parenthesis minus a c minus b d equals a d plus b c.",
+        ),
+        (
+            "Pages 3\N{EN DASH}5 cover ages 10\N{EN DASH}12, from 2020 \N{EN DASH} 2024.",
+            "Pages three to five cover ages ten to twelve, from two thousand twenty to "
+            "two thousand twenty four.",
+        ),
+        (
+            "Compute 5.0 \N{EN DASH} 3.0 before the n\N{EN DASH}1 step.",
+            "Compute five point zero minus three point zero before the n minus one step.",
+        ),
+        (
+            "The middle product \N{EN DASH} our key saving \N{EN DASH} replaces a fourth call.",
+            "The middle product, our key saving, replaces a fourth call.",
+        ),
+        (
+            "I \N{EN DASH} a teacher \N{EN DASH} use this example, and we "
+            "\N{EN DASH} a small team \N{EN DASH} check it together.",
+            "I, a teacher, use this example, and we, a small team, check it together.",
+        ),
+        (
+            "We start small, so \N{EN DASH} an example with four digits comes first.",
+            "We start small, so, an example with four digits comes first.",
+        ),
+        (
             "Call this \N{LEFT DOUBLE QUOTATION MARK}three\N{HYPHEN}product multiplication"
             "\N{RIGHT DOUBLE QUOTATION MARK}: 12 \N{MULTIPLICATION SIGN} 34 = 408.",
             'Call this "three product multiplication": twelve times thirty four equals '
@@ -75,6 +102,14 @@ def test_spoken_text_rejects_unsupported_semantic_symbols_instead_of_dropping_th
 
     with pytest.raises(SpokenTextError, match="unsupported spoken symbol"):
         normalize_spoken_text("Compute x | y.", locale="en-US")
+
+
+def test_spoken_text_rejects_an_ambiguous_en_dash_instead_of_guessing() -> None:
+    with pytest.raises(SpokenTextError, match="ambiguous en dash"):
+        normalize_spoken_text("Compare revenue \N{EN DASH} cost before taxes.", locale="en-US")
+
+    with pytest.raises(SpokenTextError, match="ambiguous en dash"):
+        normalize_spoken_text("The bare value is 5\N{EN DASH}3.", locale="en-US")
 
 
 def test_spoken_text_rejects_non_english_locale_for_english_ctc_contract() -> None:

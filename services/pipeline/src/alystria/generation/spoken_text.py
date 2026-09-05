@@ -161,6 +161,64 @@ _SPOKEN_SYMBOLS = (
     ("\N{DEGREE SIGN}", " degrees "),
 )
 
+_EN_DASH = "\N{EN DASH}"
+_CLEAR_PROSE_DASH_FOLLOWERS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "because",
+        "but",
+        "not",
+        "our",
+        "rather",
+        "so",
+        "that",
+        "the",
+        "these",
+        "this",
+        "those",
+        "when",
+        "where",
+        "which",
+        "while",
+        "who",
+        "whose",
+        "your",
+    }
+)
+_RANGE_LABELS = r"ages?|chapters?|from|levels?|pages?|steps?|years?"
+_RANGE_UNITS = r"days?|hours?|minutes?|months?|seconds?|weeks?|years?"
+_NUMBER_PATTERN = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+_SHORT_PROSE_WORDS = frozenset(
+    {
+        "am",
+        "an",
+        "as",
+        "at",
+        "be",
+        "by",
+        "do",
+        "go",
+        "he",
+        "if",
+        "in",
+        "is",
+        "it",
+        "me",
+        "my",
+        "no",
+        "of",
+        "on",
+        "or",
+        "so",
+        "to",
+        "up",
+        "us",
+        "we",
+    }
+)
+
 
 def normalize_spoken_text(text: str, *, locale: str) -> SpokenText:
     """Return one explicit, CTC-safe spoken form for English narration.
@@ -196,9 +254,10 @@ def normalize_spoken_text(text: str, *, locale: str) -> SpokenText:
     value = (
         value.replace("\N{RIGHT SINGLE QUOTATION MARK}", "'")
         .replace("\N{LEFT SINGLE QUOTATION MARK}", "'")
-        .replace("\N{EN DASH}", " to ")
-        .replace("\N{EM DASH}", ", ")
     )
+    value = _normalize_en_dashes(value)
+    value = value.replace("\N{EM DASH}", ", ")
+    value = re.sub(r"([=+*/])\s*([a-z])([a-z])\b", r"\1 \2 \3", value)
     value = re.sub(r"\bBig[\s-]*O\b", "Big O", value, flags=re.IGNORECASE)
     value = re.sub(
         r"\bO\s*\(([^()]+)\)",
@@ -318,6 +377,117 @@ def normalize_spoken_text(text: str, *, locale: str) -> SpokenText:
     if not value:
         raise SpokenTextError("Narration has no speakable content")
     return SpokenText(authored_text=text, spoken_text=value)
+
+
+def _normalize_en_dashes(value: str) -> str:
+    """Resolve only en-dash uses whose spoken meaning is explicit in context."""
+
+    # A compact numeric en dash is ambiguous without a range label or unit.
+    # could be a span or subtraction. Preserve common labelled ranges while
+    # leaving the bare form for the fail-closed branch below.
+    value = re.sub(
+        rf"\b({_RANGE_LABELS})\s+({_NUMBER_PATTERN})\s*{_EN_DASH}\s*"
+        rf"({_NUMBER_PATTERN})",
+        r"\1 \2 to \3",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(
+        rf"({_NUMBER_PATTERN})\s*{_EN_DASH}\s*({_NUMBER_PATTERN})\s+"
+        rf"({_RANGE_UNITS})\b",
+        r"\1 to \2 \3",
+        value,
+        flags=re.IGNORECASE,
+    )
+
+    # Paired spaced dashes delimit prose only when the inserted phrase begins
+    # with a clear function word. Other paired terms may be algebra, so they
+    # continue to the operand checks or fail closed.
+    prose_openers = "|".join(
+        sorted(re.escape(word) for word in _CLEAR_PROSE_DASH_FOLLOWERS)
+    )
+    value = re.sub(
+        rf"\s+{_EN_DASH}\s+((?:{prose_openers})\b\s+\S+(?:\s+\S+)*?)"
+        rf"\s+{_EN_DASH}\s+",
+        r", \1, ",
+        value,
+        flags=re.IGNORECASE,
+    )
+
+    while _EN_DASH in value:
+        index = value.index(_EN_DASH)
+        left = value[:index]
+        right = value[index + 1 :]
+        left_token_match = re.search(r"([A-Za-z]+|\d+(?:\.\d+)?|\))\s*$", left)
+        right_token_match = re.match(r"\s*(\(|[A-Za-z]+|\d+(?:\.\d+)?)", right)
+        left_token = left_token_match.group(1) if left_token_match is not None else None
+        right_token = right_token_match.group(1) if right_token_match is not None else None
+        spaced = bool(left.endswith(" ") and right.startswith(" "))
+        left_is_number = bool(
+            left_token is not None and re.fullmatch(r"\d+(?:\.\d+)?", left_token)
+        )
+        left_is_variable = bool(
+            left_token is not None
+            and left_token.isalpha()
+            and left_token.islower()
+            and len(left_token) == 1
+        )
+        right_is_short_symbol = bool(
+            right_token is not None
+            and right_token.isalpha()
+            and right_token.islower()
+            and len(right_token) <= 2
+            and right_token not in _SHORT_PROSE_WORDS
+        )
+        right_is_operand = bool(
+            right_token is not None
+            and (
+                right_token == "("
+                or re.fullmatch(r"\d+(?:\.\d+)?", right_token)
+                or right_is_short_symbol
+            )
+        )
+        nearby_math_context = bool(
+            re.search(r"[=+*/^()]", f"{left[-80:]}{right[:80]}")
+        )
+        short_product_pair = bool(
+            left_token is not None
+            and left_token.isalpha()
+            and left_token.islower()
+            and len(left_token) == 2
+            and left_token not in _SHORT_PROSE_WORDS
+            and right_is_short_symbol
+            and nearby_math_context
+        )
+
+        clear_algebra = bool(
+            left_token is not None
+            and right_is_operand
+            and (
+                left_token == ")"
+                or (left_is_number and spaced)
+                or left_is_variable
+                or short_product_pair
+            )
+        )
+        if clear_algebra:
+            value = f"{left.rstrip()} minus {right.lstrip()}"
+            continue
+
+        prose_follower = (
+            right_token.casefold()
+            if right_token is not None and right_token.isalpha()
+            else None
+        )
+        if spaced and prose_follower in _CLEAR_PROSE_DASH_FOLLOWERS:
+            value = f"{left.rstrip()}, {right.lstrip()}"
+            continue
+
+        raise SpokenTextError(
+            "Narration contains an ambiguous en dash; use an explicit numeric range, "
+            "prose dash, or mathematical minus"
+        )
+    return value
 
 
 def _power(exponent: int | str) -> str:

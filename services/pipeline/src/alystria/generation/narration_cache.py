@@ -22,7 +22,7 @@ from alystria.project import ProjectStore
 
 NARRATION_CACHE_SCHEMA = "alystria.narration-clip-cache.v1"
 NARRATION_CACHE_MEDIA_TYPE = "application/vnd.alystria.narration-clip-cache+json"
-NARRATION_NORMALIZATION_VERSION = "english-spoken-text-v3-typographic-punctuation"
+NARRATION_NORMALIZATION_VERSION = "english-spoken-text-v4-contextual-en-dash"
 MAX_CACHE_RECORD_BYTES = 2 * 1024 * 1024
 MAX_CACHED_AUDIO_BYTES = 512 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
