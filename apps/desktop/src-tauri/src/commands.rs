@@ -1,5 +1,6 @@
 use crate::diagnostics;
 use crate::error::CommandError;
+use crate::project_store::ProjectStore;
 use crate::sidecar::WorkerTransport;
 use crate::state::AppState;
 use crate::types::*;
@@ -8,8 +9,8 @@ use base64::Engine as _;
 use chrono::Utc;
 use serde_json::Value;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
-use tauri::State;
+use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 #[tauri::command]
@@ -299,6 +300,13 @@ pub fn scene_regenerate(
     )?;
     input.scene_id = validation::stable_id(&input.scene_id, "sceneId")?;
     input.instruction = validation::bounded_text(&input.instruction, "instruction", 4_000)?;
+    if input.seed.is_some_and(|seed| seed > i64::MAX as u64) {
+        return Err(CommandError::invalid(
+            "seed",
+            "must be between 0 and 9223372036854775807",
+        ));
+    }
+    validate_image_recipe(&mut input.image_recipe)?;
     if !(1..=4).contains(&input.alternatives) {
         return Err(CommandError::invalid(
             "alternatives",
@@ -311,6 +319,105 @@ pub fn scene_regenerate(
     }
     input.preservation_locks = locks.into_iter().collect();
     control_action(input, "control.regenerateScene", &state)
+}
+
+fn validate_image_recipe(recipe: &mut Option<ImageRecipeRequest>) -> Result<(), CommandError> {
+    if let Some(recipe) = recipe {
+        if let Some(model) = &mut recipe.model {
+            *model = validation::bounded_text(model, "imageRecipe.model", 500)?;
+        }
+        if recipe
+            .model
+            .as_deref()
+            .is_some_and(|model| model != "local/sdxl-base-1.0")
+        {
+            return Err(CommandError::invalid(
+                "imageRecipe.model",
+                "must be local/sdxl-base-1.0",
+            ));
+        }
+        if recipe.loras.len() > 1
+            || recipe
+                .loras
+                .iter()
+                .any(|lora| lora != "local/sdxl-offset-lora-1.0")
+        {
+            return Err(CommandError::invalid(
+                "imageRecipe.loras",
+                "supports only local/sdxl-offset-lora-1.0 once",
+            ));
+        }
+        if let Some(negative_prompt) = &mut recipe.negative_prompt {
+            *negative_prompt =
+                validation::bounded_text(negative_prompt, "imageRecipe.negativePrompt", 2_048)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn scene_candidate_accept(
+    mut input: VisualCandidateAcceptRequest,
+    state: State<'_, AppState>,
+) -> Result<VisualCandidateAcceptReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    input.expected_head_revision_id = validation::bounded_text(
+        &input.expected_head_revision_id,
+        "expectedHeadRevisionId",
+        128,
+    )?;
+    input.candidate_id = validation::stable_id(&input.candidate_id, "candidateId")?;
+
+    let expected_project_id = input.project_id;
+    let expected_candidate_id = input.candidate_id.clone();
+    let receipt: VisualCandidateAcceptReceipt =
+        worker_result(&state.worker, "control.acceptVisualCandidate", &input)?;
+    if receipt.project_id != expected_project_id || receipt.candidate_id != expected_candidate_id {
+        return Err(CommandError::worker(
+            "The pipeline returned a mismatched visual candidate receipt.",
+            false,
+        ));
+    }
+    validation::stable_id(&receipt.head_revision_id, "headRevisionId")?;
+    validation::stable_id(&receipt.scene_id, "sceneId")?;
+    validation::stable_id(&receipt.asset_id, "assetId")?;
+    validate_sha256(&receipt.artifact_hash, "artifactHash")?;
+    Ok(receipt)
+}
+
+#[tauri::command]
+pub fn scene_stock_search(
+    mut input: StockVisualCandidateSearchRequest,
+    state: State<'_, AppState>,
+) -> Result<JobReceipt, CommandError> {
+    verify_control_identity(
+        &state,
+        input.project_id,
+        &input.project_directory,
+        &input.expected_head_revision_id,
+    )?;
+    input.scene_id = validation::stable_id(&input.scene_id, "sceneId")?;
+    input.instruction = validation::bounded_text(&input.instruction, "instruction", 4_000)?;
+    if !(1..=4).contains(&input.alternatives) {
+        return Err(CommandError::invalid(
+            "alternatives",
+            "must be between 1 and 4",
+        ));
+    }
+    let mut locks = BTreeSet::new();
+    for lock in &input.preservation_locks {
+        locks.insert(validation::lock_name(lock)?);
+    }
+    input.preservation_locks = locks.into_iter().collect();
+    if let Some(search_query) = &mut input.search_query {
+        *search_query = validation::bounded_text(search_query, "searchQuery", 240)?;
+    }
+    if let Some(locale) = &mut input.locale {
+        *locale = validation::locale(locale)?;
+    }
+    control_action(input, "control.searchVisualCandidates", &state)
 }
 
 #[tauri::command]
@@ -368,11 +475,190 @@ pub fn master_export(
 }
 
 #[tauri::command]
+pub fn editor_timeline_export(
+    input: EditorTimelineExportRequest,
+    state: State<'_, AppState>,
+) -> Result<JobReceipt, CommandError> {
+    editor_timeline_export_with_transport(input, &state.projects, &state.worker)
+}
+
+fn editor_timeline_export_with_transport(
+    input: EditorTimelineExportRequest,
+    projects: &ProjectStore,
+    worker: &dyn WorkerTransport,
+) -> Result<JobReceipt, CommandError> {
+    projects.verify_identity(&input.project_directory, input.project_id)?;
+    validation::bounded_text(
+        &input.expected_head_revision_id,
+        "expectedHeadRevisionId",
+        128,
+    )?;
+    if !input.manifest.is_object() {
+        return Err(CommandError::invalid(
+            "manifest",
+            "must be an editor render manifest object",
+        ));
+    }
+    worker_result(worker, "editor.timeline.export", &input)
+}
+
+#[tauri::command]
+pub fn project_asset_resolve(
+    input: ProjectAssetResolveRequest,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<ProjectAssetResolveReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    validate_sha256(&input.artifact_hash, "artifactHash")?;
+    let expected_project_id = input.project_id;
+    let expected_hash = input.artifact_hash.clone();
+    let receipt: ProjectAssetResolveReceipt =
+        worker_result(&state.worker, "asset.resolve", &input)?;
+    if receipt.project_id != expected_project_id || receipt.artifact_hash != expected_hash {
+        return Err(CommandError::worker(
+            "The pipeline returned a mismatched project artifact.",
+            false,
+        ));
+    }
+    allow_verified_project_file(&app, &input.project_directory, &receipt.path)?;
+    Ok(receipt)
+}
+
+#[tauri::command]
+pub fn editor_bindings_get(
+    input: EditorBindingsGetRequest,
+    state: State<'_, AppState>,
+) -> Result<EditorBindingsGetReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    let expected_project_id = input.project_id;
+    let expected_generation_id = input.generation_id;
+    let receipt: EditorBindingsGetReceipt =
+        worker_result(&state.worker, "editor.bindings.get", &input)?;
+    if receipt.project_id != expected_project_id || receipt.generation_id != expected_generation_id
+    {
+        return Err(CommandError::worker(
+            "The pipeline returned mismatched editor media bindings.",
+            false,
+        ));
+    }
+    Ok(receipt)
+}
+
+#[tauri::command]
+pub fn editor_waveform_get(
+    input: EditorWaveformRequest,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<EditorWaveformReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    validate_sha256(&input.artifact_hash, "artifactHash")?;
+    if !(256..=4096).contains(&input.profile.width) {
+        return Err(CommandError::invalid(
+            "profile.width",
+            "must be between 256 and 4096",
+        ));
+    }
+    if !(32..=256).contains(&input.profile.height) {
+        return Err(CommandError::invalid(
+            "profile.height",
+            "must be between 32 and 256",
+        ));
+    }
+
+    let expected_project_id = input.project_id;
+    let expected_hash = input.artifact_hash.clone();
+    let expected_width = input.profile.width;
+    let expected_height = input.profile.height;
+    let receipt: EditorWaveformReceipt =
+        worker_result(&state.worker, "editor.waveform.get", &input)?;
+    if receipt.project_id != expected_project_id
+        || receipt.artifact_hash != expected_hash
+        || receipt.profile.width != expected_width
+        || receipt.profile.height != expected_height
+        || receipt.width != expected_width
+        || receipt.height != expected_height
+        || receipt.media_type != "image/png"
+        || receipt.duration_ticks == 0
+    {
+        return Err(CommandError::worker(
+            "The pipeline returned mismatched waveform media.",
+            false,
+        ));
+    }
+    validate_sha256(&receipt.waveform_hash, "waveformHash")?;
+    allow_verified_project_file(&app, &input.project_directory, &receipt.waveform_path)?;
+    Ok(receipt)
+}
+
+fn validate_sha256(value: &str, field: &str) -> Result<(), CommandError> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(CommandError::invalid(
+            field,
+            "must be 64 lowercase hexadecimal characters",
+        ));
+    }
+    Ok(())
+}
+
+fn allow_verified_project_file(
+    app: &AppHandle,
+    project_directory: &Path,
+    path: &Path,
+) -> Result<(), CommandError> {
+    let project_root = std::fs::canonicalize(project_directory).map_err(|_| {
+        CommandError::worker("The verified project directory is unavailable.", true)
+    })?;
+    let resolved = std::fs::canonicalize(path)
+        .map_err(|_| CommandError::worker("The verified project media is unavailable.", true))?;
+    if !resolved.starts_with(&project_root)
+        || !std::fs::metadata(&resolved)
+            .map(|metadata| metadata.is_file())
+            .unwrap_or(false)
+    {
+        return Err(CommandError::worker(
+            "The pipeline returned media outside the verified project.",
+            false,
+        ));
+    }
+    app.asset_protocol_scope()
+        .allow_file(&resolved)
+        .map_err(|_| {
+            CommandError::new(
+                "ASSET_PROTOCOL_SCOPE_FAILED",
+                "The verified project media could not be exposed to this app window.",
+                true,
+            )
+        })
+}
+
+#[tauri::command]
 pub fn job_status(
     input: JobActionRequest,
     state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<JobReceipt, CommandError> {
-    job_action(input, "job.status", &state)
+    let project_directory = input.project_directory.clone();
+    let receipt = job_action(input, "job.status", &state)?;
+    if receipt.state == JobState::Succeeded {
+        if let Some(result) = receipt.result.as_ref().and_then(Value::as_object) {
+            for field in ["path", "outputPath"] {
+                if let Some(path) = result.get(field).and_then(Value::as_str) {
+                    allow_verified_project_file(&app, &project_directory, Path::new(path))?;
+                }
+            }
+        }
+    }
+    Ok(receipt)
 }
 
 fn job_action(
@@ -914,6 +1200,39 @@ mod tests {
     }
 
     #[test]
+    fn image_recipe_validation_accepts_defaults_and_rejects_unapproved_models() {
+        let mut defaults = Some(ImageRecipeRequest {
+            model: None,
+            loras: Vec::new(),
+            negative_prompt: None,
+        });
+        validate_image_recipe(&mut defaults).unwrap();
+
+        let mut approved = Some(ImageRecipeRequest {
+            model: Some(" local/sdxl-base-1.0 ".into()),
+            loras: vec!["local/sdxl-offset-lora-1.0".into()],
+            negative_prompt: Some(" no text or watermark ".into()),
+        });
+        validate_image_recipe(&mut approved).unwrap();
+        let approved = approved.unwrap();
+        assert_eq!(approved.model.as_deref(), Some("local/sdxl-base-1.0"));
+        assert_eq!(
+            approved.negative_prompt.as_deref(),
+            Some("no text or watermark")
+        );
+
+        let mut rejected = Some(ImageRecipeRequest {
+            model: Some("local/unreviewed-model".into()),
+            loras: Vec::new(),
+            negative_prompt: None,
+        });
+        assert_eq!(
+            validate_image_recipe(&mut rejected).unwrap_err().code,
+            "INVALID_INPUT"
+        );
+    }
+
+    #[test]
     fn generated_transport_failures_are_not_misclassified_as_durable_jobs() {
         let receipt = failed_receipt(
             Uuid::now_v7(),
@@ -1074,5 +1393,59 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.code, "INVALID_INPUT");
+    }
+
+    struct EditorExportWorker {
+        method: Mutex<Option<String>>,
+    }
+
+    impl WorkerTransport for EditorExportWorker {
+        fn call(&self, method: &str, _payload: Value) -> Result<Value, CommandError> {
+            *self.method.lock() = Some(method.into());
+            serde_json::to_value(JobReceipt {
+                job_id: Uuid::nil(),
+                state: JobState::Queued,
+                accepted_at: Utc::now(),
+                message: "Editor timeline export queued".into(),
+                retryable: false,
+                operation: Some("editor_timeline_export".into()),
+                progress: Some(0.0),
+                result: None,
+                error: None,
+            })
+            .map_err(CommandError::from)
+        }
+    }
+
+    #[test]
+    fn editor_timeline_export_verifies_identity_and_uses_the_narrow_worker_method() {
+        let root = tempdir().unwrap();
+        let project = ProjectStore
+            .create(CreateProjectRequest {
+                parent_directory: root.path().to_path_buf(),
+                directory_name: "editor-export-test".into(),
+                title: "Editor export test".into(),
+                locale: "en-US".into(),
+                grounding_mode: GroundingMode::Creative,
+                initial_snapshot: None,
+            })
+            .unwrap();
+        let worker = EditorExportWorker {
+            method: Mutex::new(None),
+        };
+        let receipt = editor_timeline_export_with_transport(
+            EditorTimelineExportRequest {
+                project_id: project.manifest.project_id,
+                project_directory: project.project_directory,
+                expected_head_revision_id: "revision.one".into(),
+                manifest: serde_json::json!({ "schemaVersion": 1, "tracks": [] }),
+            },
+            &ProjectStore,
+            &worker,
+        )
+        .unwrap();
+
+        assert_eq!(*worker.method.lock(), Some("editor.timeline.export".into()));
+        assert_eq!(receipt.state, JobState::Queued);
     }
 }

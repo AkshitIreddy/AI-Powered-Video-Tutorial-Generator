@@ -93,6 +93,14 @@ impl PortableLayout {
             ("ALYSTRIA_PROJECTS_DIR", self.projects.clone()),
             ("ALYSTRIA_EXPORTS_DIR", self.exports.clone()),
             ("ALYSTRIA_LOGS_DIR", self.logs.clone()),
+            (
+                "ALYSTRIA_FORCED_ALIGNER_CONFIG_PATH",
+                self.models.join("alignment-runtime.json"),
+            ),
+            (
+                "ALYSTRIA_COMFYUI_RUNTIME_ROOT",
+                self.models.join("comfyui-local"),
+            ),
             ("ALYSTRIA_CACHE_DIR", self.cache.clone()),
             ("ALYSTRIA_TEMP_DIR", self.temp.clone()),
             ("WEBVIEW2_USER_DATA_FOLDER", self.app_data.join("WebView2")),
@@ -132,8 +140,24 @@ impl PortableLayout {
             .collect::<BTreeMap<_, _>>();
         environment.insert("PLAYWRIGHT_BROWSERS_PATH".into(), "0".into());
         environment.insert("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD".into(), "1".into());
+        if let Some(gpu_lock) = shared_gpu_lock_path() {
+            environment.insert("ALYSTRIA_GPU_LOCK_PATH".into(), gpu_lock.into_os_string());
+        }
         environment
     }
+}
+
+fn shared_gpu_lock_path() -> Option<PathBuf> {
+    let explicit = std::env::var_os("ALYSTRIA_GPU_LOCK_PATH").map(PathBuf::from);
+    if explicit.as_ref().is_some_and(|path| path.is_file()) {
+        return explicit;
+    }
+    let home = match (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
+        (Some(drive), Some(path)) => PathBuf::from(drive).join(path),
+        _ => return None,
+    };
+    let candidate = home.join("Desktop/Code Palace/gpu use.txt");
+    candidate.is_file().then_some(candidate)
 }
 
 fn portable_layout_override() -> Result<Option<PortableLayout>, CommandError> {
@@ -147,7 +171,8 @@ fn portable_layout_override() -> Result<Option<PortableLayout>, CommandError> {
     if !cfg!(any(debug_assertions, feature = "portable-debug-runtime")) {
         return Ok(None);
     }
-    let executable = std::env::current_exe().map_err(|_| CommandError::io("portable executable discovery"))?;
+    let executable =
+        std::env::current_exe().map_err(|_| CommandError::io("portable executable discovery"))?;
     portable_root_from_executable(&executable)
         .map(|root| PortableLayout::from_root(&root))
         .transpose()
@@ -191,7 +216,8 @@ fn portable_root_from_executable(executable: &Path) -> Option<PathBuf> {
     }
     let root = app_directory.parent()?;
     let manifest_path = root.join("test-area-manifest.json");
-    let manifest: serde_json::Value = serde_json::from_slice(&fs::read(manifest_path).ok()?).ok()?;
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(manifest_path).ok()?).ok()?;
     if manifest.get("kind")?.as_str()? != "ai-video-tutorial-generator-portable-debug-test-area"
         || manifest.pointer("/desktop/path")?.as_str()? != "App\\AI Video Tutorial Generator.exe"
     {
@@ -359,6 +385,9 @@ impl AppState {
             } else {
                 None
             };
+        let model_installer_executable = worker_config
+            .as_ref()
+            .map(|config| config.executable.clone());
         let worker = if let Some(mut config) = worker_config {
             if let Some(layout) = &portable {
                 config.environment.extend(layout.worker_environment());
@@ -371,7 +400,8 @@ impl AppState {
             )
         }
         .with_credential_manager(credentials.clone());
-        let model_downloads = ModelDownloadManager::at(paths.models.clone())?;
+        let model_downloads = ModelDownloadManager::at(paths.models.clone())?
+            .with_installer_executable(model_installer_executable);
         Ok(Self {
             projects: ProjectStore,
             credentials,
@@ -636,10 +666,15 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({
                 "kind": "ai-video-tutorial-generator-portable-debug-test-area",
                 "desktop": { "path": "App\\AI Video Tutorial Generator.exe" }
-            })).unwrap(),
-        ).unwrap();
+            }))
+            .unwrap(),
+        )
+        .unwrap();
 
-        assert_eq!(portable_root_from_executable(&executable), Some(temporary.path().to_path_buf()));
+        assert_eq!(
+            portable_root_from_executable(&executable),
+            Some(temporary.path().to_path_buf())
+        );
     }
 
     #[test]
@@ -659,6 +694,12 @@ mod tests {
 
         for (key, value) in layout.worker_environment() {
             if key == "PLAYWRIGHT_BROWSERS_PATH" || key == "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" {
+                continue;
+            }
+            if key == "ALYSTRIA_GPU_LOCK_PATH" {
+                let path = PathBuf::from(value);
+                assert!(path.is_file(), "shared GPU lock must be an existing file");
+                assert_eq!(Some(path), shared_gpu_lock_path());
                 continue;
             }
             assert!(

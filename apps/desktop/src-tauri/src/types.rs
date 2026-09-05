@@ -540,8 +540,96 @@ pub struct SceneRegenerationRequest {
     pub scene_id: String,
     pub instruction: String,
     #[serde(default)]
+    pub role: VisualCandidateRole,
+    #[serde(default)]
+    pub seed: Option<u64>,
+    #[serde(default)]
+    pub image_recipe: Option<ImageRecipeRequest>,
+    #[serde(default)]
     pub preservation_locks: Vec<String>,
     pub alternatives: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ImageRecipeRequest {
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub loras: Vec<String>,
+    #[serde(default)]
+    pub negative_prompt: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum VisualCandidateRole {
+    #[default]
+    Scene,
+    Presenter,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VisualCandidateAcceptRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub candidate_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VisualCandidateAcceptReceipt {
+    pub project_id: Uuid,
+    pub head_revision_id: String,
+    pub revision_number: u64,
+    pub candidate_id: String,
+    pub scene_id: String,
+    pub role: VisualCandidateRole,
+    pub artifact_hash: String,
+    pub asset_id: String,
+    #[serde(default)]
+    pub invalidated: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StockVisualCandidateSearchRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub scene_id: String,
+    pub instruction: String,
+    #[serde(default)]
+    pub preservation_locks: Vec<String>,
+    pub alternatives: u8,
+    pub provider_id: StockVisualProvider,
+    #[serde(default)]
+    pub search_query: Option<String>,
+    #[serde(default)]
+    pub desired_aspect_ratio: Option<StockVisualAspectRatio>,
+    #[serde(default)]
+    pub locale: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum StockVisualProvider {
+    Openverse,
+    Pexels,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum StockVisualAspectRatio {
+    #[serde(rename = "16:9")]
+    Landscape,
+    #[serde(rename = "4:3")]
+    Standard,
+    #[serde(rename = "1:1")]
+    Square,
+    #[serde(rename = "9:16")]
+    Portrait,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -582,6 +670,15 @@ pub enum CaptionDeliveryMode {
     Both,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExportCodecPreference {
+    #[default]
+    H264Hardware,
+    HevcHardware,
+    Av1,
+}
+
 fn deserialize_caption_delivery_mode<'de, D>(
     deserializer: D,
 ) -> Result<CaptionDeliveryMode, D::Error>
@@ -619,6 +716,8 @@ pub struct MasterExportRequest {
     pub aspect: String,
     pub resolution: String,
     pub fps: u16,
+    #[serde(default)]
+    pub codec_preference: ExportCodecPreference,
     #[serde(
         default,
         alias = "captions",
@@ -627,6 +726,83 @@ pub struct MasterExportRequest {
     pub caption_delivery_mode: CaptionDeliveryMode,
     pub transcript: bool,
     pub bibliography: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditorTimelineExportRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub manifest: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectAssetResolveRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub artifact_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectAssetResolveReceipt {
+    pub project_id: Uuid,
+    pub artifact_hash: String,
+    pub path: PathBuf,
+    pub media_type: String,
+    pub byte_size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditorBindingsGetRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub generation_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditorBindingsGetReceipt {
+    pub project_id: Uuid,
+    pub generation_id: Uuid,
+    pub assets: Vec<Value>,
+    pub narration: Vec<Value>,
+    pub presenters: Vec<Value>,
+    #[serde(default)]
+    pub renders: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditorWaveformProfile {
+    pub width: u16,
+    pub height: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditorWaveformRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub artifact_hash: String,
+    pub profile: EditorWaveformProfile,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditorWaveformReceipt {
+    pub project_id: Uuid,
+    pub artifact_hash: String,
+    pub profile: EditorWaveformProfile,
+    pub waveform_hash: String,
+    pub waveform_path: PathBuf,
+    pub media_type: String,
+    pub width: u16,
+    pub height: u16,
+    pub duration_ticks: u64,
 }
 
 #[derive(Clone, Deserialize)]
@@ -926,7 +1102,11 @@ pub struct UpdaterStatus {
 
 #[cfg(test)]
 mod caption_delivery_tests {
-    use super::{CaptionDeliveryMode, MasterExportRequest};
+    use super::{
+        CaptionDeliveryMode, EditorBindingsGetReceipt, ExportCodecPreference, MasterExportRequest,
+        SceneRegenerationRequest, StockVisualAspectRatio, StockVisualCandidateSearchRequest,
+        StockVisualProvider, VisualCandidateRole,
+    };
     use serde_json::{Value, json};
 
     fn export_request() -> Value {
@@ -947,6 +1127,28 @@ mod caption_delivery_tests {
     fn master_export_defaults_to_clean_sidecars() {
         let request: MasterExportRequest = serde_json::from_value(export_request()).unwrap();
         assert_eq!(request.caption_delivery_mode, CaptionDeliveryMode::Sidecar);
+        assert_eq!(
+            request.codec_preference,
+            ExportCodecPreference::H264Hardware
+        );
+    }
+
+    #[test]
+    fn master_export_accepts_only_the_supported_codec_preferences() {
+        for (wire, expected) in [
+            ("h264-hardware", ExportCodecPreference::H264Hardware),
+            ("hevc-hardware", ExportCodecPreference::HevcHardware),
+            ("av1", ExportCodecPreference::Av1),
+        ] {
+            let mut value = export_request();
+            value["codecPreference"] = Value::String(wire.to_owned());
+            let request: MasterExportRequest = serde_json::from_value(value).unwrap();
+            assert_eq!(request.codec_preference, expected);
+        }
+
+        let mut unsupported = export_request();
+        unsupported["codecPreference"] = Value::String("vp9".to_owned());
+        assert!(serde_json::from_value::<MasterExportRequest>(unsupported).is_err());
     }
 
     #[test]
@@ -972,5 +1174,99 @@ mod caption_delivery_tests {
             let request: MasterExportRequest = serde_json::from_value(value).unwrap();
             assert_eq!(request.caption_delivery_mode, CaptionDeliveryMode::Sidecar);
         }
+    }
+
+    #[test]
+    fn editor_bindings_accepts_composite_render_bindings() {
+        let receipt: EditorBindingsGetReceipt = serde_json::from_value(json!({
+            "projectId": "11111111-1111-4111-8111-111111111111",
+            "generationId": "22222222-2222-4222-8222-222222222222",
+            "assets": [],
+            "narration": [],
+            "presenters": [],
+            "renders": [{
+                "sceneId": "scene-1",
+                "artifactHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "mediaType": "video/webm"
+            }]
+        }))
+        .unwrap();
+
+        assert_eq!(receipt.renders.len(), 1);
+    }
+
+    #[test]
+    fn scene_regeneration_defaults_to_scene_candidates_and_accepts_a_seed() {
+        let base = json!({
+            "projectId": "11111111-1111-4111-8111-111111111111",
+            "projectDirectory": "C:\\Alystria\\Project",
+            "baseRevisionId": "revision.one",
+            "sceneId": "scene-1",
+            "instruction": "Make the diagram clearer",
+            "preservationLocks": ["narration"],
+            "alternatives": 2
+        });
+        let defaulted: SceneRegenerationRequest = serde_json::from_value(base.clone()).unwrap();
+        assert_eq!(defaulted.role, VisualCandidateRole::Scene);
+        assert_eq!(defaulted.seed, None);
+
+        let mut presenter = base;
+        presenter["role"] = Value::String("presenter".into());
+        presenter["seed"] = Value::Number(42.into());
+        let presenter: SceneRegenerationRequest = serde_json::from_value(presenter).unwrap();
+        assert_eq!(presenter.role, VisualCandidateRole::Presenter);
+        assert_eq!(presenter.seed, Some(42));
+    }
+
+    #[test]
+    fn scene_regeneration_rejects_unknown_candidate_roles() {
+        let request = json!({
+            "projectId": "11111111-1111-4111-8111-111111111111",
+            "projectDirectory": "C:\\Alystria\\Project",
+            "baseRevisionId": "revision.one",
+            "sceneId": "scene-1",
+            "instruction": "Make the diagram clearer",
+            "role": "thumbnail",
+            "preservationLocks": [],
+            "alternatives": 1
+        });
+        assert!(serde_json::from_value::<SceneRegenerationRequest>(request).is_err());
+    }
+
+    #[test]
+    fn stock_visual_search_accepts_only_closed_provider_and_aspect_values() {
+        let request = json!({
+            "projectId": "11111111-1111-4111-8111-111111111111",
+            "projectDirectory": "C:\\Alystria\\Project",
+            "expectedHeadRevisionId": "revision.one",
+            "sceneId": "scene-1",
+            "instruction": "Find a concrete multiplication visual",
+            "preservationLocks": ["narration"],
+            "alternatives": 2,
+            "providerId": "openverse",
+            "desiredAspectRatio": "16:9",
+            "locale": "en-US"
+        });
+        let parsed: StockVisualCandidateSearchRequest =
+            serde_json::from_value(request.clone()).unwrap();
+        assert_eq!(parsed.provider_id, StockVisualProvider::Openverse);
+        assert_eq!(
+            parsed.desired_aspect_ratio,
+            Some(StockVisualAspectRatio::Landscape)
+        );
+
+        let mut unsupported_provider = request.clone();
+        unsupported_provider["providerId"] = Value::String("unsplash".into());
+        assert!(
+            serde_json::from_value::<StockVisualCandidateSearchRequest>(unsupported_provider)
+                .is_err()
+        );
+
+        let mut unsupported_aspect = request;
+        unsupported_aspect["desiredAspectRatio"] = Value::String("21:9".into());
+        assert!(
+            serde_json::from_value::<StockVisualCandidateSearchRequest>(unsupported_aspect)
+                .is_err()
+        );
     }
 }

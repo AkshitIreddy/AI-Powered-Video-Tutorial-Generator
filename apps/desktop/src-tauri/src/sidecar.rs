@@ -849,6 +849,7 @@ fn valid_method(method: &str) -> bool {
             | "project.export"
             | "source.import"
             | "asset.import"
+            | "asset.resolve"
             | "presenter.profile.select"
             | "provider.routingPolicy.get"
             | "provider.routingPolicy.save"
@@ -857,9 +858,14 @@ fn valid_method(method: &str) -> bool {
             | "generation.cancel"
             | "generation.retry"
             | "control.regenerateScene"
+            | "control.searchVisualCandidates"
+            | "control.acceptVisualCandidate"
             | "control.renderScene"
             | "control.repairQa"
             | "control.exportMaster"
+            | "editor.timeline.export"
+            | "editor.bindings.get"
+            | "editor.waveform.get"
             | "job.status"
     )
 }
@@ -903,10 +909,16 @@ mod tests {
         assert!(valid_method("control.renderScene"));
         assert!(valid_method("source.import"));
         assert!(valid_method("asset.import"));
+        assert!(valid_method("asset.resolve"));
         assert!(valid_method("presenter.profile.select"));
         assert!(valid_method("project.export"));
         assert!(valid_method("provider.routingPolicy.get"));
         assert!(valid_method("provider.routingPolicy.save"));
+        assert!(valid_method("editor.timeline.export"));
+        assert!(valid_method("editor.bindings.get"));
+        assert!(valid_method("editor.waveform.get"));
+        assert!(valid_method("control.acceptVisualCandidate"));
+        assert!(valid_method("control.searchVisualCandidates"));
         assert!(!valid_method("shell.execute"));
         assert!(!valid_method("filesystem.read"));
     }

@@ -67,6 +67,8 @@ const ROUTE_MEDIA: &[&str] = &[
     "presenter",
     "portraitAnimation",
     "lipSync",
+    "stock",
+    "visualReview",
 ];
 const PROVIDERS: &[&str] = &[
     "local-runtime",
@@ -77,6 +79,8 @@ const PROVIDERS: &[&str] = &[
     "nvidia-nim",
     "elevenlabs",
     "azure-speech",
+    "openverse",
+    "pexels",
     "google-cloud-speech",
     "runway",
     "heygen",
