@@ -1,5 +1,6 @@
 import { useEffect, useId, useReducer, useRef, useState, type KeyboardEvent } from "react";
 import "./editor.css";
+import { clipCarriesProgrammeAudio } from "./audioPolicy";
 import { BrowserMediaImportController, createBrowserClipFromAsset, downloadEditorProject, downloadOtioTimeline } from "./browserBridge";
 import { EditorCanvas, EditorInspector, MediaBin, ProposalPanel, TranscriptPanel } from "./EditorPanels";
 import { EditorTimeline } from "./EditorTimeline";
@@ -28,7 +29,7 @@ export interface AdvancedVideoEditorProps {
 
 function waveformAssets(project: EditorProject): EditorMediaAsset[] {
   const ids = new Set(project.tracks.flatMap((track) => track.clips.flatMap((clip) => {
-    const carriesAudio = track.kind === "narration" || track.kind === "music" || track.kind === "sfx" || clip.metadata.includeSourceAudio === true;
+    const carriesAudio = clipCarriesProgrammeAudio(track, clip);
     return carriesAudio && clip.enabled && clip.assetId ? [clip.assetId] : [];
   })));
   return project.assets.filter((asset) => ids.has(asset.id) && asset.status === "ready" && (asset.kind === "audio" || asset.kind === "video") && Boolean(asset.hash));

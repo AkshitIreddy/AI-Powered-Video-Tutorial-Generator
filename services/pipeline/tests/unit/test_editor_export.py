@@ -10,8 +10,10 @@ from types import SimpleNamespace
 
 import pytest
 
+import alystria.editor_export as editor_export_module
 from alystria.editor_export import (
     EditorExportError,
+    SubprocessEditorMediaProbe,
     build_editor_export_plan,
     render_editor_timeline,
 )
@@ -45,6 +47,37 @@ class FakeRunner:
         assert timeout_seconds == 3600
         self.argv = tuple(argv)
         Path(argv[-1]).write_bytes(b"rendered timeline")
+
+
+class FakeMediaProbe:
+    def __init__(self, has_audio: bool = True) -> None:
+        self.has_audio = has_audio
+        self.calls: list[tuple[Path, Path, float]] = []
+
+    def has_audio_stream(self, source_path: Path, *, ffprobe_path: Path, timeout_seconds: float) -> bool:
+        self.calls.append((source_path, ffprobe_path, timeout_seconds))
+        return self.has_audio
+
+
+def test_ffprobe_audio_inspection_is_hidden_and_shell_free_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_run(argv: Sequence[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        observed.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0, b'{"streams":[{"index":1}]}', b"")
+
+    monkeypatch.setattr(editor_export_module.os, "name", "nt")
+    monkeypatch.setattr(editor_export_module.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(editor_export_module.subprocess, "run", fake_run)
+
+    assert SubprocessEditorMediaProbe().has_audio_stream(
+        Path("verified-source.webm"),
+        ffprobe_path=Path("verified-ffprobe.exe"),
+        timeout_seconds=10,
+    )
+    assert observed["creationflags"] == 0x08000000
+    assert observed["shell"] is False
+    assert observed["stdin"] is subprocess.DEVNULL
 
 
 def manifest(digest: str) -> dict[str, object]:
@@ -107,7 +140,8 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
     output = tmp_path / "exports" / "editor" / "lesson.webm"
     output.parent.mkdir(parents=True)
     staging = tmp_path / "staging" / "manual"
-    plan = build_editor_export_plan(store, manifest(digest), ffmpeg_path=Path("ffmpeg.exe"), output_path=output, staging_dir=staging)
+    probe = FakeMediaProbe()
+    plan = build_editor_export_plan(store, manifest(digest), ffmpeg_path=Path("ffmpeg.exe"), media_probe=probe, output_path=output, staging_dir=staging)
     command = " ".join(plan.argv)
     assert "trim=start=0.5:duration=2" in command
     assert "setpts=(PTS-STARTPTS)/2.000000000" in command
@@ -123,6 +157,7 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
     assert "-c:v libvpx-vp9" in command
     assert plan.media_type == "video/webm"
     assert plan.warnings
+    assert probe.calls == [(store.cas.source, Path("ffprobe.exe"), 30)]
     assert (staging / "text-0000.txt").read_text(encoding="utf-8") == "A title; with filter syntax"
 
 
@@ -130,7 +165,7 @@ def test_executes_without_shell_and_content_addresses_delivery(tmp_path: Path) -
     digest = "b" * 64
     store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest))
     runner = FakeRunner()
-    receipt = render_editor_timeline(store, manifest(digest), ffmpeg_path=Path("ffmpeg.exe"), runner=runner)
+    receipt = render_editor_timeline(store, manifest(digest), ffmpeg_path=Path("ffmpeg.exe"), media_probe=FakeMediaProbe(), runner=runner)
     assert runner.argv[:4] == ("ffmpeg.exe", "-hide_banner", "-nostdin", "-y")
     assert receipt["projectId"] == "project-editor"
     assert receipt["mediaType"] == "video/webm"
@@ -148,12 +183,34 @@ def test_rejects_untrusted_or_unsupported_timeline_features(tmp_path: Path) -> N
     value = manifest(digest)
     value["assets"][0]["exportEligible"] = False  # type: ignore[index]
     with pytest.raises(EditorExportError, match="not eligible"):
-        build_editor_export_plan(store, value, ffmpeg_path=Path("ffmpeg.exe"), output_path=tmp_path / "out.webm", staging_dir=tmp_path / "stage-1")
+        build_editor_export_plan(store, value, ffmpeg_path=Path("ffmpeg.exe"), media_probe=FakeMediaProbe(), output_path=tmp_path / "out.webm", staging_dir=tmp_path / "stage-1")
 
     value = manifest(digest)
     value["clips"][0]["keyframes"] = [{"property": "opacity", "timelineTicks": 999_999, "value": 0.5, "interpolation": "linear"}]  # type: ignore[index]
     with pytest.raises(EditorExportError, match="outside its timeline"):
-        build_editor_export_plan(store, value, ffmpeg_path=Path("ffmpeg.exe"), output_path=tmp_path / "out.webm", staging_dir=tmp_path / "stage-2")
+        build_editor_export_plan(store, value, ffmpeg_path=Path("ffmpeg.exe"), media_probe=FakeMediaProbe(), output_path=tmp_path / "out.webm", staging_dir=tmp_path / "stage-2")
+
+
+def test_requested_source_audio_is_omitted_when_verified_video_has_no_audio_stream(tmp_path: Path) -> None:
+    digest = "d" * 64
+    store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest))
+    output = tmp_path / "exports" / "editor" / "silent.webm"
+    output.parent.mkdir(parents=True)
+    probe = FakeMediaProbe(has_audio=False)
+    plan = build_editor_export_plan(
+        store,
+        manifest(digest),
+        ffmpeg_path=Path("ffmpeg.exe"),
+        ffprobe_path=Path("verified-ffprobe.exe"),
+        media_probe=probe,
+        output_path=output,
+        staging_dir=tmp_path / "staging" / "silent",
+    )
+    command = " ".join(plan.argv)
+    assert "[0:a]" not in command
+    assert "[1:a]" in command
+    assert "visual requested source audio, but its verified video asset has no audio stream." in plan.warnings
+    assert probe.calls == [(store.cas.source, Path("verified-ffprobe.exe"), 30)]
 
 
 def _ffmpeg() -> Path | None:
@@ -279,3 +336,32 @@ def test_actual_ffmpeg_renders_motion_text_captions_and_source_audio(tmp_path: P
         assert [sidecar["format"] for sidecar in sidecars] == ["vtt", "srt"]
         assert "00:00:00.000 --> 00:00:01.000" in Path(sidecars[0]["path"]).read_text(encoding="utf-8")
         assert "CAPTION" in Path(sidecars[1]["path"]).read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(_ffmpeg() is None, reason="FFmpeg is required for silent native editor media proof")
+def test_actual_ffmpeg_renders_silent_video_when_source_audio_is_requested(tmp_path: Path) -> None:
+    ffmpeg = _ffmpeg()
+    assert ffmpeg is not None
+    source_path = tmp_path / "silent-programme.webm"
+    subprocess.run(
+        [
+            str(ffmpeg), "-hide_banner", "-nostdin", "-y",
+            "-f", "lavfi", "-i", "color=c=teal:s=20x20:r=10:d=1",
+            "-an", "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", str(source_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    with ProjectStore.create(tmp_path / "silent-proof-project", name="Silent native media proof") as store:
+        source = store.add_artifact_bytes(source_path.read_bytes(), media_type="video/webm", original_name=source_path.name)
+        receipt = render_editor_timeline(store, _actual_manifest(source.hash, store.manifest.project_id), ffmpeg_path=ffmpeg)
+        output_path = Path(str(receipt["outputPath"]))
+        assert output_path.is_file() and output_path.stat().st_size > 0
+        assert "motion requested source audio, but its verified video asset has no audio stream." in receipt["warnings"]
+        decoded_audio = subprocess.run(
+            [str(ffmpeg), "-v", "error", "-i", str(output_path), "-map", "0:a:0", "-f", "s16le", "-acodec", "pcm_s16le", "-"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        assert decoded_audio
+        assert not any(decoded_audio)

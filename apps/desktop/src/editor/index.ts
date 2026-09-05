@@ -2,6 +2,7 @@ export { AdvancedVideoEditor } from "./EditorShell";
 export type { AdvancedVideoEditorProps } from "./EditorShell";
 export { EditorCanvas, EditorInspector, MediaBin, ProposalPanel, TranscriptPanel } from "./EditorPanels";
 export { EditorTimeline } from "./EditorTimeline";
+export { clipCarriesProgrammeAudio, isClipAudible, isTrackAudible, trackCarriesProgrammeAudio } from "./audioPolicy";
 export { createEditorState, createEmptyEditorProject, createTrack, defaultClipValues, findClip, normalizeEditorProject, selectedClips, trackKinds } from "./model";
 export { editorReducer } from "./reducer";
 export {

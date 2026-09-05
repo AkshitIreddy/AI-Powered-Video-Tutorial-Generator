@@ -42,8 +42,50 @@ class EditorExportError(ValueError):
     """The timeline cannot be rendered without changing its meaning."""
 
 
+def _hidden_creation_flags() -> int:
+    return int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0
+
+
 class EditorExportRunner(Protocol):
     def run(self, argv: Sequence[str], *, timeout_seconds: float) -> None: ...
+
+
+class EditorMediaProbe(Protocol):
+    def has_audio_stream(self, source_path: Path, *, ffprobe_path: Path, timeout_seconds: float) -> bool: ...
+
+
+class SubprocessEditorMediaProbe:
+    def has_audio_stream(self, source_path: Path, *, ffprobe_path: Path, timeout_seconds: float) -> bool:
+        try:
+            completed = subprocess.run(
+                (
+                    str(ffprobe_path),
+                    "-v", "error",
+                    "-select_streams", "a:0",
+                    "-show_entries", "stream=index",
+                    "-of", "json",
+                    str(source_path),
+                ),
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                check=False,
+                shell=False,
+                timeout=timeout_seconds,
+                creationflags=_hidden_creation_flags(),
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise EditorExportError(f"Editor source-audio inspection could not run: {error}") from error
+        if completed.returncode != 0:
+            detail = completed.stderr.decode("utf-8", errors="replace")[-1600:].strip()
+            raise EditorExportError(f"Editor source-audio inspection failed: {detail or f'exit {completed.returncode}'}")
+        try:
+            payload = json.loads(completed.stdout.decode("utf-8", errors="strict"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise EditorExportError("Editor source-audio inspection returned invalid JSON") from error
+        streams = payload.get("streams") if isinstance(payload, Mapping) else None
+        if not isinstance(streams, list):
+            raise EditorExportError("Editor source-audio inspection returned no stream list")
+        return bool(streams)
 
 
 class SubprocessEditorExportRunner:
@@ -56,6 +98,7 @@ class SubprocessEditorExportRunner:
                 check=False,
                 shell=False,
                 timeout=timeout_seconds,
+                creationflags=_hidden_creation_flags(),
             )
         except (OSError, subprocess.TimeoutExpired) as error:
             raise EditorExportError(f"FFmpeg editor export could not run: {error}") from error
@@ -278,11 +321,18 @@ def build_editor_export_plan(
     manifest: Mapping[str, Any],
     *,
     ffmpeg_path: Path,
+    ffprobe_path: Path | None = None,
+    media_probe: EditorMediaProbe | None = None,
+    probe_timeout_seconds: float = 30,
     output_path: Path,
     staging_dir: Path,
 ) -> EditorExportPlan:
     """Validate a render manifest and compile one deterministic FFmpeg argv."""
 
+    if probe_timeout_seconds <= 0:
+        raise EditorExportError("Editor media probe timeout must be positive")
+    selected_ffprobe = ffprobe_path or ffmpeg_path.with_name("ffprobe.exe" if ffmpeg_path.suffix.lower() == ".exe" else "ffprobe")
+    selected_probe = media_probe or SubprocessEditorMediaProbe()
     canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     manifest_hash = hashlib.sha256(canonical).hexdigest()
     if manifest.get("schema") != EDITOR_RENDER_SCHEMA:
@@ -337,7 +387,7 @@ def build_editor_export_plan(
 
     staging_dir.mkdir(parents=True, exist_ok=True)
     input_args: list[str] = []
-    media_inputs: dict[str, tuple[int, str]] = {}
+    media_inputs: dict[str, tuple[int, str, Path]] = {}
     next_input = 0
     for clip in clips:
         clip_id = _string(clip.get("id"), "clip.id", maximum=180)
@@ -354,7 +404,7 @@ def build_editor_export_plan(
             if (isinstance(expected_kind, str) and binding[1] != expected_kind) or (isinstance(expected_kind, set) and binding[1] not in expected_kind):
                 raise EditorExportError(f"Clip {clip_id} media kind does not match its track")
             input_args.extend(("-i", str(binding[0])))
-            media_inputs[clip_id] = (next_input, binding[1])
+            media_inputs[clip_id] = (next_input, binding[1], binding[0])
             next_input += 1
         elif raw_asset_id is not None:
             raise EditorExportError(f"Text clip {clip_id} must not carry a media asset")
@@ -367,6 +417,7 @@ def build_editor_export_plan(
     text_number = 0
     audio_number = 0
     plan_warnings: list[str] = []
+    source_audio_cache: dict[Path, bool] = {}
 
     for clip in clips:
         clip_id = str(clip["id"])
@@ -399,13 +450,24 @@ def build_editor_export_plan(
         keyframes = _parse_keyframes(clip.get("keyframes"), clip_id=clip_id, start_ticks=start_ticks, end_ticks=start_ticks + timeline_ticks)
 
         if kind in VISUAL_KINDS:
-            input_index, media_kind = media_inputs[clip_id]
-            include_source_audio = clip.get("includeSourceAudio", False)
-            if not isinstance(include_source_audio, bool):
+            input_index, media_kind, media_path = media_inputs[clip_id]
+            requested_source_audio = clip.get("includeSourceAudio", False)
+            if not isinstance(requested_source_audio, bool):
                 raise EditorExportError(f"Clip {clip_id} includeSourceAudio must be a boolean")
-            if include_source_audio and media_kind != "video":
+            if requested_source_audio and media_kind != "video":
                 raise EditorExportError(f"Clip {clip_id} can preserve source audio only from video media")
-            unsupported = set(keyframes) - {"transform.x", "transform.y", "transform.scaleX", "transform.scaleY", "transform.rotation", "opacity", *( {"audio.volumeDb"} if include_source_audio else set() )}
+            include_source_audio = requested_source_audio
+            if requested_source_audio:
+                if media_path not in source_audio_cache:
+                    source_audio_cache[media_path] = selected_probe.has_audio_stream(
+                        media_path,
+                        ffprobe_path=selected_ffprobe,
+                        timeout_seconds=probe_timeout_seconds,
+                    )
+                include_source_audio = source_audio_cache[media_path]
+                if not include_source_audio:
+                    plan_warnings.append(f"{clip_id} requested source audio, but its verified video asset has no audio stream.")
+            unsupported = set(keyframes) - {"transform.x", "transform.y", "transform.scaleX", "transform.scaleY", "transform.rotation", "opacity", *( {"audio.volumeDb"} if requested_source_audio else set() )}
             if unsupported:
                 raise EditorExportError(f"Clip {clip_id} has keyframes that do not apply to its visual media: {', '.join(sorted(unsupported))}")
             prefix = "loop=loop=-1:size=1:start=0," if media_kind == "image" else ""
@@ -496,7 +558,7 @@ def build_editor_export_plan(
             unsupported = set(keyframes) - {"audio.volumeDb"}
             if unsupported:
                 raise EditorExportError(f"Clip {clip_id} has keyframes that do not apply to audio: {', '.join(sorted(unsupported))}")
-            input_index, _ = media_inputs[clip_id]
+            input_index, _, _ = media_inputs[clip_id]
             muted = audio.get("muted") is True
             gain = -90.0 if muted else _number(audio.get("volumeDb"), f"clip {clip_id} volumeDb", minimum=-90, maximum=12)
             fade_in_ticks = _integer(audio.get("fadeInTicks", 0), f"clip {clip_id} fadeInTicks")
@@ -540,6 +602,8 @@ def render_editor_timeline(
     manifest: Mapping[str, Any],
     *,
     ffmpeg_path: Path,
+    ffprobe_path: Path | None = None,
+    media_probe: EditorMediaProbe | None = None,
     output_path: Path | None = None,
     runner: EditorExportRunner | None = None,
     timeout_seconds: float = 3_600,
@@ -563,7 +627,16 @@ def render_editor_timeline(
     selected_output.parent.mkdir(parents=True, exist_ok=True)
     attempt = (store.root / "staging" / "editor-export" / uuid.uuid4().hex).resolve()
     attempt.mkdir(parents=True, exist_ok=False)
-    plan = build_editor_export_plan(store, manifest, ffmpeg_path=ffmpeg_path, output_path=selected_output, staging_dir=attempt)
+    plan = build_editor_export_plan(
+        store,
+        manifest,
+        ffmpeg_path=ffmpeg_path,
+        ffprobe_path=ffprobe_path,
+        media_probe=media_probe,
+        probe_timeout_seconds=min(timeout_seconds, 30),
+        output_path=selected_output,
+        staging_dir=attempt,
+    )
     sidecar_paths: tuple[Path, ...] = ()
     try:
         (runner or SubprocessEditorExportRunner()).run(plan.argv, timeout_seconds=timeout_seconds)

@@ -1,4 +1,5 @@
 import { assertValidEditorProject } from "./otio";
+import { clipCarriesProgrammeAudio, isTrackAudible } from "./audioPolicy";
 import type { ClipTransform, EditorProject, InspectorProperty, KeyframeInterpolation, TextStyle, TrackKind } from "./types";
 
 export const EDITOR_RENDER_MANIFEST_SCHEMA = "alystria.editor.render.v1" as const;
@@ -93,13 +94,15 @@ export function compileEditorRenderManifest(
     return [{ id: asset.id, artifactHash: asset.hash, mediaType: asset.mimeType ?? "application/octet-stream", kind: asset.kind, exportEligible: asset.metadata.exportEligible !== false }];
   });
 
-  const anyAudioSolo = project.tracks.some((track) => (track.kind === "narration" || track.kind === "music" || track.kind === "sfx") && track.solo);
   const clips = project.tracks.flatMap((track): EditorRenderClip[] => {
     if (track.hidden) return [];
     const audioTrack = track.kind === "narration" || track.kind === "music" || track.kind === "sfx";
-    if (audioTrack && (track.muted || (anyAudioSolo && !track.solo))) return [];
+    const trackAudible = isTrackAudible(project, track);
+    if (audioTrack && !trackAudible) return [];
     return track.clips.flatMap((clip): EditorRenderClip[] => {
       if (!clip.enabled) return [];
+      const includeSourceAudio = clip.metadata.includeSourceAudio === true && trackAudible && !clip.audio.muted;
+      const effectiveAudioMuted = clip.audio.muted || (clipCarriesProgrammeAudio(track, clip) && !trackAudible);
       if ((track.kind === "slides" || track.kind === "presenter" || audioTrack) && !clip.assetId) blockers.push({ code: "MEDIA_REQUIRED", message: `${clip.name} needs a durable media asset before render.`, clipId: clip.id });
       const unsupportedKeyframe = clip.keyframes.find((keyframe) =>
         keyframe.property === "audio.pan" ||
@@ -126,11 +129,11 @@ export function compileEditorRenderManifest(
         audio: {
           volumeDb: clip.audio.volumeDb,
           pan: clip.audio.pan,
-          muted: clip.audio.muted,
+          muted: effectiveAudioMuted,
           fadeInTicks: framesToTicks(clip.audio.fadeInFrames, project),
           fadeOutTicks: framesToTicks(clip.audio.fadeOutFrames, project),
         },
-        ...(clip.metadata.includeSourceAudio === true ? { includeSourceAudio: true } : {}),
+        ...(includeSourceAudio ? { includeSourceAudio: true } : {}),
         ...(clip.text !== undefined ? { text: clip.text } : {}),
         ...((track.kind === "titles" || track.kind === "captions") ? { textStyle: structuredClone(clip.textStyle ?? {
           fontFamily: "sans-serif",
@@ -141,7 +144,7 @@ export function compileEditorRenderManifest(
           align: "center",
           position: track.kind === "titles" ? "center" : "bottom",
         }) } : {}),
-        keyframes: clip.keyframes.map((keyframe) => ({
+        keyframes: clip.keyframes.filter((keyframe) => !effectiveAudioMuted || keyframe.property !== "audio.volumeDb").map((keyframe) => ({
           property: keyframe.property,
           timelineTicks: framesToTicks(keyframe.frame, project),
           value: keyframe.value,

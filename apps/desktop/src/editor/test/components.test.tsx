@@ -55,6 +55,39 @@ describe("AdvancedVideoEditor", () => {
     expect(screen.getAllByText("Start with the question.").length).toBeGreaterThan(0);
   });
 
+  it("previews video source audio with the same clip, mute, and solo policy as export", async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    const project = makeSampleProject();
+    const slideAsset = project.assets.find((asset) => asset.id === "asset-slide-a")!;
+    slideAsset.kind = "video";
+    slideAsset.previewUrl = "asset://preview/slide.webm";
+    const presenterAsset = project.assets.find((asset) => asset.id === "asset-presenter")!;
+    presenterAsset.previewUrl = "asset://preview/presenter.webm";
+    const slideClip = project.tracks.find((track) => track.kind === "slides")!.clips[0]!;
+    slideClip.metadata.includeSourceAudio = true;
+    const presenterClip = project.tracks.find((track) => track.kind === "presenter")!.clips[0]!;
+    presenterClip.metadata.includeSourceAudio = true;
+
+    render(<AdvancedVideoEditor project={project} />);
+    const slideVideo = screen.getByLabelText("Preview of Slide A") as HTMLVideoElement;
+    const presenterVideo = screen.getByLabelText("Preview of Presenter recording") as HTMLVideoElement;
+    expect(slideVideo.muted).toBe(false);
+    expect(presenterVideo.muted).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Solo Narration" }));
+    expect(slideVideo.muted).toBe(true);
+    expect(presenterVideo.muted).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Unsolo Narration" }));
+
+    await user.click(screen.getByRole("button", { name: /Opening slide, slides/ }));
+    expect(screen.getByRole("group", { name: "Source audio" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Volume dB" })).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Mute clip" }));
+    expect(slideVideo.muted).toBe(true);
+    pause.mockRestore();
+  });
+
   it("shows only resolved waveform media and crops it to the clip source range", async () => {
     const project = makeSampleProject();
     project.assets = project.assets.map((asset, index) => ({ ...asset, hash: String(index + 1).repeat(64) }));

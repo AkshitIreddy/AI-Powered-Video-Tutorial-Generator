@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch } from "react";
+import { clipCarriesProgrammeAudio, isClipAudible } from "./audioPolicy";
 import { selectedClips } from "./model";
 import { describeEditProposal } from "./proposals";
 import { previewStyleAtFrame, volumeAtFrame } from "./preview";
@@ -112,6 +113,8 @@ function MediaPreview({ state, clip, className, muted = true }: { state: EditorS
 }
 
 export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch: Dispatch<EditorAction> }) {
+  const slideTrack = state.project.tracks.find((track) => track.kind === "slides");
+  const presenterTrack = state.project.tracks.find((track) => track.kind === "presenter");
   const slide = activeClip(state, "slides");
   const presenter = activeClip(state, "presenter");
   const title = activeClip(state, "titles");
@@ -119,8 +122,7 @@ export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch
   const audioClips = (["narration", "music", "sfx"] as const).flatMap((kind) => {
     const track = state.project.tracks.find((candidate) => candidate.kind === kind);
     const clip = activeClip(state, kind);
-    const anySolo = state.project.tracks.some((candidate) => (candidate.kind === "narration" || candidate.kind === "music" || candidate.kind === "sfx") && candidate.solo);
-    return clip && track && !track.muted && (!anySolo || track.solo) ? [clip] : [];
+    return clip && track && isClipAudible(state.project, track, clip) ? [clip] : [];
   });
   const slideAsset = slide?.assetId ? state.project.assets.find((candidate) => candidate.id === slide.assetId) : null;
   const hasVisibleContent = Boolean(slide || presenter || title || caption);
@@ -133,9 +135,9 @@ export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch
         </div>
       </div>
       <div className="aly-editor-canvas-stage" style={{ aspectRatio: `${state.project.canvas.width} / ${state.project.canvas.height}`, backgroundColor: state.project.canvas.backgroundColor }} data-media-status={slideAsset?.status ?? "none"}>
-        {slide ? <MediaPreview state={state} clip={slide} className="aly-editor-canvas-stage__media" muted={slide.metadata.includeSourceAudio !== true} /> : null}
+        {slide ? <MediaPreview state={state} clip={slide} className="aly-editor-canvas-stage__media" muted={!slideTrack || !isClipAudible(state.project, slideTrack, slide)} /> : null}
         {slide && (!slideAsset?.previewUrl || slideAsset.status !== "ready") ? <div className="aly-editor-canvas-stage__slide" data-testid="editor-preview-slide"><span>Scene preview</span><strong>{slide.name}</strong><small>{typeof slide.metadata.objective === "string" ? slide.metadata.objective : "Rendered scene media is not attached yet."}</small></div> : null}
-        {presenter ? <MediaPreview state={state} clip={presenter} className="aly-editor-canvas-stage__media aly-editor-canvas-stage__media--presenter" /> : null}
+        {presenter ? <MediaPreview state={state} clip={presenter} className="aly-editor-canvas-stage__media aly-editor-canvas-stage__media--presenter" muted={!presenterTrack || !isClipAudible(state.project, presenterTrack, presenter)} /> : null}
         {title?.text ? <div className="aly-editor-canvas-stage__text aly-editor-canvas-stage__text--titles" style={previewStyleAtFrame(title, state.transport.playheadFrame)}>{title.text}</div> : null}
         {caption?.text ? <div className="aly-editor-canvas-stage__text aly-editor-canvas-stage__text--captions" style={previewStyleAtFrame(caption, state.transport.playheadFrame)}>{caption.text}</div> : null}
         {audioClips.map((clip) => <MediaPreview key={clip.id} state={state} clip={clip} className="aly-editor-canvas-stage__audio" muted={false} />)}
@@ -170,7 +172,8 @@ export function EditorInspector({ state, dispatch }: { state: EditorState; dispa
   if (!clip) return <section className="aly-editor-inspector" aria-labelledby="aly-editor-inspector-title"><header className="aly-editor-panel__header"><h2 id="aly-editor-inspector-title">Inspector</h2></header><div className="aly-editor-inspector__empty">Select a clip to inspect transform, audio, text, and keyframes.</div></section>;
   const visualClip = clip.kind === "slides" || clip.kind === "presenter";
   const textClip = clip.kind === "titles" || clip.kind === "captions";
-  const audioClip = clip.kind === "narration" || clip.kind === "music" || clip.kind === "sfx" || clip.metadata.includeSourceAudio === true;
+  const clipTrack = state.project.tracks.find((track) => track.id === clip.trackId);
+  const audioClip = clipTrack ? clipCarriesProgrammeAudio(clipTrack, clip) : clip.metadata.includeSourceAudio === true;
   const keyframeProperties: readonly PreviewInspectorProperty[] = visualClip
     ? ["transform.x", "transform.y", "transform.scaleX", "transform.scaleY", "transform.rotation", "opacity", ...(audioClip ? ["audio.volumeDb" as const] : [])]
     : textClip ? ["transform.x", "transform.y", "opacity"] : ["audio.volumeDb"];
@@ -200,7 +203,7 @@ export function EditorInspector({ state, dispatch }: { state: EditorState; dispa
         <NumberControl label="X" value={clip.transform.x} onChange={(value) => updateTransform("x", value)} /><NumberControl label="Y" value={clip.transform.y} onChange={(value) => updateTransform("y", value)} />
         {visualClip ? <><NumberControl label="Scale X" value={clip.transform.scaleX} min={0.01} step={0.05} onChange={(value) => updateTransform("scaleX", value)} /><NumberControl label="Scale Y" value={clip.transform.scaleY} min={0.01} step={0.05} onChange={(value) => updateTransform("scaleY", value)} /><NumberControl label="Rotation" value={clip.transform.rotation} step={0.5} onChange={(value) => updateTransform("rotation", value)} /></> : null}<NumberControl label="Opacity" value={clip.opacity} min={0} max={1} step={0.05} onChange={(opacity) => dispatch({ type: "UPDATE_SELECTED_CLIP", patch: { opacity }, label: "Change opacity" })} />
       </fieldset> : null}
-      {audioClip ? <fieldset className="aly-editor-inspector__section"><legend>Audio</legend>
+      {audioClip ? <fieldset className="aly-editor-inspector__section"><legend>{visualClip ? "Source audio" : "Audio"}</legend>
         <NumberControl label="Volume dB" value={clip.audio.volumeDb} min={-60} max={0} step={0.5} onChange={(value) => updateAudio("volumeDb", value)} />
         <label className="aly-editor-inspector__check"><input type="checkbox" checked={clip.audio.muted} onChange={(event) => updateAudio("muted", event.target.checked)} />Mute clip</label>
       </fieldset> : null}

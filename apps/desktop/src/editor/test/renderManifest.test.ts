@@ -36,4 +36,44 @@ describe("editor render manifest", () => {
     project.tracks.find((track) => track.kind === "narration")!.clips[0]!.keyframes = [{ id: "move-audio", property: "transform.x", frame: 0, value: 50, interpolation: "linear" }];
     expect(compileEditorRenderManifest(project).blockers.map((blocker) => blocker.code)).toContain("KEYFRAME_PROPERTY_UNSUPPORTED");
   });
+
+  it("keeps video visuals while applying track mute and solo to their source audio", () => {
+    const project = makeSampleProject();
+    project.assets = project.assets.map((asset, index) => ({
+      ...asset,
+      status: "ready",
+      hash: String(index + 1).repeat(64),
+      metadata: { ...asset.metadata, exportEligible: true, nativeArtifactId: `artifact-${index}` },
+    }));
+    const slideAsset = project.assets.find((asset) => asset.id === "asset-slide-a")!;
+    slideAsset.kind = "video";
+    slideAsset.mimeType = "video/webm";
+    const slideTrack = project.tracks.find((track) => track.kind === "slides")!;
+    slideTrack.clips[0]!.metadata.includeSourceAudio = true;
+    const narrationTrack = project.tracks.find((track) => track.kind === "narration")!;
+    narrationTrack.clips[0]!.keyframes = [{ id: "narration-gain", property: "audio.volumeDb", frame: 0, value: -3, interpolation: "linear" }];
+
+    narrationTrack.solo = true;
+    let manifest = compileEditorRenderManifest(project).manifest;
+    expect(manifest.clips.find((clip) => clip.id === "slide-a")?.audio.muted).toBe(true);
+    expect(manifest.clips.find((clip) => clip.id === "slide-a")?.includeSourceAudio).toBeUndefined();
+
+    narrationTrack.solo = false;
+    slideTrack.solo = true;
+    manifest = compileEditorRenderManifest(project).manifest;
+    expect(manifest.clips.find((clip) => clip.id === "slide-a")?.audio.muted).toBe(false);
+    expect(manifest.clips.find((clip) => clip.id === "slide-a")?.includeSourceAudio).toBe(true);
+    expect(manifest.clips.some((clip) => clip.id === "narration-a")).toBe(false);
+
+    slideTrack.solo = false;
+    manifest = compileEditorRenderManifest(project).manifest;
+    expect(manifest.clips.find((clip) => clip.id === "narration-a")?.keyframes).toEqual([
+      { property: "audio.volumeDb", timelineTicks: 0, value: -3, interpolation: "linear" },
+    ]);
+
+    slideTrack.muted = true;
+    manifest = compileEditorRenderManifest(project).manifest;
+    expect(manifest.clips.find((clip) => clip.id === "slide-a")?.audio.muted).toBe(true);
+    expect(manifest.clips.find((clip) => clip.id === "slide-a")?.includeSourceAudio).toBeUndefined();
+  });
 });

@@ -613,12 +613,16 @@ class NativeControlCoordinator:
         ffmpeg_value = os.environ.get("ALYSTRIA_FFMPEG_PATH")
         if not ffmpeg_value:
             raise RuntimeError("Pinned FFmpeg runtime is missing for editor export")
+        ffprobe_value = os.environ.get("ALYSTRIA_FFPROBE_PATH")
+        if not ffprobe_value:
+            raise RuntimeError("Pinned FFprobe runtime is missing for editor export")
         context.set_progress(0.05, message="Validating content-addressed editor timeline")
         self._require_exportable_editor_assets(head.snapshot, params["manifest"])
         result = render_editor_timeline(
             self.store,
             params["manifest"],
             ffmpeg_path=Path(ffmpeg_value),
+            ffprobe_path=Path(ffprobe_value),
         )
         snapshot = copy.deepcopy(head.snapshot)
         previous = snapshot.get("editorExports")

@@ -22,15 +22,18 @@ def test_editor_timeline_export_dispatch_persists_artifact_and_revision(
         expected_head = head.revision_id
 
     monkeypatch.setenv("ALYSTRIA_FFMPEG_PATH", str(tmp_path / "ffmpeg.exe"))
+    monkeypatch.setenv("ALYSTRIA_FFPROBE_PATH", str(tmp_path / "ffprobe.exe"))
 
     def fake_render(
         store: ProjectStore,
         manifest: Any,
         *,
         ffmpeg_path: Path,
+        ffprobe_path: Path,
     ) -> dict[str, Any]:
         assert manifest["schema"] == "alystria.editor.render.v1"
         assert ffmpeg_path == tmp_path / "ffmpeg.exe"
+        assert ffprobe_path == tmp_path / "ffprobe.exe"
         output = store.root / "exports" / "editor" / "edited.webm"
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"edited timeline")
@@ -99,6 +102,7 @@ def test_editor_timeline_export_rejects_caller_declared_unlinked_asset(
         expected_head = head.revision_id
 
     monkeypatch.setenv("ALYSTRIA_FFMPEG_PATH", str(tmp_path / "ffmpeg.exe"))
+    monkeypatch.setenv("ALYSTRIA_FFPROBE_PATH", str(tmp_path / "ffprobe.exe"))
     receipt = PipelineService().dispatch(
         "editor.timeline.export",
         {
