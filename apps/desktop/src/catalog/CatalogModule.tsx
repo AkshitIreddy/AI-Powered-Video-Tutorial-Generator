@@ -19,8 +19,8 @@ export interface CatalogModuleProps extends ModelLibraryProps {
 
 const views = [
   { id: "library", label: "Model library", icon: LibraryBig },
-  { id: "routing", label: "Capability routes", icon: Route },
-  { id: "resources", label: "Resource policy", icon: Cpu },
+  { id: "routing", label: "Compare routes", icon: Route },
+  { id: "resources", label: "Estimate resources", icon: Cpu },
 ] as const;
 
 export function CatalogModule({

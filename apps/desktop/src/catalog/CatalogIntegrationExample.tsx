@@ -12,6 +12,10 @@ import "./catalog.css";
 export interface CatalogIntegrationExampleProps {
   hardware: HardwareSnapshot;
   items?: readonly CatalogItem[];
+  onModelInspected?: (item: CatalogItem) => void;
+  onUseForWritingProfile?: (item: CatalogItem) => void;
+  writingProfileProviderIds?: readonly string[];
+  /** @deprecated The library action inspects a model; use onModelInspected. */
   onModelSelected?: (item: CatalogItem) => void;
 }
 
@@ -22,6 +26,9 @@ export interface CatalogIntegrationExampleProps {
 export function CatalogIntegrationExample({
   hardware,
   items = defaultCatalogItems,
+  onModelInspected,
+  onUseForWritingProfile,
+  writingProfileProviderIds,
   onModelSelected,
 }: CatalogIntegrationExampleProps) {
   const [routingProfile, setRoutingProfile] = useState(() => createDefaultRoutingProfile());
@@ -41,7 +48,12 @@ export function CatalogIntegrationExample({
       resourcePolicy={resourcePolicy}
       onRoutingProfileChange={setRoutingProfile}
       onResourcePolicyChange={setResourcePolicy}
-      {...(onModelSelected === undefined ? {} : { onSelect: onModelSelected })}
+      {...(onUseForWritingProfile === undefined
+        ? {}
+        : { onUseForWritingProfile, writingProfileProviderIds })}
+      {...(onModelInspected === undefined && onModelSelected === undefined
+        ? {}
+        : { onInspect: onModelInspected ?? onModelSelected })}
     />
   );
 }

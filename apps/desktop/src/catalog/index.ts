@@ -12,3 +12,4 @@ export * from "./resourcePolicy";
 export * from "./ResourcePolicySettings";
 export * from "./routing";
 export * from "./types";
+export * from "./writingProfile";

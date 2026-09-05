@@ -8,7 +8,6 @@ import {
   Search,
   ShieldAlert,
   SlidersHorizontal,
-  Sparkles,
 } from "lucide-react";
 import { ProviderMark } from "./ProviderMark";
 import { filterCatalogItems, parseCatalogQuery, toggleFilterValue } from "./query";
@@ -24,12 +23,15 @@ import {
   type CompatibilityLevel,
 } from "./types";
 import { selectionFromCatalogItem } from "./routing";
+import { isCloudWritingProfileCandidate } from "./writingProfile";
 
 export interface ModelLibraryProps {
   items: readonly CatalogItem[];
   compatibilityContext: CompatibilityContext;
   onInspect?: (item: CatalogItem) => void;
   onSelect?: (item: CatalogItem) => void;
+  onUseForWritingProfile?: (item: CatalogItem) => void;
+  writingProfileProviderIds?: readonly string[];
   onAddToRoute?: (selection: CapabilityRouteSelection) => void;
   initialQuery?: string;
 }
@@ -58,6 +60,8 @@ export function ModelLibrary({
   compatibilityContext,
   onInspect,
   onSelect,
+  onUseForWritingProfile,
+  writingProfileProviderIds,
   onAddToRoute,
   initialQuery = "",
 }: ModelLibraryProps) {
@@ -77,20 +81,7 @@ export function ModelLibrary({
   };
 
   return (
-    <section className="aly-catalog-library" aria-labelledby={`${searchId}-title`}>
-      <header className="aly-catalog-hero">
-        <div>
-          <p className="aly-catalog-eyebrow"><Sparkles size={14} aria-hidden="true" /> Federated model library</p>
-          <h2 id={`${searchId}-title`}>Find the right engine for every creative stage</h2>
-          <p>Search curated recipes, public catalogs, connected providers, and verified local installs from one compatibility-aware index.</p>
-        </div>
-        <dl className="aly-catalog-statline" aria-label="Catalog summary">
-          <div><dt>Indexed</dt><dd>{items.length}</dd></div>
-          <div><dt>Matching</dt><dd>{results.length}</dd></div>
-          <div><dt>Local</dt><dd>{items.filter((item) => item.execution.boundaries.includes("local")).length}</dd></div>
-        </dl>
-      </header>
-
+    <section className="aly-catalog-library" aria-label="Model library">
       <div className="aly-catalog-toolbar">
         <div className="aly-catalog-searchbox">
           <Search size={18} aria-hidden="true" />
@@ -177,8 +168,8 @@ export function ModelLibrary({
       )}
 
       <div className="aly-catalog-results-heading">
-        <p aria-live="polite"><strong>{results.length}</strong> {results.length === 1 ? "model" : "models"}</p>
-        <span>Compatibility uses the current project, provider, and hardware policy.</span>
+        <p aria-live="polite"><strong>{results.length}</strong> {results.length === 1 ? "model" : "models"} <span>of {items.length} indexed</span></p>
+        <span><strong>{items.filter((item) => item.execution.boundaries.includes("local")).length}</strong> local · Compatibility uses the current project, provider, and hardware policy.</span>
       </div>
 
       {results.length === 0 ? (
@@ -189,7 +180,10 @@ export function ModelLibrary({
         </div>
       ) : (
         <ul className="aly-catalog-card-grid">
-          {results.map(({ item, compatibility }) => (
+          {results.map(({ item, compatibility }) => {
+            const canStageWritingProfile = Boolean(onUseForWritingProfile)
+              && isCloudWritingProfileCandidate(item, writingProfileProviderIds ?? [item.identity.providerId]);
+            return (
             <li className="aly-catalog-card" key={`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`}>
               <div className="aly-catalog-card__topline">
                 <ProviderMark providerId={item.identity.providerId} />
@@ -213,12 +207,13 @@ export function ModelLibrary({
               </dl>
               {compatibility.reasons[0] && <p className="aly-catalog-card__reason">{compatibility.reasons[0].message}</p>}
               <div className="aly-catalog-card__actions">
-                <button type="button" className="aly-catalog-button aly-catalog-button--quiet" onClick={() => onInspect?.(item)}>Inspect details</button>
+                {onInspect && <button type="button" className="aly-catalog-button aly-catalog-button--quiet" onClick={() => onInspect(item)}>Inspect details</button>}
                 {onAddToRoute && <button type="button" className="aly-catalog-button aly-catalog-button--quiet" disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Add this ready item to a capability route" : "Resolve compatibility checks before routing this item"} onClick={() => onAddToRoute(selectionFromCatalogItem(item))}>Add to route</button>}
-                <button type="button" className="aly-catalog-button" disabled={!compatibility.canSelect} onClick={() => onSelect?.(item)}>Select model</button>
+                {canStageWritingProfile && <button type="button" className="aly-catalog-button" disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Stage this exact model in the active writing profile; use Save setup below to keep it" : "Connect the provider and resolve its compatibility checks before using it"} onClick={() => onUseForWritingProfile?.(item)}>Use in writing profile</button>}
+                {onSelect && <button type="button" className="aly-catalog-button" disabled={!compatibility.canSelect} onClick={() => onSelect(item)}>Select model</button>}
               </div>
             </li>
-          ))}
+          );})}
         </ul>
       )}
     </section>

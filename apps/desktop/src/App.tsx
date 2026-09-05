@@ -202,6 +202,7 @@ import {
   adaptHuggingFaceModel,
   adaptNvidiaCatalogEntry,
   defaultCatalogSources,
+  stageCatalogWritingModel,
   type CatalogCapability,
   type CatalogItem,
   type CloudCatalogEndpoint,
@@ -415,6 +416,7 @@ const profileProviderOptions = [
   ["pexels", "Pexels licensed media"],
   ["openai-compatible-local", "LM Studio / llama.cpp local endpoint"],
 ] as const;
+const profileProviderIds = profileProviderOptions.map(([id]) => id);
 
 const SOURCE_FILE_ACCEPT = ".pdf,.docx,.pptx,.epub,.md,.markdown,.txt,.csv,.json";
 const MAX_SOURCE_FILE_BYTES = 8 * 1024 * 1024;
@@ -2275,6 +2277,13 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
 
   const mutateSetup = (update: (current: LocalModelSetup) => LocalModelSetup) => setSetup((current) => current ? update(current) : current);
   const activeProfile = setup?.profiles.find((profile) => profile.id === setup.activeProfileId) ?? setup?.profiles[0] ?? null;
+  const catalogHardwareWithConnections = useMemo(() => ({
+    ...catalogHardware,
+    providerConnectionIds: [...new Set([
+      ...catalogHardware.providerConnectionIds,
+      ...Object.entries(secretRefs).filter(([, reference]) => reference.availability === "present").map(([providerId]) => providerId),
+    ])],
+  }), [catalogHardware, secretRefs]);
   const updateProfile = (profileId: string, update: (profile: ModelProfile) => ModelProfile) => mutateSetup((current) => ({ ...current, profiles: current.profiles.map((profile) => profile.id === profileId ? update(profile) : profile) }));
   const createProfile = () => {
     if (!setup || !activeProfile) return;
@@ -2323,6 +2332,24 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       onNotify("Setup was not saved", errorMessage(error), "warning");
     } finally { setSetupSaving(false); }
   };
+  const stageWritingProfileModel = (item: CatalogItem) => {
+    if (!activeProfile || !profileProviderIds.includes(item.identity.providerId as typeof profileProviderIds[number])) return;
+    updateProfile(activeProfile.id, (profile) => stageCatalogWritingModel(profile, item));
+    onNotify("Writing choice staged", `${item.identity.name} is staged in ${activeProfile.name}. Use Save setup & active profile below to keep this choice. Project cloud approval is still required.`, "info");
+    window.setTimeout(() => {
+      const input = document.querySelector<HTMLInputElement>('[aria-label="Writing & review model"]');
+      const scroller = input?.closest<HTMLElement>(".main-content");
+      if (input && scroller) {
+        const target = input.getBoundingClientRect();
+        const viewport = scroller.getBoundingClientRect();
+        const previousScrollBehavior = scroller.style.scrollBehavior;
+        scroller.style.scrollBehavior = "auto";
+        scroller.scrollTop += target.top - viewport.top - ((viewport.height - target.height) / 2);
+        window.requestAnimationFrame(() => { scroller.style.scrollBehavior = previousScrollBehavior; });
+      }
+      input?.focus({ preventScroll: true });
+    }, 0);
+  };
   const saveSecret = async () => {
     if (!editingProvider || !secret.trim()) return;
     setSaving(true);
@@ -2360,16 +2387,16 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
 
   return <div className="page">
     <PageTitle kicker="Your compute, your choice" title="Models & providers" description={`${PRODUCT_NAME} only routes work to providers you configure and approve. Local mode blocks project-content networking.`} />
-    <section className="routing-card"><div><span className="section-kicker">Default routing boundary</span><h3>{mode} creation</h3><p>{mode === "Local" ? "All generation remains on this device. No cloud fallback." : mode === "Cloud" ? "Use only connected cloud providers after cost and privacy approval." : "Keep private sources local; route approved creative tasks to cloud providers."}</p></div><div className="segmented-large" role="group" aria-label="Provider routing mode">{["Local", "Hybrid", "Cloud"].map((item) => <button key={item} className={mode === item ? "active" : ""} onClick={() => setMode(item)}><span>{item === "Local" ? <HardDrive /> : item === "Cloud" ? <Cloud /> : <Network />}</span>{item}</button>)}</div><div className="routing-facts"><span><ShieldCheck /> No silent fallback</span><span><CircleDollarSign /> Hard budgets enabled</span><span><Lock /> Keys in OS vault</span></div></section>
+    <section className="routing-card"><div><span className="section-kicker">Routing choices explained</span><h3>{mode} routing</h3><p>{mode === "Local" ? "All generation remains on this device. No cloud fallback." : mode === "Cloud" ? "Use only connected cloud providers after cost and privacy approval." : "Keep private sources local; route approved creative tasks to cloud providers. Choose models in a saved profile below."}</p></div><div className="segmented-large" role="group" aria-label="Compare routing modes">{["Local", "Hybrid", "Cloud"].map((item) => <button key={item} className={mode === item ? "active" : ""} onClick={() => setMode(item)}><span>{item === "Local" ? <HardDrive /> : item === "Cloud" ? <Cloud /> : <Network />}</span>{item}</button>)}</div><div className="routing-facts"><span><ShieldCheck /> No silent fallback</span><span><CircleDollarSign /> Hard budgets enabled</span><span><Lock /> Keys in OS vault</span></div></section>
     <section className="federated-catalog-panel" aria-labelledby="federated-catalog-title">
-      <div className="federated-catalog-heading"><div><span className="section-kicker">Find and compare models</span><h2 id="federated-catalog-title">One model library for every capability</h2><p>Browse local models and connected services. Compare supported tasks, download sizes, hardware needs, and usage terms before choosing a model.</p></div><span><Cpu size={16} /> {catalogHardware.gpuNames[0] ?? "Hardware probe pending"}</span></div>
-      <div className="catalog-source-strip" aria-label="Federated catalog sources">{defaultCatalogSources.map((source) => {
+      <div className="federated-catalog-heading federated-catalog-heading--compact"><div><span className="section-kicker">Find and compare models</span><h2 id="federated-catalog-title">Model library</h2><p>Catalog filters, route comparisons, and resource estimates are temporary. Choose a compatible writing model here, then save it in a model profile below.</p></div><span><Cpu size={16} /> {catalogHardware.gpuNames[0] ?? "Hardware probe pending"}</span></div>
+      <details className="catalog-source-disclosure"><summary><span><strong>{defaultCatalogSources.length} catalog sources</strong><small>Curated, connected, public, and local indexes</small></span><span>Browse and sync <ChevronDown size={15} aria-hidden="true" /></span></summary><div className="catalog-source-strip" aria-label="Federated catalog sources">{defaultCatalogSources.map((source) => {
         const syncable = (["hugging-face", "civitai", "nvidia-nim", "cohere"] as const).find((candidate) => candidate === source.id);
         const count = syncable ? catalogSyncedCounts[syncable] ?? 0 : 0;
         const hasMore = syncable ? Boolean(catalogCursors[syncable]) : false;
         return <article key={source.id} className={!source.catalogUrl ? "local-source" : ""}><ProviderMark providerId={source.brandAssetId} compact /><strong>{source.label}</strong><small>{count ? `${count} live rows · ` : ""}{source.discovery.replaceAll("-", " ")} · {source.authentication.replaceAll("-", " ")}</small><span>{source.catalogUrl && <a href={source.catalogUrl} target="_blank" rel="noreferrer">Explore</a>}{syncable && <button type="button" disabled={catalogSyncing !== null || ((syncable === "nvidia-nim" || syncable === "cohere") && secretRefs[syncable]?.availability !== "present")} onClick={() => { void syncCatalog(syncable); }}><RefreshCw size={11} className={catalogSyncing === syncable ? "spinning" : ""} />{catalogSyncing === syncable ? "Syncing…" : hasMore ? "Load more" : "Sync"}</button>}</span></article>;
-      })}</div>
-      <CatalogIntegrationExample hardware={catalogHardware} items={catalogItems} onModelSelected={(item) => onNotify("Model inspected", `${item.identity.name} remains blocked until its exact revision, license, compatibility, and required artifacts pass review.`, "info")} />
+      })}</div></details>
+      <CatalogIntegrationExample hardware={catalogHardwareWithConnections} items={catalogItems} onModelInspected={(item) => onNotify("Model inspected", `${item.identity.name} was reviewed here only. Compare routes and estimates here; save models in a profile below.`, "info")} writingProfileProviderIds={profileProviderIds} {...(setup && activeProfile ? { onUseForWritingProfile: stageWritingProfileModel } : {})} />
     </section>
     <div className="provider-heading"><div><span className="section-kicker">Configured capabilities</span><h2>Provider connections</h2></div><span className="environment-note"><ShieldCheck size={15} /> {environment === "native" ? "OS credential vault" : "Browser demo · values discarded"}</span></div>
     <div className="provider-grid">{providers.map(({ id, name, icon: Icon, detail, tone, local }) => {

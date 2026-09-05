@@ -71,8 +71,9 @@ test("captures home, templates, model catalog, settings, studio and editor", asy
   await page.locator(".template-grid").screenshot({ path: `${output}/03a-template-grid-closeup.png` });
 
   await page.getByRole("button", { name: /models & providers/i }).click();
-  await expect(page.getByRole("heading", { name: /one model library/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Model library" })).toBeVisible();
   await page.locator(".federated-catalog-panel").screenshot({ path: `${output}/04-model-catalog.png` });
+  await page.locator(".catalog-source-disclosure > summary").click();
   await page.locator(".catalog-source-strip").screenshot({ path: `${output}/04a-provider-sources-closeup.png` });
 
   await page.getByRole("button", { name: /settings & diagnostics/i }).click();

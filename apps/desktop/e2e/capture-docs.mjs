@@ -41,7 +41,7 @@ try {
   if (workspace.projects?.length || workspace.jobs?.length) throw new Error("Empty documentation profile contains seeded projects or jobs");
 
   await page.getByRole("button", { name: /models & providers/i }).click();
-  await page.getByRole("heading", { name: "One model library for every capability" }).waitFor();
+  await page.getByRole("heading", { name: "Model library" }).waitFor();
   await capture("models-providers");
 
   await page.getByRole("button", { name: "Library", exact: true }).click();
