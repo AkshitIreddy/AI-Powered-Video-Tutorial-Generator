@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from alystria.project.cas import Artifact
 from alystria.project.database import integrity_check
-from alystria.project.errors import ProjectExistsError, RevisionConflictError
+from alystria.project.errors import InvalidProjectError, ProjectExistsError, RevisionConflictError
 from alystria.project.store import ProjectStore
 
 
@@ -70,6 +71,20 @@ def test_cas_deduplicates_and_registers_content(tmp_path: Path) -> None:
         assert first.hash == hashlib.sha256(content).hexdigest() == second.hash
         assert store.cas.object_path(first.hash).read_bytes() == content
         assert store.connection.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 1
+
+
+def test_artifact_batch_validation_registers_all_or_none(tmp_path: Path) -> None:
+    with ProjectStore.create(tmp_path / "project", name="Artifact batch") as store:
+        first = store.cas.add_bytes(b"delivery", media_type="video/webm", original_name="delivery.webm")
+        second = store.cas.add_bytes(b"captions", media_type="text/vtt", original_name="captions.vtt")
+        missing = Artifact("f" * 64, 1, "text/plain", "missing.txt")
+
+        with pytest.raises(InvalidProjectError, match="missing or corrupt"):
+            store.register_artifacts((first, missing))
+        assert store.connection.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 0
+
+        store.register_artifacts((first, second))
+        assert store.connection.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 2
 
 
 def test_online_backup_is_consistent(tmp_path: Path) -> None:

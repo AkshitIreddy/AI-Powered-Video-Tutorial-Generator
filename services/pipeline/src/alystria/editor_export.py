@@ -653,6 +653,7 @@ def render_editor_timeline(
             metadata={"role": "editor-timeline-export", "manifestHash": plan.manifest_hash, "codec": plan.codec},
         )
         sidecars = []
+        artifacts = [artifact]
         for path in sidecar_paths:
             media_type = "text/vtt" if path.suffix == ".vtt" else "application/x-subrip"
             sidecar_artifact = store.cas.add_file(
@@ -661,7 +662,9 @@ def render_editor_timeline(
                 original_name=path.name,
                 metadata={"role": "editor-caption-sidecar", "manifestHash": plan.manifest_hash, "format": path.suffix[1:]},
             )
+            artifacts.append(sidecar_artifact)
             sidecars.append({"format": path.suffix[1:], "path": str(path), "artifactHash": sidecar_artifact.hash, "mediaType": media_type, "byteSize": path.stat().st_size})
+        store.register_artifacts(artifacts)
         return {
             "projectId": store.manifest.project_id,
             "outputPath": str(selected_output),

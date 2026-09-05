@@ -136,7 +136,7 @@ def manifest(digest: str) -> dict[str, object]:
 
 def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) -> None:
     digest = "a" * 64
-    store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest))
+    store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest), register_artifacts=lambda _artifacts: None)
     output = tmp_path / "exports" / "editor" / "lesson.webm"
     output.parent.mkdir(parents=True)
     staging = tmp_path / "staging" / "manual"
@@ -163,7 +163,8 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
 
 def test_executes_without_shell_and_content_addresses_delivery(tmp_path: Path) -> None:
     digest = "b" * 64
-    store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest))
+    registered: list[SimpleNamespace] = []
+    store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest), register_artifacts=lambda artifacts: registered.extend(artifacts))
     runner = FakeRunner()
     receipt = render_editor_timeline(store, manifest(digest), ffmpeg_path=Path("ffmpeg.exe"), media_probe=FakeMediaProbe(), runner=runner)
     assert runner.argv[:4] == ("ffmpeg.exe", "-hide_banner", "-nostdin", "-y")
@@ -173,6 +174,7 @@ def test_executes_without_shell_and_content_addresses_delivery(tmp_path: Path) -
     assert Path(str(receipt["outputPath"])).is_file()
     assert len(str(receipt["artifactHash"])) == 64
     assert [item["format"] for item in receipt["captionSidecars"]] == ["vtt", "srt"]
+    assert [item.hash for item in registered] == [receipt["artifactHash"], *(item["artifactHash"] for item in receipt["captionSidecars"])]
     assert "00:00:00.200 --> 00:00:01.000" in Path(receipt["captionSidecars"][0]["path"]).read_text(encoding="utf-8")
     assert "00:00:00,200 --> 00:00:01,000" in Path(receipt["captionSidecars"][1]["path"]).read_text(encoding="utf-8")
 

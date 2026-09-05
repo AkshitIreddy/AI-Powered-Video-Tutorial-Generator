@@ -7,6 +7,7 @@ import os
 import sqlite3
 import tempfile
 import uuid
+from collections.abc import Iterable
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -452,23 +453,29 @@ class ProjectStore:
         return [self._revision_from_row(row) for row in rows]
 
     def register_artifact(self, artifact: Artifact) -> None:
-        if not self.cas.verify(artifact.hash):
-            raise InvalidProjectError(f"Cannot register missing or corrupt object {artifact.hash}")
+        self.register_artifacts((artifact,))
+
+    def register_artifacts(self, artifacts: Iterable[Artifact]) -> None:
+        pending = tuple(artifacts)
+        for artifact in pending:
+            if not self.cas.verify(artifact.hash):
+                raise InvalidProjectError(f"Cannot register missing or corrupt object {artifact.hash}")
         with transaction(self.connection):
-            self.connection.execute(
-                """INSERT INTO artifacts(
-                    hash,algorithm,byte_size,media_type,original_name,metadata_json,created_at
-                ) VALUES(?,?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING""",
-                (
-                    artifact.hash,
-                    "sha256",
-                    artifact.byte_size,
-                    artifact.media_type,
-                    artifact.original_name,
-                    _canonical_json(artifact.metadata or {}),
-                    utc_now(),
-                ),
-            )
+            for artifact in pending:
+                self.connection.execute(
+                    """INSERT INTO artifacts(
+                        hash,algorithm,byte_size,media_type,original_name,metadata_json,created_at
+                    ) VALUES(?,?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING""",
+                    (
+                        artifact.hash,
+                        "sha256",
+                        artifact.byte_size,
+                        artifact.media_type,
+                        artifact.original_name,
+                        _canonical_json(artifact.metadata or {}),
+                        utc_now(),
+                    ),
+                )
 
     def add_artifact_bytes(
         self,
