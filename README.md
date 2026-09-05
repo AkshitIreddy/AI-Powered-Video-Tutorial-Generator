@@ -6,24 +6,22 @@
 
 AI Video Tutorial Generator is a Windows-first, local-first desktop environment for researching, planning, storyboarding, editing, rendering, reviewing, and exporting educational video. Projects, source copies, revisions, artifacts, job state, and usage records stay in an ordinary local directory. Cloud AI is optional bring-your-own-key; Fully Local work has no required product account, hosted backend, synchronization service, or collaboration service.
 
-![AI Video Tutorial Generator home screen](docs/images/alystria-home.png)
+![Current teaching workbench, empty local profile](docs/images/workbench-home-2026-09-05.png)
+
+The [September 5 independent audit](docs/research/product-audit-2026-09-05.md) records the current product changes and evidence boundaries. Earlier screenshots and counts below are historical unless explicitly refreshed in the [implementation ledger](IMPLEMENTATION_STATUS.md).
 
 [Documentation](docs/README.md) · [Architecture](docs/architecture/overview.md) · [Local model profiles](docs/models/local-profiles.md) · [Free/trial provider guide](docs/providers/free-and-trial.md) · [Security and privacy](docs/security/security-and-privacy.md) · [Evaluation](docs/testing/evaluation.md) · [Implementation ledger](IMPLEMENTATION_STATUS.md)
 
 ## What is in this worktree
 
-The 2.0 repository contains a Tauri 2/React desktop, Rust privilege broker, supervised Python pipeline, local SQLite history and content-addressed artifacts, durable generation jobs, provider and model contracts, a typed scene system, ten theme packs, deterministic Chromium/FFmpeg rendering, audio/caption/presenter policy, security and provenance gates, canonical fixtures, and the precision-studio interface shown below.
+The 2.0 repository contains a Tauri 2/React desktop, Rust privilege broker, supervised Python pipeline, local SQLite history and content-addressed artifacts, durable generation jobs, provider and model contracts, a typed scene system, ten theme packs, deterministic Chromium/FFmpeg rendering, audio/caption/presenter policy, security and provenance gates, canonical fixtures, and the teaching workbench interface shown above.
 
 This is still a **local RC candidate**, not a published installer. Clean-machine packaging, managed runtime signing/installation, immutable local-model pins and reference-laptop benchmarks, live BYOK smoke tests, complete rendered/audio inspection, blind v1-versus-v2 scoring, and owner approval remain release gates.
 
-- HTTP provider contracts have offline tests; this README does **not** claim live API smoke tests.
+- Reviewed provider adapters have offline tests plus bounded live evidence: Groq structured writing and Cloudflare image generation succeeded; the single Mistral smoke was rate-limited. NVIDIA image, narration, local alignment, and presenter evidence have separate reports. These results do not qualify every provider or quota.
 - Runtime manifests describe required signed packs, but no signed production FFmpeg/pipeline pack is shipped.
-- Local model weights are **not bundled**. The setup surface records broad local
-  choices and switchable provider/model profiles. One exact MuseTalk 1.5 pack
-  can be resumed into a download-only quarantine after license review and is
-  size/SHA-256 verified there; it is never treated as installed, activated, or
-  inference-ready. Other packs remain blocked until immutable declarations,
-  licenses, hashes, and hardware checks are published and pass.
+- Local model weights are **not bundled**. Optional pinned ComfyUI packages have managed download, verification, reuse and preflight paths. Local SDXL 1.0 with its official offset LoRA completed a real image-candidate generate/review/accept/reload workflow on the 12 GB GPU. FLUX.2 Klein and Z-Image remain optional offload candidates, without a claimed laptop quality/performance pass. See the [local image audit](docs/research/local-image-model-audit-2026-09-05.md).
+- The included library provides four slide backgrounds and eight elements without an API key. Image generation is optional for creating more scene artwork or fictional teachers; generated candidates require explicit review and selection.
 
 ## Guided and Studio workflows
 
@@ -92,7 +90,7 @@ Exact material prefers deterministic SVG/DOM graphics; real people/events/places
 
 The renderer uses one frame-driven scene path for preview and final output, independently compiles landscape/portrait/square/custom targets, represents time at 240,000 ticks/second, denies wall clock/remote assets/autonomous CSS/unseeded randomness, verifies Chromium version and hash, checkpoints frames, and invokes FFmpeg/ffprobe directly without a shell. WebVTT is canonical; SRT, overlays, transcripts, and descriptive output derive from common cues.
 
-The 48 kHz master target is −16 ±1 LUFS and no more than −1.5 dBTP. Music and effects default off. Voice cloning or a real-person presenter requires immutable consent, scope, proof, revocation, rights, and synthetic-media disclosure. Current code implements contracts, policy, deterministic fixtures, and Windows speech integration; it does not claim a live cloud voice or presenter smoke pass.
+The 48 kHz master target is −16 ±1 LUFS and no more than −1.5 dBTP. Music and effects default off. Voice cloning or a real-person presenter requires immutable consent, scope, proof, revocation, rights, and synthetic-media disclosure. The current local evidence includes NVIDIA Magpie narration, pinned CPU forced alignment, and short local presenter tests. Presenter coverage is sparse by default; inspect the [presenter audit](docs/research/presenter-voice-audit-2026-09-05.md) for measured limits and the [Windows report](docs/research/windows-integration-audit-2026-09-05.md) for the current integrated tutorial result.
 
 NVIDIA LipSync remains a separate local-sidecar candidate rather than a normal
 NIM hosted capability: it needs NVIDIA's AI for Media Private Access Program,
@@ -109,7 +107,7 @@ See [Rendering](docs/architecture/rendering.md) and [Accessibility](docs/accessi
 - **Hybrid:** sensitive stages can remain local while separately approved payloads use named cloud capabilities.
 - **Cloud:** approved capabilities may use cloud providers, with explicit model, payload, region/retention, and cost.
 
-Current typed text adapters cover OpenAI Responses, Anthropic Messages, Gemini Interactions, NVIDIA NIM hosted chat/VLM, and OpenAI-compatible local endpoints. NVIDIA NIM also has typed embedding and dormant reranking contracts plus exact allowlisted image endpoints behind one OS-keyring credential; video is not advertised because its documented route is deprecated. Its hosted catalog is public/synthetic development testing only—not production or self-hosted NIM—and every selected model's access and rate limit is rechecked. Media request builders cover configured capabilities across OpenAI, Google/Gemini, NVIDIA NIM, Black Forest Labs, Recraft, Openverse, Pexels, Runway, ElevenLabs, Azure/Google speech, HeyGen, and Tavus.
+Current typed text adapters cover OpenAI Responses, Anthropic Messages, Gemini generateContent, reviewed Groq/Mistral/OpenRouter structured routes, NVIDIA NIM hosted chat/VLM, and OpenAI-compatible local endpoints. NVIDIA NIM also has typed embedding and dormant reranking contracts plus exact allowlisted image endpoints behind one OS-keyring credential; video is not advertised because its documented route is deprecated. Its hosted catalog is public/synthetic development testing only—not production or self-hosted NIM—and every selected model's access and rate limit is rechecked. Media request builders cover configured capabilities across OpenAI, Google/Gemini, NVIDIA NIM, Black Forest Labs, Recraft, Openverse, Pexels, Runway, ElevenLabs, Azure/Google speech, HeyGen, and Tavus.
 
 Availability is **capability-gated**: an adapter is selectable only when its catalog, credential, policy/pricing freshness, request shape, rights/consent, and budget checks pass. The deterministic mock is the only provider approved by default. There is no silent provider, region, retention, or local/cloud fallback.
 
@@ -117,7 +115,7 @@ The local catalog records candidates for Qwen LLM/VLM and embeddings, FLUX, Qwen
 
 ### Try AI Video Tutorial Generator with free or trial providers
 
-The [free and trial provider guide](docs/providers/free-and-trial.md) was last verified **2026-08-28**. Offers, quotas, access, data-use terms, and licenses change—check official pages again before creating a key or sending content.
+The [free and trial provider guide](docs/providers/free-and-trial.md) preserves its **2026-08-28** broad offer snapshot and links the **2026-09-05** audit of current executable routes. Offers, quotas, access, data-use terms, and licenses change—check official pages again before creating a key or sending content.
 
 > AI Video Tutorial Generator is BYOK and includes no hosted AI allowance. NVIDIA NIM can reduce signup friction because one Developer API key covers several currently available prototype model families; Cohere, Gemini, speech, research, media, and local options are also documented. A free quota is not permission to upload private sources, free output may lack commercial rights, and every asset still needs provenance and export-clear rights.
 
@@ -262,7 +260,7 @@ corepack pnpm test:e2e
 node scripts/clean-machine-check.mjs
 ```
 
-Visual claims require rendered evidence. The five README screenshots were captured from the running UI with Playwright in reduced-motion mode and checked for page/console errors. Final RC acceptance still requires exact pinned-runtime frames, audio measurements, crash injection, clean-machine packages, and human inspection of every canonical family. No live cloud smoke result is claimed.
+Visual claims require rendered evidence. The five README screenshots were captured from the running UI with Playwright in reduced-motion mode and checked for page/console errors. Final RC acceptance still requires exact pinned-runtime frames, audio measurements, crash injection, clean-machine packages, and human inspection of every canonical family. Current bounded live-provider results are recorded in the dated audit reports; historical screenshots are not evidence for newly integrated native behavior.
 
 Benchmarks never change Windows/G-Helper settings. Reports record power/boost, thermal/background context, runtime revisions, and comparability; constrained-mode numbers remain estimates.
 

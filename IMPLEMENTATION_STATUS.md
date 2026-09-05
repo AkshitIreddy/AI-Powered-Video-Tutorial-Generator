@@ -1,9 +1,12 @@
-# Alystria Studio 2.0 implementation ledger
+# AI Video Tutorial Generator implementation ledger
 
-Status snapshot: **2026-08-28**, branch `feat/alystria-studio-v2` (resumed after
-the local checkpoint pause).
+Current audit: **2026-09-05**, local `main`. The historical checklist below records the August 28 baseline; it is not a substitute for current integrated acceptance.
 
-This is the durable source of truth for the 2.0 worktree. A checked item means
+See [Product](docs/research/product-audit-2026-09-05.md), [Generation](docs/research/generation-audit-2026-09-05.md), [Editor](docs/research/editor-audit-2026-09-05.md), [Onboarding](docs/research/onboarding-audit-2026-09-05.md), [Catalog](docs/research/catalog-audit-2026-09-05.md), [Presenter and voice](docs/research/presenter-voice-audit-2026-09-05.md), and [Windows integration](docs/research/windows-integration-audit-2026-09-05.md) for current findings, fixes, measurements, and remaining gates.
+
+Current source evidence: **200 desktop tests**, **25 Playwright journeys** (3 intentional viewport skips), **63 Rust tests**, desktop typecheck, and lint passed. A separate real authored binary-search example is 84.008 seconds and has inspected teaching frames. The current final provider-generated three-minute tutorial, native editor journey, and recovery qualification are tracked in the Windows report; earlier counts and media below must not be substituted for them.
+
+This ledger preserves the historical implementation checklist for the 2.0 worktree. A checked item means
 the implementation exists and its relevant local verification passed. It does
 not mean that live cloud providers, production signing, every export profile,
 or release distribution have been approved or verified.
@@ -97,7 +100,7 @@ or release distribution have been approved or verified.
 ### Providers, local models, narration, presenters, and product breadth
 
 - [x] Implement mocked/contract-tested OpenAI Responses, Anthropic Messages,
-  Gemini Interactions, NVIDIA NIM hosted chat/VLM/embedding/image preview, and
+  Gemini generateContent, NVIDIA NIM hosted chat/VLM/embedding/image preview, and
   OpenAI-compatible local LLM adapters with structured output revalidation,
   privacy scope, idempotency, and budget guards.
 - [x] Implement mocked/contract-tested request builders and async lifecycle for
