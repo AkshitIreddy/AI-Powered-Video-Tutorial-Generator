@@ -66,6 +66,213 @@ describe("provider routing review", () => {
     expect(review.errors).toContain("elevenlabs needs a credential in the OS vault before this profile can be approved.");
   });
 
+  it("keeps image generation optional for authored layouts and bundled visuals", () => {
+    const review = buildProviderRoutingReview({
+      profile: {
+        ...profile,
+        routes: {
+          ...profile.routes,
+          images: { providerId: "local-runtime", modelId: "off by default" },
+        },
+      },
+      secretRefs: secrets,
+      dataClassification: "project",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "creative",
+    });
+
+    expect(review.errors).toEqual([]);
+    expect(review.policy?.routes.map((route) => route.capability)).not.toContain("image.generate");
+    expect(review.profileSnapshot?.routes.map((route) => route.medium)).not.toContain("images");
+  });
+
+  it("requires a safe Account ID for the exact Cloudflare image route", () => {
+    const cloudflareProfile: ModelProfile = {
+      ...profile,
+      routes: {
+        ...profile.routes,
+        images: {
+          providerId: "cloudflare-workers-ai",
+          modelId: "@cf/black-forest-labs/flux-1-schnell",
+        },
+      },
+    };
+    const withoutAccount = buildProviderRoutingReview({
+      profile: cloudflareProfile,
+      secretRefs: { ...secrets, "cloudflare-workers-ai": secret("cloudflare-workers-ai") },
+      dataClassification: "project",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "grounded",
+    });
+    expect(withoutAccount.policy).toBeNull();
+    expect(withoutAccount.errors).toContain(
+      "Cloudflare Workers AI needs the Account ID from the Workers AI dashboard.",
+    );
+
+    const withAccount = buildProviderRoutingReview({
+      profile: cloudflareProfile,
+      secretRefs: { ...secrets, "cloudflare-workers-ai": secret("cloudflare-workers-ai") },
+      providerAccountIds: {
+        "cloudflare-workers-ai": "0123456789abcdef0123456789abcdef",
+      },
+      dataClassification: "project",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "grounded",
+    });
+    expect(withAccount.errors).toEqual([]);
+    expect(withAccount.policy?.approvals.find(
+      (approval) => approval.providerId === "cloudflare-workers-ai",
+    )?.accountId).toBe("0123456789abcdef0123456789abcdef");
+  });
+
+  it("rejects unreviewed Cloudflare model IDs", () => {
+    const review = buildProviderRoutingReview({
+      profile: {
+        ...profile,
+        routes: {
+          ...profile.routes,
+          images: { providerId: "cloudflare-workers-ai", modelId: "@cf/vendor/other" },
+        },
+      },
+      secretRefs: { ...secrets, "cloudflare-workers-ai": secret("cloudflare-workers-ai") },
+      providerAccountIds: {
+        "cloudflare-workers-ai": "0123456789abcdef0123456789abcdef",
+      },
+      dataClassification: "project",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "grounded",
+    });
+    expect(review.policy).toBeNull();
+    expect(review.errors).toContain(
+      "Cloudflare Workers AI currently supports only the reviewed FLUX.1 Schnell image route.",
+    );
+  });
+
+  it.each([
+    ["groq", "openai/gpt-oss-20b"],
+    ["mistral", "mistral-small-2603"],
+    ["openrouter", "z-ai/glm-5.2:free"],
+  ])("builds the exact reviewed %s structured-writing route", (providerId, modelId) => {
+    const review = buildProviderRoutingReview({
+      profile: {
+        ...profile,
+        routes: {
+          ...profile.routes,
+          writing: { providerId, modelId },
+        },
+      },
+      secretRefs: { ...secrets, [providerId]: secret(providerId) },
+      dataClassification: "project",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "grounded",
+    });
+    expect(review.errors).toEqual([]);
+    expect(review.policy?.routes.find((route) => route.capability === "llm.structured")).toMatchObject({
+      providerIds: [providerId],
+      model: modelId,
+    });
+  });
+
+  it("rejects user-entered model aliases for model-scoped structured clouds", () => {
+    for (const providerId of ["groq", "mistral", "openrouter"]) {
+      const review = buildProviderRoutingReview({
+        profile: {
+          ...profile,
+          routes: {
+            ...profile.routes,
+            writing: { providerId, modelId: "latest" },
+          },
+        },
+        secretRefs: { ...secrets, [providerId]: secret(providerId) },
+        dataClassification: "project",
+        hardLimitMinorUnits: 250,
+        approvalChecked: true,
+        hasPrivateSources: false,
+        groundingMode: "grounded",
+      });
+      expect(review.policy).toBeNull();
+      expect(review.errors.join(" | ")).toContain(`${providerId} structured writing currently supports only the reviewed`);
+    }
+  });
+
+  it("adds optional CC0 stock search and NVIDIA visual review to a public profile", () => {
+    const review = buildProviderRoutingReview({
+      profile: {
+        ...profile,
+        routes: {
+          ...profile.routes,
+          stock: { providerId: "openverse", modelId: "licensed-media" },
+          visualReview: { providerId: "nvidia-nim", modelId: "nvidia/nemotron-nano-12b-v2-vl" },
+        },
+      },
+      secretRefs: { ...secrets, "nvidia-nim": secret("nvidia-nim") },
+      dataClassification: "public",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "grounded",
+      reviewedAt: "2026-09-05T12:00:00.000Z",
+    });
+
+    expect(review.errors).toEqual([]);
+    expect(review.policy?.routes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ capability: "media.licensed.search", providerIds: ["openverse"], model: "licensed-media" }),
+      expect.objectContaining({ capability: "vlm.chat", providerIds: ["nvidia-nim"], model: "nvidia/nemotron-nano-12b-v2-vl" }),
+    ]));
+    expect(review.policy?.approvals.find((approval) => approval.providerId === "openverse")?.credentialRef).toBeNull();
+    expect(review.profileSnapshot?.routes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ medium: "stock", capability: "media.licensed.search", providerId: "openverse" }),
+      expect.objectContaining({ medium: "visualReview", capability: "vlm.chat", providerId: "nvidia-nim" }),
+    ]));
+  });
+
+  it("requires a Pexels API key when the optional keyed stock route is selected", () => {
+    const review = buildProviderRoutingReview({
+      profile: {
+        ...profile,
+        routes: { ...profile.routes, stock: { providerId: "pexels", modelId: "licensed-media" } },
+      },
+      secretRefs: secrets,
+      dataClassification: "public",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "grounded",
+    });
+    expect(review.policy).toBeNull();
+    expect(review.errors).toContain("pexels needs a credential in the OS vault before this profile can be approved.");
+  });
+
+  it.each([
+    ["stock", "openverse", "latest", "openverse stock media currently supports only the reviewed licensed-media route."],
+    ["visualReview", "nvidia-nim", "latest", "nvidia-nim visual review currently supports only the reviewed nvidia/nemotron-nano-12b-v2-vl route."],
+  ] as const)("rejects unreviewed %s route model IDs", (medium, providerId, modelId, expectedError) => {
+    const review = buildProviderRoutingReview({
+      profile: {
+        ...profile,
+        routes: { ...profile.routes, [medium]: { providerId, modelId } },
+      },
+      secretRefs: { ...secrets, [providerId]: secret(providerId) },
+      dataClassification: "public",
+      hardLimitMinorUnits: 250,
+      approvalChecked: true,
+      hasPrivateSources: false,
+      groundingMode: "grounded",
+    });
+    expect(review.policy).toBeNull();
+    expect(review.errors).toContain(expectedError);
+  });
+
   it("blocks private sources and project content from cloud-preview-only routing", () => {
     const nimProfile: ModelProfile = {
       ...profile,

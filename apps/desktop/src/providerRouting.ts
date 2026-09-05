@@ -7,7 +7,7 @@ import type {
   TutorialRoutingPolicy,
 } from "./native";
 
-export type RouteMedium = "writing" | "research" | "images" | "motion" | "voice" | "transcription" | "presenter" | "portraitAnimation" | "lipSync";
+export type RouteMedium = "writing" | "research" | "images" | "motion" | "voice" | "transcription" | "presenter" | "portraitAnimation" | "lipSync" | "stock" | "visualReview";
 
 interface ProviderPolicyDescriptor {
   boundary: "local" | "cloud";
@@ -27,9 +27,11 @@ const mediumCapabilities: Record<RouteMedium, ProviderCapability> = {
   presenter: "presenter.generate",
   portraitAnimation: "portrait.animate",
   lipSync: "lipsync.generate",
+  stock: "media.licensed.search",
+  visualReview: "vlm.chat",
 };
 
-const baselineRequiredMedia: RouteMedium[] = ["writing", "images", "voice"];
+const baselineRequiredMedia: RouteMedium[] = ["writing", "voice"];
 
 const curatedStarterPresenterVoices: Record<string, {
   readonly label: string;
@@ -79,16 +81,34 @@ const providerPolicies: Record<string, ProviderPolicyDescriptor> = {
   "openai-compatible-local": local(["llm.text", "llm.structured"]),
   openai: cloud("configurable", ["llm.text", "llm.structured", "research.web", "image.generate", "image.edit", "audio.tts", "audio.transcribe"]),
   anthropic: cloud("configurable", ["llm.text", "llm.structured", "research.web"]),
+  groq: cloud("provider_default", ["llm.text", "llm.structured"]),
+  mistral: cloud("provider_default", ["llm.text", "llm.structured"]),
+  openrouter: cloud("provider_default", ["llm.text", "llm.structured"]),
+  openverse: cloud("provider_default", ["media.licensed.search"], false),
+  pexels: cloud("provider_default", ["media.licensed.search"]),
   gemini: cloud("configurable", ["llm.text", "llm.structured", "research.web", "image.generate", "image.edit", "motion.generate", "audio.tts", "audio.transcribe"]),
-  "nvidia-nim": cloud("provider_default", ["llm.text", "llm.structured", "vlm.chat", "retrieval.embed", "image.generate"]),
+  "nvidia-nim": cloud("provider_default", ["llm.text", "llm.structured", "vlm.chat", "retrieval.embed", "image.generate", "audio.tts"]),
+  "cloudflare-workers-ai": cloud("configurable", ["image.generate"]),
   "black-forest-labs": cloud("provider_default", ["image.generate", "image.edit"]),
   recraft: cloud("provider_default", ["image.generate", "image.edit"]),
   runway: cloud("provider_default", ["motion.generate"]),
   elevenlabs: cloud("provider_default", ["audio.tts", "audio.transcribe"]),
-  "azure-speech": cloud("configurable", ["audio.tts", "audio.transcribe", "presenter.generate"]),
-  "google-cloud-speech": cloud("configurable", ["audio.tts", "audio.transcribe", "audio.align"]),
+  "azure-speech": cloud("configurable", ["audio.tts", "audio.transcribe"]),
+  "google-cloud-speech": cloud("configurable", ["audio.tts", "audio.transcribe"]),
   heygen: cloud("provider_default", ["presenter.generate"]),
   tavus: cloud("provider_default", ["presenter.generate"]),
+};
+
+const reviewedStructuredCloudModels: Readonly<Record<string, string>> = {
+  groq: "openai/gpt-oss-20b",
+  mistral: "mistral-small-2603",
+  openrouter: "z-ai/glm-5.2:free",
+};
+
+const reviewedOptionalRouteModels: Readonly<Record<string, Readonly<Partial<Record<ProviderCapability, string>>>>> = {
+  openverse: { "media.licensed.search": "licensed-media" },
+  pexels: { "media.licensed.search": "licensed-media" },
+  "nvidia-nim": { "vlm.chat": "nvidia/nemotron-nano-12b-v2-vl" },
 };
 
 export interface ProviderRoutingReview {
@@ -112,6 +132,7 @@ export function buildProviderRoutingReview(input: {
   groundingMode: "creative" | "grounded" | "strict";
   reviewedAt?: string;
   setupUpdatedAt?: string;
+  providerAccountIds?: Readonly<Record<string, string>>;
 }): ProviderRoutingReview {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -135,6 +156,23 @@ export function buildProviderRoutingReview(input: {
     }
     if (!descriptor.capabilities.has(capability)) {
       errors.push(`${selection.providerId} cannot provide ${labelForMedium(medium).toLowerCase()}.`);
+      continue;
+    }
+    if (
+      selection.providerId === "cloudflare-workers-ai"
+      && selection.modelId !== "@cf/black-forest-labs/flux-1-schnell"
+    ) {
+      errors.push("Cloudflare Workers AI currently supports only the reviewed FLUX.1 Schnell image route.");
+      continue;
+    }
+    const reviewedStructuredModel = reviewedStructuredCloudModels[selection.providerId];
+    if (reviewedStructuredModel && selection.modelId !== reviewedStructuredModel) {
+      errors.push(`${selection.providerId} structured writing currently supports only the reviewed ${reviewedStructuredModel} route.`);
+      continue;
+    }
+    const reviewedOptionalModel = reviewedOptionalRouteModels[selection.providerId]?.[capability];
+    if (reviewedOptionalModel && selection.modelId !== reviewedOptionalModel) {
+      errors.push(`${selection.providerId} ${labelForMedium(medium).toLowerCase()} currently supports only the reviewed ${reviewedOptionalModel} route.`);
       continue;
     }
     const modelRevision = selection.modelRevision?.trim() || undefined;
@@ -219,6 +257,13 @@ export function buildProviderRoutingReview(input: {
     if (descriptor.credential && credential?.availability !== "present") {
       errors.push(`${providerId} needs a credential in the OS vault before this profile can be approved.`);
     }
+    const accountId = input.providerAccountIds?.[providerId]?.trim() || null;
+    if (
+      providerId === "cloudflare-workers-ai"
+      && (accountId === null || !/^[A-Za-z0-9_-]{1,64}$/.test(accountId))
+    ) {
+      errors.push("Cloudflare Workers AI needs the Account ID from the Workers AI dashboard.");
+    }
     return {
       providerId,
       capabilities: [...capabilities],
@@ -233,10 +278,12 @@ export function buildProviderRoutingReview(input: {
       budgetApproved: input.approvalChecked,
       termsApproved: input.approvalChecked && providerId === "nvidia-nim",
       modelAccessCheckedAt: providerId === "nvidia-nim" && input.approvalChecked ? (input.reviewedAt ?? new Date().toISOString()) : null,
+      ...(providerId === "cloudflare-workers-ai"
+        ? { accountId }
+        : {}),
     };
   });
 
-  if (!routes.some((route) => route.capability === "image.generate")) errors.push("The profile must include an image generation route.");
   if (!routes.some((route) => route.capability === "audio.tts")) errors.push("The profile must include a narration route.");
 
   const uniqueErrors = [...new Set(errors)];
@@ -277,8 +324,8 @@ function local(capabilities: ProviderCapability[]): ProviderPolicyDescriptor {
   return { boundary: "local", retention: "local_only", regions: ["local"], capabilities: new Set(capabilities), credential: false };
 }
 
-function cloud(retention: ProviderPolicyDescriptor["retention"], capabilities: ProviderCapability[]): ProviderPolicyDescriptor {
-  return { boundary: "cloud", retention, regions: ["provider-managed"], capabilities: new Set(capabilities), credential: true };
+function cloud(retention: ProviderPolicyDescriptor["retention"], capabilities: ProviderCapability[], credential = true): ProviderPolicyDescriptor {
+  return { boundary: "cloud", retention, regions: ["provider-managed"], capabilities: new Set(capabilities), credential };
 }
 
 function isDisabledModel(value: string): boolean {
@@ -287,5 +334,5 @@ function isDisabledModel(value: string): boolean {
 }
 
 function labelForMedium(medium: RouteMedium): string {
-  return ({ writing: "Writing", research: "Research", images: "Images", motion: "Motion", voice: "Narration", transcription: "Transcription", presenter: "Presenter", portraitAnimation: "Portrait animation", lipSync: "Lip-sync" } satisfies Record<RouteMedium, string>)[medium];
+  return ({ writing: "Writing", research: "Research", images: "Images", motion: "Motion", voice: "Narration", transcription: "Transcription", presenter: "Presenter", portraitAnimation: "Portrait animation", lipSync: "Lip-sync", stock: "Stock media", visualReview: "Visual review" } satisfies Record<RouteMedium, string>)[medium];
 }
