@@ -1,5 +1,12 @@
 # Presenter motion runtime: measured Windows decision
 
+> **Re-audited 2026-09-05:** See
+> [`presenter-voice-audit-2026-09-05.md`](presenter-voice-audit-2026-09-05.md).
+> The hybrid remains the practical installed 12 GB route, but fresh evidence
+> measured roughly 50× real time and exposed MuseTalk mouth motion during true
+> silence. The newer audit records the source-frame silence repair, its fresh
+> replay, current voice/alignment choices, and newer practical challengers.
+
 **Date:** 2026-09-04
 
 **Target:** Windows 11, NVIDIA RTX 4080 Laptop GPU, 12 GB VRAM, 32 GB RAM
