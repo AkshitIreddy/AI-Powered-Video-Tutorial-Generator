@@ -164,6 +164,36 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
     assert (staging / "text-0000.txt").read_text(encoding="utf-8") == "A title; with filter syntax"
 
 
+def test_elides_neutral_rotation_and_opacity_pixel_filters(tmp_path: Path) -> None:
+    digest = "f" * 64
+    store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest))
+    value = manifest(digest)
+    visual = value["clips"][0]  # type: ignore[index]
+    visual["transform"] = {  # type: ignore[index]
+        "x": 0,
+        "y": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotation": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5,
+    }
+    visual["opacity"] = 1  # type: ignore[index]
+    visual["keyframes"] = []  # type: ignore[index]
+    plan = build_editor_export_plan(
+        store,
+        value,
+        ffmpeg_path=Path("ffmpeg.exe"),
+        media_probe=FakeMediaProbe(),
+        output_path=tmp_path / "neutral.webm",
+        staging_dir=tmp_path / "neutral-staging",
+    )
+    command = " ".join(plan.argv)
+    assert "min(1280/iw,720/ih)" in command
+    assert "rotate=" not in command
+    assert "geq=" not in command
+
+
 def test_executes_without_shell_and_content_addresses_delivery(tmp_path: Path) -> None:
     digest = "b" * 64
     registered: list[SimpleNamespace] = []
@@ -424,6 +454,49 @@ def test_actual_ffmpeg_contains_source_before_transform_without_cropping_edges(
             assert right[0] < 70 and right[1] > 180 and right[2] < 70
             assert top[0] < 70 and top[1] < 70 and top[2] > 180
             assert bottom[0] > 180 and bottom[1] > 180 and bottom[2] < 70
+
+
+@pytest.mark.skipif(_ffmpeg() is None, reason="FFmpeg is required for native editor alpha proof")
+def test_actual_ffmpeg_neutral_filter_elision_preserves_source_alpha(tmp_path: Path) -> None:
+    ffmpeg = _ffmpeg()
+    assert ffmpeg is not None
+    source_path = tmp_path / "transparent-source.png"
+    subprocess.run(
+        [
+            str(ffmpeg), "-hide_banner", "-nostdin", "-y",
+            "-f", "lavfi", "-i",
+            "color=c=black@0.0:s=100x100:d=1,format=rgba,"
+            "drawbox=x=25:y=25:w=50:h=50:color=red@1.0:t=fill:replace=1",
+            "-frames:v", "1", "-threads", "1", str(source_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    with ProjectStore.create(tmp_path / "alpha-proof", name="Editor alpha proof") as store:
+        source = store.add_artifact_bytes(source_path.read_bytes(), media_type="image/png", original_name=source_path.name)
+        value = _actual_manifest(source.hash, store.manifest.project_id)
+        value["canvas"] = {"width": 200, "height": 200, "pixelAspectRatio": 1, "backgroundColor": "#0000FF"}
+        value["assets"] = [{"id": "programme", "artifactHash": source.hash, "mediaType": "image/png", "kind": "image", "exportEligible": True}]
+        value["clips"] = [value["clips"][0]]  # type: ignore[index]
+        clip = value["clips"][0]  # type: ignore[index]
+        clip["keyframes"] = []  # type: ignore[index]
+        clip["includeSourceAudio"] = False  # type: ignore[index]
+        receipt = render_editor_timeline(store, value, ffmpeg_path=ffmpeg)
+        raw = subprocess.run(
+            [str(ffmpeg), "-v", "error", "-i", str(receipt["outputPath"]), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        assert len(raw) == 200 * 200 * 3
+
+        def pixel(x: int, y: int) -> tuple[int, int, int]:
+            offset = (y * 200 + x) * 3
+            return tuple(raw[offset:offset + 3])  # type: ignore[return-value]
+
+        corner = pixel(10, 10)
+        centre = pixel(100, 100)
+        assert corner[0] < 40 and corner[1] < 40 and corner[2] > 180
+        assert centre[0] > 180 and centre[1] < 70 and centre[2] < 70
 
 
 @pytest.mark.skipif(_ffmpeg() is None, reason="FFmpeg is required for silent native editor media proof")
