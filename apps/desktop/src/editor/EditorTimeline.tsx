@@ -1,4 +1,5 @@
 import { formatTimecode, framesToSeconds } from "./timecode";
+import { defaultClipValues } from "./model";
 import type { CSSProperties, Dispatch } from "react";
 import type { EditorAction, EditorClip, EditorState, EditorTrack } from "./types";
 import type { EditorWaveformPreview } from "./waveform";
@@ -70,11 +71,40 @@ export function EditorTimeline({ state, dispatch, waveforms = {} }: EditorTimeli
   const tickStep = seconds > 600 ? 60 : seconds > 180 ? 30 : seconds > 60 ? 10 : seconds > 20 ? 5 : 1;
   const ticks = Array.from({ length: Math.min(200, Math.floor(seconds / tickStep) + 1) }, (_, index) => index * tickStep);
   const playheadLeft = state.transport.playheadFrame / duration * 100;
+  const textSpace = (kind: "titles" | "captions") => {
+    const track = state.project.tracks.find((candidate) => candidate.kind === kind);
+    const start = state.transport.playheadFrame;
+    if (!track || track.locked || track.clips.some((clip) => clip.timelineRange.startFrame <= start && clip.timelineRange.startFrame + clip.timelineRange.durationFrames > start)) return null;
+    const nextStart = Math.min(...track.clips.filter((clip) => clip.timelineRange.startFrame > start).map((clip) => clip.timelineRange.startFrame));
+    const remaining = state.project.durationFrames > start ? state.project.durationFrames - start : Math.round(3 * fps);
+    return { track, start, length: Math.max(1, Math.min(Math.round(3 * fps), remaining, nextStart - start)) };
+  };
+  const addText = (kind: "titles" | "captions") => {
+    const space = textSpace(kind);
+    if (!space) return;
+    const clip: EditorClip = {
+      ...defaultClipValues(),
+      id: `user-${kind}-${crypto.randomUUID()}`,
+      trackId: space.track.id,
+      kind,
+      name: kind === "titles" ? "New title" : "New caption",
+      assetId: null,
+      timelineRange: { startFrame: space.start, durationFrames: space.length },
+      sourceRange: { startFrame: 0, durationFrames: space.length },
+      text: kind === "titles" ? "Your title" : "Your caption",
+      textStyle: { fontFamily: "Arial", fontSize: kind === "titles" ? 48 : 42, fontWeight: 400, color: "#ffffff", backgroundColor: "#151827", align: "center", position: "bottom" },
+      metadata: { userCreatedText: true },
+    };
+    dispatch({ type: "INSERT_CLIP", trackId: space.track.id, clip });
+    dispatch({ type: "SELECT_CLIP", clipId: clip.id });
+  };
 
   return (
     <section className="aly-editor-timeline" aria-label="Multitrack timeline">
       <div className="aly-editor-timeline__toolbar">
         <div className="aly-editor-timeline__edit-tools" role="group" aria-label="Timeline edit tools">
+          <button type="button" disabled={!textSpace("titles")} title="Add a title in an empty space at the playhead" onClick={() => addText("titles")}>Add title</button>
+          <button type="button" disabled={!textSpace("captions")} title="Add a caption in an empty space at the playhead" onClick={() => addText("captions")}>Add caption</button>
           <button type="button" onClick={() => dispatch({ type: "SPLIT_SELECTED" })}>Split</button>
           <button type="button" disabled={state.selection.clipIds.length !== 1} onClick={() => dispatch({ type: "REORDER_CLIP", clipId: state.selection.clipIds[0]!, direction: "previous" })}>Earlier</button>
           <button type="button" disabled={state.selection.clipIds.length !== 1} onClick={() => dispatch({ type: "REORDER_CLIP", clipId: state.selection.clipIds[0]!, direction: "next" })}>Later</button>
