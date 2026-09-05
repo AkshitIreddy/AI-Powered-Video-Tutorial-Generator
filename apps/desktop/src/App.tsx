@@ -77,6 +77,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import appMark from "./assets/ai-video-tutorial-generator-mark.svg";
 import { LessonLab } from "./LessonLab";
 import { TemplateArt } from "./TemplateArt";
@@ -136,6 +137,7 @@ import {
 import {
   appBootstrap,
   catalogDiscover,
+  desktopShutdown,
   desktopEnvironment,
   diagnosticsRun,
   editorBindingsGet,
@@ -246,6 +248,7 @@ import type {
   Workspace,
 } from "./types";
 import { usePersistentState } from "./usePersistentState";
+import { EditorDocumentSaveQueue, createEditorCloseHandler, mergeGeneralProjectSnapshot, type EditorSaveStatus } from "./editorSaveLifecycle";
 
 interface RuntimeState {
   environment: ReturnType<typeof desktopEnvironment>;
@@ -751,6 +754,8 @@ function App() {
     document.documentElement.dataset.denseEditor = String(preferences.denseEditor);
   }, [preferences.reducedMotion, preferences.highContrast, preferences.denseEditor]);
   const [snapshot, setSnapshot, resetSnapshot] = usePersistentState<AppSnapshot>("alystria-studio-v2", defaultSnapshot, normalizeAppSnapshot);
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
   const [runtime, setRuntime] = useState<RuntimeState>({ environment: desktopEnvironment(), bootstrap: null, loading: true, error: null });
   const [diagnosticReport, setDiagnosticReport] = useState<DiagnosticReport | null>(null);
   const [detectedConnections, setDetectedConnections] = useState<string[]>([]);
@@ -815,6 +820,7 @@ function App() {
   const [guidedTourSteps, setGuidedTourSteps] = useState<readonly GuidedTourStep[]>(GUIDED_TOUR_STEPS);
   const [guidedTourCompletedStepIds, setGuidedTourCompletedStepIds] = useState<string[]>([]);
   const [approvingProjectIds, setApprovingProjectIds] = useState<string[]>([]);
+  const [editorSaveStates, setEditorSaveStates] = useState<Record<string, EditorSaveStatus>>({});
   const guidedTourBaseline = useRef<GuidedTourEvidenceBaseline>({ projectIds: new Set(), sourceCountByProjectId: new Map(), jobIds: new Set() });
   const previousOnboardingStatus = useRef(initialOnboarding?.status ?? "not-started");
   const toastCounter = useRef(0);
@@ -823,6 +829,9 @@ function App() {
   const snapshotSaveFailures = useRef(new Map<string, { version: number; error: unknown }>());
   const approvalInFlightProjects = useRef(new Set<string>());
   const durableVersionByProject = useRef(new Map<string, number>());
+  const editorDocumentSaves = useRef<EditorDocumentSaveQueue | null>(null);
+  const persistGeneralProjectEditsRef = useRef<(project: ProjectRecord, version: number) => Promise<void>>(async () => undefined);
+  const flushPendingDurableChangesRef = useRef<() => Promise<void>>(async () => undefined);
   const customizationSaves = useRef(new Map<string, {
     projectId: string;
     projectDirectory: string;
@@ -935,29 +944,78 @@ function App() {
     return running;
   }, []);
 
-  const openProject = (projectId: string, nextWorkspace: Workspace = "plan") => {
+  if (!editorDocumentSaves.current) {
+    editorDocumentSaves.current = new EditorDocumentSaveQueue({
+      load: (identity) => projectSnapshotGet(identity),
+      save: (input) => enqueueSnapshotSave(() => projectSnapshotSave({ ...input, message: "Saved advanced editor timeline" })),
+      validate: prepareEditorProjectForPersistence,
+      onStatus: (projectKey, status) => setEditorSaveStates((current) => ({ ...current, [projectKey]: status })),
+      onSaved: (projectKey, receipt) => setSnapshot((current) => ({
+        ...current,
+        projects: current.projects.map((project) => project.id === projectKey
+          ? { ...project, nativeHeadRevisionId: receipt.headRevisionId, nativeRevisionNumber: receipt.revisionNumber }
+          : project),
+      })),
+    });
+  }
+
+  const queueEditorDocumentSave = useCallback((projectKey: string, document: EditorProject) => {
+    const prepared = prepareEditorProjectForPersistence(document);
+    const project = snapshotRef.current.projects.find((item) => item.id === projectKey);
+    setSnapshot((current) => ({
+      ...current,
+      projects: current.projects.map((item) => item.id === projectKey
+        ? { ...item, editorDocument: prepared, updatedAt: "just now" }
+        : item),
+    }));
+    if (runtime.environment === "native" && project?.nativeProjectId && project.nativeProjectDirectory) {
+      editorDocumentSaves.current!.queue({
+        projectKey,
+        projectId: project.nativeProjectId,
+        projectDirectory: project.nativeProjectDirectory,
+      }, prepared);
+    } else {
+      setEditorSaveStates((current) => ({ ...current, [projectKey]: { phase: "saved", detail: "Timeline saved in this browser" } }));
+    }
+  }, [runtime.environment, setSnapshot]);
+
+  const flushEditorDocument = useCallback(async (projectKey: string) => {
+    await editorDocumentSaves.current?.flush(projectKey);
+  }, []);
+
+  const openProject = async (projectId: string, nextWorkspace: Workspace = "plan") => {
     const project = snapshot.projects.find((item) => item.id === projectId);
+    if (runtime.environment === "native") {
+      try {
+        await flushPendingDurableChangesRef.current();
+      } catch (error) {
+        notify("Changes are not saved", `${errorMessage(error)} The current workspace remains open so you can retry.`, "warning");
+        return;
+      }
+    }
     if (project?.nativeProjectDirectory && runtime.environment === "native") {
-      void projectOpen({ projectDirectory: project.nativeProjectDirectory, allowReadOnly: true })
-        .then(async (handle) => {
-          const durable = await projectSnapshotGet({
-            projectId: handle.manifest.projectId,
-            projectDirectory: handle.projectDirectory,
-          });
-          snapshotSaveFailures.current.delete(projectId);
-          setSnapshot((current) => ({
-            ...current,
-            projects: current.projects.map((item) => item.id === projectId
-              ? hydrateDurableProject(item, durable.snapshot, {
-                nativeProjectId: handle.manifest.projectId,
-                nativeProjectDirectory: handle.projectDirectory,
-                nativeHeadRevisionId: durable.headRevisionId,
-                nativeRevisionNumber: durable.revisionNumber,
-              })
-              : item),
-          }));
-        })
-        .catch((error: unknown) => notify("Project folder needs attention", errorMessage(error), "warning"));
+      try {
+        const handle = await projectOpen({ projectDirectory: project.nativeProjectDirectory, allowReadOnly: true });
+        const durable = await projectSnapshotGet({ projectId: handle.manifest.projectId, projectDirectory: handle.projectDirectory });
+        snapshotSaveFailures.current.delete(projectId);
+        setSnapshot((current) => ({
+          ...current,
+          projects: current.projects.map((item) => {
+            if (item.id !== projectId) return item;
+            if ((item.nativeRevisionNumber ?? 0) > durable.revisionNumber) return item;
+            const hydrated = hydrateDurableProject(item, durable.snapshot, {
+              nativeProjectId: handle.manifest.projectId,
+              nativeProjectDirectory: handle.projectDirectory,
+              nativeHeadRevisionId: durable.headRevisionId,
+              nativeRevisionNumber: durable.revisionNumber,
+            });
+            const pendingDocument = editorDocumentSaves.current?.pendingDocument(projectId);
+            return pendingDocument ? { ...hydrated, editorDocument: pendingDocument } : hydrated;
+          }),
+        }));
+      } catch (error) {
+        notify("Project folder needs attention", errorMessage(error), "warning");
+      }
     }
     setActiveProjectId(projectId);
     setSnapshot((current) => ({ ...current, recentProjectId: projectId }));
@@ -1012,7 +1070,7 @@ function App() {
       return;
     }
     entry.saving = true;
-    const operation = (async () => {
+    const operation = enqueueSnapshotSave(async () => {
       let conflictRetries = 0;
       while (true) {
         const expectedHead = entry.expectedHeadRevisionId;
@@ -1047,7 +1105,7 @@ function App() {
           }));
         }
       }
-    })();
+    });
     entry.flushPromise = operation;
     try {
       await operation;
@@ -1102,6 +1160,62 @@ function App() {
     }
     customizationSaves.current.set(project.id, next);
   };
+
+  const persistGeneralProjectEdits = async (project: ProjectRecord, version: number): Promise<void> => {
+    if (!project.nativeProjectId || !project.nativeProjectDirectory) return;
+    const captured = projectSnapshotDocument(project);
+    await enqueueSnapshotSave(async () => {
+      let conflictRetries = 0;
+      while (true) {
+        const durable = await projectSnapshotGet({ projectId: project.nativeProjectId!, projectDirectory: project.nativeProjectDirectory! });
+        try {
+          const saved = await projectSnapshotSave({
+            projectId: project.nativeProjectId!,
+            projectDirectory: project.nativeProjectDirectory!,
+            expectedHeadRevisionId: durable.headRevisionId,
+            snapshot: mergeGeneralProjectSnapshot(durable.snapshot, captured),
+            message: "Saved scene and script edits",
+          });
+          snapshotSaveFailures.current.delete(project.id);
+          durableVersionByProject.current.set(project.id, version);
+          setSnapshot((current) => ({
+            ...current,
+            projects: current.projects.map((item) => item.id === project.id
+              ? { ...item, nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber }
+              : item),
+          }));
+          return;
+        } catch (error) {
+          if (!errorMessage(error).includes("REVISION_CONFLICT") || conflictRetries >= 2) {
+            snapshotSaveFailures.current.set(project.id, { version, error });
+            throw error;
+          }
+          conflictRetries += 1;
+        }
+      }
+    });
+  };
+
+  const flushPendingDurableChanges = async (): Promise<void> => {
+    const pendingGeneralProjectIds = new Set([
+      ...snapshotAutosaveTimers.current.keys(),
+      ...snapshotSaveFailures.current.keys(),
+    ]);
+    for (const projectKey of pendingGeneralProjectIds) {
+      const timer = snapshotAutosaveTimers.current.get(projectKey);
+      if (timer) window.clearTimeout(timer);
+      snapshotAutosaveTimers.current.delete(projectKey);
+      const project = snapshotRef.current.projects.find((item) => item.id === projectKey);
+      if (project) await persistGeneralProjectEdits(project, snapshotRef.current.version);
+    }
+    for (const [projectKey, entry] of customizationSaves.current) {
+      if (entry.persistedVersion < entry.version) await flushProjectCustomization(projectKey, true);
+    }
+    await editorDocumentSaves.current?.flushAll();
+    await snapshotSaveSequence.current;
+  };
+  persistGeneralProjectEditsRef.current = persistGeneralProjectEdits;
+  flushPendingDurableChangesRef.current = flushPendingDurableChanges;
 
   const useBundledAsset = async (asset: BundledAsset) => {
     const project = snapshot.projects.find((item) => item.id === snapshot.recentProjectId) ?? snapshot.projects[0];
@@ -1166,13 +1280,36 @@ function App() {
   useEffect(() => {
     const autosaveTimers = snapshotAutosaveTimers.current;
     const customizationEntries = customizationSaves.current;
+    const editorQueue = editorDocumentSaves.current;
     return () => {
       for (const entry of customizationEntries.values()) {
         if (entry.timer) window.clearTimeout(entry.timer);
       }
       for (const timer of autosaveTimers.values()) window.clearTimeout(timer);
+      editorQueue?.dispose();
     };
   }, []);
+
+  useEffect(() => {
+    if (runtime.environment !== "native") return;
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    const handleClose = createEditorCloseHandler({
+      flush: () => flushPendingDurableChangesRef.current(),
+      shutdown: async () => { if (active) await desktopShutdown(); },
+      onError: (error) => { if (active) notify("Changes are not saved", `${errorMessage(error)} The app remains open so you can retry.`, "warning"); },
+    });
+    void getCurrentWindow().onCloseRequested(handleClose).then((stopListening) => {
+      if (active) unlisten = stopListening;
+      else stopListening();
+    }).catch((error: unknown) => {
+      if (active) notify("Safe close needs attention", errorMessage(error), "warning");
+    });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [runtime.environment, notify]);
 
   useEffect(() => {
     setNativeJobs(nativeJobLinks(snapshot.jobs));
@@ -1225,7 +1362,10 @@ function App() {
             if (!active) return;
             setSnapshot((current) => ({ ...current, projects: current.projects.map((project) => {
               if (project.nativeProjectId !== link.projectId) return project;
-              return hydrateDurableProject(project, durable.snapshot, { nativeProjectId: link.projectId, nativeProjectDirectory: link.projectDirectory, nativeHeadRevisionId: durable.headRevisionId, nativeRevisionNumber: durable.revisionNumber });
+              if ((project.nativeRevisionNumber ?? 0) > durable.revisionNumber) return project;
+              const hydrated = hydrateDurableProject(project, durable.snapshot, { nativeProjectId: link.projectId, nativeProjectDirectory: link.projectDirectory, nativeHeadRevisionId: durable.headRevisionId, nativeRevisionNumber: durable.revisionNumber });
+              const pendingDocument = editorDocumentSaves.current?.pendingDocument(project.id);
+              return pendingDocument ? { ...hydrated, editorDocument: pendingDocument } : hydrated;
             }) }));
             refreshedJobStates.current.add(key);
           } catch { /* A failed refresh stays retryable on the next poll. */ }
@@ -1254,28 +1394,7 @@ function App() {
     const timer = window.setTimeout(() => {
       autosaveTimers.delete(project.id);
       if (approvalInFlightProjects.current.has(project.id)) return;
-      const durableProject = projectSnapshotDocument(project);
-      void enqueueSnapshotSave(async () => {
-        try {
-          return await projectSnapshotSave({
-            projectId: project.nativeProjectId!,
-            projectDirectory: project.nativeProjectDirectory!,
-            expectedHeadRevisionId: project.nativeHeadRevisionId!,
-            snapshot: durableProject,
-            message: "Saved scene and script edits",
-          });
-        } catch (error) {
-          snapshotSaveFailures.current.set(project.id, { version: snapshot.version, error });
-          throw error;
-        }
-      }).then((saved) => {
-        snapshotSaveFailures.current.delete(project.id);
-        durableVersionByProject.current.set(project.id, snapshot.version);
-        setSnapshot((current) => ({
-          ...current,
-          projects: current.projects.map((item) => item.id === project.id ? { ...item, nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber } : item),
-        }));
-      }).catch((error: unknown) => {
+      void persistGeneralProjectEditsRef.current(project, snapshot.version).catch((error: unknown) => {
         notify("Project edits need attention", errorMessage(error), "warning");
       });
     }, Math.max(500, preferences.autosaveSeconds * 1000));
@@ -1284,7 +1403,7 @@ function App() {
       window.clearTimeout(timer);
       if (autosaveTimers.get(project.id) === timer) autosaveTimers.delete(project.id);
     };
-  }, [activeProjectId, approvingProjectIds, enqueueSnapshotSave, snapshot.projects, snapshot.version, setSnapshot, preferences.autosaveSeconds, notify]);
+  }, [activeProjectId, approvingProjectIds, snapshot.projects, snapshot.version, preferences.autosaveSeconds, notify]);
 
   const createTutorial = async (project: ProjectRecord, settings: TutorialCreationSettings) => {
     const bootstrap = runtime.bootstrap ?? await appBootstrap();
@@ -1722,6 +1841,9 @@ function App() {
               onProjectCustomization={(customization, receipt) => updateProjectCustomization(activeProject, customization, receipt)}
               onProjectCreative={(creative) => updateProjectCreative(activeProject.id, creative)}
               onProjectEdit={(update) => setSnapshot((current) => ({ ...current, projects: current.projects.map((item) => item.id === activeProject.id ? { ...item, ...update, updatedAt: "just now" } : item), version: current.version + 1 }))}
+              onEditorDocumentChange={(document) => queueEditorDocumentSave(activeProject.id, document)}
+              onFlushEditorDocument={() => flushEditorDocument(activeProject.id)}
+              {...(editorSaveStates[activeProject.id] ? { editorSaveStatus: editorSaveStates[activeProject.id] } : {})}
               onRegenerate={setRegenScene}
               onNotify={notify}
               onAddJob={addJob}
@@ -2374,6 +2496,9 @@ function ProjectWorkspace(props: {
   onProjectCustomization: (customization: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => void;
   onProjectCreative: (creative: CreativeConfiguration) => void;
   onProjectEdit: (update: Pick<Partial<ProjectRecord>, "scenes" | "sceneCandidates" | "customization" | "editorDocument" | "reviewNotes" | "nativeHeadRevisionId" | "nativeRevisionNumber">) => void;
+  onEditorDocumentChange: (document: EditorProject) => void;
+  onFlushEditorDocument: () => Promise<void>;
+  editorSaveStatus?: EditorSaveStatus;
   onRegenerate: (scene: Scene) => void;
   onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void;
   onAddJob: (job: JobRecord) => void;
@@ -2450,7 +2575,7 @@ function StoryboardWorkspace({ project, onScene, onRegenerate, onWorkspace, onPr
   </div>;
 }
 
-function StudioWorkspace({ project, activeScene, mode, version, environment, jobs, onSelectScene, onSceneUpdate, onProjectCustomization, onProjectCreative, onRegenerate, onUndo, onRedo, onRenderScene, onNotify, onProjectEdit, onAddJob }: ProjectWorkspaceProps) {
+function StudioWorkspace({ project, activeScene, mode, version, environment, jobs, onSelectScene, onSceneUpdate, onProjectCustomization, onProjectCreative, onRegenerate, onUndo, onRedo, onRenderScene, onNotify, onProjectEdit, onEditorDocumentChange, onFlushEditorDocument, editorSaveStatus, onAddJob }: ProjectWorkspaceProps) {
   const [playing, setPlaying] = useState(false);
   const [previewSeconds, setPreviewSeconds] = useState(0);
   const activeIndex = project.scenes.findIndex((scene) => scene.id === activeScene.id);
@@ -2470,6 +2595,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
   }, [playing, activeScene.duration]);
   useEffect(() => { if (previewSeconds >= activeScene.duration) setPlaying(false); }, [previewSeconds, activeScene.duration]);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [returningFromEditor, setReturningFromEditor] = useState(false);
   const [editorProject, setEditorProject] = useState<EditorProject>(() => project.editorDocument ?? createEditorProjectFromAlystriaProject(project, { now: new Date().toISOString() }));
   const [editorImportRights, setEditorImportRights] = useState<"unknown" | "owned" | "licensed" | "publicDomain">("unknown");
   const editorImportController = useRef<BrowserMediaImportController | null>(null);
@@ -2524,10 +2650,11 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
   const renderEditorTimeline = async (document: EditorProject) => {
     const identity = nativeProjectLink(projectRef.current);
     if (!identity) throw new Error("Open a saved desktop project before rendering a timeline.");
+    const prepared = prepareEditorProjectForPersistence(document);
+    onEditorDocumentChange(prepared);
+    await onFlushEditorDocument();
     const current = await projectSnapshotGet(identity);
-    const saved = await projectSnapshotSave({ ...identity, expectedHeadRevisionId: current.headRevisionId, snapshot: { ...current.snapshot, editorDocument: prepareEditorProjectForPersistence(document) }, message: "Saved timeline before render" });
-    onProjectEdit({ editorDocument: prepareEditorProjectForPersistence(document), nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber });
-    const submitted = await exportEditorTimelineNative(document, { ...identity, expectedHeadRevisionId: saved.headRevisionId }, editorTimelineExport, { name: "vp9" });
+    const submitted = await exportEditorTimelineNative(prepared, { ...identity, expectedHeadRevisionId: current.headRevisionId }, editorTimelineExport, { name: "vp9" });
     let receipt: JobReceipt = { ...submitted, operation: "editor_timeline_export" };
     const link = { ...identity, jobId: receipt.jobId };
     const recordReceipt = (value: JobReceipt) => onAddJob(receiptJob(value, `Timeline · ${project.title}`, value.message, link));
@@ -2541,6 +2668,18 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
     if (!result) throw new Error(receipt.message || "Timeline render did not complete.");
     onNotify("Edited video exported", result.outputPath, "success");
     return result;
+  };
+  const returnToScene = async () => {
+    if (returningFromEditor) return;
+    setReturningFromEditor(true);
+    try {
+      await onFlushEditorDocument();
+      setEditorOpen(false);
+    } catch (error) {
+      onNotify("Timeline is not saved", `${errorMessage(error)} The editor remains open so you can retry.`, "warning");
+    } finally {
+      setReturningFromEditor(false);
+    }
   };
   const customization = canvasCustomization(project);
   const creative = project.creative ?? DEFAULT_CREATIVE_CONFIGURATION;
@@ -2664,7 +2803,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
       </aside>
     </div>
     <div className="scene-sequence-panel"><div className="scene-sequence-heading"><strong><Layers3 size={15} /> Teaching sequence</strong><button className="text-button" onClick={() => { void openAdvancedEditor(); }}>Edit tracks & timing <ArrowRight size={14} /></button><small>v{version}</small></div><div className="scene-sequence-clips">{project.scenes.map((scene) => <button className={scene.id === activeScene.id ? "active" : ""} style={{ flexGrow: scene.duration }} key={scene.id} onClick={() => onSelectScene(scene.id)}><span>{String(scene.index).padStart(2, "0")} · {formatTime(scene.duration)}</span><strong>{scene.title}</strong></button>)}</div></div>
-    {editorOpen && <div className="integrated-editor-layer" role="dialog" aria-modal="true" aria-label="Integrated advanced video editor"><div className="integrated-editor-layer__bar"><div><span className="section-kicker">Non-destructive finishing room</span><strong>{project.title}</strong></div><label className="editor-import-rights">New media rights<select aria-label="Rights for new editor media" value={editorImportRights} onChange={(event) => setEditorImportRights(event.target.value as typeof editorImportRights)}><option value="unknown">Not reviewed · preview only</option><option value="owned">I own the media</option><option value="licensed">Licensed for distribution</option><option value="publicDomain">Public domain</option></select></label><button className="secondary-button small" onClick={() => setEditorOpen(false)}><X size={15} /> Return to scene</button></div><AdvancedVideoEditor project={editorProject} {...(environment === "native" ? { onImportMedia: importEditorMedia, onRenderTimeline: renderEditorTimeline, onResolveWaveform: resolveEditorWaveform } : {})} onProjectChange={(next) => { setEditorProject(next); onProjectEdit({ editorDocument: prepareEditorProjectForPersistence(next) }); }} onCreateProjectCopy={(copy) => { setEditorProject(copy); onProjectEdit({ editorDocument: prepareEditorProjectForPersistence(copy) }); onNotify("Version copy created", `${copy.name} is saved with this tutorial.`, "success"); }} /></div>}
+    {editorOpen && <div className="integrated-editor-layer" role="dialog" aria-modal="true" aria-label="Integrated advanced video editor"><div className="integrated-editor-layer__bar"><div><span className="section-kicker">Non-destructive finishing room</span><strong>{project.title}</strong>{editorSaveStatus && <span className={`editor-save-status is-${editorSaveStatus.phase}`} role="status" aria-live="polite" style={{ color: editorSaveStatus.phase === "error" ? "#ffb4a8" : "#8495ae", fontSize: 11 }}>{editorSaveStatus.phase === "error" ? `Save failed · ${editorSaveStatus.detail}` : editorSaveStatus.detail}</span>}</div><label className="editor-import-rights">New media rights<select aria-label="Rights for new editor media" value={editorImportRights} onChange={(event) => setEditorImportRights(event.target.value as typeof editorImportRights)}><option value="unknown">Not reviewed · preview only</option><option value="owned">I own the media</option><option value="licensed">Licensed for distribution</option><option value="publicDomain">Public domain</option></select></label><button className="secondary-button small" disabled={returningFromEditor} aria-busy={returningFromEditor} onClick={() => { void returnToScene(); }}><X size={15} /> {returningFromEditor ? "Saving…" : "Return to scene"}</button></div><AdvancedVideoEditor project={editorProject} {...(environment === "native" ? { onImportMedia: importEditorMedia, onRenderTimeline: renderEditorTimeline, onResolveWaveform: resolveEditorWaveform } : {})} onProjectChange={(next) => { setEditorProject(next); onEditorDocumentChange(next); }} onCreateProjectCopy={(copy) => { setEditorProject(copy); onEditorDocumentChange(copy); onNotify("Version copy created", `${copy.name} is saved with this tutorial.`, "success"); }} /></div>}
   </div>;
 }
 

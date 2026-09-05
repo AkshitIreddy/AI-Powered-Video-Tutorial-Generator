@@ -123,26 +123,21 @@ fn prepare_headless_acceptance(state: &AppState) -> Result<(), std::io::Error> {
     }
 }
 
+#[tauri::command]
+fn desktop_shutdown(app: tauri::AppHandle, state: tauri::State<'_, AppState>) {
+    // The webview invokes this only after its pending durable saves finish.
+    // Stop the supervised child before ending the process so a normal window
+    // close cannot strand the worker or discard a final checkpoint.
+    state.worker.stop();
+    app.exit(0);
+}
+
 pub fn run() {
     prepare_portable_process_environment().unwrap_or_else(|error| {
         panic!("{}: {}", error.code, error.message);
     });
     configure_headless_webview_debugging();
     let app = tauri::Builder::default()
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Keep the window alive until the supervised worker has had a
-                // bounded opportunity to checkpoint and stop. Running this
-                // outside the GUI event loop prevents slow IPC from freezing
-                // Windows' close handling.
-                api.prevent_close();
-                let handle = window.app_handle().clone();
-                std::thread::spawn(move || {
-                    handle.state::<AppState>().worker.stop();
-                    handle.exit(0);
-                });
-            }
-        })
         .setup(|app| {
             let state = AppState::initialize(app.handle()).map_err(|error| {
                 std::io::Error::other(format!("{}: {}", error.code, error.message))
@@ -214,7 +209,8 @@ pub fn run() {
             local_model_download_start,
             runtime_manifest,
             updater_status,
-            catalog_discover
+            catalog_discover,
+            desktop_shutdown
         ])
         .build(tauri::generate_context!())
         .expect("AI Video Tutorial Generator desktop runtime failed");

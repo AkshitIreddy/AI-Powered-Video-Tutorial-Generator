@@ -10,6 +10,7 @@ vi.mock("@tauri-apps/api/core", () => tauri);
 import {
   appBootstrap,
   catalogDiscover,
+  desktopShutdown,
   generationApprove,
   jobStatus,
   masterExport,
@@ -93,6 +94,14 @@ describe("native desktop bridge", () => {
     await appBootstrap();
 
     expect(tauri.invoke).toHaveBeenCalledWith("app_bootstrap", undefined);
+  });
+
+  it("requests native shutdown only through the argument-free broker command", async () => {
+    tauri.invoke.mockResolvedValueOnce(undefined);
+
+    await desktopShutdown();
+
+    expect(tauri.invoke).toHaveBeenCalledWith("desktop_shutdown", undefined);
   });
 
   it("reopens a persisted native project through the validated Rust command", async () => {

@@ -704,6 +704,11 @@ export function appBootstrap(): Promise<BootstrapInfo> {
   }));
 }
 
+/** Ends the native desktop process after the caller has flushed durable UI state. */
+export function desktopShutdown(): Promise<void> {
+  return command("desktop_shutdown", undefined, () => Promise.resolve());
+}
+
 export function diagnosticsRun(): Promise<DiagnosticReport> {
   return command("diagnostics_run", undefined, () => {
     const checks: DiagnosticCheck[] = [
