@@ -131,6 +131,110 @@ def test_supervisor_recovers_expired_lease_after_process_restart(tmp_path: Path)
         restarted.stop(timeout_seconds=3)
 
 
+def test_supervisor_reopens_persisted_blocked_child_after_parent_succeeded(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "persisted-blocked-child"
+    with ProjectStore.create(project, name="Blocked child") as store:
+        runtime = SQLiteWorkflowRuntime(store.connection)
+        parent = runtime.enqueue(
+            project_id=store.manifest.project_id,
+            kind="parent",
+            parameters={},
+        )
+        child = runtime.enqueue(
+            project_id=store.manifest.project_id,
+            kind="child",
+            parameters={},
+            dependency_ids=[parent.job_id],
+        )
+        assert runtime.run_once({"parent": lambda *_: {"ok": True}}) is not None
+        # Recreate the durable snapshot visible between worker turns: the
+        # parent committed successfully while its child is still blocked.
+        store.connection.execute(
+            "UPDATE jobs SET state='BLOCKED' WHERE job_id=?",
+            (child.job_id,),
+        )
+
+    completed = threading.Event()
+
+    def execute(store: ProjectStore, runtime: SQLiteWorkflowRuntime):
+        result = runtime.run_once({"child": lambda *_: {"ok": True}})
+        if result is not None and result.state.value == "SUCCEEDED":
+            completed.set()
+        return result
+
+    restarted = DesktopJobSupervisor(execute, poll_interval_seconds=0.01)
+    restarted.start()
+    try:
+        restarted.register(project)
+        assert completed.wait(1)
+        with ProjectStore.open(project) as store:
+            recovered = SQLiteWorkflowRuntime(store.connection).get_job(child.job_id)
+            assert recovered.state.value == "SUCCEEDED"
+    finally:
+        restarted.stop(timeout_seconds=3)
+
+
+def test_supervisor_recovers_expired_child_without_rerunning_succeeded_parent(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "expired-child"
+    with ProjectStore.create(project, name="Expired child") as store:
+        runtime = SQLiteWorkflowRuntime(store.connection)
+        parent = runtime.enqueue(
+            project_id=store.manifest.project_id,
+            kind="parent",
+            parameters={},
+        )
+        child = runtime.enqueue(
+            project_id=store.manifest.project_id,
+            kind="child",
+            parameters={},
+            dependency_ids=[parent.job_id],
+        )
+        assert runtime.run_once({"parent": lambda *_: {"accepted": "once"}}) is not None
+        runtime._unblock_ready_jobs()
+        claim = runtime._claim_next()
+        assert claim is not None and claim[0].job_id == child.job_id
+        store.connection.execute(
+            "UPDATE jobs SET lease_expires_at='2000-01-01T00:00:00Z' WHERE job_id=?",
+            (child.job_id,),
+        )
+
+    child_completed = threading.Event()
+
+    def execute(store: ProjectStore, runtime: SQLiteWorkflowRuntime):
+        def reject_parent(*_):
+            raise AssertionError("succeeded parent was executed again")
+
+        result = runtime.run_once({"parent": reject_parent, "child": lambda *_: {"ok": True}})
+        if result is not None and result.state.value == "SUCCEEDED":
+            child_completed.set()
+        return result
+
+    restarted = DesktopJobSupervisor(execute, poll_interval_seconds=0.01)
+    restarted.start()
+    try:
+        restarted.register(project)
+        assert child_completed.wait(1)
+        with ProjectStore.open(project) as store:
+            runtime = SQLiteWorkflowRuntime(store.connection)
+            recovered_parent = runtime.get_job(parent.job_id)
+            recovered_child = runtime.get_job(child.job_id)
+            assert recovered_parent.state.value == "SUCCEEDED"
+            assert recovered_parent.attempt_count == 1
+            assert recovered_parent.result == {"accepted": "once"}
+            assert recovered_child.state.value == "SUCCEEDED"
+            assert recovered_child.attempt_count == 2
+            assert store.connection.execute(
+                "SELECT COUNT(*) FROM job_attempts WHERE job_id=? AND state='ABANDONED'",
+                (child.job_id,),
+            ).fetchone()[0] == 1
+    finally:
+        restarted.stop(timeout_seconds=3)
+
+
 def test_desktop_cancel_remains_responsive_while_stage_is_running(tmp_path: Path) -> None:
     project = tmp_path / "cancel-running"
     with ProjectStore.create(
