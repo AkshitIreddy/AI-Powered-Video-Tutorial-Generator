@@ -252,6 +252,9 @@ def test_selection_revalidates_real_person_consent_and_revision_head(tmp_path: P
         ("soundEffect", "click.opus", "audio/opus", b"OggS" + b"sfx-data"),
         ("presenterAudio", "voice.flac", "audio/flac", b"fLaC" + b"voice-data"),
         ("backgroundImage", "paper.webp", "image/webp", b"RIFF\x10\x00\x00\x00WEBPdata"),
+        ("editorImage", "diagram.png", "image/png", PNG),
+        ("editorVideo", "lesson.mp4", "video/mp4", b"\x00\x00\x00\x18ftypmp42" + b"video-data"),
+        ("editorAudio", "voice.wav", "audio/wav", b"RIFF\x10\x00\x00\x00WAVEfmt " + b"audio-data"),
     ],
 )
 def test_supported_custom_asset_families_import_with_typed_roles(

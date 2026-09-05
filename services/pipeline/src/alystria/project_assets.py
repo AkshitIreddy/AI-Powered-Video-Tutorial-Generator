@@ -35,6 +35,9 @@ ASSET_LIMITS = {
     "font": 16 * 1024 * 1024,
     "music": 64 * 1024 * 1024,
     "soundEffect": 32 * 1024 * 1024,
+    "editorImage": 32 * 1024 * 1024,
+    "editorVideo": 64 * 1024 * 1024,
+    "editorAudio": 64 * 1024 * 1024,
 }
 
 ASSET_MIME_TYPES = {
@@ -46,6 +49,11 @@ ASSET_MIME_TYPES = {
     ),
     "music": frozenset({"audio/wav", "audio/mpeg", "audio/flac", "audio/ogg"}),
     "soundEffect": frozenset(
+        {"audio/wav", "audio/mpeg", "audio/flac", "audio/ogg"}
+    ),
+    "editorImage": frozenset({"image/png", "image/jpeg", "image/webp"}),
+    "editorVideo": frozenset({"video/mp4", "video/webm", "video/quicktime"}),
+    "editorAudio": frozenset(
         {"audio/wav", "audio/mpeg", "audio/flac", "audio/ogg"}
     ),
 }
