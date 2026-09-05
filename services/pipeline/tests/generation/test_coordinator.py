@@ -1217,6 +1217,23 @@ class RecordingMediaClient(DeterministicMediaClient):
 
 
 class PacingRecoveryMediaClient(RecordingMediaClient):
+    def narration_cache_runtime_identity(self) -> dict[str, object]:
+        value: dict[str, object] = {
+            "contract": "pacing-recovery-fixture-v1",
+            "selectedProvider": self.provider_id,
+            "requestedModel": self.model_revision,
+            "requestedVoice": "deterministic-sine",
+            "synthesisControls": {
+                "normalDurationMs": 30_000,
+                "reviewedDurationMs": 35_000,
+            },
+        }
+        canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
+        return {
+            **value,
+            "runtimeIdentitySha256": hashlib.sha256(canonical.encode()).hexdigest(),
+        }
+
     def synthesize_narration(
         self, scene: dict[str, Any], *, locale: str, seed: int
     ) -> GeneratedMedia:
@@ -1369,6 +1386,131 @@ def test_failed_measured_pacing_can_freeze_a_new_reviewed_approval_branch(
             assert all(job.state is JobState.STALE for job in reopened_old_jobs)
         finally:
             reopened.close()
+    finally:
+        store.close()
+
+
+def test_pacing_reapproval_reuses_unchanged_verified_narration_clips(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALYSTRIA_MEDIA_MODE", "production")
+    root = tmp_path / "Pacing clip reuse"
+    store = ProjectStore.create(root, name="Pacing clip reuse")
+    media = PacingRecoveryMediaClient()
+    try:
+        coordinator = GenerationCoordinator(store, media_client=media)
+        generation_id = coordinator.start(pacing_recovery_request()).generation_id
+        coordinator.run_pending()
+        head = store.head_revision()
+        assert head is not None
+        first_approval = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=head.revision_id,
+        )
+        assert first_approval.approval_revision_id is not None
+        failed = coordinator.run_pending()
+        assert failed is not None and failed.state is GenerationState.FAILED
+        assert len(media.narration_scenes) == 5
+        assert (
+            store.connection.execute(
+                """SELECT COUNT(*) FROM dependency_nodes
+                   WHERE project_id=? AND logical_key LIKE 'narration-cache:%'
+                     AND state='CURRENT'""",
+                (store.manifest.project_id,),
+            ).fetchone()[0]
+            == 5
+        )
+
+        # Reopen the project to prove this is durable CAS reuse rather than an
+        # in-memory retry shortcut. Only the edited scene should invoke TTS.
+        store.close()
+        store = ProjectStore.open(root)
+        coordinator = GenerationCoordinator(store, media_client=media)
+        failed_head = store.head_revision()
+        assert failed_head is not None
+        revised_snapshot = copy.deepcopy(failed_head.snapshot)
+        first_scene = revised_snapshot["payload"]["storyboard"]["scenes"][0]
+        first_scene["narration"] = f"{first_scene['narration']} reviewed pacing"
+        revised = store.create_revision(
+            snapshot=revised_snapshot,
+            expected_head=failed_head.revision_id,
+            message="Revise one narration scene after measured pacing failure",
+        )
+        reapproved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=revised.revision_id,
+        )
+        assert reapproved.approval_revision_id is not None
+        second_failed = coordinator.run_pending()
+        assert second_failed is not None and second_failed.state is GenerationState.FAILED
+        assert len(media.narration_scenes) == 6
+        assert media.narration_scenes[-1]["id"] == first_scene["id"]
+        assert "reviewed pacing" in str(media.narration_scenes[-1]["narration"])
+
+        narration_usage = []
+        for row in store.connection.execute("SELECT metadata_json FROM usage_records"):
+            metadata = json.loads(str(row["metadata_json"]))
+            if metadata.get("kind") == "narration":
+                narration_usage.append(metadata)
+        assert len(narration_usage) == 6
+        cache_keys = [
+            str(row["logical_key"])
+            for row in store.connection.execute(
+                """SELECT logical_key FROM dependency_nodes
+                   WHERE project_id=? AND logical_key LIKE 'narration-cache:%'
+                     AND state='CURRENT' ORDER BY logical_key""",
+                (store.manifest.project_id,),
+            )
+        ]
+        assert len(cache_keys) == 6, cache_keys
+
+        second_failed_head = store.head_revision()
+        assert second_failed_head is not None
+        final_snapshot = copy.deepcopy(second_failed_head.snapshot)
+        for scene in final_snapshot["payload"]["storyboard"]["scenes"][1:]:
+            scene["narration"] = f"{scene['narration']} reviewed pacing"
+        final_revision = store.create_revision(
+            snapshot=final_snapshot,
+            expected_head=second_failed_head.revision_id,
+            message="Finish reviewed narration pacing",
+        )
+        final_approval = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=final_revision.revision_id,
+        )
+        assert final_approval.approval_revision_id is not None
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        # The first reviewed scene is reused from the second failed fit; only
+        # the four newly edited scenes invoke the provider on this branch.
+        assert len(media.narration_scenes) == 10
+        final_narration_job = next(
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("approvalRevisionId") == final_approval.approval_revision_id
+            and job.parameters.get("stage") == GenerationStage.NARRATION.value
+        )
+        assert final_narration_job.result is not None
+        final_narration = final_narration_job.result["payload"]["narration"]
+        by_scene = {str(item["sceneId"]): item for item in final_narration}
+        reused = by_scene[str(first_scene["id"])]["synthesis"]
+        assert reused["reused"] is True
+        assert reused["providerInvoked"] is False
+        assert reused["newActualCostMicros"] == 0
+        assert reused["newUsageUnits"] == {}
+        assert reused["originUsage"]["providerInvoked"] is True
+        assert all(
+            item["synthesis"]["providerInvoked"] is True
+            for scene_id, item in by_scene.items()
+            if scene_id != str(first_scene["id"])
+        )
+        narration_usage = [
+            json.loads(str(row["metadata_json"]))
+            for row in store.connection.execute("SELECT metadata_json FROM usage_records")
+            if json.loads(str(row["metadata_json"])).get("kind") == "narration"
+        ]
+        assert len(narration_usage) == 10
     finally:
         store.close()
 

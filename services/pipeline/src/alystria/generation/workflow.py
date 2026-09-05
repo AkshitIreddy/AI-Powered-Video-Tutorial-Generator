@@ -109,9 +109,17 @@ from .models import (
     ObjectiveSpec,
     SourceSpec,
 )
+from .narration_cache import (
+    alignment_runtime_identity,
+    load_cached_narration,
+    narration_request_identity,
+    store_cached_narration,
+    synthesis_runtime_identity,
+)
+from .narration_cache import fingerprint as narration_cache_fingerprint
 from .spoken_text import normalize_spoken_text
 
-IMPLEMENTATION_VERSION = "generation-v10-reviewed-narration-reapproval"
+IMPLEMENTATION_VERSION = "generation-v11-reusable-narration-clips"
 PROMPT_VERSION = "offline-education-v3-exact-role-vocabulary"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
@@ -1303,7 +1311,31 @@ class GenerationWorkflow:
             upstream_keys=[self.logical_key(generation_id, GenerationStage.SCRIPT.value)],
         )
         pending: list[dict[str, Any]] = []
+
+        def persist_cache_item(item: dict[str, Any]) -> None:
+            request_identity = item["cacheIdentity"]
+            if request_identity is None or item["cacheHit"] or item["cacheStored"]:
+                return
+            media = item["media"]
+            store_cached_narration(
+                self.store,
+                request_identity=request_identity,
+                audio_hash=str(item["artifactHash"]),
+                media_type=media.media_type,
+                original_name=media.original_name,
+                provider_id=media.provider_id,
+                model_revision=media.model_revision,
+                duration_ms=int(item["durationMs"]),
+                word_timings=[asdict(word) for word in item["wordTimings"]],
+                alignment=item["alignment"],
+                actual_cost_micros=media.actual_cost_micros,
+                usage_units=media.usage_units,
+            )
+            item["cacheStored"] = True
+
         scenes = approved["storyboard"]["scenes"]
+        synthesis_runtime = synthesis_runtime_identity(self.media_client)
+        alignment_runtime = alignment_runtime_identity(self.alignment_client)
         for index, scene in enumerate(scenes):
             context.check_cancelled()
             authored_text = str(scene["narration"])
@@ -1315,51 +1347,113 @@ class GenerationWorkflow:
             authored_word_count = len(re.findall(r"\b[\w'-]+\b", authored_text, re.UNICODE))
             spoken_word_count = len(re.findall(r"\b[\w'-]+\b", spoken_text, re.UNICODE))
             spoken_scene = {**scene, "narration": spoken_text}
-            media = self.media_client.synthesize_narration(
-                spoken_scene,
-                locale=request.locale,
-                seed=request.deterministic_seed + index,
+            request_identity = (
+                narration_request_identity(
+                    scene_id=str(scene["id"]),
+                    authored_text=authored_text,
+                    spoken_text=spoken_text,
+                    locale=request.locale,
+                    seed=request.deterministic_seed + index,
+                    synthesis_runtime=synthesis_runtime,
+                    alignment_runtime=alignment_runtime,
+                )
+                if synthesis_runtime is not None and alignment_runtime is not None
+                else None
             )
-            self._record_media_usage(context, media, scene_id=str(scene["id"]), kind="narration")
-            artifact = self.store.add_artifact_bytes(
-                media.content,
-                media_type=media.media_type,
-                original_name=media.original_name,
-                metadata={
-                    **media.metadata,
-                    "provider": media.provider_id,
-                    "modelRevision": media.model_revision,
-                    "sceneId": scene["id"],
-                    "textSha256": hashlib.sha256(spoken_text.encode()).hexdigest(),
-                    "authoredTextSha256": hashlib.sha256(authored_text.encode()).hexdigest(),
-                    "authoredWordCount": authored_word_count,
-                    "spokenWordCount": spoken_word_count,
-                },
+            cached = (
+                None
+                if request_identity is None
+                else load_cached_narration(self.store, request_identity)
             )
-            unscaled_word_timings = _deterministic_word_timings(spoken_text)
-            duration_ms = _positive_int(
-                media.metadata.get("durationMs", unscaled_word_timings[-1].end_ms),
-                "narration durationMs",
-            )
-            word_timings, alignment = _provider_neutral_word_timings(
-                spoken_text,
-                duration_ms=duration_ms,
-                metadata=media.metadata,
-            )
-            pending.append(
-                {
-                    "scene": scene,
-                    "authoredText": authored_text,
-                    "spokenText": spoken_text,
-                    "authoredWordCount": authored_word_count,
-                    "spokenWordCount": spoken_word_count,
-                    "media": media,
-                    "artifact": artifact,
-                    "durationMs": duration_ms,
-                    "wordTimings": word_timings,
-                    "alignment": alignment,
+            if cached is not None:
+                media = GeneratedMedia(
+                    cached.audio,
+                    cached.media_type,
+                    cached.original_name,
+                    cached.provider_id,
+                    cached.model_revision,
+                    dict(cached.media_metadata),
+                    0,
+                    {},
+                )
+                artifact_hash = cached.audio_hash
+                duration_ms = cached.duration_ms
+                word_timings = tuple(
+                    WordTiming(
+                        str(word.get("token", word.get("word"))),
+                        int(word["start_ms"] if "start_ms" in word else word["startMs"]),
+                        int(word["end_ms"] if "end_ms" in word else word["endMs"]),
+                        confidence=(
+                            None
+                            if word.get("confidence") is None
+                            else float(word["confidence"])
+                        ),
+                    )
+                    for word in cached.word_timings
+                )
+                alignment = dict(cached.alignment)
+                origin_usage = dict(cached.origin_usage)
+            else:
+                media = self.media_client.synthesize_narration(
+                    spoken_scene,
+                    locale=request.locale,
+                    seed=request.deterministic_seed + index,
+                )
+                self._record_media_usage(
+                    context, media, scene_id=str(scene["id"]), kind="narration"
+                )
+                artifact = self.store.add_artifact_bytes(
+                    media.content,
+                    media_type=media.media_type,
+                    original_name=media.original_name,
+                    metadata={
+                        **media.metadata,
+                        "provider": media.provider_id,
+                        "modelRevision": media.model_revision,
+                        "sceneId": scene["id"],
+                        "textSha256": hashlib.sha256(spoken_text.encode()).hexdigest(),
+                        "authoredTextSha256": hashlib.sha256(authored_text.encode()).hexdigest(),
+                        "authoredWordCount": authored_word_count,
+                        "spokenWordCount": spoken_word_count,
+                    },
+                )
+                artifact_hash = artifact.hash
+                unscaled_word_timings = _deterministic_word_timings(spoken_text)
+                duration_ms = _positive_int(
+                    media.metadata.get("durationMs", unscaled_word_timings[-1].end_ms),
+                    "narration durationMs",
+                )
+                word_timings, alignment = _provider_neutral_word_timings(
+                    spoken_text,
+                    duration_ms=duration_ms,
+                    metadata=media.metadata,
+                )
+                origin_usage = {
+                    "providerInvoked": True,
+                    "actualCostMicros": media.actual_cost_micros,
+                    "usageUnits": dict(media.usage_units),
                 }
-            )
+            pending_item = {
+                "scene": scene,
+                "authoredText": authored_text,
+                "spokenText": spoken_text,
+                "authoredWordCount": authored_word_count,
+                "spokenWordCount": spoken_word_count,
+                "media": media,
+                "artifactHash": artifact_hash,
+                "durationMs": duration_ms,
+                "wordTimings": word_timings,
+                "alignment": alignment,
+                "cacheIdentity": request_identity,
+                "cacheHit": cached is not None,
+                "cacheStored": cached is not None,
+                "originUsage": origin_usage,
+            }
+            pending.append(pending_item)
+            if cached is None and (
+                alignment.get("status") == "COMPLETE" or self.alignment_client is None
+            ):
+                persist_cache_item(pending_item)
             context.set_progress((index + 1) / max(1, len(scenes)) * 0.55)
 
         needs_alignment = [
@@ -1395,14 +1489,22 @@ class GenerationWorkflow:
                 item["wordTimings"] = word_timings
                 item["alignment"] = alignment
 
+        # Persist each independently successful clip and its final timing
+        # evidence before the aggregate pacing gate. A fit failure therefore
+        # leaves reusable CAS evidence without creating a partial stage or a
+        # new project revision.
+        for item in pending:
+            persist_cache_item(item)
+
         for index, item in enumerate(pending):
             scene = item["scene"]
             media = item["media"]
-            artifact = item["artifact"]
+            artifact_hash = str(item["artifactHash"])
+            cache_identity = item["cacheIdentity"]
             narration.append(
                 {
                     "sceneId": scene["id"],
-                    "artifactHash": artifact.hash,
+                    "artifactHash": artifact_hash,
                     "mediaType": media.media_type,
                     "durationMs": item["durationMs"],
                     "sampleRateHz": media.metadata.get("sampleRateHz", 48_000),
@@ -1412,18 +1514,39 @@ class GenerationWorkflow:
                     "spokenWordCount": item["spokenWordCount"],
                     "words": [asdict(word) for word in item["wordTimings"]],
                     "alignment": item["alignment"],
+                    "synthesis": {
+                        "requestIdentityHash": (
+                            None
+                            if cache_identity is None
+                            else narration_cache_fingerprint(cache_identity)
+                        ),
+                        "providerId": media.provider_id,
+                        "modelRevision": media.model_revision,
+                        "voiceId": media.metadata.get("voiceId"),
+                        "reused": bool(item["cacheHit"]),
+                        "providerInvoked": not bool(item["cacheHit"]),
+                        "newActualCostMicros": (
+                            0 if item["cacheHit"] else media.actual_cost_micros
+                        ),
+                        "newUsageUnits": {} if item["cacheHit"] else dict(media.usage_units),
+                        "originUsage": item["originUsage"],
+                    },
                 }
             )
             links.append(
-                {"artifactHash": artifact.hash, "role": "scene-narration", "stableId": scene["id"]}
+                {
+                    "artifactHash": artifact_hash,
+                    "role": "scene-narration",
+                    "stableId": scene["id"],
+                }
             )
             self._record_scene_node(
                 generation_id,
                 str(scene["id"]),
                 "narration",
-                artifact.hash,
+                artifact_hash,
                 [GenerationStage.SCRIPT.value, "pronunciation"],
-                artifact.hash,
+                artifact_hash,
             )
             context.set_progress(0.65 + (index + 1) / max(1, len(scenes)) * 0.25)
         fixture_timing = os.environ.get("ALYSTRIA_MEDIA_MODE") == "fixture"
