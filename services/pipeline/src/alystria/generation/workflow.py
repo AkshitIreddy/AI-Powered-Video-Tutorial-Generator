@@ -119,7 +119,7 @@ from .narration_cache import (
 from .narration_cache import fingerprint as narration_cache_fingerprint
 from .spoken_text import normalize_spoken_text
 
-IMPLEMENTATION_VERSION = "generation-v11-reusable-narration-clips"
+IMPLEMENTATION_VERSION = "generation-v12-brief-aware-objectives"
 PROMPT_VERSION = "offline-education-v4-spoken-math-and-exact-roles"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
@@ -747,9 +747,9 @@ class GenerationWorkflow:
             objective_statements = [item.statement for item in request.objectives]
             if not objective_statements:
                 objective_statements = [
-                    f"Explain the central idea of {request.topic}.",
-                    f"Apply {request.topic} in a concrete example.",
-                    f"Recall the key decisions in {request.topic}.",
+                    f"Explain the central ideas in this teaching brief: {request.topic}",
+                    f"Work through a concrete example for this teaching brief: {request.topic}",
+                    f"Recap the key ideas from this teaching brief: {request.topic}",
                 ]
             for index, statement in enumerate(objective_statements):
                 selected_source_id = (
@@ -887,9 +887,9 @@ class GenerationWorkflow:
                 )
                 for index, (statement, level) in enumerate(
                     (
-                        (f"Explain {request.topic} clearly.", "understand"),
-                        (f"Apply {request.topic} in a worked example.", "apply"),
-                        (f"Recall the key ideas in {request.topic}.", "remember"),
+                        (f"Explain the central ideas in this teaching brief: {request.topic}", "understand"),
+                        (f"Work through an example for this teaching brief: {request.topic}", "apply"),
+                        (f"Recap the key ideas from this teaching brief: {request.topic}", "remember"),
                     )
                 )
             ]
@@ -922,7 +922,7 @@ class GenerationWorkflow:
                     prerequisites=PrerequisiteDag(prerequisites),
                     misconceptions=(
                         Misconception.create(
-                            f"{request.topic} can be learned by memorizing labels alone.",
+                            "Memorizing labels alone is enough to understand the topic.",
                             "Understanding requires connecting the idea to a concrete example.",
                             "Can you explain why the example works?",
                         ),
