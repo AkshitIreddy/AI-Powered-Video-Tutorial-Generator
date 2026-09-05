@@ -301,6 +301,11 @@ export interface JobActionRequest {
   projectId: string;
   projectDirectory: string;
   jobId: string;
+  expectedHeadRevisionId?: string;
+}
+
+export interface GenerationApprovalRequest extends JobActionRequest {
+  expectedHeadRevisionId: string;
 }
 
 export interface JobReceipt {
@@ -1148,7 +1153,7 @@ export function jobRetry(input: JobActionRequest): Promise<JobReceipt> {
   return command("job_retry", input, () => updateBrowserJob(input.jobId, "RUNNING", "Browser demo job restarted."));
 }
 
-export function generationApprove(input: JobActionRequest): Promise<JobReceipt> {
+export function generationApprove(input: GenerationApprovalRequest): Promise<JobReceipt> {
   return command("generation_approve", input, () => updateBrowserJob(input.jobId, "SUCCEEDED", "Browser demo generation approved and completed."));
 }
 

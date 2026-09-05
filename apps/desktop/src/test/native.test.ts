@@ -10,6 +10,7 @@ vi.mock("@tauri-apps/api/core", () => tauri);
 import {
   appBootstrap,
   catalogDiscover,
+  generationApprove,
   jobStatus,
   masterExport,
   projectCreate,
@@ -75,6 +76,15 @@ describe("native desktop bridge", () => {
     await projectCreate(input);
 
     expect(tauri.invoke).toHaveBeenCalledWith("project_create", { input });
+  });
+
+  it("sends the reviewed head revision with generation approval", async () => {
+    const input = { projectId: "019d0000-0000-7000-8000-000000000001", projectDirectory: "C:/projects/tutorial", jobId: "019d0000-0000-7000-8000-000000000002", expectedHeadRevisionId: "revision.reviewed" };
+    tauri.invoke.mockResolvedValueOnce({ jobId: input.jobId, state: "SUCCEEDED", acceptedAt: "now", message: "Approved", retryable: false });
+
+    await generationApprove(input);
+
+    expect(tauri.invoke).toHaveBeenCalledWith("generation_approve", { input });
   });
 
   it("invokes argument-free commands without inventing an input payload", async () => {

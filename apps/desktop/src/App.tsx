@@ -120,6 +120,7 @@ import languageSofia from "./assets/presenters/language-sofia-v1.webp";
 import historyMarcus from "./assets/presenters/history-marcus-v1.webp";
 import youngLearnersLily from "./assets/presenters/young-learners-lily-v1.webp";
 import { completeExampleProject, defaultSnapshot, templates } from "./data";
+import { persistReviewedGenerationApproval, type FrozenGenerationReview } from "./generationApproval";
 import {
   createGuidedTourReplaySteps,
   guidedTourCompletionKey,
@@ -813,10 +814,14 @@ function App() {
   const [guidedTourIndex, setGuidedTourIndex] = useState(0);
   const [guidedTourSteps, setGuidedTourSteps] = useState<readonly GuidedTourStep[]>(GUIDED_TOUR_STEPS);
   const [guidedTourCompletedStepIds, setGuidedTourCompletedStepIds] = useState<string[]>([]);
+  const [approvingProjectIds, setApprovingProjectIds] = useState<string[]>([]);
   const guidedTourBaseline = useRef<GuidedTourEvidenceBaseline>({ projectIds: new Set(), sourceCountByProjectId: new Map(), jobIds: new Set() });
   const previousOnboardingStatus = useRef(initialOnboarding?.status ?? "not-started");
   const toastCounter = useRef(0);
   const snapshotSaveSequence = useRef(Promise.resolve());
+  const snapshotAutosaveTimers = useRef(new Map<string, number>());
+  const snapshotSaveFailures = useRef(new Map<string, { version: number; error: unknown }>());
+  const approvalInFlightProjects = useRef(new Set<string>());
   const durableVersionByProject = useRef(new Map<string, number>());
   const customizationSaves = useRef(new Map<string, {
     projectId: string;
@@ -827,6 +832,8 @@ function App() {
     persistedVersion: number;
     saving: boolean;
     timer?: number;
+    flushPromise?: Promise<void>;
+    lastFailure?: { version: number; error: unknown };
   }>());
 
   const activeProject = snapshot.projects.find((project) => project.id === activeProjectId) ?? snapshot.projects[0] ?? null;
@@ -922,6 +929,12 @@ function App() {
     window.setTimeout(() => setToasts((items) => items.filter((item) => item.id !== id)), 3800);
   }, []);
 
+  const enqueueSnapshotSave = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
+    const running = snapshotSaveSequence.current.then(operation, operation);
+    snapshotSaveSequence.current = running.then(() => undefined, () => undefined);
+    return running;
+  }, []);
+
   const openProject = (projectId: string, nextWorkspace: Workspace = "plan") => {
     const project = snapshot.projects.find((item) => item.id === projectId);
     if (project?.nativeProjectDirectory && runtime.environment === "native") {
@@ -931,6 +944,7 @@ function App() {
             projectId: handle.manifest.projectId,
             projectDirectory: handle.projectDirectory,
           });
+          snapshotSaveFailures.current.delete(projectId);
           setSnapshot((current) => ({
             ...current,
             projects: current.projects.map((item) => item.id === projectId
@@ -974,68 +988,77 @@ function App() {
     }));
   };
 
-  const flushProjectCustomization = async (projectKey: string) => {
+  const flushProjectCustomization = async (
+    projectKey: string,
+    propagateFailure = false,
+    frozenTarget?: { version: number; customization: CanvasCustomization },
+  ): Promise<void> => {
     const entry = customizationSaves.current.get(projectKey);
-    if (!entry || entry.saving || entry.persistedVersion >= entry.version) return;
+    if (!entry) return;
+    if (entry.timer) {
+      window.clearTimeout(entry.timer);
+      delete entry.timer;
+    }
+    if (entry.saving && entry.flushPromise) {
+      try { await entry.flushPromise; } catch (error) { if (propagateFailure) throw error; }
+      const requestedVersion = frozenTarget?.version ?? entry.version;
+      if (propagateFailure && entry.lastFailure?.version === requestedVersion) throw entry.lastFailure.error;
+      if (entry.persistedVersion < requestedVersion) await flushProjectCustomization(projectKey, propagateFailure, frozenTarget);
+      return;
+    }
+    const target = frozenTarget ?? { version: entry.version, customization: structuredClone(entry.latest) };
+    if (entry.persistedVersion >= target.version) {
+      if (propagateFailure && entry.lastFailure?.version === target.version) throw entry.lastFailure.error;
+      return;
+    }
     entry.saving = true;
-    let conflictRetries = 0;
-    try {
-      while (entry.persistedVersion < entry.version) {
-        const savingVersion = entry.version;
+    const operation = (async () => {
+      let conflictRetries = 0;
+      while (true) {
         const expectedHead = entry.expectedHeadRevisionId;
-        const customization = structuredClone(entry.latest);
         try {
           const saved = await projectCustomizationSave({
             projectId: entry.projectId,
             projectDirectory: entry.projectDirectory,
             expectedHeadRevisionId: expectedHead,
-            customization,
+            customization: target.customization,
             message: "Updated visual bible customization",
           });
-          if (entry.expectedHeadRevisionId === expectedHead) {
-            entry.expectedHeadRevisionId = saved.headRevisionId;
-          }
-          entry.persistedVersion = savingVersion;
-          conflictRetries = 0;
+          if (entry.expectedHeadRevisionId === expectedHead) entry.expectedHeadRevisionId = saved.headRevisionId;
+          entry.persistedVersion = Math.max(entry.persistedVersion, target.version);
+          if (entry.lastFailure?.version === target.version) delete entry.lastFailure;
           setSnapshot((current) => ({
             ...current,
             projects: current.projects.map((project) => project.id === projectKey && project.nativeHeadRevisionId === expectedHead
-              ? {
-                ...project,
-                nativeHeadRevisionId: saved.headRevisionId,
-                nativeRevisionNumber: saved.revisionNumber,
-              }
+              ? { ...project, nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber }
               : project),
           }));
+          return;
         } catch (error) {
           if (!errorMessage(error).includes("REVISION_CONFLICT") || conflictRetries >= 2) throw error;
           conflictRetries += 1;
-          const current = await projectSnapshotGet({
-            projectId: entry.projectId,
-            projectDirectory: entry.projectDirectory,
-          });
+          const current = await projectSnapshotGet({ projectId: entry.projectId, projectDirectory: entry.projectDirectory });
           entry.expectedHeadRevisionId = current.headRevisionId;
           setSnapshot((snapshotState) => ({
             ...snapshotState,
             projects: snapshotState.projects.map((project) => project.id === projectKey
-              ? {
-                ...project,
-                nativeHeadRevisionId: current.headRevisionId,
-                nativeRevisionNumber: current.revisionNumber,
-              }
+              ? { ...project, nativeHeadRevisionId: current.headRevisionId, nativeRevisionNumber: current.revisionNumber }
               : project),
           }));
         }
       }
+    })();
+    entry.flushPromise = operation;
+    try {
+      await operation;
     } catch (error) {
-      // Stop automatic retry storms after bounded conflict recovery. The
-      // in-memory choice remains visible and the next user edit queues a fresh
-      // save against the most recently observed head.
-      entry.persistedVersion = entry.version;
+      entry.lastFailure = { version: target.version, error };
       notify("Visual bible needs attention", `${errorMessage(error)} Your choices remain in this app session and can be saved again after the project is refreshed.`, "warning");
+      if (propagateFailure) throw error;
     } finally {
       entry.saving = false;
-      if (entry.persistedVersion < entry.version) {
+      if (entry.flushPromise === operation) delete entry.flushPromise;
+      if (entry.persistedVersion < entry.version && !approvalInFlightProjects.current.has(projectKey) && entry.lastFailure?.version !== entry.version) {
         entry.timer = window.setTimeout(() => { void flushProjectCustomization(projectKey); }, 500);
       }
     }
@@ -1073,7 +1096,10 @@ function App() {
     if (receipt || !existing) next.expectedHeadRevisionId = expectedHeadRevisionId;
     next.latest = structuredClone(customization);
     next.version += 1;
-    next.timer = window.setTimeout(() => { void flushProjectCustomization(project.id); }, 500);
+    if (next.lastFailure && next.lastFailure.version < next.version) delete next.lastFailure;
+    if (!approvalInFlightProjects.current.has(project.id)) {
+      next.timer = window.setTimeout(() => { void flushProjectCustomization(project.id); }, 500);
+    }
     customizationSaves.current.set(project.id, next);
   };
 
@@ -1137,10 +1163,15 @@ function App() {
     previousOnboardingStatus.current = onboarding.state.status;
   }, [onboarding.state.status, startGuidedTour]);
 
-  useEffect(() => () => {
-    for (const entry of customizationSaves.current.values()) {
-      if (entry.timer) window.clearTimeout(entry.timer);
-    }
+  useEffect(() => {
+    const autosaveTimers = snapshotAutosaveTimers.current;
+    const customizationEntries = customizationSaves.current;
+    return () => {
+      for (const entry of customizationEntries.values()) {
+        if (entry.timer) window.clearTimeout(entry.timer);
+      }
+      for (const timer of autosaveTimers.values()) window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -1210,64 +1241,50 @@ function App() {
     if (snapshot.version === 0) return;
     const project = snapshot.projects.find((item) => item.id === activeProjectId);
     if (!project?.nativeProjectId || !project.nativeProjectDirectory || !project.nativeHeadRevisionId) return;
+    if (approvalInFlightProjects.current.has(project.id)) return;
+    const autosaveTimers = snapshotAutosaveTimers.current;
     const savedVersion = durableVersionByProject.current.get(project.id);
     if (savedVersion === undefined) {
       durableVersionByProject.current.set(project.id, snapshot.version);
       return;
     }
     if (savedVersion === snapshot.version) return;
+    const existingTimer = autosaveTimers.get(project.id);
+    if (existingTimer) window.clearTimeout(existingTimer);
     const timer = window.setTimeout(() => {
+      autosaveTimers.delete(project.id);
+      if (approvalInFlightProjects.current.has(project.id)) return;
       const durableProject = projectSnapshotDocument(project);
-      snapshotSaveSequence.current = snapshotSaveSequence.current
-        .catch(() => undefined)
-        .then(async () => {
-          let expectedHead = project.nativeHeadRevisionId!;
-          try {
-            const saved = await projectSnapshotSave({
-              projectId: project.nativeProjectId!,
-              projectDirectory: project.nativeProjectDirectory!,
-              expectedHeadRevisionId: expectedHead,
-              snapshot: durableProject,
-              message: "Saved scene and script edits",
-            });
-            durableVersionByProject.current.set(project.id, snapshot.version);
-            setSnapshot((current) => ({
-              ...current,
-              projects: current.projects.map((item) => item.id === project.id ? {
-                ...item,
-                nativeHeadRevisionId: saved.headRevisionId,
-                nativeRevisionNumber: saved.revisionNumber,
-              } : item),
-            }));
-          } catch (error) {
-            if (!errorMessage(error).includes("REVISION_CONFLICT")) throw error;
-            const current = await projectSnapshotGet({
-              projectId: project.nativeProjectId!,
-              projectDirectory: project.nativeProjectDirectory!,
-            });
-            expectedHead = current.headRevisionId;
-            const saved = await projectSnapshotSave({
-              projectId: project.nativeProjectId!,
-              projectDirectory: project.nativeProjectDirectory!,
-              expectedHeadRevisionId: expectedHead,
-              snapshot: durableProject,
-              message: "Saved scene and script edits after refresh",
-            });
-            durableVersionByProject.current.set(project.id, snapshot.version);
-            setSnapshot((state) => ({
-              ...state,
-              projects: state.projects.map((item) => item.id === project.id ? {
-                ...item,
-                nativeHeadRevisionId: saved.headRevisionId,
-                nativeRevisionNumber: saved.revisionNumber,
-              } : item),
-            }));
-          }
-        })
-        .catch((error: unknown) => notify("Project edits need attention", errorMessage(error), "warning"));
+      void enqueueSnapshotSave(async () => {
+        try {
+          return await projectSnapshotSave({
+            projectId: project.nativeProjectId!,
+            projectDirectory: project.nativeProjectDirectory!,
+            expectedHeadRevisionId: project.nativeHeadRevisionId!,
+            snapshot: durableProject,
+            message: "Saved scene and script edits",
+          });
+        } catch (error) {
+          snapshotSaveFailures.current.set(project.id, { version: snapshot.version, error });
+          throw error;
+        }
+      }).then((saved) => {
+        snapshotSaveFailures.current.delete(project.id);
+        durableVersionByProject.current.set(project.id, snapshot.version);
+        setSnapshot((current) => ({
+          ...current,
+          projects: current.projects.map((item) => item.id === project.id ? { ...item, nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber } : item),
+        }));
+      }).catch((error: unknown) => {
+        notify("Project edits need attention", errorMessage(error), "warning");
+      });
     }, Math.max(500, preferences.autosaveSeconds * 1000));
-    return () => window.clearTimeout(timer);
-  }, [activeProjectId, snapshot.projects, snapshot.version, setSnapshot, preferences.autosaveSeconds, notify]);
+    autosaveTimers.set(project.id, timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (autosaveTimers.get(project.id) === timer) autosaveTimers.delete(project.id);
+    };
+  }, [activeProjectId, approvingProjectIds, enqueueSnapshotSave, snapshot.projects, snapshot.version, setSnapshot, preferences.autosaveSeconds, notify]);
 
   const createTutorial = async (project: ProjectRecord, settings: TutorialCreationSettings) => {
     const bootstrap = runtime.bootstrap ?? await appBootstrap();
@@ -1438,11 +1455,54 @@ function App() {
       notify("Generation is not ready for approval", "Open a tutorial with a saved generation job before approving its storyboard.", "warning");
       return;
     }
-    const link = { ...identity, jobId };
+    if (approvalInFlightProjects.current.has(projectId)) return;
+    const reviewedVersion = snapshot.version;
+    const customizationEntry = customizationSaves.current.get(projectId);
+    const frozenCustomizationTarget = customizationEntry && customizationEntry.persistedVersion < customizationEntry.version
+      ? { version: customizationEntry.version, customization: structuredClone(customizationEntry.latest) }
+      : undefined;
+    if (customizationEntry?.timer) {
+      window.clearTimeout(customizationEntry.timer);
+      delete customizationEntry.timer;
+    }
+    const snapshotFailureBeforeClick = snapshotSaveFailures.current.get(projectId);
+    const review: FrozenGenerationReview = {
+      projectId: identity.projectId,
+      projectDirectory: identity.projectDirectory,
+      generationId: jobId,
+      jobId,
+      scenes: structuredClone(project.scenes.map(({ id, title, narration, objective, duration }) => ({ id, title, narration, objective, duration }))),
+    };
+    approvalInFlightProjects.current.add(projectId);
+    const scheduledAutosave = snapshotAutosaveTimers.current.get(projectId);
+    if (scheduledAutosave) {
+      window.clearTimeout(scheduledAutosave);
+      snapshotAutosaveTimers.current.delete(projectId);
+    }
+    setApprovingProjectIds((current) => current.includes(projectId) ? current : [...current, projectId]);
     try {
-      const receipt = await generationApprove(link);
+      const { saved, receipt } = await persistReviewedGenerationApproval(review, {
+        awaitPendingSaves: async () => {
+          await snapshotSaveSequence.current;
+          const queuedFailure = snapshotSaveFailures.current.get(projectId);
+          if (queuedFailure && queuedFailure !== snapshotFailureBeforeClick) throw queuedFailure.error;
+          await flushProjectCustomization(projectId, true, frozenCustomizationTarget);
+          await snapshotSaveSequence.current;
+        },
+        getSnapshot: () => projectSnapshotGet(identity),
+        saveSnapshot: ({ expectedHeadRevisionId, snapshot: reviewedSnapshot }) => enqueueSnapshotSave(() => projectSnapshotSave({
+          ...identity,
+          expectedHeadRevisionId,
+          snapshot: reviewedSnapshot,
+          message: "Saved the exact reviewed storyboard before approval",
+        })),
+        approve: ({ expectedHeadRevisionId }) => generationApprove({ ...identity, jobId, expectedHeadRevisionId }),
+      });
+      snapshotSaveFailures.current.delete(projectId);
+      durableVersionByProject.current.set(projectId, reviewedVersion);
       setSnapshot((current) => ({
         ...current,
+        projects: current.projects.map((item) => item.id === projectId ? { ...item, nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber } : item),
         jobs: current.jobs.map((job) => job.id === jobId ? receiptJob(receipt, job.title, job.detail, nativeJobProject(job) ?? undefined) : job),
       }));
       setWorkspace(receipt.state === "SUCCEEDED" ? "review" : "storyboard");
@@ -1454,6 +1514,13 @@ function App() {
       );
     } catch (error) {
       notify("Could not approve generation", errorMessage(error), "warning");
+    } finally {
+      approvalInFlightProjects.current.delete(projectId);
+      setApprovingProjectIds((current) => current.filter((id) => id !== projectId));
+      const pendingCustomization = customizationSaves.current.get(projectId);
+      if (pendingCustomization && pendingCustomization.persistedVersion < pendingCustomization.version && pendingCustomization.lastFailure?.version !== pendingCustomization.version) {
+        pendingCustomization.timer = window.setTimeout(() => { void flushProjectCustomization(projectId); }, 0);
+      }
     }
   };
 
@@ -1661,6 +1728,7 @@ function App() {
               onImportSources={(files) => importSources(activeProject.id, files)}
               onExportArchive={() => exportArchive(activeProject.id)}
               onApproveGeneration={() => { void approveProjectGeneration(activeProject.id); }}
+              approvalPending={approvingProjectIds.includes(activeProject.id)}
               onUndo={() => { void navigateHistory("undo"); }}
               onRedo={() => { void navigateHistory("redo"); }}
               onRenderScene={(scene) => { void renderNativeScene(scene); }}
@@ -2312,6 +2380,7 @@ function ProjectWorkspace(props: {
   onImportSources: (files: File[]) => Promise<SourceImportReceipt[]>;
   onExportArchive: () => Promise<string>;
   onApproveGeneration: () => void;
+  approvalPending: boolean;
   onUndo: () => void;
   onRedo: () => void;
   onRenderScene: (scene: Scene) => void;
@@ -2331,12 +2400,12 @@ function ProjectHeader({ project, step, title, description, action }: { project:
   return <div className="project-page-header"><div><span className="section-kicker">{step} · {project.locale} · {project.audience}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>;
 }
 
-function PlanWorkspace({ project, onNotify, onApproveGeneration, onImportSources, onSceneUpdate, onUndo, onRedo }: ProjectWorkspaceProps) {
+function PlanWorkspace({ project, onNotify, onApproveGeneration, approvalPending, onImportSources, onSceneUpdate, onUndo, onRedo }: ProjectWorkspaceProps) {
   const [tab, setTab] = useState("Learning plan");
   const objectiveScenes = project.scenes.filter((scene) => scene.objective.trim());
   const reviewedSources = project.sources.filter((source) => source.status === "verified").length;
   return <div className="page project-page plan-workspace">
-    <ProjectHeader project={project} step="1 · Plan" title="Shape the learning journey" description="Start with the learner. Connect each scene to something they should understand." action={<button className="primary-button" data-tour-target="approve-plan" onClick={onApproveGeneration}>Approve learning plan <ArrowRight size={16} /></button>} />
+    <ProjectHeader project={project} step="1 · Plan" title="Shape the learning journey" description="Start with the learner. Connect each scene to something they should understand." action={<button className="primary-button" data-tour-target="approve-plan" disabled={approvalPending} aria-busy={approvalPending} onClick={onApproveGeneration}>{approvalPending ? "Saving reviewed plan…" : "Approve learning plan"} {!approvalPending && <ArrowRight size={16} />}</button>} />
     <div className="plan-progress" aria-label="Plan sections">{["Brief", "Sources", "Research", "Learning plan", "Script"].map((item, index) => <button key={item} data-tour-route={item === "Sources" ? "plan-sources" : undefined} className={tab === item ? "active" : ""} onClick={() => setTab(item)}><i>{index + 1}</i><span>{item}</span></button>)}</div>
     <div className="plan-grid"><section className="plan-main-card">
       <div className="card-title-row"><div><span className="section-kicker">{project.title}</span><h2>{tab === "Learning plan" ? "What should the learner take away?" : tab}</h2></div></div>
@@ -2385,6 +2454,8 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
   const [playing, setPlaying] = useState(false);
   const [previewSeconds, setPreviewSeconds] = useState(0);
   const activeIndex = project.scenes.findIndex((scene) => scene.id === activeScene.id);
+  const generationJob = project.nativeGenerationId ? jobs.find((job) => job.id === project.nativeGenerationId) : undefined;
+  const canEditGeneratedTiming = !project.nativeGenerationId || generationJob?.status === "complete";
   useEffect(() => { setPreviewSeconds(0); setPlaying(false); }, [activeScene.id]);
   useEffect(() => {
     if (!playing) return;
@@ -2589,7 +2660,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
       <aside className="inspector"><div className="inspector-tabs">{["Content", "Generate", "Design", "Motion"].map((tab) => <button className={inspectorTab === tab ? "active" : ""} onClick={() => setInspectorTab(tab)} key={tab}>{tab}</button>)}</div>
         {inspectorTab === "Content" ? <div className="inspector-body"><InspectorSection title="Scene identity"><label>Title<input value={activeScene.title} onChange={(event) => onSceneUpdate(activeScene.id, { title: event.target.value })} /></label><label>Scene family<select value={activeScene.kind} onChange={(event) => onSceneUpdate(activeScene.id, { kind: event.target.value as Scene["kind"] })}><option value="title">Title</option><option value="definition">Definition</option><option value="diagram">Diagram</option><option value="worked-example">Worked example</option><option value="comparison">Comparison</option><option value="code">Code trace</option><option value="recap">Recap</option></select></label></InspectorSection><InspectorSection title="Narration"><textarea data-tour-target="scene-narration" aria-label="Scene narration" rows={7} value={activeScene.narration} onChange={(event) => onSceneUpdate(activeScene.id, { narration: event.target.value })} /><div className="field-meta"><span>{activeScene.narration.split(" ").length} words</span><span>~{activeScene.duration}s</span></div><button className="secondary-button full" onClick={() => setInspectorTab("Design")}><Mic2 size={15} /> Presenter & voice direction</button></InspectorSection><InspectorSection title="Evidence"><div className="evidence-chip"><Link2 size={15} /><span><strong>{activeScene.citations} citation references</strong><small>Review claim support in the Sources and Review workspaces.</small></span></div></InspectorSection><InspectorSection title="Your scene review"><button className="secondary-button full" onClick={() => onSceneUpdate(activeScene.id, { status: activeScene.status === "approved" ? "draft" : "approved" })}><CheckCircle2 size={15} />{activeScene.status === "approved" ? "Reopen scene review" : "Mark scene reviewed"}</button><p className="inspector-note">This records your review. Editing the explanation clears this mark; export checks still run separately.</p></InspectorSection>{mode === "studio" && <InspectorSection title="Dependency impact"><p className="inspector-note">Editing narration invalidates alignment, captions, presenter timing, scene render, and final composition.</p></InspectorSection>}</div>
         : inspectorTab === "Generate" ? <div><fieldset className="creative-generation-fields" disabled={generatingVisual}><CreativeInspector configuration={creative} onChange={onProjectCreative} onQueueVisualReview={() => { void generateVisual("scene"); }} onGeneratePresenter={() => { void generateVisual("presenter"); }} /></fieldset><StockImageSearch policy={project.providerRoutingPolicy} sceneId={activeScene.id} suggestedQuery={activeScene.title} busy={generatingVisual} onSearch={searchStockImages} />{generatingVisual && <p role="status" className="inspector-note">Preparing image candidates… You can follow or cancel this task in Jobs.</p>}<VisualCandidateReview candidates={candidateImages} resolve={resolveCandidateImage} onAccept={acceptCandidateImage} /></div>
-        : inspectorTab === "Design" ? <DesignInspector project={project} customization={customization} onChange={onProjectCustomization} onNotify={onNotify} onPreviewAsset={(id, url) => setAssetPreviews((current) => ({ ...current, [id]: url }))} /> : <MotionInspector scene={activeScene} onChange={(update) => onSceneUpdate(activeScene.id, update)} />}
+        : inspectorTab === "Design" ? <DesignInspector project={project} customization={customization} onChange={onProjectCustomization} onNotify={onNotify} onPreviewAsset={(id, url) => setAssetPreviews((current) => ({ ...current, [id]: url }))} /> : <MotionInspector scene={activeScene} canEditTiming={canEditGeneratedTiming} onChange={(update) => onSceneUpdate(activeScene.id, update)} />}
       </aside>
     </div>
     <div className="scene-sequence-panel"><div className="scene-sequence-heading"><strong><Layers3 size={15} /> Teaching sequence</strong><button className="text-button" onClick={() => { void openAdvancedEditor(); }}>Edit tracks & timing <ArrowRight size={14} /></button><small>v{version}</small></div><div className="scene-sequence-clips">{project.scenes.map((scene) => <button className={scene.id === activeScene.id ? "active" : ""} style={{ flexGrow: scene.duration }} key={scene.id} onClick={() => onSelectScene(scene.id)}><span>{String(scene.index).padStart(2, "0")} · {formatTime(scene.duration)}</span><strong>{scene.title}</strong></button>)}</div></div>
@@ -2838,8 +2909,8 @@ function CaptionPreview({ settings, fontFamily }: { settings: CanvasCustomizatio
   return <div className={`caption-preview position-${settings.position} style-${settings.style}`} style={{ color: settings.textColor, backgroundColor: settings.style === "outline" ? "transparent" : `${settings.panelColor}e8`, fontFamily: `"${fontFamily}", sans-serif`, fontSize: `${Math.round(12 * settings.size / 100)}px`, maxWidth: `calc(100% - ${settings.safeInset * 2}%)` }} data-testid="caption-preview"><span>A clear explanation, <em>one step at a time</em>.</span><small>Caption style sample · {settings.maxLines} line{settings.maxLines === 1 ? "" : "s"} max</small></div>;
 }
 
-function MotionInspector({ scene, onChange }: { scene: Scene; onChange: (update: Partial<Scene>) => void }) {
-  return <div className="inspector-body"><InspectorSection title="Scene timing"><label>Duration in seconds<input aria-label="Scene duration in seconds" type="number" min="1" max="3600" value={scene.duration} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value) && value >= 1 && value <= 3600) onChange({ duration: value }); }} /></label><p className="inspector-note">Keep enough time for the narration and each visual step. Re-render the scene after a timing change.</p></InspectorSection><div className="guided-callout"><Clock3 size={18} /><strong>Rehearse the explanation.</strong><p>Scrub the preview to inspect the animation. Open the advanced editor for track timing, trimming, and keyframes.</p></div></div>;
+function MotionInspector({ scene, canEditTiming, onChange }: { scene: Scene; canEditTiming: boolean; onChange: (update: Partial<Scene>) => void }) {
+  return <div className="inspector-body"><InspectorSection title="Scene timing"><label>Duration in seconds<input aria-label="Scene duration in seconds" type="number" min="1" max="3600" value={scene.duration} readOnly={!canEditTiming} aria-readonly={!canEditTiming} onChange={(event) => { const value = Number(event.target.value); if (canEditTiming && Number.isFinite(value) && value >= 1 && value <= 3600) onChange({ duration: value }); }} /></label><p className="inspector-note">{canEditTiming ? "Keep enough time for the narration and each visual step. Re-render the scene after a timing change." : "This is the generated plan timing. Review title, narration, and teaching intent now; final timing follows narration and remains editable in the exported timeline."}</p></InspectorSection><div className="guided-callout"><Clock3 size={18} /><strong>Rehearse the explanation.</strong><p>Scrub the preview to inspect the animation. Open the advanced editor for track timing, trimming, and keyframes.</p></div></div>;
 }
 
 function ReviewWorkspace({ project, jobs, environment, onWorkspace, onScene, onRepairQa, onProjectEdit }: ProjectWorkspaceProps) {
