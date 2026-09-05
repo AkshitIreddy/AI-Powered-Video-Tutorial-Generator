@@ -10,6 +10,7 @@ export {
   configuredChapterIds,
   createOnboardingState,
   defaultOnboardingConfiguration,
+  exitOnboarding,
   goToOnboardingChapter,
   isChapterConfigured,
   normalizeOnboardingState,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   advanceOnboarding,
+  exitOnboarding,
   goToOnboardingChapter,
   normalizeOnboardingState,
   replayOnboarding,
@@ -117,9 +118,14 @@ export function useOnboardingController({
   }, [now]);
 
   const exit = useCallback(() => {
+    const exited = exitOnboarding(state, now);
+    // Cancelling a replay restores prior completion; it is not a new setup
+    // completion and must not apply unfinished choices or restart the tour.
+    previousStatus.current = exited.status;
+    setState(exited);
     setOpen(false);
-    onExit?.(state);
-  }, [onExit, state]);
+    onExit?.(exited);
+  }, [now, onExit, state]);
 
   const replay = useCallback(() => {
     setState((current) => replayOnboarding(current, setupState, now));

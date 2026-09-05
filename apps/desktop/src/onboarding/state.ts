@@ -156,6 +156,7 @@ export function normalizeOnboardingState(
 }
 
 export function shouldOpenFirstRunOnboarding(state: PersistedOnboardingState | null | undefined): boolean {
+  if (state?.replayReturnStatus === "completed" || state?.replayReturnStatus === "skipped") return false;
   return !state || state.status === "not-started" || state.status === "in-progress";
 }
 
@@ -261,6 +262,7 @@ export function advanceOnboarding(
   if (current === "ready") {
     return withStateChange(state, {
       status: "completed",
+      replayReturnStatus: null,
       completedChapterIds: unique([...completedChapterIds, "ready"]),
       visitedChapterIds: unique([...state.visitedChapterIds, "ready"]),
     }, now);
@@ -286,7 +288,13 @@ export function skipOnboarding(
   state: PersistedOnboardingState,
   now?: () => string,
 ): PersistedOnboardingState {
-  return withStateChange(state, { status: "skipped" }, now);
+  return withStateChange(state, { status: "skipped", replayReturnStatus: null }, now);
+}
+
+export function exitOnboarding(state: PersistedOnboardingState, now?: () => string): PersistedOnboardingState {
+  const priorStatus = state.replayReturnStatus;
+  if (priorStatus !== "completed" && priorStatus !== "skipped") return state;
+  return withStateChange(state, { status: priorStatus, replayReturnStatus: null }, now);
 }
 
 export function replayOnboarding(
@@ -298,6 +306,9 @@ export function replayOnboarding(
   return withStateChange(normalized, {
     status: "in-progress",
     activeChapterId: "welcome",
+    replayReturnStatus: normalized.status === "completed" || normalized.status === "skipped"
+      ? normalized.status
+      : normalized.replayReturnStatus ?? null,
     visitedChapterIds: ["welcome"],
   }, now);
 }

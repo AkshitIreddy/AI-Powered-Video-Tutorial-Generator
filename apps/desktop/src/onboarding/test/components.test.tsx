@@ -35,13 +35,15 @@ function OnboardingHarness({
   setupState,
   onPersist = vi.fn(),
   onExit = vi.fn(),
+  onComplete = vi.fn(),
 }: {
   persistedState?: PersistedOnboardingState;
   setupState?: OnboardingSetupState;
   onPersist?: (state: PersistedOnboardingState) => void | Promise<void>;
   onExit?: (state: PersistedOnboardingState) => void;
+  onComplete?: (state: PersistedOnboardingState) => void;
 }) {
-  const controller = useOnboardingController({ persistedState, setupState, onPersist, onExit });
+  const controller = useOnboardingController({ persistedState, setupState, onPersist, onExit, onComplete });
   return (
     <>
       <OnboardingReplayButton controller={controller} />
@@ -72,6 +74,25 @@ function ProfileHarness({
 }
 
 describe("OnboardingDialog", () => {
+  it("exits a completed setup replay without reapplying setup or reopening on remount", async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    const onPersist = vi.fn();
+    const state = { ...createOnboardingState(), status: "completed" as const };
+    const view = render(<OnboardingHarness persistedState={state} onPersist={onPersist} onComplete={onComplete} />);
+    await user.click(screen.getByRole("button", { name: "Replay onboarding" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("checkbox", { name: /Tutorials/ }));
+    await user.click(screen.getByRole("button", { name: "Exit onboarding" }));
+    await waitFor(() => expect(onPersist).toHaveBeenLastCalledWith(expect.objectContaining({ status: "completed" })));
+    expect(onComplete).not.toHaveBeenCalled();
+    const saved = onPersist.mock.lastCall?.[0] as PersistedOnboardingState;
+    expect(saved.configuration.goals).toEqual(["tutorials"]);
+    view.unmount();
+    render(<OnboardingHarness persistedState={saved} />);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("uses modal semantics, focuses each chapter heading, and gates required chapters", async () => {
     const user = userEvent.setup();
     render(<OnboardingHarness />);
@@ -105,6 +126,33 @@ describe("OnboardingDialog", () => {
     expect(screen.getByRole("dialog", { name: "Make AI Video Tutorial Generator yours" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Chapter 1 What will you create/ }));
     expect(screen.getByRole("checkbox", { name: /Tutorials/ })).toBeChecked();
+  });
+
+  it("restores completed status when replay is exited but keeps an initial setup resumable", async () => {
+    const user = userEvent.setup();
+    const onPersist = vi.fn();
+    const onExit = vi.fn();
+    const completed = createOnboardingState({}, () => "2026-09-02T08:00:00.000Z");
+    completed.status = "completed";
+    completed.activeChapterId = "ready";
+    const replay = render(<OnboardingHarness persistedState={completed} onPersist={onPersist} onExit={onExit} />);
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Replay onboarding" }));
+    expect(screen.getByRole("dialog", { name: "Make AI Video Tutorial Generator yours" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Exit onboarding" }));
+
+    expect(onExit).toHaveBeenLastCalledWith(expect.objectContaining({ status: "completed" }));
+    await waitFor(() => expect(onPersist).toHaveBeenLastCalledWith(expect.objectContaining({ status: "completed" })));
+    replay.unmount();
+
+    onExit.mockClear();
+    const inProgress = createOnboardingState({}, () => "2026-09-02T08:00:00.000Z");
+    inProgress.status = "in-progress";
+    inProgress.activeChapterId = "privacy";
+    render(<OnboardingHarness persistedState={inProgress} onExit={onExit} />);
+    await user.click(screen.getByRole("button", { name: "Exit onboarding" }));
+    expect(onExit).toHaveBeenLastCalledWith(expect.objectContaining({ status: "in-progress", activeChapterId: "privacy" }));
   });
 
   it("persists state through the injected callback", async () => {

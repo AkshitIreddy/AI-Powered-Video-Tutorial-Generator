@@ -5,6 +5,7 @@ import {
   computeTourPanelPosition,
   createGuidedTourReplaySteps,
   createOnboardingState,
+  exitOnboarding,
   normalizeOnboardingState,
   replayOnboarding,
   shouldOpenFirstRunOnboarding,
@@ -17,6 +18,25 @@ import type { OnboardingSetupState, PersistedOnboardingState } from "..";
 const clock = () => "2026-09-02T08:00:00.000Z";
 
 describe("onboarding state", () => {
+  it.each(["completed", "skipped"] as const)("keeps a %s setup settled after replay exit or restart", (status) => {
+    const previous = { ...createOnboardingState({}, clock), status };
+    const replay = replayOnboarding(previous, {}, clock);
+    expect(replay.status).toBe("in-progress");
+    expect(shouldOpenFirstRunOnboarding(replay)).toBe(false);
+    const restored = exitOnboarding(normalizeOnboardingState(JSON.parse(JSON.stringify(replay)), {}, clock), clock);
+    expect(restored.status).toBe(status);
+    expect(restored.replayReturnStatus).toBeNull();
+    expect(restored.configuration).toEqual(previous.configuration);
+    expect(shouldOpenFirstRunOnboarding(restored)).toBe(false);
+  });
+
+  it("keeps an unfinished first setup resumable after exit", () => {
+    const started = startOnboarding(createOnboardingState({}, clock), {}, clock);
+    const exited = exitOnboarding(started, clock);
+    expect(exited).toEqual(started);
+    expect(shouldOpenFirstRunOnboarding(exited)).toBe(true);
+  });
+
   it("detects and preserves setup that is already configured", () => {
     const setup: OnboardingSetupState = {
       runtimeConfigured: true,

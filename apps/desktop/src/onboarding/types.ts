@@ -108,6 +108,7 @@ export interface OnboardingSetupState {
 export interface PersistedOnboardingState {
   schemaVersion: typeof ONBOARDING_SCHEMA_VERSION;
   status: OnboardingStatus;
+  replayReturnStatus?: "completed" | "skipped" | null;
   activeChapterId: OnboardingChapterId;
   completedChapterIds: OnboardingChapterId[];
   visitedChapterIds: OnboardingChapterId[];
