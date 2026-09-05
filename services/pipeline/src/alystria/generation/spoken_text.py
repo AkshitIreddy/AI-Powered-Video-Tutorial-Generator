@@ -188,6 +188,8 @@ def normalize_spoken_text(text: str, *, locale: str) -> SpokenText:
             # mathematical minus in _SPOKEN_SYMBOLS below.
             ord("\N{HYPHEN}"): "-",
             ord("\N{NON-BREAKING HYPHEN}"): "-",
+            ord("\N{LEFT DOUBLE QUOTATION MARK}"): '"',
+            ord("\N{RIGHT DOUBLE QUOTATION MARK}"): '"',
         }
     )
     value = unicodedata.normalize("NFKC", value)

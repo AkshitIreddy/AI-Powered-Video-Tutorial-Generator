@@ -49,6 +49,12 @@ from alystria.generation.spoken_text import SpokenTextError, normalize_spoken_te
             "versus big O of n squared.",
         ),
         (
+            "Call this \N{LEFT DOUBLE QUOTATION MARK}three\N{HYPHEN}product multiplication"
+            "\N{RIGHT DOUBLE QUOTATION MARK}: 12 \N{MULTIPLICATION SIGN} 34 = 408.",
+            'Call this "three product multiplication": twelve times thirty four equals '
+            "four hundred eight.",
+        ),
+        (
             "SHA-256 and H2O use UTF-8; Bézout's f'(x_1) = 5! at ratio 1:2.",
             "SHA two hundred fifty six and H two O use UTF eight; Bezout's f prime open "
             "parenthesis x sub one close parenthesis equals five factorial at ratio one to two.",
