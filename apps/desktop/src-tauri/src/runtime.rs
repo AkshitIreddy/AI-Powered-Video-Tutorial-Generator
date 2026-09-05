@@ -1,5 +1,5 @@
 use crate::error::CommandError;
-use crate::sidecar::WorkerLaunchConfig;
+use crate::sidecar::{PortableRuntimeVerification, WorkerLaunchConfig};
 use crate::types::{RuntimeComponent, RuntimeManifest, UpdaterStatus};
 use base64::Engine as _;
 use chrono::Utc;
@@ -259,6 +259,14 @@ impl InstalledRuntimePack {
             working_directory,
             expected_sha256: Some(worker.sha256.clone()),
             environment,
+            runtime_verification: if self.manifest.channel == "portable-debug" {
+                Some(PortableRuntimeVerification {
+                    root: self.root.clone(),
+                    manifest_sha256: sha256_file(&self.manifest_path).ok()?,
+                })
+            } else {
+                None
+            },
         })
     }
 }
@@ -274,6 +282,35 @@ impl InstalledRuntimePack {
 /// selected component is still path-contained, size-bound, and SHA-256
 /// verified before the worker is started.
 pub fn load_portable_debug_pack(root: &Path) -> Result<InstalledRuntimePack, CommandError> {
+    load_portable_debug_pack_with_mode(root, true)
+}
+
+/// Reads the portable debug ledger and validates every path before the desktop
+/// is shown, but defers expensive component hashing until immediately before
+/// the worker is launched. The manifest digest binds that later verification
+/// to the exact ledger inspected here.
+pub fn inspect_portable_debug_pack(root: &Path) -> Result<InstalledRuntimePack, CommandError> {
+    load_portable_debug_pack_with_mode(root, false)
+}
+
+pub fn verify_portable_debug_pack(
+    root: &Path,
+    expected_manifest_sha256: &str,
+) -> Result<(), CommandError> {
+    let actual_manifest_sha256 = sha256_file(&root.join(MANIFEST_FILE))?;
+    if actual_manifest_sha256 != expected_manifest_sha256 {
+        return Err(runtime_error(
+            "RUNTIME_MANIFEST_CHANGED",
+            "The portable runtime ledger changed after application startup.",
+        ));
+    }
+    load_portable_debug_pack(root).map(|_| ())
+}
+
+fn load_portable_debug_pack_with_mode(
+    root: &Path,
+    verify_files: bool,
+) -> Result<InstalledRuntimePack, CommandError> {
     if !cfg!(any(debug_assertions, feature = "portable-debug-runtime")) {
         return Err(runtime_error(
             "PORTABLE_DEBUG_RUNTIME_DISABLED",
@@ -344,7 +381,28 @@ pub fn load_portable_debug_pack(root: &Path) -> Result<InstalledRuntimePack, Com
                 ),
             ));
         }
-        verify_component_file(&path, component)?;
+        if verify_files {
+            verify_component_file(&path, component)?;
+        } else {
+            let metadata = path.symlink_metadata().map_err(|_| {
+                runtime_error(
+                    "INCOMPLETE_RUNTIME_PACK",
+                    format!("Portable runtime component {} is missing.", component.id),
+                )
+            })?;
+            if metadata.file_type().is_symlink()
+                || !metadata.is_file()
+                || metadata.len() != component.size_bytes
+            {
+                return Err(runtime_error(
+                    "INVALID_RUNTIME_COMPONENT",
+                    format!(
+                        "Portable runtime component {} has invalid file metadata.",
+                        component.id
+                    ),
+                ));
+            }
+        }
         components.insert(component.id.clone(), component.clone());
     }
     if REQUIRED_COMPONENTS
@@ -1130,6 +1188,7 @@ mod tests {
                 .join("alystria-pipeline.exe")
         );
         assert!(config.expected_sha256.is_some());
+        assert!(config.runtime_verification.is_some());
         for variable in [
             "ALYSTRIA_RUNTIME_PACK_ROOT",
             "ALYSTRIA_RUNTIME_MANIFEST_PATH",
@@ -1173,6 +1232,30 @@ mod tests {
 
         let error = load_portable_debug_pack(temporary.path()).unwrap_err();
         assert_eq!(error.code, "RUNTIME_COMPONENT_SIZE_MISMATCH");
+    }
+
+    #[test]
+    fn deferred_portable_verification_rejects_same_size_tampering() {
+        let temporary = TempDir::new().unwrap();
+        let manifest = portable_debug_fixture(temporary.path());
+        fs::write(
+            temporary.path().join(MANIFEST_FILE),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let inspected = inspect_portable_debug_pack(temporary.path()).unwrap();
+        let launch = inspected
+            .worker_launch_config(temporary.path().join("work"))
+            .unwrap();
+        let verification = launch.runtime_verification.unwrap();
+        let renderer = temporary.path().join("renderer/dist/src/cli.js");
+        let length = fs::metadata(&renderer).unwrap().len() as usize;
+        fs::write(&renderer, vec![b'x'; length]).unwrap();
+
+        let error = verify_portable_debug_pack(&verification.root, &verification.manifest_sha256)
+            .unwrap_err();
+        assert_eq!(error.code, "RUNTIME_COMPONENT_HASH_MISMATCH");
     }
 
     fn verifier(signing_key: &SigningKey) -> Arc<dyn RuntimeManifestVerifier> {

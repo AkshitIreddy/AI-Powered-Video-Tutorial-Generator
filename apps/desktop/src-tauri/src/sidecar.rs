@@ -24,8 +24,15 @@ use zeroize::{Zeroize, Zeroizing};
 const PROTOCOL_VERSION: u32 = 1;
 const START_TIMEOUT: Duration = Duration::from_secs(12);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const CREDENTIAL_BROKER_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_RESPONSE_BYTES: u64 = 2 * 1024 * 1024;
+
+#[derive(Debug, Clone)]
+pub struct PortableRuntimeVerification {
+    pub root: PathBuf,
+    pub manifest_sha256: String,
+}
 
 pub trait WorkerTransport: Send + Sync {
     fn call(&self, method: &str, payload: Value) -> Result<Value, CommandError>;
@@ -39,6 +46,7 @@ pub struct WorkerLaunchConfig {
     /// fixtures. Installed runtime packs always provide a manifest hash.
     pub expected_sha256: Option<String>,
     pub environment: BTreeMap<OsString, OsString>,
+    pub runtime_verification: Option<PortableRuntimeVerification>,
 }
 
 struct RunningWorker {
@@ -63,6 +71,7 @@ pub struct WorkerSupervisor {
     working_directory: PathBuf,
     expected_sha256: Option<String>,
     environment: BTreeMap<OsString, OsString>,
+    runtime_verification: Option<PortableRuntimeVerification>,
     credentials: Option<Arc<CredentialManager>>,
     lifecycle: Mutex<WorkerLifecycle>,
 }
@@ -90,6 +99,7 @@ impl WorkerSupervisor {
             working_directory,
             expected_sha256: None,
             environment: BTreeMap::new(),
+            runtime_verification: None,
         })
     }
 
@@ -99,6 +109,7 @@ impl WorkerSupervisor {
             working_directory,
             expected_sha256,
             environment,
+            runtime_verification,
         } = config;
         let lifecycle = if executable.is_file() {
             WorkerLifecycle::Stopped
@@ -113,6 +124,7 @@ impl WorkerSupervisor {
             working_directory,
             expected_sha256,
             environment,
+            runtime_verification,
             credentials: None,
             lifecycle: Mutex::new(lifecycle),
         }
@@ -145,33 +157,55 @@ impl WorkerSupervisor {
     }
 
     pub fn start(&self) -> Result<WorkerStatus, CommandError> {
-        let mut lifecycle = self.lifecycle.lock();
-        match &*lifecycle {
-            WorkerLifecycle::Unavailable(reason) => {
-                return Err(CommandError::worker(reason.clone(), true));
+        {
+            let mut lifecycle = self.lifecycle.lock();
+            match &*lifecycle {
+                WorkerLifecycle::Unavailable(reason) => {
+                    return Err(CommandError::worker(reason.clone(), true));
+                }
+                WorkerLifecycle::Ready(_) => return Ok(lifecycle.status()),
+                WorkerLifecycle::Starting | WorkerLifecycle::Stopping => {
+                    return Err(CommandError::worker(
+                        "The pipeline worker is changing state. Try again shortly.",
+                        true,
+                    ));
+                }
+                WorkerLifecycle::Stopped
+                | WorkerLifecycle::Degraded(_)
+                | WorkerLifecycle::Failed { .. } => {}
             }
-            WorkerLifecycle::Ready(_) => return Ok(lifecycle.status()),
-            WorkerLifecycle::Starting | WorkerLifecycle::Stopping => {
-                return Err(CommandError::worker(
-                    "The pipeline worker is changing state. Try again shortly.",
-                    true,
-                ));
-            }
-            WorkerLifecycle::Stopped
-            | WorkerLifecycle::Degraded(_)
-            | WorkerLifecycle::Failed { .. } => {}
+            *lifecycle = WorkerLifecycle::Starting;
         }
-        *lifecycle = WorkerLifecycle::Starting;
 
-        let result = verify_worker_executable(&self.executable, self.expected_sha256.as_deref())
-            .and_then(|_| {
-                spawn_worker(
-                    &self.executable,
-                    &self.working_directory,
-                    &self.environment,
-                    self.credentials.clone(),
+        // Runtime hashing may touch hundreds of immutable files. It runs
+        // without holding the lifecycle lock so the UI can report `Starting`
+        // and shutdown can cancel the launch before a child process exists.
+        let verification = self
+            .runtime_verification
+            .as_ref()
+            .map(|verification| {
+                crate::runtime::verify_portable_debug_pack(
+                    &verification.root,
+                    &verification.manifest_sha256,
                 )
+            })
+            .unwrap_or(Ok(()))
+            .and_then(|_| {
+                verify_worker_executable(&self.executable, self.expected_sha256.as_deref())
             });
+
+        let mut lifecycle = self.lifecycle.lock();
+        if !matches!(*lifecycle, WorkerLifecycle::Starting) {
+            return Ok(lifecycle.status());
+        }
+        let result = verification.and_then(|_| {
+            spawn_worker(
+                &self.executable,
+                &self.working_directory,
+                &self.environment,
+                self.credentials.clone(),
+            )
+        });
         match result {
             Ok(running) => {
                 *lifecycle = WorkerLifecycle::Ready(running);
@@ -208,7 +242,12 @@ impl WorkerSupervisor {
         let previous = std::mem::replace(&mut *lifecycle, WorkerLifecycle::Stopping);
         match previous {
             WorkerLifecycle::Ready(mut running) => {
-                let _ = call_running(&running, "system.shutdown", Value::Null);
+                let _ = call_running_with_timeout(
+                    &running,
+                    "system.shutdown",
+                    Value::Null,
+                    SHUTDOWN_TIMEOUT,
+                );
                 let _ = running.child.try_wait().and_then(|status| {
                     if status.is_none() {
                         running.child.kill()?;
@@ -725,6 +764,15 @@ fn call_running(
     method: &str,
     payload: Value,
 ) -> Result<Value, CommandError> {
+    call_running_with_timeout(running, method, payload, REQUEST_TIMEOUT)
+}
+
+fn call_running_with_timeout(
+    running: &RunningWorker,
+    method: &str,
+    payload: Value,
+    timeout: Duration,
+) -> Result<Value, CommandError> {
     let id = Uuid::now_v7();
     let request = RpcRequest {
         protocol_version: PROTOCOL_VERSION,
@@ -742,8 +790,8 @@ fn call_running(
             CommandError::worker("The pipeline worker IPC channel is unavailable.", true)
         })?;
     stream
-        .set_read_timeout(Some(REQUEST_TIMEOUT))
-        .and_then(|_| stream.set_write_timeout(Some(REQUEST_TIMEOUT)))
+        .set_read_timeout(Some(timeout))
+        .and_then(|_| stream.set_write_timeout(Some(timeout)))
         .map_err(|_| CommandError::worker("Worker IPC timeouts could not be applied.", true))?;
     stream
         .write_all(&bytes)
@@ -879,6 +927,7 @@ mod tests {
             working_directory: temp.path().join("work"),
             expected_sha256: Some("0".repeat(64)),
             environment: BTreeMap::new(),
+            runtime_verification: None,
         });
         let error = supervisor.start().unwrap_err();
         assert!(error.message.contains("SHA-256"));

@@ -17,33 +17,154 @@ mod validation;
 use commands::*;
 use state::{AppState, prepare_portable_process_environment};
 use std::ffi::OsStr;
+use std::fs;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 const HEADLESS_ACCEPTANCE_ENVIRONMENT: &str = "ALYSTRIA_HEADLESS_ACCEPTANCE";
+const HEADLESS_ACCEPTANCE_CDP_PORT_ENVIRONMENT: &str = "ALYSTRIA_HEADLESS_ACCEPTANCE_CDP_PORT";
 
 fn should_show_main_window(headless_acceptance: Option<&OsStr>) -> bool {
     headless_acceptance != Some(OsStr::new("1"))
+}
+
+fn headless_acceptance_requested() -> bool {
+    cfg!(any(debug_assertions, feature = "portable-debug-runtime"))
+        && !should_show_main_window(std::env::var_os(HEADLESS_ACCEPTANCE_ENVIRONMENT).as_deref())
+}
+
+fn headless_webview_arguments(headless: bool, port: Option<&OsStr>) -> Option<String> {
+    if !headless {
+        return None;
+    }
+    let port = port?
+        .to_string_lossy()
+        .parse::<u16>()
+        .ok()
+        .filter(|port| *port >= 1024)?;
+    Some(format!(
+        "--remote-debugging-port={port} --remote-allow-origins=http://127.0.0.1:{port}"
+    ))
+}
+
+fn configure_headless_webview_debugging() {
+    let Some(arguments) = headless_webview_arguments(
+        headless_acceptance_requested(),
+        std::env::var_os(HEADLESS_ACCEPTANCE_CDP_PORT_ENVIRONMENT).as_deref(),
+    ) else {
+        return;
+    };
+    // SAFETY: `run` invokes this before Tauri or WebView2 creates threads.
+    unsafe { std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", arguments) };
+}
+
+fn acceptance_report_path(paths: &types::AppPaths) -> PathBuf {
+    paths
+        .logs
+        .parent()
+        .filter(|parent| parent.join("Evidence").is_dir())
+        .map(|parent| parent.join("Evidence"))
+        .unwrap_or_else(|| paths.logs.clone())
+        .join("native-headless-ready.json")
+}
+
+fn write_acceptance_report(path: &Path, report: &serde_json::Value) -> std::io::Result<()> {
+    let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
+    let mut bytes = serde_json::to_vec_pretty(report).map_err(std::io::Error::other)?;
+    bytes.push(b'\n');
+    fs::write(&temporary, bytes)?;
+    fs::rename(temporary, path)
+}
+
+fn prepare_headless_acceptance(state: &AppState) -> Result<(), std::io::Error> {
+    let path = acceptance_report_path(&state.paths);
+    let result = state.worker.start().and_then(|status| {
+        state
+            .worker
+            .call("system.ping", serde_json::Value::Null)
+            .map(|_| status)
+    });
+    match result {
+        Ok(types::WorkerStatus::Ready { pid, .. }) => write_acceptance_report(
+            &path,
+            &serde_json::json!({
+                "schemaVersion": 1,
+                "state": "ready",
+                "desktopPid": std::process::id(),
+                "workerPid": pid,
+                "workerHandshake": true,
+                "portableAppData": state.paths.app_data,
+                "portableRuntime": state.paths.runtimes,
+                "portableModels": state.paths.models,
+                "portableProjects": state.paths.projects,
+                "portableCache": state.paths.cache,
+                "portableLogs": state.paths.logs,
+                "portableTemp": state.paths.temp
+            }),
+        ),
+        Ok(_) => {
+            let report = serde_json::json!({
+                "schemaVersion": 1,
+                "state": "failed",
+                "reason": "The worker did not reach the ready state."
+            });
+            write_acceptance_report(&path, &report)?;
+            Err(std::io::Error::other("headless worker readiness failed"))
+        }
+        Err(error) => {
+            let report = serde_json::json!({
+                "schemaVersion": 1,
+                "state": "failed",
+                "reason": format!("{}: {}", error.code, error.message)
+            });
+            write_acceptance_report(&path, &report)?;
+            Err(std::io::Error::other("headless worker handshake failed"))
+        }
+    }
 }
 
 pub fn run() {
     prepare_portable_process_environment().unwrap_or_else(|error| {
         panic!("{}: {}", error.code, error.message);
     });
-    tauri::Builder::default()
+    configure_headless_webview_debugging();
+    let app = tauri::Builder::default()
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Keep the window alive until the supervised worker has had a
+                // bounded opportunity to checkpoint and stop. Running this
+                // outside the GUI event loop prevents slow IPC from freezing
+                // Windows' close handling.
+                api.prevent_close();
+                let handle = window.app_handle().clone();
+                std::thread::spawn(move || {
+                    handle.state::<AppState>().worker.stop();
+                    handle.exit(0);
+                });
+            }
+        })
         .setup(|app| {
             let state = AppState::initialize(app.handle()).map_err(|error| {
                 std::io::Error::other(format!("{}: {}", error.code, error.message))
             })?;
             app.manage(state);
+            let headless_acceptance = headless_acceptance_requested();
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                if headless_acceptance {
+                    let state = handle.state::<AppState>();
+                    if prepare_headless_acceptance(&state).is_err() {
+                        handle.exit(1);
+                    }
+                } else {
+                    let _ = handle.state::<AppState>().worker.start();
+                }
+            });
             if should_show_main_window(std::env::var_os(HEADLESS_ACCEPTANCE_ENVIRONMENT).as_deref())
             {
-                let window = app
-                    .get_webview_window("main")
-                    .ok_or_else(|| {
-                        std::io::Error::other(
-                            "AI Video Tutorial Generator main window was not created",
-                        )
-                    })?;
+                let window = app.get_webview_window("main").ok_or_else(|| {
+                    std::io::Error::other("AI Video Tutorial Generator main window was not created")
+                })?;
                 window.show()?;
             }
             Ok(())
@@ -89,8 +210,13 @@ pub fn run() {
             updater_status,
             catalog_discover
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("AI Video Tutorial Generator desktop runtime failed");
+    app.run(|app_handle, event| {
+        if matches!(&event, tauri::RunEvent::ExitRequested { .. }) {
+            app_handle.state::<AppState>().worker.stop();
+        }
+    });
 }
 
 #[tauri::command]
@@ -103,7 +229,7 @@ async fn catalog_discover(
 
 #[cfg(test)]
 mod tests {
-    use super::should_show_main_window;
+    use super::{headless_webview_arguments, should_show_main_window};
     use std::ffi::OsStr;
 
     #[test]
@@ -115,5 +241,30 @@ mod tests {
     #[test]
     fn headless_acceptance_keeps_the_main_window_hidden() {
         assert!(!should_show_main_window(Some(OsStr::new("1"))));
+    }
+
+    #[test]
+    fn ordinary_launch_never_enables_webview_remote_debugging() {
+        assert_eq!(
+            headless_webview_arguments(false, Some(OsStr::new("9333"))),
+            None
+        );
+    }
+
+    #[test]
+    fn acceptance_debugging_requires_a_valid_unprivileged_port() {
+        assert_eq!(headless_webview_arguments(true, None), None);
+        assert_eq!(
+            headless_webview_arguments(true, Some(OsStr::new("80"))),
+            None
+        );
+        assert_eq!(
+            headless_webview_arguments(true, Some(OsStr::new("not-a-port"))),
+            None
+        );
+        assert_eq!(
+            headless_webview_arguments(true, Some(OsStr::new("49333"))).as_deref(),
+            Some("--remote-debugging-port=49333 --remote-allow-origins=http://127.0.0.1:49333")
+        );
     }
 }

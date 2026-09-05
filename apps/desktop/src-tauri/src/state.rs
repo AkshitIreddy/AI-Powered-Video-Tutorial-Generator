@@ -2,7 +2,7 @@ use crate::error::CommandError;
 use crate::model_download::ModelDownloadManager;
 use crate::model_setup::ModelSetupStore;
 use crate::project_store::ProjectStore;
-use crate::runtime::{RuntimeManager, load_portable_debug_pack};
+use crate::runtime::{RuntimeManager, inspect_portable_debug_pack};
 use crate::secrets::CredentialManager;
 use crate::sidecar::{WorkerLaunchConfig, WorkerSupervisor};
 use crate::types::AppPaths;
@@ -164,17 +164,18 @@ pub(crate) fn prepare_portable_process_environment() -> Result<(), CommandError>
     let mut environment = layout.worker_environment();
     environment.insert(
         "ALYSTRIA_PIPELINE_WORKER".into(),
-        layout.runtimes.join("alystria-pipeline.exe").into_os_string(),
+        layout
+            .runtimes
+            .join("alystria-pipeline.exe")
+            .into_os_string(),
     );
     environment.insert(
         "ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH".into(),
-        layout.models.join("presenter-runtime.json").into_os_string(),
+        layout
+            .models
+            .join("presenter-runtime.json")
+            .into_os_string(),
     );
-    environment.insert(
-        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS".into(),
-        "--remote-debugging-port=9333".into(),
-    );
-
     // SAFETY: this runs synchronously at the very beginning of `run`, before
     // Tauri, WebView2, the worker supervisor, or any application thread starts.
     for (key, value) in environment {
@@ -430,6 +431,7 @@ fn debug_worker_override(
             working_directory: runtime_root.join("work").join("pipeline-debug"),
             expected_sha256: None,
             environment,
+            runtime_verification: None,
         }));
     }
     Ok(None)
@@ -471,7 +473,7 @@ fn portable_debug_worker_launch(
             false,
         )
     })?;
-    let pack = load_portable_debug_pack(pack_root)?;
+    let pack = inspect_portable_debug_pack(pack_root)?;
     let expected_worker = pack.component_path("pipeline-worker").ok_or_else(|| {
         CommandError::new(
             "INCOMPLETE_RUNTIME_PACK",
