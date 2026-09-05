@@ -4,7 +4,7 @@ import pytest
 
 from alystria.providers import (
     GEMINI_2_5_FLASH_MODEL,
-    GeminiInteractionsAdapter,
+    GeminiGenerateContentAdapter,
     HttpRequest,
     HttpResponse,
     TextRequest,
@@ -19,7 +19,7 @@ class NoNetworkTransport:
 
 
 def test_gemini_flash_price_snapshot_bounds_the_maximum_requested_output() -> None:
-    adapter = GeminiInteractionsAdapter(
+    adapter = GeminiGenerateContentAdapter(
         NoNetworkTransport(),
         prices=reviewed_gemini_prices((GEMINI_2_5_FLASH_MODEL,)),
     )

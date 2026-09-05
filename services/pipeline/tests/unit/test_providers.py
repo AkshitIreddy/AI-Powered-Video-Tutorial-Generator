@@ -7,13 +7,14 @@ from typing import Any
 import pytest
 
 from alystria.providers import (
+    GEMINI_2_5_FLASH_MODEL,
     AnthropicMessagesAdapter,
     AssetInput,
     Capability,
     DataBoundary,
     DataClassification,
     FailureCode,
-    GeminiInteractionsAdapter,
+    GeminiGenerateContentAdapter,
     HttpRequest,
     HttpResponse,
     ImageRequest,
@@ -272,56 +273,121 @@ def test_anthropic_uses_output_config_and_versioned_research_tool() -> None:
     assert result.value.citations[0]["url"] == "https://source.test"
 
 
-def test_gemini_uses_interactions_response_format_and_steps_shape() -> None:
+def test_gemini_uses_generate_content_schema_and_usage_shape() -> None:
     transport = FakeTransport(
         response(
             {
-                "id": "int_1",
-                "status": "completed",
-                "model": "gemini-test",
-                "steps": [
+                "responseId": "resp_1",
+                "modelVersion": "gemini-2.5-flash-001",
+                "candidates": [
                     {
-                        "type": "model_output",
-                        "content": [{"type": "text", "text": '{"answer":"yes"}'}],
+                        "finishReason": "STOP",
+                        "content": {
+                            "role": "model",
+                            "parts": [{"text": '{"answer":"yes"}'}],
+                        },
+                        "groundingMetadata": {
+                            "webSearchQueries": ["example query"],
+                            "groundingChunks": [
+                                {
+                                    "web": {
+                                        "uri": "https://source.test/gemini",
+                                        "title": "Grounding source",
+                                    }
+                                }
+                            ],
+                        },
                     }
                 ],
-                "usage": {
-                    "total_input_tokens": 6,
-                    "total_output_tokens": 3,
-                    "total_thought_tokens": 2,
-                    "total_tool_use_tokens": 0,
+                "usageMetadata": {
+                    "promptTokenCount": 6,
+                    "candidatesTokenCount": 3,
+                    "thoughtsTokenCount": 2,
+                    "toolUsePromptTokenCount": 0,
                 },
             }
         )
     )
-    adapter = GeminiInteractionsAdapter(transport)
+    adapter = GeminiGenerateContentAdapter(transport)
     result = adapter.invoke(
-        TextRequest("Answer", "gemini-test", json_schema=SCHEMA),
+        TextRequest(
+            "Answer",
+            GEMINI_2_5_FLASH_MODEL,
+            system="Return one answer.",
+            temperature=0.2,
+            json_schema=SCHEMA,
+            research=True,
+        ),
         context("gemini"),
     )
     sent = transport.requests[0]
-    assert sent.url.endswith("/v1beta/interactions")
-    assert sent.headers["Api-Revision"] == "2026-05-20"
-    assert sent.json_body["store"] is False
-    assert sent.json_body["response_format"] == {
-        "type": "text",
-        "mime_type": "application/json",
-        "schema": SCHEMA,
+    assert sent.url.endswith("/v1beta/models/gemini-2.5-flash:generateContent")
+    assert "Api-Revision" not in sent.headers
+    assert sent.json_body["contents"] == [{"role": "user", "parts": [{"text": "Answer"}]}]
+    assert sent.json_body["systemInstruction"] == {"parts": [{"text": "Return one answer."}]}
+    assert sent.json_body["generationConfig"] == {
+        "maxOutputTokens": 2048,
+        "temperature": 0.2,
+        "responseMimeType": "application/json",
+        "responseJsonSchema": SCHEMA,
     }
+    assert sent.json_body["tools"] == [{"google_search": {}}]
     assert result.value.parsed == {"answer": "yes"}
+    assert result.value.citations == (
+        {
+            "url": "https://source.test/gemini",
+            "title": "Grounding source",
+            "type": "citation",
+        },
+    )
     assert result.usage.units["thought_tokens"] == 2
+    assert result.usage.units["search_requests"] == 1
+    assert result.model == "gemini-2.5-flash-001"
+    assert result.usage.request_id == "resp_1"
 
 
 def test_gemini_research_rejects_unadvertised_domain_filter_before_network() -> None:
     transport = FakeTransport()
-    adapter = GeminiInteractionsAdapter(transport)
+    adapter = GeminiGenerateContentAdapter(transport)
     with pytest.raises(ProviderFailure, match="domain allowlisting") as caught:
         adapter.invoke(
-            TextRequest("Research", "gemini-test", research=True, allowed_domains=("x.test",)),
+            TextRequest(
+                "Research",
+                GEMINI_2_5_FLASH_MODEL,
+                research=True,
+                allowed_domains=("x.test",),
+            ),
             context("gemini"),
         )
     assert caught.value.code is FailureCode.UNSUPPORTED_CAPABILITY
     assert transport.requests == []
+
+
+def test_gemini_rejects_unreviewed_model_before_network() -> None:
+    transport = FakeTransport()
+    adapter = GeminiGenerateContentAdapter(transport)
+    with pytest.raises(ProviderFailure, match=r"reviewed gemini-2\.5-flash") as caught:
+        adapter.invoke(
+            TextRequest("Answer", "gemini-unreviewed", json_schema=SCHEMA),
+            context("gemini"),
+        )
+    assert caught.value.code is FailureCode.UNSUPPORTED_CAPABILITY
+    assert transport.requests == []
+
+
+def test_gemini_reports_prompt_and_candidate_safety_blocks() -> None:
+    request = TextRequest("Answer", GEMINI_2_5_FLASH_MODEL)
+    adapter = GeminiGenerateContentAdapter(FakeTransport())
+    with pytest.raises(ProviderFailure, match="blocked the prompt") as prompt_block:
+        adapter.parse_response(request, {"promptFeedback": {"blockReason": "SAFETY"}})
+    assert prompt_block.value.code is FailureCode.POLICY_BLOCKED
+
+    with pytest.raises(ProviderFailure, match="blocked the response") as response_block:
+        adapter.parse_response(
+            request,
+            {"candidates": [{"finishReason": "SAFETY", "content": {"parts": []}}]},
+        )
+    assert response_block.value.code is FailureCode.POLICY_BLOCKED
 
 
 def test_local_openai_compatible_is_loopback_by_default_and_needs_no_key() -> None:

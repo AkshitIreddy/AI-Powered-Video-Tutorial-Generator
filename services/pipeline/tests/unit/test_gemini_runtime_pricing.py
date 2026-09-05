@@ -17,20 +17,29 @@ from alystria.providers import (
 class GeminiFixtureTransport:
     def send(self, request: HttpRequest) -> HttpResponse:
         assert request.json_body is not None
+        assert request.url.endswith("/v1beta/models/gemini-2.5-flash:generateContent")
+        assert request.json_body["generationConfig"]["responseMimeType"] == "application/json"
         return HttpResponse(
             200,
             {"content-type": "application/json"},
             json.dumps(
                 {
-                    "id": "gemini-priced",
-                    "status": "completed",
-                    "model": "gemini-2.5-flash",
-                    "output_text": '{"lesson":"verified"}',
-                    "usage": {
-                        "total_input_tokens": 8,
-                        "total_output_tokens": 4,
-                        "total_thought_tokens": 3,
-                        "total_tool_use_tokens": 0,
+                    "responseId": "gemini-priced",
+                    "modelVersion": "gemini-2.5-flash-001",
+                    "candidates": [
+                        {
+                            "finishReason": "STOP",
+                            "content": {
+                                "role": "model",
+                                "parts": [{"text": '{"lesson":"verified"}'}],
+                            },
+                        }
+                    ],
+                    "usageMetadata": {
+                        "promptTokenCount": 8,
+                        "candidatesTokenCount": 4,
+                        "thoughtsTokenCount": 3,
+                        "toolUsePromptTokenCount": 0,
                     },
                 }
             ).encode(),
@@ -79,9 +88,11 @@ def test_runtime_factory_applies_reviewed_gemini_pricing_under_one_dollar_cap() 
     credential_ref = "keyring://alystria/gemini/api_key"
     grant = broker.issue("gemini", credential_ref, "fixture-runtime-credential")
     runtime = ProviderRuntimeFactory(
-        transport_factory=lambda provider_id: GeminiFixtureTransport()
-        if provider_id == "gemini"
-        else (_ for _ in ()).throw(AssertionError(provider_id)),
+        transport_factory=lambda provider_id: (
+            GeminiFixtureTransport()
+            if provider_id == "gemini"
+            else (_ for _ in ()).throw(AssertionError(provider_id))
+        ),
         credential_resolver=broker,
         credential_grants={"gemini": grant},
     ).build(parse_routing_policy(_policy()))

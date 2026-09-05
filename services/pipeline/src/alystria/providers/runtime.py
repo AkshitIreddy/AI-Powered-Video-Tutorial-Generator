@@ -22,7 +22,7 @@ from .cloudflare_workers_ai import CloudflareWorkersAIAdapter
 from .errors import FailureCode, ProviderFailure
 from .llm import (
     AnthropicMessagesAdapter,
-    GeminiInteractionsAdapter,
+    GeminiGenerateContentAdapter,
     OpenAICompatibleLocalAdapter,
     OpenAIResponsesAdapter,
     reviewed_gemini_prices,
@@ -543,7 +543,7 @@ class ProviderRuntimeFactory:
                 }
             )
             adapters.append(
-                GeminiInteractionsAdapter(
+                GeminiGenerateContentAdapter(
                     transport,
                     prices=reviewed_gemini_prices(route_models),
                 )
@@ -573,7 +573,7 @@ class ProviderRuntimeFactory:
                 (
                     OpenAIResponsesAdapter,
                     AnthropicMessagesAdapter,
-                    GeminiInteractionsAdapter,
+                    GeminiGenerateContentAdapter,
                     OpenAICompatibleLocalAdapter,
                 ),
             ):

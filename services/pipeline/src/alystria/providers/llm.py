@@ -129,15 +129,11 @@ class BaseLLMAdapter(GuardedAdapter):
         if self.prices is not None:
             actual_cost = _token_cost(
                 input_tokens,
-                output_tokens
-                if billable_output_tokens is None
-                else billable_output_tokens,
+                output_tokens if billable_output_tokens is None else billable_output_tokens,
                 self.prices,
             )
             if "search_requests" in units:
-                actual_cost += round(
-                    units["search_requests"] * self.prices.search_micros_per_call
-                )
+                actual_cost += round(units["search_requests"] * self.prices.search_micros_per_call)
         return Usage(
             provider_id=self.descriptor.provider_id,
             model=model,
@@ -348,8 +344,8 @@ class AnthropicMessagesAdapter(BaseLLMAdapter):
         )
 
 
-class GeminiInteractionsAdapter(BaseLLMAdapter):
-    """Gemini Interactions API using the post-June-2026 steps schema."""
+class GeminiGenerateContentAdapter(BaseLLMAdapter):
+    """Gemini stable-model generateContent adapter with native JSON Schema output."""
 
     def __init__(
         self,
@@ -357,44 +353,50 @@ class GeminiInteractionsAdapter(BaseLLMAdapter):
         *,
         base_url: str = "https://generativelanguage.googleapis.com/v1beta",
         prices: TokenPrices | None = None,
-        api_revision: str = "2026-05-20",
     ) -> None:
         super().__init__(transport, prices)
         self.base_url = base_url.rstrip("/")
-        self.api_revision = api_revision
         self.descriptor = default_catalog().get("gemini")
 
     def build_request(self, request: TextRequest, context: RequestContext) -> HttpRequest:
+        if request.model != GEMINI_2_5_FLASH_MODEL:
+            raise ProviderFailure(
+                FailureCode.UNSUPPORTED_CAPABILITY,
+                "Gemini structured writing supports only the reviewed gemini-2.5-flash model",
+                provider_id=self.descriptor.provider_id,
+            )
+        generation_config: dict[str, Any] = {
+            "maxOutputTokens": request.max_output_tokens,
+        }
+        if request.temperature is not None:
+            generation_config["temperature"] = request.temperature
+        if request.json_schema is not None:
+            generation_config["responseMimeType"] = "application/json"
+            generation_config["responseJsonSchema"] = request.json_schema
         body: dict[str, Any] = {
-            "model": request.model,
-            "input": request.prompt,
-            "store": False,
-            "generation_config": {"max_output_tokens": request.max_output_tokens},
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": request.prompt}],
+                }
+            ],
+            "generationConfig": generation_config,
         }
         if request.system:
-            body["system_instruction"] = request.system
-        if request.json_schema is not None:
-            body["response_format"] = {
-                "type": "text",
-                "mime_type": "application/json",
-                "schema": request.json_schema,
-            }
+            body["systemInstruction"] = {"parts": [{"text": request.system}]}
         if request.research:
-            tool: dict[str, Any] = {"type": "google_search", "search_types": ["web_search"]}
             if request.allowed_domains:
-                # Interactions does not currently advertise domain allowlisting.
                 raise ProviderFailure(
                     FailureCode.UNSUPPORTED_CAPABILITY,
-                    "Gemini Interactions does not declare web-search domain allowlisting",
+                    "Gemini generateContent does not declare web-search domain allowlisting",
                     provider_id=self.descriptor.provider_id,
                 )
-            body["tools"] = [tool]
+            body["tools"] = [{"google_search": {}}]
         return HttpRequest(
             "POST",
-            f"{self.base_url}/interactions",
+            f"{self.base_url}/models/{request.model}:generateContent",
             headers={
                 "x-goog-api-key": context.credential or "",
-                "Api-Revision": self.api_revision,
                 "Content-Type": "application/json",
             },
             json_body=body,
@@ -403,59 +405,65 @@ class GeminiInteractionsAdapter(BaseLLMAdapter):
     def parse_response(
         self, request: TextRequest, payload: dict[str, Any]
     ) -> ProviderResult[TextOutput]:
-        status = payload.get("status", "completed")
-        if status != "completed":
+        prompt_feedback = _dict(payload.get("promptFeedback"))
+        block_reason = _string(prompt_feedback.get("blockReason"))
+        candidates = _list(payload.get("candidates"))
+        if block_reason:
             raise ProviderFailure(
-                FailureCode.TRANSIENT
-                if status in {"in_progress", "queued"}
-                else FailureCode.PROVIDER_ERROR,
-                f"Gemini interaction did not complete (status={status})",
+                FailureCode.POLICY_BLOCKED,
+                f"Gemini blocked the prompt (reason={block_reason})",
                 provider_id=self.descriptor.provider_id,
-                retryable=status in {"in_progress", "queued"},
-                request_id=_string(payload.get("id")),
+                request_id=_string(payload.get("responseId")),
             )
-        text = payload.get("output_text")
-        if not isinstance(text, str):
-            chunks: list[str] = []
-            for step in _list(payload.get("steps")):
-                if step.get("type") != "model_output":
-                    continue
-                for content in _list(step.get("content")):
-                    if content.get("type") == "text" and isinstance(content.get("text"), str):
-                        chunks.append(content["text"])
-            text = "".join(chunks)
-        if not text:
-            raise _malformed(self.descriptor.provider_id, "Gemini interaction contained no text")
-        usage = _dict(payload.get("usage"))
-        search_requests = sum(
-            _int(item.get("count"))
-            for item in _list(usage.get("grounding_tool_count"))
-            if item.get("type") == "google_search"
+        if not candidates:
+            raise _malformed(self.descriptor.provider_id, "Gemini returned no candidates")
+        candidate = candidates[0]
+        text = "".join(
+            part["text"]
+            for part in _list(_dict(candidate.get("content")).get("parts"))
+            if isinstance(part.get("text"), str)
         )
-        output_tokens = _int(usage.get("total_output_tokens"))
-        thought_tokens = _int(usage.get("total_thought_tokens"))
+        if not text:
+            finish_reason = _string(candidate.get("finishReason"))
+            if finish_reason in {"SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}:
+                raise ProviderFailure(
+                    FailureCode.POLICY_BLOCKED,
+                    f"Gemini blocked the response (reason={finish_reason})",
+                    provider_id=self.descriptor.provider_id,
+                    request_id=_string(payload.get("responseId")),
+                )
+            raise _malformed(self.descriptor.provider_id, "Gemini returned no text content")
+        usage = _dict(payload.get("usageMetadata"))
+        output_tokens = _int(usage.get("candidatesTokenCount"))
+        thought_tokens = _int(usage.get("thoughtsTokenCount"))
+        tool_use_tokens = _int(usage.get("toolUsePromptTokenCount"))
+        grounding = _dict(candidate.get("groundingMetadata"))
+        web_search_queries = grounding.get("webSearchQueries")
+        search_requests = len(web_search_queries) if isinstance(web_search_queries, list) else 0
+        if not search_requests and grounding:
+            search_requests = 1
         result_usage = self._usage(
             request.model,
-            _int(usage.get("total_input_tokens")),
+            _int(usage.get("promptTokenCount")),
             output_tokens,
-            _string(payload.get("id")),
+            _string(payload.get("responseId")),
             extra={
                 "thought_tokens": thought_tokens,
-                "tool_use_tokens": _int(usage.get("total_tool_use_tokens")),
+                "tool_use_tokens": tool_use_tokens,
                 "search_requests": search_requests,
             },
             billable_output_tokens=output_tokens + thought_tokens,
         )
         return ProviderResult(
             self.descriptor.provider_id,
-            _string(payload.get("model")) or request.model,
+            _string(payload.get("modelVersion")) or request.model,
             TextOutput(
                 text,
                 _parse_structured(text, request, self.descriptor.provider_id),
                 tuple(_collect_citations(payload)),
             ),
             result_usage,
-            _string(payload.get("id")),
+            _string(payload.get("responseId")),
         )
 
 

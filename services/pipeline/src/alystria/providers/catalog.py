@@ -253,7 +253,7 @@ def default_catalog() -> ProviderCatalog:
                 Capability.TTS,
                 Capability.TRANSCRIPTION,
             },
-            "https://ai.google.dev/api/interactions-api-v1",
+            "https://ai.google.dev/api/generate-content",
             policy=_cloud(RetentionMode.CONFIGURABLE),
             models=("gemini-2.5-flash",),
             cancellation=True,
