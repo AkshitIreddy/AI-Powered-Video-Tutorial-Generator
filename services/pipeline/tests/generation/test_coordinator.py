@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import socket
 import uuid
@@ -38,7 +39,7 @@ from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
 from alystria.qa import Finding, GateStatus, QualityGate, Severity
 from alystria.research import GroundingMode
-from alystria.service import _configured_local_presenter
+from alystria.service import _configured_forced_aligner, _configured_local_presenter
 
 
 def request(*, faults: int = 0) -> GenerationRequest:
@@ -156,6 +157,7 @@ class _UntimedMediaClient:
 
     def __init__(self) -> None:
         self.inner = DeterministicMediaClient()
+        self.narration_texts: list[str] = []
 
     def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
         return self.inner.create_visual(scene, seed=seed)
@@ -163,6 +165,7 @@ class _UntimedMediaClient:
     def synthesize_narration(
         self, scene: dict[str, Any], *, locale: str, seed: int
     ) -> GeneratedMedia:
+        self.narration_texts.append(str(scene["narration"]))
         media = self.inner.synthesize_narration(scene, locale=locale, seed=seed)
         return replace(
             media,
@@ -177,6 +180,17 @@ class _UntimedMediaClient:
         self, scene: dict[str, Any], *, narration_hash: str, seed: int
     ) -> GeneratedMedia | None:
         return self.inner.create_presenter(scene, narration_hash=narration_hash, seed=seed)
+
+
+class _RecordingNativeMediaClient(DeterministicMediaClient):
+    def __init__(self) -> None:
+        self.narration_texts: list[str] = []
+
+    def synthesize_narration(
+        self, scene: dict[str, Any], *, locale: str, seed: int
+    ) -> GeneratedMedia:
+        self.narration_texts.append(str(scene["narration"]))
+        return super().synthesize_narration(scene, locale=locale, seed=seed)
 
 
 class _MeasuredBatchAligner:
@@ -206,30 +220,140 @@ class _MeasuredBatchAligner:
 def test_narration_runs_one_forced_alignment_batch_before_caption_export(tmp_path: Path) -> None:
     store = ProjectStore.create(tmp_path / "Aligned", name="Aligned")
     aligner = _MeasuredBatchAligner()
+    media_client = _UntimedMediaClient()
     try:
         coordinator = GenerationCoordinator(
             store,
-            media_client=_UntimedMediaClient(),
+            media_client=media_client,
             alignment_client=aligner,
         )
-        started = coordinator.start(request())
+        authored = replace(
+            request(),
+            topic="Analyze O(n^2) and 1,234 + 50%",
+            duration_seconds=60,
+        )
+        started = coordinator.start(authored)
         coordinator.run_pending()
         coordinator.approve(started.generation_id)
         completed = coordinator.run_pending()
         assert completed is not None
         assert completed.state is GenerationState.SUCCEEDED
         assert len(aligner.calls) == 1
+        aligned_texts = [item.text for item in aligner.calls[0]]
+        assert aligned_texts == media_client.narration_texts
+        assert all(
+            "O(n^2)" not in text and "1,234" not in text and "50%" not in text
+            for text in aligned_texts
+        )
+        assert all("big O of n squared" in text for text in aligned_texts)
+        assert all("one thousand two hundred thirty four" in text for text in aligned_texts)
+        assert all("fifty percent" in text for text in aligned_texts)
         narration_stage = next(
             item for item in completed.stages if item.stage is GenerationStage.NARRATION
         )
         result = coordinator.runtime.get_job(narration_stage.job_id).result
         assert result is not None
         assert all(
+            item["spokenText"] in media_client.narration_texts
+            and item["authoredText"] != item["spokenText"]
+            and item["spokenWordCount"] > item["authoredWordCount"]
+            for item in result["payload"]["narration"]
+        )
+        assert all(
             item["alignment"]["source"] == "forced-alignment"
             for item in result["payload"]["narration"]
         )
     finally:
         store.close()
+
+
+def test_non_english_native_timing_route_preserves_provider_narration(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Spanish", name="Spanish")
+    media_client = _RecordingNativeMediaClient()
+    try:
+        coordinator = GenerationCoordinator(store, media_client=media_client)
+        configured = replace(
+            request(),
+            topic="Comparar O(n^2) con 1,234 operaciones",
+            locale="es-ES",
+            duration_seconds=60,
+        )
+        generation_id = coordinator.start(configured).generation_id
+        coordinator.run_pending()
+        coordinator.approve(generation_id)
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert media_client.narration_texts
+        assert all(
+            "O(n^2)" in text and "1,234" in text for text in media_client.narration_texts
+        )
+    finally:
+        store.close()
+
+
+def test_invalid_deferred_aligner_fails_narration_job_instead_of_stalling_queue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_root = tmp_path / "invalid-aligner"
+    config = _invalid_alignment_config(runtime_root)
+    monkeypatch.setenv("ALYSTRIA_FORCED_ALIGNER_CONFIG_PATH", str(config))
+    store = ProjectStore.create(tmp_path / "Deferred failure", name="Deferred failure")
+    try:
+        alignment_client = _configured_forced_aligner(store)
+        assert alignment_client is not None
+        coordinator = GenerationCoordinator(
+            store,
+            media_client=_UntimedMediaClient(),
+            alignment_client=alignment_client,
+        )
+        generation_id = coordinator.start(request()).generation_id
+        waiting = coordinator.run_pending()
+        assert waiting is not None and waiting.state is GenerationState.WAITING_APPROVAL
+        coordinator.approve(generation_id)
+
+        failed = coordinator.run_pending()
+
+        assert failed is not None and failed.state is GenerationState.FAILED
+        narration = next(
+            stage for stage in failed.stages if stage.stage is GenerationStage.NARRATION
+        )
+        assert narration.state == "FAILED"
+        assert narration.error is not None
+        assert narration.error["exceptionType"] == "ForcedAlignmentError"
+        assert "worker pin is invalid" in narration.error["message"]
+    finally:
+        store.close()
+
+
+def _invalid_alignment_config(root: Path) -> Path:
+    root.mkdir()
+    entries: dict[str, dict[str, str]] = {}
+    for key, relative in (
+        ("python", "python.exe"),
+        ("worker", "worker.py"),
+        ("model", "model.onnx"),
+        ("vocab", "vocab.json"),
+    ):
+        path = root / relative
+        path.write_bytes(key.encode())
+        entries[key] = {
+            "relativePath": relative,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+    entries["worker"]["sha256"] = "0" * 64
+    config = root / "alignment-runtime.json"
+    config.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "runtimeRoot": str(root),
+                "timeoutSeconds": 60,
+                **entries,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config
 
 
 def open_coordinator(tmp_path: Path) -> tuple[ProjectStore, GenerationCoordinator]:

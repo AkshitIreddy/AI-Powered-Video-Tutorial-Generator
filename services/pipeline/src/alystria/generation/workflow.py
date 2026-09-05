@@ -104,8 +104,9 @@ from .models import (
     ObjectiveSpec,
     SourceSpec,
 )
+from .spoken_text import normalize_spoken_text
 
-IMPLEMENTATION_VERSION = "generation-v7-rendered-frame-review"
+IMPLEMENTATION_VERSION = "generation-v8-spoken-math-alignment"
 PROMPT_VERSION = "offline-education-v1"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
@@ -1063,8 +1064,17 @@ class GenerationWorkflow:
         scenes = approved["storyboard"]["scenes"]
         for index, scene in enumerate(scenes):
             context.check_cancelled()
+            authored_text = str(scene["narration"])
+            spoken_text = (
+                normalize_spoken_text(authored_text, locale=request.locale).spoken_text
+                if request.locale.casefold().startswith("en")
+                else authored_text
+            )
+            authored_word_count = len(re.findall(r"\b[\w'-]+\b", authored_text, re.UNICODE))
+            spoken_word_count = len(re.findall(r"\b[\w'-]+\b", spoken_text, re.UNICODE))
+            spoken_scene = {**scene, "narration": spoken_text}
             media = self.media_client.synthesize_narration(
-                scene,
+                spoken_scene,
                 locale=request.locale,
                 seed=request.deterministic_seed + index,
             )
@@ -1078,22 +1088,29 @@ class GenerationWorkflow:
                     "provider": media.provider_id,
                     "modelRevision": media.model_revision,
                     "sceneId": scene["id"],
-                    "textSha256": hashlib.sha256(str(scene["narration"]).encode()).hexdigest(),
+                    "textSha256": hashlib.sha256(spoken_text.encode()).hexdigest(),
+                    "authoredTextSha256": hashlib.sha256(authored_text.encode()).hexdigest(),
+                    "authoredWordCount": authored_word_count,
+                    "spokenWordCount": spoken_word_count,
                 },
             )
-            unscaled_word_timings = _deterministic_word_timings(str(scene["narration"]))
+            unscaled_word_timings = _deterministic_word_timings(spoken_text)
             duration_ms = _positive_int(
                 media.metadata.get("durationMs", unscaled_word_timings[-1].end_ms),
                 "narration durationMs",
             )
             word_timings, alignment = _provider_neutral_word_timings(
-                str(scene["narration"]),
+                spoken_text,
                 duration_ms=duration_ms,
                 metadata=media.metadata,
             )
             pending.append(
                 {
                     "scene": scene,
+                    "authoredText": authored_text,
+                    "spokenText": spoken_text,
+                    "authoredWordCount": authored_word_count,
+                    "spokenWordCount": spoken_word_count,
                     "media": media,
                     "artifact": artifact,
                     "durationMs": duration_ms,
@@ -1114,7 +1131,7 @@ class GenerationWorkflow:
                         scene_id=str(item["scene"]["id"]),
                         audio=item["media"].content,
                         media_type=item["media"].media_type,
-                        text=str(item["scene"]["narration"]),
+                        text=str(item["spokenText"]),
                         locale=request.locale,
                         duration_ms=int(item["durationMs"]),
                     )
@@ -1127,7 +1144,7 @@ class GenerationWorkflow:
                 if not isinstance(evidence, dict):
                     raise ValueError(f"Forced alignment omitted narration scene {scene_id}")
                 word_timings, alignment = _provider_neutral_word_timings(
-                    str(item["scene"]["narration"]),
+                    str(item["spokenText"]),
                     duration_ms=int(item["durationMs"]),
                     metadata={**item["media"].metadata, **evidence},
                 )
@@ -1147,6 +1164,10 @@ class GenerationWorkflow:
                     "mediaType": media.media_type,
                     "durationMs": item["durationMs"],
                     "sampleRateHz": media.metadata.get("sampleRateHz", 48_000),
+                    "authoredText": item["authoredText"],
+                    "spokenText": item["spokenText"],
+                    "authoredWordCount": item["authoredWordCount"],
+                    "spokenWordCount": item["spokenWordCount"],
                     "words": [asdict(word) for word in item["wordTimings"]],
                     "alignment": item["alignment"],
                 }

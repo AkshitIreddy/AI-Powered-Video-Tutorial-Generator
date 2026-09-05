@@ -52,13 +52,25 @@ def _normalized_words(text: str, vocab: dict[str, int]) -> tuple[list[str], list
     normalized: list[str] = []
     alphabet = {key for key in vocab if len(key) == 1 and key != "|"}
     uppercase = any(key.isupper() for key in alphabet)
+    ignorable = frozenset(".,!?;:'\"")
     for word in words:
         folded = unicodedata.normalize("NFKD", word)
         folded = "".join(character for character in folded if not unicodedata.combining(character))
         folded = folded.upper() if uppercase else folded.lower()
+        unsupported = [
+            character
+            for character in folded
+            if character not in alphabet and character not in ignorable
+        ]
+        if unsupported:
+            raise ValueError(
+                f"transcript word cannot be represented by the pinned vocabulary: {word!r}"
+            )
         token = "".join(character for character in folded if character in alphabet)
         if not token:
-            raise ValueError(f"transcript word cannot be represented by the pinned vocabulary: {word!r}")
+            raise ValueError(
+                f"transcript word cannot be represented by the pinned vocabulary: {word!r}"
+            )
         normalized.append(token)
     return words, normalized
 

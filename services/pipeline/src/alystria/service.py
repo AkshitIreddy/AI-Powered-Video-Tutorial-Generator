@@ -38,8 +38,8 @@ from .generation import (
     request_from_desktop,
 )
 from .generation.forced_alignment import (
+    DeferredPinnedOnnxCtcAligner,
     ForcedAlignmentClient,
-    load_pinned_onnx_ctc_aligner,
 )
 from .jobs import (
     ActionKey,
@@ -1239,7 +1239,7 @@ def _configured_forced_aligner(store: ProjectStore) -> ForcedAlignmentClient | N
     config_path = Path(config_value)
     if not config_path.exists() and not config_path.is_symlink():
         return None
-    return load_pinned_onnx_ctc_aligner(store, config_path)
+    return DeferredPinnedOnnxCtcAligner(store, config_path)
 
 
 def _rendered_frame_ffmpeg_path() -> Path | None:

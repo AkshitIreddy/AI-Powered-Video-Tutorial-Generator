@@ -244,6 +244,23 @@ class PinnedOnnxCtcAligner:
                 raise ForcedAlignmentError(f"Forced-alignment {label} pin is invalid")
 
 
+class DeferredPinnedOnnxCtcAligner:
+    """Load and verify the optional runtime only when untimed speech needs it.
+
+    Desktop workers serve unrelated imports, editor exports, visual searches,
+    and pre-approval generation stages. A stale optional model pin must not
+    disable those queues, while narration still fails inside its durable task
+    attempt before any timing can be certified.
+    """
+
+    def __init__(self, store: ProjectStore, config_path: Path) -> None:
+        self.store = store
+        self.config_path = config_path
+
+    def align_batch(self, values: Sequence[AlignmentInput]) -> dict[str, dict[str, Any]]:
+        return load_pinned_onnx_ctc_aligner(self.store, self.config_path).align_batch(values)
+
+
 def load_pinned_onnx_ctc_aligner(
     store: ProjectStore, config_path: Path
 ) -> PinnedOnnxCtcAligner:
