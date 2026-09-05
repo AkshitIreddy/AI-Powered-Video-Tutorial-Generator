@@ -168,7 +168,7 @@ impl CredentialManager {
     pub fn lease_reference(&self, reference: &str) -> Result<Zeroizing<String>, CommandError> {
         const PREFIX: &str = "keyring://alystria/";
         let suffix = reference.strip_prefix(PREFIX).ok_or_else(|| {
-            CommandError::invalid("credentialRef", "must be an Alystria keyring reference")
+            CommandError::invalid("credentialRef", "must be an application keyring reference")
         })?;
         let (provider, kind) = suffix.split_once('/').ok_or_else(|| {
             CommandError::invalid(
@@ -213,7 +213,7 @@ fn secret_error(error: SecretStoreError) -> CommandError {
     match error {
         SecretStoreError::Unavailable => CommandError::new(
             "KEYRING_UNAVAILABLE",
-            "The operating-system credential vault is unavailable. Alystria Studio will not fall back to plaintext storage.",
+            "The operating-system credential vault is unavailable. AI Video Tutorial Generator will not fall back to plaintext storage.",
             true,
         ),
         SecretStoreError::AccessDenied => CommandError::new(

@@ -6,7 +6,7 @@ fn main() {
     .join("icon.ico");
     assert!(
         icon_path.is_file(),
-        "the checked-in Alystria icon set is required"
+        "the checked-in AI Video Tutorial Generator icon set is required"
     );
 
     // The context macro independently resolves the default window icon. Feed it

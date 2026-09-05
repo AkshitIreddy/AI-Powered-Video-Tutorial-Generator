@@ -270,7 +270,7 @@ fn validate_manifest(manifest: &ProjectManifest) -> Result<(), CommandError> {
     if manifest.schema_version > PROJECT_SCHEMA_VERSION {
         return Err(CommandError::new(
             "PROJECT_REQUIRES_NEWER_APP",
-            "This project uses a newer manifest schema. Update Alystria Studio before opening it.",
+            "This project uses a newer manifest schema. Update AI Video Tutorial Generator before opening it.",
             false,
         ));
     }

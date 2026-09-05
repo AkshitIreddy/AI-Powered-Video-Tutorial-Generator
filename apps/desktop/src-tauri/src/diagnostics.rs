@@ -104,7 +104,7 @@ fn storage_check(path: &Path) -> DiagnosticCheck {
             DiagnosticLevel::Failure,
             "Available storage could not be measured.",
             details,
-            Some("Verify that the Alystria application-data folder is accessible.".into()),
+            Some("Verify that the AI Video Tutorial Generator application-data folder is accessible.".into()),
         ),
     }
 }
