@@ -171,6 +171,8 @@ No current process references `E:\temp\Alystria Studio`. Repository references a
 
 The current aligner must remain installed. Its `model\part-0.bin` through `model\part-3.bin` files total about 155.36 MB and are not referenced by `alignment-runtime.json`; they are a separate post-proof cleanup candidate after alignment evidence is recorded.
 
+After the Windows lane released those four fragments, their exact 155,363,383-byte payload was moved to `E:\uesless\AI Video Tutorial Generator Aligner Download Fragments 2026-09-05`. The adjacent manifest records every source path, byte count, and SHA-256 hash. All source paths are absent and destination hashes match. The active assembled `model_quantized.onnx`, vocabulary, worker, Python runtime, runtime manifest, and smoke evidence remain in `E:\temp\alystria-aligner-runtime`.
+
 ## Final safe-now scratch pass
 
 Five empty folders left behind under `E:\temp\AI Video Tutorial Generator` were moved to `E:\uesless\AI Video Tutorial Generator Empty Scratch 2026-09-05`: `build-cache`, `models`, `runtime-temp`, `scratch`, and `venvs`. Each contained zero files and zero bytes, had no active process reference, and was outside current model, runtime, build, and evidence paths. The adjacent manifest records and verifies the move.
@@ -189,4 +191,4 @@ The only project-owned cleanup folder still present under `E:\uesless` was `AI V
 
 After current native harnesses replaced the route scratch and committed documentation superseded the pause handoff, `.ui-routes.mjs` and `PAUSE_HANDOFF_2026-09-05.md` were released for reversible cleanup. Both ordinary untracked files were moved to `E:\uesless\AI Video Tutorial Generator Final Repo Scratch 2026-09-05`. Their adjacent manifest records exact source paths, destinations, byte counts, SHA-256 hashes, and reasons. The combined moved payload is 19,530 bytes; both repository sources are absent and both destination hashes were verified. `see me` remains untouched as user-owned material.
 
-The 5.91 GB historical Alystria Studio tree and 155,363,383 bytes of unreferenced aligner chunks remain in place pending final native-proof release.
+Only the 5.91 GB historical Alystria Studio tree remains pending final native-proof release. The aligner chunks were subsequently released and moved as recorded above.
