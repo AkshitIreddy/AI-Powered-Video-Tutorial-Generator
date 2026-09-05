@@ -107,7 +107,7 @@ from .models import (
 )
 from .spoken_text import normalize_spoken_text
 
-IMPLEMENTATION_VERSION = "generation-v9-bounded-visual-tail"
+IMPLEMENTATION_VERSION = "generation-v10-reviewed-narration-reapproval"
 PROMPT_VERSION = "offline-education-v1"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000

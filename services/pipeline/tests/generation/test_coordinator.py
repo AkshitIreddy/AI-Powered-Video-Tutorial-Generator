@@ -22,11 +22,13 @@ from alystria.generation import (
     GenerationRequest,
     GenerationStage,
     GenerationState,
+    ObjectiveSpec,
     RenderedTutorial,
     SourceSpec,
     request_from_desktop,
     request_from_fixture,
 )
+from alystria.generation.coordinator import _prepare_narration_pacing_reapproval
 from alystria.generation.forced_alignment import AlignmentInput
 from alystria.generation.workflow import (
     _caption_alignment_quality_gate,
@@ -35,6 +37,7 @@ from alystria.generation.workflow import (
     _presenters_for_render,
     _provider_neutral_word_timings,
 )
+from alystria.jobs import JobState
 from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
 from alystria.project.errors import RevisionConflictError
@@ -968,6 +971,273 @@ class RecordingMediaClient(DeterministicMediaClient):
     ) -> GeneratedMedia:
         self.narration_scenes.append(copy.deepcopy(scene))
         return super().synthesize_narration(scene, locale=locale, seed=seed)
+
+
+class PacingRecoveryMediaClient(RecordingMediaClient):
+    def synthesize_narration(
+        self, scene: dict[str, Any], *, locale: str, seed: int
+    ) -> GeneratedMedia:
+        output = super().synthesize_narration(scene, locale=locale, seed=seed)
+        duration_ms = 35_000 if "reviewed pacing" in str(scene["narration"]) else 30_000
+        tokens = str(scene["narration"]).split()
+        return replace(
+            output,
+            metadata={
+                **output.metadata,
+                "durationMs": duration_ms,
+                "wordTimings": [
+                    {
+                        "word": token,
+                        "startMs": round(index * duration_ms / len(tokens)),
+                        "endMs": round((index + 1) * duration_ms / len(tokens)),
+                    }
+                    for index, token in enumerate(tokens)
+                ],
+            },
+        )
+
+
+def pacing_recovery_request() -> GenerationRequest:
+    fixture_scenes = [
+        {
+            "id": f"paced-scene-{index}",
+            "type": "definition",
+            "title": f"Pacing scene {index}",
+            "narration": f"Initial narration for pacing scene {index}.",
+            "visualIntent": f"Explain pacing scene {index}.",
+            "claimIds": [],
+            "objectiveIds": ["objective.pacing"],
+        }
+        for index in range(5)
+    ]
+    return replace(
+        request(),
+        presenter_mode="off",
+        objectives=(
+            ObjectiveSpec(
+                "objective.pacing",
+                "Explain how measured narration pacing matches the tutorial timeline.",
+            ),
+        ),
+        metadata={"canonicalFixtureScenes": fixture_scenes},
+    )
+
+
+def test_failed_measured_pacing_can_freeze_a_new_reviewed_approval_branch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALYSTRIA_MEDIA_MODE", "production")
+    store = ProjectStore.create(tmp_path / "Pacing recovery", name="Pacing recovery")
+    media = PacingRecoveryMediaClient()
+    renderer = RecordingRenderer()
+    coordinator = GenerationCoordinator(store, media_client=media, renderer_client=renderer)
+    try:
+        generation_id = coordinator.start(pacing_recovery_request()).generation_id
+        coordinator.run_pending()
+        generated_head = store.head_revision()
+        assert generated_head is not None
+        first_approval = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=generated_head.revision_id,
+        )
+        old_approval_id = first_approval.approval_revision_id
+        assert old_approval_id is not None
+        old_approval_snapshot = copy.deepcopy(store.get_revision(old_approval_id).snapshot)
+
+        failed = coordinator.run_pending()
+        assert failed is not None and failed.state is GenerationState.FAILED
+        failed_narration = next(
+            item for item in failed.stages if item.stage is GenerationStage.NARRATION
+        )
+        assert failed_narration.error is not None
+        assert "leaves 30000 ms unvoiced" in str(failed_narration.error["message"])
+
+        failed_head = store.head_revision()
+        assert failed_head is not None
+        reviewed_snapshot = copy.deepcopy(failed_head.snapshot)
+        for scene in reviewed_snapshot["payload"]["storyboard"]["scenes"]:
+            scene["narration"] = f"{scene['narration']} reviewed pacing"
+        reviewed = store.create_revision(
+            snapshot=reviewed_snapshot,
+            expected_head=failed_head.revision_id,
+            message="Revise narration after measured pacing failure",
+        )
+
+        reapproved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=reviewed.revision_id,
+        )
+        assert reapproved.approval_revision_id not in {None, old_approval_id}
+        new_approval = store.get_revision(str(reapproved.approval_revision_id))
+        assert new_approval.snapshot["payload"]["approval"][
+            "supersedesApprovalRevisionId"
+        ] == old_approval_id
+        assert store.get_revision(old_approval_id).snapshot == old_approval_snapshot
+
+        old_post_jobs = [
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("approvalRevisionId") == old_approval_id
+        ]
+        assert old_post_jobs
+        assert all(job.state is JobState.STALE for job in old_post_jobs)
+        new_post_jobs = [
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("approvalRevisionId") == new_approval.revision_id
+        ]
+        assert len(new_post_jobs) == len(old_post_jobs)
+        assert {str(job.parameters["stage"]) for job in new_post_jobs} == {
+            str(job.parameters["stage"]) for job in old_post_jobs
+        }
+        assert {job.task_key for job in new_post_jobs}.isdisjoint(
+            {job.task_key for job in old_post_jobs}
+        )
+
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert completed.approval_revision_id == new_approval.revision_id
+        assert all(
+            "reviewed pacing" in str(scene["narration"])
+            for scene in media.narration_scenes[-5:]
+        )
+        assert renderer.requests
+        assert all(
+            "reviewed pacing" in str(scene["narration"])
+            for scene in renderer.requests[-1]["scenes"]
+        )
+
+        reopened = ProjectStore.open(store.root)
+        try:
+            resumed = GenerationCoordinator(reopened)
+            resumed_status = resumed.status(generation_id)
+            assert resumed_status.state is GenerationState.SUCCEEDED
+            assert resumed_status.approval_revision_id == new_approval.revision_id
+            assert {stage.job_id for stage in resumed_status.stages}.isdisjoint(
+                {job.job_id for job in old_post_jobs}
+            )
+            reopened_old_jobs = [
+                job
+                for job in resumed._jobs(generation_id)
+                if job.parameters.get("approvalRevisionId") == old_approval_id
+            ]
+            assert len(reopened_old_jobs) == len(old_post_jobs)
+            assert all(job.state is JobState.STALE for job in reopened_old_jobs)
+        finally:
+            reopened.close()
+    finally:
+        store.close()
+
+
+def test_pacing_reapproval_refreshes_stale_job_snapshots_before_superseding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALYSTRIA_MEDIA_MODE", "production")
+    store = ProjectStore.create(tmp_path / "Pacing race", name="Pacing race")
+    coordinator = GenerationCoordinator(store, media_client=PacingRecoveryMediaClient())
+    try:
+        generation_id = coordinator.start(pacing_recovery_request()).generation_id
+        coordinator.run_pending()
+        head = store.head_revision()
+        assert head is not None
+        approved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=head.revision_id,
+        )
+        approval_revision_id = approved.approval_revision_id
+        assert approval_revision_id is not None
+        failed = coordinator.run_pending()
+        assert failed is not None and failed.state is GenerationState.FAILED
+
+        stale_job_snapshots = coordinator._jobs(generation_id)
+        failed_narration = next(
+            job
+            for job in stale_job_snapshots
+            if job.parameters.get("approvalRevisionId") == approval_revision_id
+            and job.parameters.get("stage") == GenerationStage.NARRATION.value
+        )
+        assert failed_narration.state is JobState.FAILED
+        previous_payload = copy.deepcopy(
+            store.get_revision(approval_revision_id).snapshot["payload"]
+        )
+        reviewed_payload = copy.deepcopy(previous_payload)
+        reviewed_payload["storyboard"]["scenes"][0]["narration"] += " reviewed pacing"
+
+        retried = coordinator.runtime.retry(failed_narration.job_id)
+        assert retried.state is JobState.QUEUED
+        with pytest.raises(ApprovalNotReadyError, match="media work is active"):
+            _prepare_narration_pacing_reapproval(
+                coordinator.runtime,
+                stale_job_snapshots,
+                approval_revision_id=approval_revision_id,
+                previous_payload=previous_payload,
+                reviewed_payload=reviewed_payload,
+            )
+        assert coordinator.runtime.get_job(failed_narration.job_id).state is JobState.QUEUED
+        assert not any(
+            job.state is JobState.STALE
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("approvalRevisionId") == approval_revision_id
+        )
+    finally:
+        store.close()
+
+
+def test_reviewed_narration_cannot_branch_while_media_work_is_active(
+    tmp_path: Path,
+) -> None:
+    store, coordinator = open_coordinator(tmp_path)
+    try:
+        generation_id = coordinator.start(request()).generation_id
+        coordinator.run_pending()
+        generated_head = store.head_revision()
+        assert generated_head is not None
+        approved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=generated_head.revision_id,
+        )
+        assert approved.state is GenerationState.QUEUED
+        approval_revision_id = approved.approval_revision_id
+        assert approval_revision_id is not None
+        total_jobs_before = len(coordinator._jobs(generation_id))
+        post_jobs_before = [
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("approvalRevisionId") == approval_revision_id
+        ]
+        assert any(job.state in {JobState.READY, JobState.BLOCKED} for job in post_jobs_before)
+
+        approval_head = store.head_revision()
+        assert approval_head is not None
+        reviewed_snapshot = copy.deepcopy(approval_head.snapshot)
+        reviewed_snapshot["payload"]["storyboard"]["scenes"][0]["narration"] = (
+            "A changed narration must wait until the current media branch is terminal."
+        )
+        reviewed = store.create_revision(
+            snapshot=reviewed_snapshot,
+            expected_head=approval_head.revision_id,
+            message="Attempt narration edit while media is active",
+        )
+
+        with pytest.raises(ApprovalNotReadyError, match="media work is active"):
+            coordinator.approve(
+                generation_id,
+                expected_head_revision_id=reviewed.revision_id,
+            )
+        approval_revisions = [
+            revision
+            for revision in store.list_revisions(limit=100)
+            if revision.kind == "approval"
+            and revision.snapshot.get("generationId") == generation_id
+        ]
+        assert [revision.revision_id for revision in approval_revisions] == [
+            approval_revision_id
+        ]
+        assert len(coordinator._jobs(generation_id)) == total_jobs_before
+    finally:
+        store.close()
 
 
 def test_approval_freezes_reviewed_scene_prose_for_narration_and_render(

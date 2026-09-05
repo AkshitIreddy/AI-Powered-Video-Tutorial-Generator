@@ -38,6 +38,7 @@ from .forced_alignment import ForcedAlignmentClient
 from .models import (
     ALL_STAGES,
     POST_APPROVAL_STAGES,
+    PRE_APPROVAL_STAGES,
     ClaimSpec,
     GenerationRequest,
     GenerationStage,
@@ -220,9 +221,11 @@ class GenerationCoordinator:
         return self.status(identifier)
 
     def status(self, generation_id: str) -> GenerationStatus:
-        jobs = self._jobs(generation_id)
-        if not jobs:
+        all_jobs = self._jobs(generation_id)
+        if not all_jobs:
             raise GenerationNotFoundError(generation_id)
+        approval_revision = self._approval_revision(generation_id)
+        jobs = _current_generation_jobs(all_jobs, approval_revision)
         by_stage = {
             GenerationStage(str(job.parameters["stage"])): job
             for job in jobs
@@ -287,7 +290,6 @@ class GenerationCoordinator:
             )
             / expected
         )
-        approval_revision = self._approval_revision(generation_id)
         export_result = export_job.result if export_job is not None else None
         export_payload: dict[str, Any] = {}
         if isinstance(export_result, dict):
@@ -361,9 +363,68 @@ class GenerationCoordinator:
                     generation_id=generation_id,
                     reviewed_revision_id=reviewed_head.revision_id,
                 )
+                supersedes_revision_id = None
+            elif status.state is GenerationState.FAILED:
+                if expected_head_revision_id is None:
+                    raise ApprovalNotReadyError(
+                        "Reapproving failed narration requires the exact reviewed head revision"
+                    )
+                if approval_job.result is None or not isinstance(
+                    approval_job.result.get("payload"), dict
+                ):
+                    raise ApprovalNotReadyError("Approval gate payload is unavailable")
+                approval_payload = _freeze_reviewed_approval_payload(
+                    approval_job.result["payload"],
+                    reviewed_head.snapshot,
+                    generation_id=generation_id,
+                    reviewed_revision_id=reviewed_head.revision_id,
+                )
+                previous_payload = self.store.get_revision(existing_revision).snapshot.get(
+                    "payload"
+                )
+                if not isinstance(previous_payload, dict):
+                    raise ApprovalNotReadyError("Prior approval payload is unavailable")
+                _prepare_narration_pacing_reapproval(
+                    self.runtime,
+                    jobs,
+                    approval_revision_id=existing_revision,
+                    previous_payload=previous_payload,
+                    reviewed_payload=approval_payload,
+                )
+                supersedes_revision_id = existing_revision
+            else:
+                if reviewed_head.kind == "edit":
+                    previous_payload = self.store.get_revision(existing_revision).snapshot.get(
+                        "payload"
+                    )
+                    if not isinstance(previous_payload, dict):
+                        raise ApprovalNotReadyError("Prior approval payload is unavailable")
+                    if approval_job.result is None or not isinstance(
+                        approval_job.result.get("payload"), dict
+                    ):
+                        raise ApprovalNotReadyError("Approval gate payload is unavailable")
+                    reviewed_payload = _freeze_reviewed_approval_payload(
+                        approval_job.result["payload"],
+                        reviewed_head.snapshot,
+                        generation_id=generation_id,
+                        reviewed_revision_id=reviewed_head.revision_id,
+                    )
+                    if _reviewed_scene_prose_changed(previous_payload, reviewed_payload):
+                        raise ApprovalNotReadyError(
+                            "Reviewed narration cannot be reapproved while post-approval "
+                            "media work is active"
+                        )
+                approval_revision_id = existing_revision
+
+            if existing_revision is None or status.state is GenerationState.FAILED:
                 approval_payload["approval"] = {
                     **dict(approval_payload.get("approval", {})),
                     "approved": True,
+                    **(
+                        {"supersedesApprovalRevisionId": supersedes_revision_id}
+                        if supersedes_revision_id is not None
+                        else {}
+                    ),
                 }
                 snapshot = copy.deepcopy(reviewed_head.snapshot)
                 snapshot.update(
@@ -382,8 +443,6 @@ class GenerationCoordinator:
                     expected_head=reviewed_head.revision_id,
                 )
                 approval_revision_id = revision.revision_id
-            else:
-                approval_revision_id = existing_revision
             request = _request_from_job(approval_job.parameters)
             self.workflow.enqueue_post_approval(
                 generation_id=generation_id,
@@ -394,11 +453,12 @@ class GenerationCoordinator:
         return self.status(generation_id)
 
     def cancel(self, generation_id: str) -> GenerationStatus:
-        jobs = self._jobs(generation_id)
-        if not jobs:
+        all_jobs = self._jobs(generation_id)
+        if not all_jobs:
             raise GenerationNotFoundError(generation_id)
         if self.status(generation_id).state is GenerationState.SUCCEEDED:
             return self.status(generation_id)
+        jobs = _current_generation_jobs(all_jobs, self._approval_revision(generation_id))
         for job in jobs:
             if job.state not in {
                 JobState.SUCCEEDED,
@@ -413,9 +473,10 @@ class GenerationCoordinator:
         return self.status(generation_id)
 
     def retry(self, generation_id: str) -> GenerationStatus:
-        jobs = self._jobs(generation_id)
-        if not jobs:
+        all_jobs = self._jobs(generation_id)
+        if not all_jobs:
             raise GenerationNotFoundError(generation_id)
+        jobs = _current_generation_jobs(all_jobs, self._approval_revision(generation_id))
         if callable(self._media_reset_cancellation):
             self._media_reset_cancellation()
         with transaction(self.store.connection):
@@ -598,16 +659,16 @@ class GenerationCoordinator:
         ]
 
     def _approval_revision(self, generation_id: str) -> str | None:
-        for job in self._jobs(generation_id):
-            revision = job.parameters.get("approvalRevisionId")
-            if isinstance(revision, str):
-                return revision
         for revision in self.store.list_revisions(limit=1_000):
             if (
                 revision.kind == "approval"
                 and revision.snapshot.get("generationId") == generation_id
             ):
                 return revision.revision_id
+        for job in self._jobs(generation_id):
+            revision_id = job.parameters.get("approvalRevisionId")
+            if isinstance(revision_id, str):
+                return revision_id
         return None
 
     def _invalidated_scopes(self, generation_id: str) -> tuple[str, ...]:
@@ -1071,6 +1132,136 @@ def _request_from_job(parameters: dict[str, Any]) -> GenerationRequest:
     from .workflow import _request
 
     return _request(parameters)
+
+
+def _current_generation_jobs(
+    jobs: list[Job], approval_revision_id: str | None
+) -> list[Job]:
+    """Select pre-approval jobs and the newest immutable approval branch."""
+
+    selected: list[Job] = []
+    for job in jobs:
+        stage_value = job.parameters.get("stage")
+        if not isinstance(stage_value, str):
+            continue
+        try:
+            stage = GenerationStage(stage_value)
+        except ValueError:
+            continue
+        if stage in PRE_APPROVAL_STAGES or (
+            stage in POST_APPROVAL_STAGES
+            and approval_revision_id is not None
+            and job.parameters.get("approvalRevisionId") == approval_revision_id
+        ):
+            selected.append(job)
+    return selected
+
+
+_ACTIVE_MEDIA_STATES = frozenset(
+    {JobState.READY, JobState.QUEUED, JobState.RUNNING, JobState.RETRY_WAIT}
+)
+_NARRATION_PACING_FAILURE_PREFIXES = (
+    "Measured narration leaves ",
+    "Measured narration exceeds the requested tutorial duration by ",
+)
+
+
+def _prepare_narration_pacing_reapproval(
+    runtime: SQLiteWorkflowRuntime,
+    jobs: list[Job],
+    *,
+    approval_revision_id: str,
+    previous_payload: dict[str, Any],
+    reviewed_payload: dict[str, Any],
+) -> None:
+    """Retire one failed approval branch before a reviewed narration restart."""
+
+    post_job_ids = [
+        job.job_id
+        for job in jobs
+        if job.parameters.get("stage") in {stage.value for stage in POST_APPROVAL_STAGES}
+        and job.parameters.get("approvalRevisionId") == approval_revision_id
+    ]
+    # ``approve`` computes its high-level state before opening this transaction.
+    # Refresh every branch job under the transaction before checking activity;
+    # a concurrent Retry or worker claim must never be hidden by the earlier
+    # FAILED snapshots and then superseded as if it were idle.
+    post_jobs = [runtime.get_job(job_id) for job_id in post_job_ids]
+    active = [job for job in post_jobs if job.state in _ACTIVE_MEDIA_STATES]
+    if active:
+        stages = sorted(str(job.parameters.get("stage")) for job in active)
+        raise ApprovalNotReadyError(
+            "Narration cannot be reapproved while media work is active: " + ", ".join(stages)
+        )
+    narration_job = next(
+        (
+            job
+            for job in post_jobs
+            if job.parameters.get("stage") == GenerationStage.NARRATION.value
+            and job.state is JobState.FAILED
+        ),
+        None,
+    )
+    error_message = (
+        narration_job.error.get("message")
+        if narration_job is not None and isinstance(narration_job.error, dict)
+        else None
+    )
+    if not isinstance(error_message, str) or not error_message.startswith(
+        _NARRATION_PACING_FAILURE_PREFIXES
+    ):
+        raise ApprovalNotReadyError(
+            "A new approval branch is available only after measured narration pacing fails"
+        )
+    if not _reviewed_narration_changed(previous_payload, reviewed_payload):
+        raise ApprovalNotReadyError(
+            "Revise at least one narration before reapproving a measured pacing failure"
+        )
+    for job in post_jobs:
+        if job.state is not JobState.STALE:
+            runtime.mark_stale(job.job_id, reason="superseded_by_reviewed_narration")
+
+
+def _reviewed_narration_changed(
+    previous_payload: dict[str, Any], reviewed_payload: dict[str, Any]
+) -> bool:
+    previous_scenes, reviewed_scenes = _approval_scene_pairs(
+        previous_payload, reviewed_payload
+    )
+    return any(
+        previous.get("narration") != reviewed.get("narration")
+        for previous, reviewed in zip(previous_scenes, reviewed_scenes, strict=True)
+    )
+
+
+def _reviewed_scene_prose_changed(
+    previous_payload: dict[str, Any], reviewed_payload: dict[str, Any]
+) -> bool:
+    previous_scenes, reviewed_scenes = _approval_scene_pairs(
+        previous_payload, reviewed_payload
+    )
+    return any(
+        any(previous.get(field) != reviewed.get(field) for field in _REVIEWABLE_SCENE_FIELDS)
+        for previous, reviewed in zip(previous_scenes, reviewed_scenes, strict=True)
+    )
+
+
+def _approval_scene_pairs(
+    previous_payload: dict[str, Any], reviewed_payload: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    previous_storyboard = previous_payload.get("storyboard")
+    reviewed_storyboard = reviewed_payload.get("storyboard")
+    if not isinstance(previous_storyboard, dict) or not isinstance(reviewed_storyboard, dict):
+        raise ApprovalNotReadyError("Approved narration recovery requires both storyboards")
+    previous_scenes = previous_storyboard.get("scenes")
+    reviewed_scenes = reviewed_storyboard.get("scenes")
+    if not isinstance(previous_scenes, list) or not isinstance(reviewed_scenes, list):
+        raise ApprovalNotReadyError("Approved narration recovery requires scene lists")
+    if not all(isinstance(scene, dict) for scene in [*previous_scenes, *reviewed_scenes]):
+        raise ApprovalNotReadyError("Approved narration recovery requires scene objects")
+    if len(previous_scenes) != len(reviewed_scenes):
+        raise ApprovalNotReadyError("Approved narration recovery requires matching scenes")
+    return previous_scenes, reviewed_scenes
 
 
 _REVIEWABLE_SCENE_FIELDS = frozenset({"title", "narration", "visualIntent"})
