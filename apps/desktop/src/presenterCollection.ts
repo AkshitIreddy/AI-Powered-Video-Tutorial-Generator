@@ -1,0 +1,23 @@
+/** Current curated fictional presenter designs; retained legacy IDs can still open saved projects. */
+export const presenterCollection = new Set([
+  "presenter-portrait.software-daniel-v1",
+  "presenter-portrait.language-sofia-v1",
+  "presenter-portrait.history-marcus-v1",
+  "presenter-portrait.young-learners-lily-v1",
+  "presenter-portrait.broadcast-elena-v1",
+  "presenter-portrait.anime-astrid-v1",
+  "presenter-portrait.graphic-luca-v1",
+  "presenter-portrait.clay-nora-v1",
+  "presenter-portrait.watercolor-elisabeth-v1",
+  "presenter-portrait.animated-theo-v1",
+  "presenter-portrait.retro-felix-v1",
+  "presenter-portrait.holographic-selene-v1",
+  "presenter-portrait.papercut-celia-v1",
+  "presenter-portrait.ink-roman-v1",
+  "presenter-portrait.oil-helena-v1",
+  "presenter-portrait.vector-avery-v1",
+  "presenter-portrait.cartoon-oliver-v1",
+  "presenter-portrait.charcoal-marta-v1",
+  "presenter-portrait.cartoon-camille-v1",
+  "presenter-portrait.cartoon-elias-v1",
+]);

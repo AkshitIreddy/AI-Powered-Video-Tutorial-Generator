@@ -5,7 +5,7 @@ import App from "../App";
 import { canonicalFixtureIdFromTopic, hydrateDurableProject, isDurableNativeJob, normalizeAppSnapshot, projectTitleFromTopic } from "../project-utils";
 import { defaultSnapshot, exampleSnapshot } from "../data";
 import { createOnboardingState } from "../onboarding";
-import { localModelSetupSave, providerSecretSet } from "../native";
+import { localModelSetupSave, providerSecretSet, type TutorialRoutingPolicy } from "../native";
 import type { AppSnapshot } from "../types";
 
 describe("Alystria desktop shell", () => {
@@ -21,6 +21,7 @@ describe("Alystria desktop shell", () => {
     onboarding.configuration.goals = ["tutorial"];
     localStorage.setItem("alystria-onboarding-v1", JSON.stringify(onboarding));
     localStorage.setItem("alystria-guided-tour-v1", "completed");
+    localStorage.removeItem("alystria-provider-account-ids-v1");
   });
 
   it("starts a new user without unrequested projects or jobs", () => {
@@ -84,6 +85,20 @@ describe("Alystria desktop shell", () => {
     expect(hydrated.nativeHeadRevisionId).toBe("rev-stage");
   });
 
+  it("shows authored generation content and unreviewed source records instead of the scaffold", () => {
+    const project = structuredClone(exampleSnapshot.projects[0]!);
+    const hydrated = hydrateDurableProject(project, {
+      projectId: "native-project", stage: "approval",
+      payload: {
+        storyboard: { scenes: [{ id: "new-scene", type: "whiteboard", title: "Understand binary search", narration: "Compare the middle value.", visualIntent: "Discard the half that cannot contain the target.", durationTicks: 7_200_000, claimIds: ["claim-1"], onScreenText: ["Keep the possible range"] }] },
+        sources: [{ id: "source-1", title: "Search notes", locator: "Local notes", licenseId: "CC-BY-4.0" }],
+      },
+    }, { nativeProjectId: "native-project", nativeProjectDirectory: "C:/native-project", nativeHeadRevisionId: "revision-2", nativeRevisionNumber: 2 });
+    expect(hydrated.scenes).toHaveLength(1);
+    expect(hydrated.scenes[0]).toMatchObject({ title: "Understand binary search", duration: 30, kind: "whiteboard", narration: "Compare the middle value.", status: "draft", citations: 1, authored: { onScreenText: ["Keep the possible range"] } });
+    expect(hydrated.sources).toEqual([expect.objectContaining({ title: "Search notes", license: "CC-BY-4.0", status: "review", evidence: 0 })]);
+  });
+
   it("repairs portable profile references and recovers a durable generation identity", () => {
     const snapshot = structuredClone(exampleSnapshot);
     snapshot.projects[0] = {
@@ -129,7 +144,7 @@ describe("Alystria desktop shell", () => {
   it("opens a project and switches between its five workspaces", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    await user.click(screen.getByRole("button", { name: /^open project$/i }));
     const projectNav = within(screen.getByRole("navigation", { name: /project workspace/i }));
     expect(screen.getByRole("heading", { name: /shape the learning journey/i })).toBeInTheDocument();
     await user.click(projectNav.getByRole("button", { name: /storyboard/i }));
@@ -143,7 +158,7 @@ describe("Alystria desktop shell", () => {
   it("fails Review closed until an authoritative generated media artifact exists", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    await user.click(screen.getByRole("button", { name: /^open project$/i }));
     await user.click(within(screen.getByRole("navigation", { name: /project workspace/i })).getByRole("button", { name: /review/i }));
 
     expect(screen.getByRole("heading", { name: /no authoritative media yet/i })).toBeInTheDocument();
@@ -170,7 +185,7 @@ describe("Alystria desktop shell", () => {
 
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    await user.click(screen.getByRole("button", { name: /^open project$/i }));
     await user.click(within(screen.getByRole("navigation", { name: /project workspace/i })).getByRole("button", { name: /review/i }));
 
     const media = screen.getByLabelText(/authoritative generated tutorial media/i);
@@ -182,7 +197,7 @@ describe("Alystria desktop shell", () => {
   it("defaults to a clean master with YouTube-ready caption sidecars", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    await user.click(screen.getByRole("button", { name: /^open project$/i }));
     const projectNav = within(screen.getByRole("navigation", { name: /project workspace/i }));
     await user.click(projectNav.getByRole("button", { name: /export/i }));
 
@@ -208,14 +223,14 @@ describe("Alystria desktop shell", () => {
   it("binds frame rate and codec intent to the submitted UI-contract export", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    await user.click(screen.getByRole("button", { name: /^open project$/i }));
     await user.click(within(screen.getByRole("navigation", { name: /project workspace/i })).getByRole("button", { name: /export/i }));
 
     await user.selectOptions(screen.getByLabelText("Frame rate"), "24");
     await user.selectOptions(screen.getByLabelText("Codec preference"), "av1");
     expect(screen.getByLabelText("Frame rate")).toHaveValue("24");
     expect(screen.getByLabelText("Codec preference")).toHaveValue("av1");
-    expect(screen.getByText(/current command contract does not yet select an encoder/i)).toBeInTheDocument();
+    expect(screen.getByText(/frame rate and codec are applied during native export/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /render 1440p master/i }));
 
     expect((await screen.findAllByText(/ui contract only: 24 fps av1 export simulated/i)).length).toBeGreaterThan(0);
@@ -281,6 +296,39 @@ describe("Alystria desktop shell", () => {
     expect(creationJob?.projectDirectory).toBe(created?.nativeProjectDirectory);
   });
 
+  it("restores a nonsecret Cloudflare Account ID and includes it in the approved project policy", async () => {
+    const user = userEvent.setup();
+    await configureCloudflareImageProfile();
+    localStorage.setItem("alystria-provider-account-ids-v1", JSON.stringify({
+      "cloudflare-workers-ai": "0123456789abcdef0123456789abcdef",
+    }));
+
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /create a tutorial/i }));
+    await user.type(screen.getByPlaceholderText(/explain why karatsuba/i), "Explain a simple workbench circuit");
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
+
+    expect(await screen.findByLabelText("Cloudflare Account ID")).toHaveValue("0123456789abcdef0123456789abcdef");
+    expect(screen.getByText(/nonsecret account setting/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: /approve this exact routing policy/i }));
+    await user.click(screen.getByRole("button", { name: /create learning plan/i }));
+
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
+      const created = persisted.projects.find((project) => project.title === "Explain a simple workbench circuit");
+      const policy = created?.providerRoutingPolicy as TutorialRoutingPolicy | undefined;
+      expect(policy?.approvals).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          providerId: "cloudflare-workers-ai",
+          accountId: "0123456789abcdef0123456789abcdef",
+          credentialRef: "browser-demo://alystria/cloudflare-workers-ai/api_key",
+        }),
+      ]));
+    });
+  });
+
   it("accepts an exact user-entered tutorial duration", async () => {
     const user = userEvent.setup();
     await configureCloudProfile();
@@ -336,7 +384,7 @@ describe("Alystria desktop shell", () => {
   it("keeps accepted scenes safe when scoped regeneration starts", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    await user.click(screen.getByRole("button", { name: /^open project$/i }));
     await user.click(screen.getByRole("button", { name: /storyboard/i }));
     const regenerateButtons = screen.getAllByRole("button", { name: /^regenerate$/i });
     await user.click(regenerateButtons[0]!);
@@ -411,11 +459,17 @@ describe("Alystria desktop shell", () => {
   it("persists a project visual bible with real typography, caption, and presenter choices", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: /continue working/i }));
+    await user.click(screen.getByRole("button", { name: /^open project$/i }));
     const projectNav = within(screen.getByRole("navigation", { name: /project workspace/i }));
     await user.click(projectNav.getByRole("button", { name: /studio/i }));
     await user.click(screen.getByRole("button", { name: "Design" }));
 
+    expect(screen.queryByLabelText(/project type scale/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/reading rhythm/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/material strength/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: /corner radius/i })).toHaveValue("14");
+    expect(screen.getByRole("button", { name: /^color$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^image$/i })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /technical notebook/i }));
     await user.click(screen.getByRole("button", { name: /academic evidence paper/i }));
     await user.click(screen.getByRole("tab", { name: /captions/i }));
@@ -429,21 +483,23 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByLabelText(/ai \/ model input/i)).toHaveValue("unknown");
     await user.click(screen.getByRole("button", { name: /real person/i }));
     expect(screen.getByLabelText(/authorized distribution/i)).toHaveValue("privatePreview");
-    await user.click(screen.getByRole("button", { name: /amara · academic/i }));
+    await user.click(screen.getByRole("button", { name: /elena · news anchor/i }));
     await user.selectOptions(screen.getByLabelText(/presenter layout/i), "split");
+    expect(screen.queryByText(/voice matched to the presenter persona/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/presenter scale/i)).not.toBeInTheDocument();
 
     expect(screen.getByTestId("presenter-preview")).toBeInTheDocument();
     expect(screen.getByTestId("caption-preview")).toHaveClass("position-top");
-    expect(screen.getByTestId("caption-preview")).toHaveTextContent(/open-caption preview/i);
+    expect(screen.getByTestId("caption-preview")).toHaveTextContent(/caption style sample/i);
     const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
     const customization = persisted.projects.find((project) => project.id === "karatsuba")?.customization;
     expect(customization?.fontPairId).toBe("technical");
     expect(customization?.backgroundAssetId).toBe("background.academic-evidence-paper-v1");
     expect(customization?.captions.position).toBe("top");
     expect(customization?.captions.maxLines).toBe(1);
-    expect(customization?.presenter.assetId).toBe("presenter-portrait.academic-amara-v1");
+    expect(customization?.presenter.assetId).toBe("presenter-portrait.broadcast-elena-v1");
     expect(customization?.presenter.placement).toBe("split");
-    expect(customization?.assets.find((asset) => asset.id === "presenter-portrait.academic-amara-v1")?.rightsStatus).toBe("cleared");
+    expect(customization?.assets.find((asset) => asset.id === "presenter-portrait.broadcast-elena-v1")?.rightsStatus).toBe("cleared");
   });
 });
 
@@ -469,6 +525,31 @@ async function configureCloudProfile() {
     }],
   });
   await providerSecretSet({ providerId: "openai", credentialKind: "api_key", secret: "browser-test-openai" });
+  await providerSecretSet({ providerId: "elevenlabs", credentialKind: "api_key", secret: "browser-test-elevenlabs" });
+}
+
+async function configureCloudflareImageProfile() {
+  await localModelSetupSave({
+    activeProfileId: "test-cloudflare",
+    selectedModelIds: [],
+    lipSyncModelId: null,
+    existingModelDirectory: null,
+    profiles: [{
+      id: "test-cloudflare",
+      name: "Cloudflare image test",
+      description: "OpenAI writing, Cloudflare images, ElevenLabs voice",
+      routes: {
+        writing: { providerId: "openai", modelId: "gpt-5.4" },
+        research: { providerId: "openai", modelId: "gpt-5.4" },
+        images: { providerId: "cloudflare-workers-ai", modelId: "@cf/black-forest-labs/flux-1-schnell" },
+        voice: { providerId: "elevenlabs", modelId: "eleven_multilingual_v2" },
+        presenter: { providerId: "local-runtime", modelId: "off by default" },
+        lipSync: { providerId: "local-runtime", modelId: "off by default" },
+      },
+    }],
+  });
+  await providerSecretSet({ providerId: "openai", credentialKind: "api_key", secret: "browser-test-openai" });
+  await providerSecretSet({ providerId: "cloudflare-workers-ai", credentialKind: "api_key", secret: "browser-test-cloudflare" });
   await providerSecretSet({ providerId: "elevenlabs", credentialKind: "api_key", secret: "browser-test-elevenlabs" });
 }
 

@@ -1,4 +1,5 @@
-import type { AppSnapshot, JobRecord, ProjectRecord } from "./types";
+import type { AppSnapshot, JobRecord, ProjectRecord, Scene, SourceRecord } from "./types";
+import type { AuthoredStoryboardScene } from "@alystria/scenes";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -66,10 +67,66 @@ export function hydrateDurableProject(
   return {
     ...project,
     ...(snapshot as unknown as ProjectRecord),
+    scenes: generatedScenes(snapshot, project.scenes),
+    sources: generatedSources(snapshot, project.sources),
     id: links.nativeProjectId ?? project.id,
     ...(generationId ? { nativeGenerationId: generationId } : {}),
     ...links,
   };
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function generatedSources(snapshot: Record<string, unknown>, fallback: SourceRecord[]): SourceRecord[] {
+  const rawSources = record(snapshot.payload)?.sources;
+  if (!Array.isArray(rawSources)) return Array.isArray(snapshot.sources) ? snapshot.sources as SourceRecord[] : fallback;
+  return rawSources.flatMap((raw) => {
+    const source = record(raw);
+    if (!source || typeof source.id !== "string" || typeof source.title !== "string") return [];
+    const existing = fallback.find((item) => item.id === source.id);
+    return [{
+      ...existing,
+      id: source.id,
+      title: source.title,
+      origin: typeof source.locator === "string" ? source.locator : existing?.origin ?? "Generation source",
+      kind: existing?.kind ?? "document",
+      license: typeof source.licenseId === "string" ? source.licenseId : existing?.license ?? "Rights review required",
+      evidence: existing?.evidence ?? 0,
+      status: existing?.status ?? "review",
+      ...(typeof source.versionId === "string" ? { versionId: source.versionId } : {}),
+      ...(typeof source.artifactHash === "string" ? { artifactHash: source.artifactHash } : {}),
+    } satisfies SourceRecord];
+  });
+}
+
+/** Hydrate generated content instead of leaving the pre-generation scaffold on screen. */
+function generatedScenes(snapshot: Record<string, unknown>, fallback: Scene[]): Scene[] {
+  const storyboard = record(record(snapshot.payload)?.storyboard);
+  const rawScenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : null;
+  if (!rawScenes) return Array.isArray(snapshot.scenes) ? snapshot.scenes as Scene[] : fallback;
+  return rawScenes.flatMap((raw, index) => {
+    const source = record(raw);
+    if (!source || typeof source.id !== "string" || typeof source.title !== "string") return [];
+    const existing = (Array.isArray(snapshot.scenes) ? snapshot.scenes as Scene[] : fallback).find((scene) => scene.id === source.id);
+    const kind = String(source.type ?? source.kind ?? "definition").replaceAll("_", "-");
+    const visual = kind.includes("code") ? "code" : kind === "whiteboard" ? "whiteboard" : kind === "diagram" ? "thread" : kind.includes("example") ? "formula" : "summary";
+    const duration = typeof source.durationTicks === "number" ? source.durationTicks / 240_000 : typeof source.duration === "number" ? source.duration : existing?.duration ?? 10;
+    const objectives = Array.isArray(source.objectiveIds) ? source.objectiveIds.filter((value): value is string => typeof value === "string") : [];
+    return [{
+      ...existing,
+      id: source.id, index: index + 1, title: source.title,
+      kind: kind as Scene["kind"], visual: visual as Scene["visual"],
+      duration: Math.max(1 / 30, duration),
+      narration: typeof source.narration === "string" ? source.narration : "",
+      objective: typeof source.visualIntent === "string" ? source.visualIntent : objectives.join(" · "),
+      status: existing?.status ?? "draft",
+      citations: Array.isArray(source.claimIds) ? source.claimIds.length : 0,
+      locked: existing?.locked ?? false,
+      authored: source as unknown as AuthoredStoryboardScene,
+    } satisfies Scene];
+  });
 }
 
 /** Repair safe UI references after a portable profile outlives a rebuilt sandbox. */

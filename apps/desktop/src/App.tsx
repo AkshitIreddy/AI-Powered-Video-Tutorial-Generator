@@ -46,11 +46,11 @@ import {
   PackageCheck,
   PanelRightClose,
   Pause,
+  Pencil,
   Play,
   PlayCircle,
   Plus,
   Presentation,
-  Quote,
   Redo2,
   RefreshCw,
   RotateCcw,
@@ -69,15 +69,17 @@ import {
   Upload,
   UserRoundCheck,
   Video,
-  Volume2,
   WandSparkles,
+  Wind,
   X,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import appMark from "./assets/ai-video-tutorial-generator-mark.svg";
-import tutorialCreatorStudio from "./assets/brand/ai-tutorial-creator-studio-v1.webp";
+import { LessonLab } from "./LessonLab";
+import { TemplateArt } from "./TemplateArt";
 import academicEvidenceBackground from "./assets/backgrounds/academic-evidence-paper-v1.png";
 import modernSignalBackground from "./assets/backgrounds/modern-tech-signal-v1.png";
 import playfulPaperBackground from "./assets/backgrounds/playful-paper-cut-v1.png";
@@ -119,10 +121,13 @@ import historyMarcus from "./assets/presenters/history-marcus-v1.webp";
 import youngLearnersLily from "./assets/presenters/young-learners-lily-v1.webp";
 import { completeExampleProject, defaultSnapshot, templates } from "./data";
 import {
+  createGuidedTourReplaySteps,
+  guidedTourCompletionKey,
   GuidedTour,
   OnboardingDialog,
   useOnboardingController,
   type AccountProfileConfiguration,
+  type GuidedTourStep,
   type OnboardingCatalog,
   type OnboardingSetupState,
   type PersistedOnboardingState,
@@ -132,6 +137,9 @@ import {
   catalogDiscover,
   desktopEnvironment,
   diagnosticsRun,
+  editorBindingsGet,
+  editorWaveformGet,
+  editorTimelineExport,
   generationApprove,
   generationStart,
   jobCancel,
@@ -145,6 +153,7 @@ import {
   masterExport,
   projectCreate,
   projectAssetImport,
+  projectAssetResolve,
   projectCustomizationSave,
   projectExportArchive,
   projectOpen,
@@ -158,6 +167,8 @@ import {
   providerSecretStatus,
   qaRepair,
   sceneRegenerate,
+  sceneCandidateAccept,
+  searchVisualCandidates,
   sceneRender,
   sourceImport,
   type BootstrapInfo,
@@ -197,7 +208,19 @@ import {
   type RawNvidiaCatalogEntry,
 } from "./catalog";
 import { alystriaCatalogItems, catalogHardwareFromDiagnostics } from "./appCatalog";
-import { AdvancedVideoEditor, createEditorProjectFromAlystriaProject, type EditorProject } from "./editor";
+import { AdvancedVideoEditor, BrowserMediaImportController, createEditorProjectFromAlystriaProject, editorTimelineExportResult, exportEditorTimelineNative, mergeAlystriaMediaBindings, prepareEditorProjectForPersistence, type EditorProject } from "./editor";
+import { importNativeEditorMedia, resolveNativeEditorMedia } from "./nativeEditorMedia";
+import { resolveEditorWaveformNative, type EditorMediaAsset } from "./editor";
+import { VisualCandidateReview } from "./VisualCandidateReview";
+import { RenderedFrameReviewPanel } from "./RenderedFrameReviewPanel";
+import { StockImageSearch } from "./StockImageSearch";
+import type { StockProvider } from "./stockSearchRoutes";
+import { visualCandidates, type VisualCandidate } from "./visualCandidates";
+import { BundledAssetLibrary } from "./BundledAssetLibrary";
+import { presenterCollection } from "./presenterCollection";
+import { BUILT_IN_STARTER_KIT } from "@alystria/themes";
+import { watchRuntimeBootstrap } from "./runtimeBootstrap";
+import { bundledAssets, importBundledAsset, type BundledAsset } from "./bundledAssets";
 import {
   canonicalFixtureIdFromTopic,
   hydrateDurableProject,
@@ -299,14 +322,18 @@ const providerConfigs = [
   { id: "local", name: "Local models", icon: HardDrive, detail: "Qwen · Whisper · Kokoro", tone: "teal", local: true },
   { id: "openai", name: "OpenAI", icon: Sparkles, detail: "Language · images · speech", tone: "indigo" },
   { id: "anthropic", name: "Anthropic", icon: MessageSquareText, detail: "Language and structured review", tone: "amber" },
+  { id: "groq", name: "Groq", icon: Zap, detail: "GPT-OSS 20B structured writing", tone: "amber" },
+  { id: "mistral", name: "Mistral AI", icon: Wind, detail: "Mistral Small 4 structured writing", tone: "indigo" },
+  { id: "openrouter", name: "OpenRouter", icon: Network, detail: "Vetted free structured-output route", tone: "teal" },
   { id: "cohere", name: "Cohere", icon: Layers3, detail: "Command · Embed · Rerank", tone: "teal" },
-  { id: "gemini", name: "Google AI", icon: Globe2, detail: "Language · images · video", tone: "neutral" },
+  { id: "gemini", name: "Google AI", icon: Globe2, detail: "Gemini language and structured output", tone: "neutral" },
   { id: "nvidia-nim", name: "NVIDIA NIM (dev/test)", icon: Cpu, detail: "One key · public/synthetic hosted previews · per-model checks", tone: "teal" },
+  { id: "cloudflare-workers-ai", name: "Cloudflare Workers AI", icon: Cloud, detail: "Exact FLUX.1 Schnell image route · Account ID required", tone: "amber" },
   { id: "black-forest-labs", name: "Black Forest Labs", icon: Image, detail: "FLUX image generation and editing", tone: "neutral" },
   { id: "recraft", name: "Recraft", icon: Sparkles, detail: "Illustration and design assets", tone: "indigo" },
   { id: "elevenlabs", name: "ElevenLabs", icon: Mic2, detail: "Voices and narration", tone: "neutral" },
-  { id: "azure-speech", name: "Azure Speech", icon: AudioLines, detail: "Speech, transcription, presenter", tone: "neutral" },
-  { id: "google-cloud-speech", name: "Google Cloud Speech", icon: Languages, detail: "Speech and alignment", tone: "neutral" },
+  { id: "azure-speech", name: "Azure Speech", icon: AudioLines, detail: "Speech and transcription", tone: "neutral" },
+  { id: "google-cloud-speech", name: "Google Cloud Speech", icon: Languages, detail: "Speech and transcription", tone: "neutral" },
   { id: "runway", name: "Runway", icon: Video, detail: "Selective generated motion", tone: "neutral" },
   { id: "heygen", name: "HeyGen", icon: UserRoundCheck, detail: "Consent-gated presenter clips", tone: "amber" },
   { id: "tavus", name: "Tavus", icon: Presentation, detail: "Consent-gated presenter clips", tone: "amber" },
@@ -321,8 +348,8 @@ const localModelOptions = [
   { id: "local/bge-m3", name: "BGE-M3", medium: "Multilingual retrieval", detail: "Dense / sparse candidate" },
   { id: "local/bge-reranker-v2-m3", name: "BGE reranker v2-m3", medium: "Research ranking", detail: "Small local reranker candidate" },
   { id: "local/qwen3-reranker-0.6b", name: "Qwen3 Reranker 0.6B", medium: "Research ranking", detail: "Alternative local reranker" },
-  { id: "local/flux2-klein-4b", name: "FLUX.2 Klein 4B", medium: "Illustration", detail: "Optional 12 GB benchmark" },
-  { id: "local/qwen3-tts-0.6b", name: "Qwen3 TTS 0.6B", medium: "Narration", detail: "English / Spanish candidate" },
+  { id: "local/flux.2-klein-4b-fp8", name: "FLUX.2 Klein 4B", medium: "Illustration", detail: "Optional 12 GB benchmark" },
+  { id: "local/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice", name: "Qwen3 TTS 0.6B", medium: "Narration", detail: "English / Spanish candidate" },
   { id: "local/kokoro", name: "Kokoro", medium: "Draft narration", detail: "Small CPU-first draft voice" },
   { id: "local/piper-voice-pack", name: "Piper voice pack", medium: "Legacy draft voice", detail: "Optional only · per-voice rights review" },
   { id: "local/whisper-large-v3-turbo", name: "Whisper large-v3-turbo", medium: "Transcription", detail: "Local ASR & timing candidate" },
@@ -351,6 +378,8 @@ const profileMediums = [
   ["writing", "Writing & review"],
   ["research", "Research"],
   ["images", "Images"],
+  ["stock", "Stock photos"],
+  ["visualReview", "Image review"],
   ["motion", "Motion"],
   ["voice", "Narration"],
   ["transcription", "Transcription"],
@@ -363,9 +392,13 @@ const profileProviderOptions = [
   ["local-runtime", "Local runtime"],
   ["openai", "OpenAI"],
   ["anthropic", "Anthropic"],
+  ["groq", "Groq"],
+  ["mistral", "Mistral AI"],
+  ["openrouter", "OpenRouter"],
   ["cohere", "Cohere"],
   ["gemini", "Google Gemini"],
   ["nvidia-nim", "NVIDIA NIM (public/synthetic preview)"],
+  ["cloudflare-workers-ai", "Cloudflare Workers AI"],
   ["elevenlabs", "ElevenLabs"],
   ["azure-speech", "Azure Speech"],
   ["google-cloud-speech", "Google Cloud Speech"],
@@ -604,7 +637,7 @@ const ONBOARDING_CATALOG: OnboardingCatalog = {
     ...lipSyncModelOptions.slice(0, 3).map((model) => ({ id: model.id, name: model.name, providerId: "local", medium: "lip-sync" as const, description: model.detail, compatible: true, required: model.id === "local/musetalk-1.5", requirementReason: model.id === "local/musetalk-1.5" ? "Core presenter lip-sync fallback" : undefined, downloadBytes: model.id === "local/musetalk-1.5" ? 4.7 * 1024 ** 3 : undefined, sizeConfidence: "estimated" as const })),
   ],
   portraits: DEFAULT_CANVAS_CUSTOMIZATION.assets
-    .filter((asset) => asset.kind === "presenter")
+    .filter((asset) => asset.kind === "presenter" && presenterCollection.has(asset.id))
     .flatMap((asset) => {
       const preview = STARTER_PRESENTER_PREVIEWS[asset.id];
       if (!preview) return [];
@@ -613,16 +646,76 @@ const ONBOARDING_CATALOG: OnboardingCatalog = {
     }),
 };
 
-const GUIDED_TOUR_STEPS = [
-  { id: "create", target: ".new-project-button", title: "Start from one clear idea", description: "Create a tutorial, choose any duration, approve its provider routes, then generate an editable learning plan.", placement: "right" as const, allowTargetInteraction: true },
-  { id: "models", target: "[aria-label='Models & providers']", title: "Every capability has its own model route", description: "Search local and hosted catalogs, compare compatibility and licenses, then choose writer, visual review, image, voice, presenter, lip-sync and upscale models independently.", placement: "right" as const },
-  { id: "templates", target: "[aria-label='Templates']", title: "Choose an authored visual grammar", description: "Templates define pacing and scene structure. Designed slides remain editable; illustrated slides keep authoritative text on deterministic layers.", placement: "right" as const },
-  { id: "jobs", target: ".jobs-button", title: "Background work stays accountable", description: "Every download, generation and render appears here only after you start it, with origin, progress, resource use and cancellation controls.", placement: "bottom" as const },
-  { id: "profile", target: ".profile-button", title: "Your profile and presenter gallery", description: "Choose from 30 supplied educator styles or configure your own portrait. Presenter identity, voice, idle motion and consent remain explicit project choices.", placement: "right" as const },
-  { id: "editor", target: ".command-trigger", title: "Edit the result, not just the prompt", description: "Open a project to refine slides, transcript, presenter, audio and timeline. AI changes arrive as previewable, reversible proposals before export.", placement: "bottom" as const },
-] as const;
+const GUIDED_TOUR_STEPS: readonly GuidedTourStep[] = [
+  {
+    id: "create",
+    target: ".new-project-button",
+    title: "Create a real tutorial project",
+    description: "Open the project setup, choose the learner and duration, review the exact model routes, then create the learning plan. This tour waits until the project exists in your workspace.",
+    placement: "right",
+    allowTargetInteraction: true,
+    completion: { type: "external", key: "project-created", label: "Create the project in the setup window to continue.", completedLabel: "Project created and opened.", autoAdvance: true },
+  },
+  {
+    id: "source",
+    target: "[data-tour-target='source-import']",
+    title: "Ground the lesson in your source",
+    description: "Add a local document to the project. It is validated and recorded with provenance before it can support the tutorial.",
+    placement: "bottom",
+    allowTargetInteraction: true,
+    completion: { type: "external", key: "source-added", label: "Choose Add source and finish importing a file.", completedLabel: "Source recorded in this project.", autoAdvance: true },
+  },
+  {
+    id: "approve-plan",
+    target: "[data-tour-target='approve-plan']",
+    title: "Approve the plan before generation",
+    description: "Review the objectives, sequence, script, sources, provider boundary, and budget. Approval advances the durable generation job; the tour waits for that receipt.",
+    placement: "bottom",
+    allowTargetInteraction: true,
+    completion: { type: "external", key: "plan-approved", label: "Approve the learning plan to continue generation.", completedLabel: "Plan approved and generation completed.", autoAdvance: true },
+  },
+  {
+    id: "edit-scene",
+    target: "[data-tour-target='scene-narration']",
+    title: "Shape the explanation directly",
+    description: "The generated result stays editable. Revise a sentence in the narration; the project snapshot records your change and keeps its revision history.",
+    placement: "left",
+    allowTargetInteraction: true,
+    completion: { type: "target-event", event: "input", label: "Edit the highlighted narration, then continue.", completedLabel: "Narration changed in the project snapshot." },
+  },
+  {
+    id: "render-scene",
+    target: "[data-tour-target='render-scene']",
+    title: "Render one scene for review",
+    description: "Start the selected scene render. The work appears in Jobs only after you request it, and the tour waits for the new render receipt.",
+    placement: "bottom",
+    allowTargetInteraction: true,
+    completion: { type: "external", key: "scene-rendered", label: "Start the highlighted scene render.", completedLabel: "Scene render recorded in Jobs.", autoAdvance: true },
+  },
+  {
+    id: "export",
+    target: "[data-tour-target='export-master']",
+    title: "Submit the final master",
+    description: "Choose the frame, captions, transcript, and bibliography, then submit the master. Completion comes from the export job receipt, not from visiting this screen.",
+    placement: "left",
+    allowTargetInteraction: true,
+    completion: { type: "external", key: "export-submitted", label: "Submit the highlighted master render when the settings are ready.", completedLabel: "Master export recorded in Jobs.", autoAdvance: true },
+  },
+];
+
+const guidedTourSceneEditKey = (projectId: string) => `alystria-guided-tour-v1:scene-edited:${projectId}`;
+
+interface GuidedTourEvidenceBaseline {
+  projectIds: Set<string>;
+  sourceCountByProjectId: Map<string, number>;
+  jobIds: Set<string>;
+}
 
 function starterAsset(id: string, kind: StudioAssetKind, label: string, creator: string, license: string, sha256?: string, byteSize?: number, mediaType?: string): StudioAssetReference {
+  const canonical = BUILT_IN_STARTER_KIT.assets.find((asset) => asset.id === id);
+  sha256 ??= canonical?.source.contentHash;
+  byteSize ??= canonical?.source.byteSize;
+  mediaType ??= canonical?.technical.mediaType;
   return { id, kind, label, source: "starter-pack", creator, license, attribution: `${label} — ${creator}`, rightsStatus: "cleared", ...(sha256 ? { sha256 } : {}), ...(byteSize ? { byteSize } : {}), ...(mediaType ? { mediaType } : {}) };
 }
 
@@ -650,6 +743,12 @@ function LogoMark() {
 }
 
 function App() {
+  const [preferences] = usePersistentState<AlystriaPreferences>("alystria-preferences-v1", DEFAULT_ALYSTRIA_PREFERENCES);
+  useEffect(() => {
+    document.documentElement.dataset.reduceMotion = String(preferences.reducedMotion);
+    document.documentElement.dataset.highContrast = String(preferences.highContrast);
+    document.documentElement.dataset.denseEditor = String(preferences.denseEditor);
+  }, [preferences.reducedMotion, preferences.highContrast, preferences.denseEditor]);
   const [snapshot, setSnapshot, resetSnapshot] = usePersistentState<AppSnapshot>("alystria-studio-v2", defaultSnapshot, normalizeAppSnapshot);
   const [runtime, setRuntime] = useState<RuntimeState>({ environment: desktopEnvironment(), bootstrap: null, loading: true, error: null });
   const [diagnosticReport, setDiagnosticReport] = useState<DiagnosticReport | null>(null);
@@ -663,7 +762,7 @@ function App() {
     const primaryGpu = diagnosticReport?.system.gpu[0];
     return {
       detectedRuntime: runtime.environment === "native" ? "local" : "hybrid",
-      runtimeConfigured: false,
+      runtimeConfigured: runtime.bootstrap?.worker.state === "ready",
       privacyConfigured: false,
       connectedProviderIds: detectedConnections,
       attachedModelIds,
@@ -678,7 +777,7 @@ function App() {
         warnings: diagnosticReport.checks.filter((check) => check.level === "warning" || check.level === "failure").map((check) => check.summary),
       } : null,
     };
-  }, [attachedModelIds, detectedConnections, diagnosticReport, initialOnboarding, runtime.environment]);
+  }, [attachedModelIds, detectedConnections, diagnosticReport, initialOnboarding, runtime.bootstrap?.worker.state, runtime.environment]);
   const onboarding = useOnboardingController({
     persistedState: initialOnboarding,
     setupState: onboardingSetup,
@@ -712,6 +811,9 @@ function App() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [guidedTourOpen, setGuidedTourOpen] = useState(false);
   const [guidedTourIndex, setGuidedTourIndex] = useState(0);
+  const [guidedTourSteps, setGuidedTourSteps] = useState<readonly GuidedTourStep[]>(GUIDED_TOUR_STEPS);
+  const [guidedTourCompletedStepIds, setGuidedTourCompletedStepIds] = useState<string[]>([]);
+  const guidedTourBaseline = useRef<GuidedTourEvidenceBaseline>({ projectIds: new Set(), sourceCountByProjectId: new Map(), jobIds: new Set() });
   const previousOnboardingStatus = useRef(initialOnboarding?.status ?? "not-started");
   const toastCounter = useRef(0);
   const snapshotSaveSequence = useRef(Promise.resolve());
@@ -730,11 +832,95 @@ function App() {
   const activeProject = snapshot.projects.find((project) => project.id === activeProjectId) ?? snapshot.projects[0] ?? null;
   const activeScene = activeProject?.scenes.find((scene) => scene.id === activeSceneId) ?? activeProject?.scenes[0] ?? null;
 
-  const notify = (title: string, detail: string, tone: ToastMessage["tone"] = "success") => {
+  const rememberGuidedTourCompletion = useCallback((key: string) => {
+    setGuidedTourCompletedStepIds((current) => current.includes(key) ? current : [...current, key]);
+  }, []);
+
+  const completedTourEvidence = useMemo(() => {
+    const completed: string[] = [];
+    if (snapshot.projects.length > 0) completed.push("project-created");
+    if (activeProject?.sources.length) completed.push("source-added");
+    const activeProjectJobs = activeProject
+      ? snapshot.jobs.filter((job) => job.projectId
+        ? job.projectId === activeProject.nativeProjectId
+        : snapshot.projects.length === 1)
+      : [];
+    const generationJob = activeProject?.nativeGenerationId
+      ? activeProjectJobs.find((job) => job.id === activeProject.nativeGenerationId)
+      : undefined;
+    if (generationJob?.status === "complete") completed.push("plan-approved");
+    if (activeProject && (activeProject.editorDocument || localStorage.getItem(guidedTourSceneEditKey(activeProject.id)) === "completed")) completed.push("edit-scene");
+    if (activeProjectJobs.some((job) => job.operation === "render_scene")) completed.push("scene-rendered");
+    if (activeProjectJobs.some((job) => job.operation === "export_master")) completed.push("export-submitted");
+    return completed;
+  }, [activeProject, snapshot.jobs, snapshot.projects.length]);
+
+  const startGuidedTour = useCallback((replay = false) => {
+    guidedTourBaseline.current = {
+      projectIds: new Set(snapshot.projects.map((project) => project.id)),
+      sourceCountByProjectId: new Map(snapshot.projects.map((project) => [project.id, project.sources.length])),
+      jobIds: new Set(snapshot.jobs.map((job) => job.id)),
+    };
+    setGuidedTourCompletedStepIds(completedTourEvidence);
+    const replaySteps = replay ? createGuidedTourReplaySteps(GUIDED_TOUR_STEPS, completedTourEvidence) : GUIDED_TOUR_STEPS;
+    const fullRefresher = replay && GUIDED_TOUR_STEPS.every((step) => completedTourEvidence.includes(guidedTourCompletionKey(step)));
+    setGuidedTourSteps(fullRefresher
+      ? replaySteps.map((step) => step.completion ? { ...step, completion: { ...step.completion, autoAdvance: false } } : step)
+      : replaySteps);
+    setGuidedTourIndex(0);
+    setGuidedTourOpen(true);
+  }, [completedTourEvidence, snapshot.jobs, snapshot.projects]);
+
+  useEffect(() => {
+    if (!guidedTourOpen) return;
+    const baseline = guidedTourBaseline.current;
+    if (snapshot.projects.some((project) => !baseline.projectIds.has(project.id))) rememberGuidedTourCompletion("project-created");
+    if (activeProject && activeProject.sources.length > (baseline.sourceCountByProjectId.get(activeProject.id) ?? 0)) rememberGuidedTourCompletion("source-added");
+    const generationJob = activeProject?.nativeGenerationId
+      ? snapshot.jobs.find((job) => job.id === activeProject.nativeGenerationId)
+      : undefined;
+    if (generationJob?.status === "complete") rememberGuidedTourCompletion("plan-approved");
+    const newJobs = snapshot.jobs.filter((job) => !baseline.jobIds.has(job.id) && (
+      !activeProject
+        ? false
+        : job.projectId
+          ? job.projectId === activeProject.nativeProjectId
+          : snapshot.projects.length === 1
+    ));
+    if (newJobs.some((job) => job.operation === "render_scene")) rememberGuidedTourCompletion("scene-rendered");
+    if (newJobs.some((job) => job.operation === "export_master")) rememberGuidedTourCompletion("export-submitted");
+  }, [activeProject, guidedTourOpen, rememberGuidedTourCompletion, snapshot.jobs, snapshot.projects]);
+
+  const handleGuidedTourStepEnter = useCallback((step: GuidedTourStep) => {
+    setJobsOpen(false);
+    if (step.id === "create") {
+      setArea("home");
+      setWorkspace(null);
+      return;
+    }
+    if (step.id === "source") {
+      setWorkspace("plan");
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLButtonElement>("[data-tour-route='plan-sources']")?.click();
+      });
+      return;
+    }
+    if (step.id === "approve-plan") {
+      setWorkspace("plan");
+      return;
+    }
+    if (step.id === "edit-scene" || step.id === "render-scene") {
+      setWorkspace("studio");
+      return;
+    }
+    if (step.id === "export") setWorkspace("export");
+  }, []);
+
+  const notify = useCallback((title: string, detail: string, tone: ToastMessage["tone"] = "success") => {
     const id = ++toastCounter.current;
     setToasts((items) => [...items, { id, title, detail, tone }]);
     window.setTimeout(() => setToasts((items) => items.filter((item) => item.id !== id)), 3800);
-  };
+  }, []);
 
   const openProject = (projectId: string, nextWorkspace: Workspace = "plan") => {
     const project = snapshot.projects.find((item) => item.id === projectId);
@@ -781,7 +967,7 @@ function App() {
       ...current,
       projects: current.projects.map((project) =>
         project.id === projectId
-          ? { ...project, scenes: project.scenes.map((scene) => (scene.id === sceneId ? { ...scene, ...update } : scene)), updatedAt: "just now" }
+          ? { ...project, scenes: project.scenes.map((scene) => (scene.id === sceneId ? { ...scene, ...update, status: update.status ?? (Object.entries(update).some(([key, value]) => ["title", "narration", "objective", "duration", "kind"].includes(key) && scene[key as keyof Scene] !== value) ? "draft" : scene.status) } : scene)), updatedAt: "just now" }
           : project,
       ),
       version: current.version + 1,
@@ -891,6 +1077,33 @@ function App() {
     customizationSaves.current.set(project.id, next);
   };
 
+  const useBundledAsset = async (asset: BundledAsset) => {
+    const project = snapshot.projects.find((item) => item.id === snapshot.recentProjectId) ?? snapshot.projects[0];
+    if (!project) throw new Error("Create or open a tutorial first, then choose an included asset.");
+    const identity = nativeProjectLink(project);
+    let receipt: ProjectAssetImportReceipt | undefined;
+    if (runtime.environment === "native" && identity) {
+      await snapshotSaveSequence.current;
+      await flushProjectCustomization(project.id);
+      const head = await projectSnapshotGet(identity);
+      receipt = (await importBundledAsset(asset, { ...identity, expectedHeadRevisionId: head.headRevisionId })).receipt;
+    }
+    const id = receipt?.artifact.id ?? `bundled-${asset.id}`;
+    const reference: StudioAssetReference = { id, kind: "background", label: asset.label, source: "generated", filename: asset.filename, mediaType: "image/png", byteSize: asset.byteSize, sha256: asset.sha256, creator: "Alystria included image library", license: "Included generated asset · project use and export allowed", attribution: "Built-in artwork · generated and visually reviewed 2026-09-05", rightsStatus: "cleared" };
+    const customization = canvasCustomization(project);
+    const next: CanvasCustomization = { ...customization, assets: [...customization.assets.filter((item) => item.id !== id), reference] };
+
+    if (asset.kind === "background") {
+      next.backgroundAssetId = id;
+      next.backgroundMode = "image";
+      const dark = asset.id === "slide-ink" || asset.id === "slide-chapter";
+      next.paletteId = dark ? "midnight" : "precision";
+      next.colors = dark ? { paper: "#101725", ink: "#F5F1E8", accent: "#BDA5F3", evidence: "#70D2C4" } : { paper: "#F7F6F1", ink: "#252334", accent: "#6C50B6", evidence: "#13766D" };
+    }
+    updateProjectCustomization(project, next, receipt);
+    notify("Teaching artwork added", `${asset.label} is available in ${project.title} and its advanced editor.`, "success");
+  };
+
   const updateProjectCreative = (projectId: string, creative: CreativeConfiguration) => {
     setSnapshot((current) => ({
       ...current,
@@ -899,17 +1112,12 @@ function App() {
     }));
   };
 
-  const addJob = (job: JobRecord) => setSnapshot((current) => ({ ...current, jobs: [job, ...current.jobs] }));
+  const addJob = (job: JobRecord) => setSnapshot((current) => ({ ...current, jobs: [job, ...current.jobs.filter((item) => item.id !== job.id)] }));
 
-  useEffect(() => {
-    let active = true;
-    void appBootstrap().then((bootstrap) => {
-      if (active) setRuntime((current) => ({ ...current, bootstrap, loading: false, error: null }));
-    }).catch((error: unknown) => {
-      if (active) setRuntime((current) => ({ ...current, loading: false, error: errorMessage(error) }));
-    });
-    return () => { active = false; };
-  }, []);
+  useEffect(() => watchRuntimeBootstrap(
+    (bootstrap) => setRuntime((current) => ({ ...current, bootstrap, loading: false, error: null })),
+    (error) => setRuntime((current) => ({ ...current, loading: false, error: errorMessage(error) })),
+  ), []);
 
   useEffect(() => {
     let active = true;
@@ -924,11 +1132,10 @@ function App() {
   useEffect(() => {
     const previous = previousOnboardingStatus.current;
     if (previous !== "completed" && onboarding.state.status === "completed" && localStorage.getItem("alystria-guided-tour-v1") !== "completed") {
-      setGuidedTourIndex(0);
-      setGuidedTourOpen(true);
+      startGuidedTour();
     }
     previousOnboardingStatus.current = onboarding.state.status;
-  }, [onboarding.state.status]);
+  }, [onboarding.state.status, startGuidedTour]);
 
   useEffect(() => () => {
     for (const entry of customizationSaves.current.values()) {
@@ -955,30 +1162,49 @@ function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  const nativeJobPollKey = JSON.stringify(nativeJobs);
+  const refreshedJobStates = useRef(new Set<string>());
   useEffect(() => {
-    if (runtime.environment !== "native" || !jobsOpen || Object.keys(nativeJobs).length === 0) return;
+    if (runtime.environment !== "native") return;
+    const links = JSON.parse(nativeJobPollKey) as Record<string, NativeJobLink>;
+    if (!Object.keys(links).length) return;
     let active = true;
+    let busy = false;
     const refresh = async () => {
-      const entries = await Promise.all(Object.entries(nativeJobs).map(async ([id, input]) => {
-        try {
-          return [id, await jobStatus(input)] as const;
-        } catch {
-          return null;
-        }
-      }));
-      if (!active) return;
-      setSnapshot((current) => ({
-        ...current,
-        jobs: current.jobs.map((job) => {
+      if (busy) return;
+      busy = true;
+      try {
+        const entries = await Promise.all(Object.entries(links).map(async ([id, input]) => {
+          try { return [id, await jobStatus(input)] as const; } catch { return null; }
+        }));
+        if (!active) return;
+        setSnapshot((current) => ({ ...current, jobs: current.jobs.map((job) => {
           const receipt = entries.find((entry) => entry?.[0] === job.id)?.[1];
           return receipt ? receiptJob(receipt, job.title, job.detail, nativeJobProject(job) ?? undefined) : job;
-        }),
-      }));
+        }) }));
+        for (const entry of entries) {
+          if (!entry) continue;
+          const [id, receipt] = entry;
+          if (!["SUCCEEDED", "BLOCKED"].includes(receipt.state)) continue;
+          const key = `${id}:${receipt.state}`;
+          if (refreshedJobStates.current.has(key)) continue;
+          const link = links[id]!;
+          try {
+            const durable = await projectSnapshotGet(link);
+            if (!active) return;
+            setSnapshot((current) => ({ ...current, projects: current.projects.map((project) => {
+              if (project.nativeProjectId !== link.projectId) return project;
+              return hydrateDurableProject(project, durable.snapshot, { nativeProjectId: link.projectId, nativeProjectDirectory: link.projectDirectory, nativeHeadRevisionId: durable.headRevisionId, nativeRevisionNumber: durable.revisionNumber });
+            }) }));
+            refreshedJobStates.current.add(key);
+          } catch { /* A failed refresh stays retryable on the next poll. */ }
+        }
+      } finally { busy = false; }
     };
     void refresh();
     const interval = window.setInterval(() => { void refresh(); }, 5_000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [jobsOpen, nativeJobs, runtime.environment, setSnapshot]);
+  }, [nativeJobPollKey, runtime.environment, setSnapshot]);
 
   useEffect(() => {
     if (snapshot.version === 0) return;
@@ -1039,9 +1265,9 @@ function App() {
           }
         })
         .catch((error: unknown) => notify("Project edits need attention", errorMessage(error), "warning"));
-    }, 650);
+    }, Math.max(500, preferences.autosaveSeconds * 1000));
     return () => window.clearTimeout(timer);
-  }, [activeProjectId, snapshot.projects, snapshot.version, setSnapshot]);
+  }, [activeProjectId, snapshot.projects, snapshot.version, setSnapshot, preferences.autosaveSeconds, notify]);
 
   const createTutorial = async (project: ProjectRecord, settings: TutorialCreationSettings) => {
     const bootstrap = runtime.bootstrap ?? await appBootstrap();
@@ -1200,13 +1426,19 @@ function App() {
   };
 
   const approveProjectGeneration = async (projectId: string) => {
-    const entry = Object.entries(nativeJobs).find(([, link]) => link.projectId === projectId);
-    if (!entry) {
+    if (runtime.environment === "browser-demo") {
       notify("Learning plan approved", "Browser demo approval is reflected in the storyboard.", "success");
       setWorkspace("storyboard");
       return;
     }
-    const [jobId, link] = entry;
+    const project = snapshot.projects.find((item) => item.id === projectId);
+    const identity = project ? nativeProjectLink(project) : null;
+    const jobId = project?.nativeGenerationId;
+    if (!identity || !jobId) {
+      notify("Generation is not ready for approval", "Open a tutorial with a saved generation job before approving its storyboard.", "warning");
+      return;
+    }
+    const link = { ...identity, jobId };
     try {
       const receipt = await generationApprove(link);
       setSnapshot((current) => ({
@@ -1328,7 +1560,7 @@ function App() {
         fps: 30,
       });
       addNativeControlJob(project, receipt, `Scene ${scene.index} preview`, scene.title);
-      notify(receipt.state === "SUCCEEDED" ? "Scene rendered" : "Scene render unavailable", receipt.message, receipt.state === "SUCCEEDED" ? "success" : "warning");
+      notify(receipt.state === "SUCCEEDED" ? "Scene rendered" : ["FAILED", "BLOCKED", "CANCELLED", "STALE"].includes(receipt.state) ? "Scene render needs attention" : "Scene render queued", receipt.message, receipt.state === "SUCCEEDED" ? "success" : ["FAILED", "BLOCKED", "CANCELLED", "STALE"].includes(receipt.state) ? "warning" : "info");
     } catch (error) {
       notify("Scene render unavailable", errorMessage(error), "warning");
     }
@@ -1347,7 +1579,7 @@ function App() {
       const receipt = await qaRepair({ ...link, baseRevisionId: project.nativeHeadRevisionId, baseJobId, findingIds });
       addNativeControlJob(project, receipt, "Selected QA repair", "Bounded to two attempts");
       await refreshProjectAfterControl(project, receipt);
-      notify(receipt.state === "SUCCEEDED" ? "Repair candidate persisted" : "QA repair blocked", receipt.message, receipt.state === "SUCCEEDED" ? "success" : "warning");
+      notify(receipt.state === "SUCCEEDED" ? "Repair candidate ready" : ["FAILED", "BLOCKED", "CANCELLED", "STALE"].includes(receipt.state) ? "QA repair needs attention" : "QA repair queued", receipt.message, receipt.state === "SUCCEEDED" ? "success" : ["FAILED", "BLOCKED", "CANCELLED", "STALE"].includes(receipt.state) ? "warning" : "info");
     } catch (error) {
       notify("QA repair blocked", errorMessage(error), "warning");
     }
@@ -1357,7 +1589,7 @@ function App() {
     const project = snapshot.projects.find((item) => item.id === activeProjectId)!;
     const link = nativeProjectLink(project);
     const baseJobId = baseGenerationJobId(project);
-    const { codecPreference, ...nativeSettings } = settings;
+    const { codecPreference } = settings;
     const codecLabel = codecPreferenceLabel(codecPreference);
     if (runtime.environment === "browser-demo") {
       const demo: JobReceipt = { jobId: `demo-${Date.now()}`, state: "SUCCEEDED", acceptedAt: new Date().toISOString(), message: `UI contract only: ${settings.fps} fps ${codecLabel} export simulated; no media file was created.`, retryable: false, operation: "export_master", result: { demoOnly: true, path: null, requestedFps: settings.fps, requestedCodec: codecPreference, codecForwarded: false } };
@@ -1369,10 +1601,10 @@ function App() {
     if (!link || !project.nativeHeadRevisionId || !baseJobId) {
       throw new Error("A completed durable generation and current project revision are required for master export.");
     }
-    const receipt = await masterExport({ ...link, baseRevisionId: project.nativeHeadRevisionId, baseJobId, ...nativeSettings });
+    const receipt = await masterExport({ ...link, baseRevisionId: project.nativeHeadRevisionId, baseJobId, ...settings });
     const annotatedReceipt: JobReceipt = {
       ...receipt,
-      result: { ...(receipt.result ?? {}), requestedFps: settings.fps, requestedCodec: codecPreference, codecForwarded: false },
+      result: { ...(receipt.result ?? {}), requestedFps: settings.fps, requestedCodec: codecPreference, codecForwarded: runtime.environment === "native" },
     };
     addNativeControlJob(project, annotatedReceipt, `${project.title} · ${settings.resolution}`, `${settings.aspect} · ${settings.fps} fps · ${codecLabel} requested`);
     return annotatedReceipt;
@@ -1422,6 +1654,7 @@ function App() {
               onSceneUpdate={(sceneId, update) => updateScene(activeProject.id, sceneId, update)}
               onProjectCustomization={(customization, receipt) => updateProjectCustomization(activeProject, customization, receipt)}
               onProjectCreative={(creative) => updateProjectCreative(activeProject.id, creative)}
+              onProjectEdit={(update) => setSnapshot((current) => ({ ...current, projects: current.projects.map((item) => item.id === activeProject.id ? { ...item, ...update, updatedAt: "just now" } : item), version: current.version + 1 }))}
               onRegenerate={setRegenScene}
               onNotify={notify}
               onAddJob={addJob}
@@ -1446,9 +1679,10 @@ function App() {
               onUseTemplate={(templateId) => { setSelectedTemplateId(templateId); setNewTutorialOpen(true); }}
               onNotify={notify}
               onImportSources={(files) => snapshot.recentProjectId ? importSources(snapshot.recentProjectId, files) : Promise.resolve([])}
-              onReset={() => { resetSnapshot(); notify("Workspace reset", "Local browser preferences returned to a clean state.", "info"); }}
+              onReset={() => { resetSnapshot(); notify("Workspace view reset", "Recent tutorial links and the visible job list were cleared. Saved project folders and provider settings remain on disk.", "info"); }}
               onReplayOnboarding={onboarding.replay}
-              onReplayTour={() => { setGuidedTourIndex(0); setGuidedTourOpen(true); }}
+              onReplayTour={() => startGuidedTour(true)}
+              onUseBundledAsset={useBundledAsset}
             />
           )}
         </main>
@@ -1476,7 +1710,7 @@ function App() {
             });
             addNativeControlJob(activeProject, receipt, `Regenerating scene ${scene.index}`, instruction || `Refine ${scene.title}`);
             await refreshProjectAfterControl(activeProject, receipt);
-            notify(receipt.state === "SUCCEEDED" ? "Candidate work persisted" : "Candidate work blocked", receipt.message, receipt.state === "SUCCEEDED" ? "success" : "warning");
+            notify(receipt.state === "SUCCEEDED" ? "Candidate ready to review" : ["FAILED", "BLOCKED", "CANCELLED", "STALE"].includes(receipt.state) ? "Candidate needs attention" : "Candidate generation queued", receipt.message, receipt.state === "SUCCEEDED" ? "success" : ["FAILED", "BLOCKED", "CANCELLED", "STALE"].includes(receipt.state) ? "warning" : "info");
           } else {
             addJob({ id: `demo-${Date.now()}`, title: `Regenerating scene ${scene.index}`, detail: "Browser demo only · candidate simulation; accepted scene unchanged", status: "complete", progress: 100, operation: "regenerate_scene", result: { demoOnly: true } });
             setJobsOpen(true);
@@ -1491,12 +1725,21 @@ function App() {
 
       <OnboardingDialog controller={onboarding} setupState={onboardingSetup} catalog={ONBOARDING_CATALOG} productName={PRODUCT_NAME} brandMarkSrc={appMark} />
       <GuidedTour
-        open={guidedTourOpen}
-        steps={GUIDED_TOUR_STEPS}
+        open={guidedTourOpen && !onboarding.isOpen && !newTutorialOpen && !regenScene && !commandOpen}
+        steps={guidedTourSteps}
         activeIndex={guidedTourIndex}
         onActiveIndexChange={setGuidedTourIndex}
         onExit={() => setGuidedTourOpen(false)}
         onComplete={() => { localStorage.setItem("alystria-guided-tour-v1", "completed"); setGuidedTourOpen(false); }}
+        completedStepIds={guidedTourCompletedStepIds}
+        onStepComplete={(step) => {
+          const key = guidedTourCompletionKey(step);
+          rememberGuidedTourCompletion(key);
+          if (key === "edit-scene" && activeProject) {
+            localStorage.setItem(guidedTourSceneEditKey(activeProject.id), "completed");
+          }
+        }}
+        onStepEnter={handleGuidedTourStepEnter}
         reducedMotion={window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false}
       />
 
@@ -1537,7 +1780,7 @@ function Sidebar({ area, workspace, project, mobileNavOpen, profile, onGlobal, o
             {projectNav.map(({ id, label, icon: Icon }, index) => (
               <button key={id} aria-label={label} className={workspace === id ? "active" : ""} onClick={() => onWorkspace(id)} aria-current={workspace === id ? "page" : undefined}>
                 <span className="nav-index">{index + 1}</span><Icon size={17} /><span>{label}</span>
-                {id === "review" && <span className="nav-badge amber">3</span>}
+                {id === "review" && project.scenes.some((scene) => scene.status === "attention") && <span className="nav-badge amber">{project.scenes.filter((scene) => scene.status === "attention").length}</span>}
               </button>
             ))}
           </nav>
@@ -1549,13 +1792,13 @@ function Sidebar({ area, workspace, project, mobileNavOpen, profile, onGlobal, o
           {globalNav.map(({ id, label, icon: Icon }) => (
             <button key={id} aria-label={label} className={area === id ? "active" : ""} onClick={() => onGlobal(id)} aria-current={area === id ? "page" : undefined}>
               <Icon size={18} /><span>{label}</span>
-              {id === "providers" && <span className="status-dot online" aria-label="Providers ready" />}
+
             </button>
           ))}
         </nav>
       )}
       <div className="sidebar-bottom">
-        <div className="local-status"><span><HardDrive size={14} /> Local workspace</span><small>Protected · 184 GB free</small></div>
+        <div className="local-status"><span><HardDrive size={14} /> Local workspace</span><small>Saved on this computer</small></div>
         <button className="profile-button" aria-label="Open profile settings" onClick={onProfile}><span>{portrait ? <img src={portrait.src} alt="" width="35" height="35" /> : initials}</span><span className="profile-copy"><strong>{displayName}</strong><small>Local workspace</small></span><MoreHorizontal size={16} /></button>
       </div>
     </aside>
@@ -1587,14 +1830,14 @@ function Topbar({ project, workspace, mode, jobs, runtime, onMode, onJobs, onMen
           <button className={mode === "guided" ? "active" : ""} onClick={() => onMode("guided")}>Guided</button>
           <button className={mode === "studio" ? "active" : ""} onClick={() => onMode("studio")}>Studio</button>
         </div>}
-        <button className="command-trigger" onClick={onCommand}><Search size={15} /><span>Search or run</span><kbd>⌘ K</kbd></button>
+        <button className="command-trigger" onClick={onCommand}><Search size={15} /><span>Search or run</span><kbd>Ctrl K</kbd></button>
         <button className={`jobs-button ${running ? "is-running" : ""}`} onClick={onJobs}><Activity size={17} /><span>Jobs</span>{running > 0 && <b>{running}</b>}</button>
       </div>
     </header>
   );
 }
 
-function GlobalWorkspace({ area, snapshot, runtime, diagnosticReport, onArea, onOpenProject, onNew, onUseTemplate, onNotify, onImportSources, onReset, onReplayOnboarding, onReplayTour }: {
+function GlobalWorkspace({ area, snapshot, runtime, diagnosticReport, onArea, onOpenProject, onNew, onUseTemplate, onNotify, onImportSources, onReset, onReplayOnboarding, onReplayTour, onUseBundledAsset }: {
   area: GlobalArea;
   snapshot: AppSnapshot;
   runtime: RuntimeState;
@@ -1608,12 +1851,13 @@ function GlobalWorkspace({ area, snapshot, runtime, diagnosticReport, onArea, on
   onReset: () => void;
   onReplayOnboarding: () => void;
   onReplayTour: () => void;
+  onUseBundledAsset: (asset: BundledAsset) => Promise<void>;
 }) {
   switch (area) {
     case "home": return <HomeView snapshot={snapshot} runtime={runtime} onOpen={onOpenProject} onNew={onNew} onArea={onArea} />;
     case "projects": return <ProjectsView projects={snapshot.projects} onOpen={onOpenProject} onNew={onNew} />;
     case "templates": return <TemplatesView onUse={onUseTemplate} />;
-    case "library": return <LibraryView project={snapshot.projects.find((project) => project.id === snapshot.recentProjectId) ?? snapshot.projects[0] ?? null} onNotify={onNotify} onImportSources={onImportSources} />;
+    case "library": return <LibraryView project={snapshot.projects.find((project) => project.id === snapshot.recentProjectId) ?? snapshot.projects[0] ?? null} onNotify={onNotify} onImportSources={onImportSources} onUseBundledAsset={onUseBundledAsset} />;
     case "providers": return <ProvidersView environment={runtime.environment} diagnosticReport={diagnosticReport} onNotify={onNotify} />;
     case "diagnostics": return <DiagnosticsView runtime={runtime} onNotify={onNotify} onReset={onReset} onReplayOnboarding={onReplayOnboarding} onReplayTour={onReplayTour} />;
   }
@@ -1629,37 +1873,23 @@ function HomeView({ snapshot, runtime, onOpen, onNew, onArea }: {
   const featured = snapshot.projects.find((project) => project.id === snapshot.recentProjectId) ?? snapshot.projects[0] ?? null;
   return (
     <div className="page home-page">
-      <section className="home-hero">
-        <div className="hero-copy">
-          <span className="section-kicker"><Sparkles size={14} /> Your teaching studio</span>
-          <h1>Turn a difficult idea into<br /><em>a clear line of thought.</em></h1>
-          <p>Research, structure, narrate, and render rigorous tutorials—without losing the thread between a claim and the scene that teaches it.</p>
-          <div className="hero-actions"><button className="primary-button" onClick={onNew}><Plus size={17} /> Create a tutorial</button>{featured && <button className="secondary-button" onClick={() => onOpen(featured.id)}><PlayCircle size={17} /> Continue working</button>}</div>
-        </div>
-        <div className="concept-thread-hero" aria-label="A tutorial moves from idea to evidence to scene to review">
-          <img className="concept-hero-art" src={tutorialCreatorStudio} alt="A tutorial creator teaching beside a camera, storyboard, waveform, and editing timeline" width="1536" height="1024" decoding="async" />
-          <div className="thread-line" />
-          <div className="thread-node node-idea"><span><TextCursorInput size={17} /></span><small>Idea</small><strong>Your difficult question</strong></div>
-          <div className="thread-node node-evidence"><span><Link2 size={17} /></span><small>Evidence</small><strong>Sources you approve</strong></div>
-          <div className="thread-node node-scene"><span><Film size={17} /></span><small>Scenes</small><strong>Editable visual beats</strong></div>
-          <div className="thread-node node-review"><span><BadgeCheck size={17} /></span><small>Review</small><strong>Clear export checks</strong></div>
-          <div className="thread-watermark">IDEA → VIDEO</div>
-        </div>
+      <div className="workbench-heading"><div><span className="section-kicker">A place for your next explanation</span><h1>Your teaching workbench.</h1></div><span className="workbench-local"><HardDrive size={14} /> Yours, from idea to export</span></div>
+      <section className="workbench-intro">
+        <div className="workbench-invitation"><span className="workbench-note">MAKE SOMETHING CLICK</span><h2>Big ideas.<br />Little <em>aha!</em> moments.</h2><p>Turn what you know into something someone else can understand. Start with a question, shape the story, and make it move.</p><button className="primary-button" onClick={onNew}><Plus size={18} /> Create a tutorial <ArrowRight size={17} /></button><span className="workbench-caption">Your sources. Your voice. Every scene editable.</span></div>
+        <LessonLab />
       </section>
-
+      <section className="workbench-paths" aria-label="Ways to teach"><div><span className="section-kicker">Find the right way in</span><h2>How will you make it clear?</h2></div><div className="workbench-path-grid">{[
+        { icon: Presentation, name: "Show the idea", detail: "Visual stories, examples & comparisons", tone: "violet" },
+        { icon: TextCursorInput, name: "Work it out", detail: "Whiteboard steps & mathematical reasoning", tone: "mint" },
+        { icon: Braces, name: "Walk through code", detail: "Algorithms, traces & meaningful changes", tone: "peach" },
+      ].map(({ icon: Icon, name, detail, tone }) => <button className={`workbench-path ${tone}`} key={name} onClick={() => onArea("templates")}><span><Icon size={24} /></span><div><strong>{name}</strong><small>{detail}</small></div><ArrowRight size={17} /></button>)}</div></section>
       {featured ? <section className="continue-section">
-        <div className="section-heading"><div><span className="section-kicker">Continue the thread</span><h2>{featured.title}</h2></div><button className="text-button" onClick={() => onOpen(featured.id)}>Open project <ArrowRight size={15} /></button></div>
+        <div className="section-heading"><div><span className="section-kicker">Pick up where you left off</span><h2>{featured.title}</h2></div><button className="text-button" onClick={() => onOpen(featured.id)}>Open project <ArrowRight size={15} /></button></div>
         <button className="continue-card" onClick={() => onOpen(featured.id, "storyboard")}>
-          <div className="continue-preview"><SceneArtwork scene={featured.scenes[3]!} compact /><div className="preview-time">03:14 / 12:00</div></div>
-          <div className="continue-details">
-            <div className="project-status-line"><StatusPill status={featured.status} /><span>{featured.updatedAt}</span></div>
-            <h3>Review the three-product insight</h3>
-            <p>The worked derivation is ready. One citation and two narration beats still need attention before production.</p>
-            <div className="continue-metrics"><span><Layers3 size={15} /> 8 scenes</span><span><Link2 size={15} /> 42 evidence spans</span><span><Languages size={15} /> English</span></div>
-            <ProgressBar value={featured.progress} /><small>{featured.progress}% ready for export</small>
-          </div>
+          <div className="continue-preview">{featured.scenes[0] ? <SceneArtwork scene={featured.scenes[0]} project={featured} compact /> : <Film size={32} />}<div className="preview-time">{featured.duration} min target</div></div>
+          <div className="continue-details"><div className="project-status-line"><StatusPill status={featured.status} /><span>{featured.updatedAt}</span></div><h3>{featured.scenes.find((scene) => scene.status !== "approved")?.title ?? "Review your teaching sequence"}</h3><p>{featured.description}</p><div className="continue-metrics"><span><Layers3 size={15} /> {featured.scenes.length} scenes</span><span><Link2 size={15} /> {featured.sources.length} sources</span><span><Languages size={15} /> {featured.locale}</span></div><ProgressBar value={featured.progress} /><small>{featured.progress}% project progress</small></div>
         </button>
-      </section> : <section className="continue-section empty-workbench"><EmptyState icon={Sparkles} title="Your workbench is ready" detail="No sample projects or background jobs were added. Start a tutorial when you are ready, or follow the guided setup first." action={<button className="primary-button" onClick={onNew}><Plus size={17} /> Create your first tutorial</button>} /></section>}
+      </section> : <section className="workbench-empty"><span className="workbench-empty__icon"><FolderClock size={25} /></span><div><h3>Your workbench is ready</h3><p>Your tutorials will appear here. Start with an idea or choose a teaching template.</p></div><button className="text-button" onClick={() => onArea("templates")}>Explore templates <ArrowRight size={16} /></button></section>}
 
       <section className="home-grid">
         <div className="home-panel recent-panel">
@@ -1670,7 +1900,7 @@ function HomeView({ snapshot, runtime, onOpen, onNew, onArea }: {
           <div className="panel-heading"><div><span className="section-kicker">Studio readiness</span><h3>Everything stays in view</h3></div><ShieldCheck className="teal" size={23} /></div>
           <div className="readiness-list">
             <span><CheckCircle2 /> {runtime.environment === "native" ? "Native project storage" : "Browser demo storage"} <b>{runtime.bootstrap ? "Ready" : "Checking"}</b></span>
-            <span>{runtime.bootstrap?.worker.state === "ready" ? <CheckCircle2 /> : <CircleAlert />} Pipeline worker <b className={runtime.bootstrap?.worker.state === "ready" ? "" : "amber-text"}>{workerLabel(runtime.bootstrap?.worker)}</b></span>
+            <span>{runtime.environment === "native" && runtime.bootstrap?.worker.state === "ready" ? <CheckCircle2 /> : <CircleAlert />} Generation worker <b className={runtime.environment === "native" && runtime.bootstrap?.worker.state === "ready" ? "" : "amber-text"}>{runtime.environment === "native" ? workerLabel(runtime.bootstrap?.worker) : "Desktop app only"}</b></span>
             <span><CircleAlert /> Voice provider <b className="amber-text">Optional</b></span>
           </div>
           <button className="text-button" onClick={() => onArea("diagnostics")}>Open diagnostics <ArrowRight size={15} /></button>
@@ -1688,14 +1918,14 @@ function ProjectsView({ projects, onOpen, onNew }: { projects: ProjectRecord[]; 
     <div className="page projects-page">
       <PageTitle kicker="Local workbench" title="Projects" description="Each tutorial is a private folder with its own sources, history, artifacts, and exports." action={<button className="primary-button" onClick={onNew}><Plus size={17} /> New tutorial</button>} />
       <div className="toolbar"><label className="search-field"><Search size={16} /><input aria-label="Search projects" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects" /></label><div className="filter-pills">{["All", "Planning", "Ready to review", "Complete"].map((item) => <button key={item} onClick={() => setFilter(item)} className={filter === item ? "active" : ""}>{item}</button>)}</div><button className="icon-button"><SlidersHorizontal size={17} /></button></div>
-      {filtered.length ? <div className="project-grid">{filtered.map((project) => <ProjectCard key={project.id} project={project} onOpen={() => onOpen(project.id)} />)}<button className="project-card new-card" onClick={onNew}><span><Plus size={24} /></span><strong>Start with a difficult idea</strong><small>Build a grounded learning plan first.</small></button></div> : <EmptyState icon={Search} title="No projects match" detail="Try a different phrase or clear the current status filter." action={<button className="secondary-button" onClick={() => { setQuery(""); setFilter("All"); }}>Clear filters</button>} />}
+      {filtered.length ? <div className="project-grid">{filtered.map((project) => <ProjectCard key={project.id} project={project} onOpen={() => onOpen(project.id)} />)}<button className="project-card new-card" onClick={onNew}><span><Plus size={24} /></span><strong>Start with a difficult idea</strong><small>Build a grounded learning plan first.</small></button></div> : <EmptyState icon={Search} title={projects.length ? "No projects match" : "Your first tutorial starts here"} detail={projects.length ? "Try a different phrase or clear the current status filter." : "Create a tutorial to keep its sources, scenes, and edits together."} action={projects.length ? <button className="secondary-button" onClick={() => { setQuery(""); setFilter("All"); }}>Clear filters</button> : <button className="primary-button" onClick={onNew}><Plus size={16} /> New tutorial</button>} />}
     </div>
   );
 }
 
 function ProjectCard({ project, onOpen }: { project: ProjectRecord; onOpen: () => void }) {
   return <button className="project-card" onClick={onOpen}>
-    <div className={`project-card-art art-${project.id}`}><span className="project-card-label">{project.theme}</span><SceneArtwork scene={project.scenes[0]!} compact /></div>
+    <div className={`project-card-art art-${project.id}`}><span className="project-card-label">{project.theme}</span>{project.scenes[0] ? <SceneArtwork scene={project.scenes[0]} project={project} compact /> : <Film size={32} />}</div>
     <div className="project-card-body"><div className="project-card-meta"><StatusPill status={project.status} /><span>{project.updatedAt}</span></div><h3>{project.title}</h3><p>{project.description}</p><div className="project-card-footer"><span>{project.scenes.length} scenes · {project.duration} min</span><span>{project.progress}%</span></div><ProgressBar value={project.progress} /></div>
   </button>;
 }
@@ -1707,20 +1937,18 @@ function TemplatesView({ onUse }: { onUse: (templateId: string) => void }) {
     <PageTitle kicker="Starting structures" title="Templates" description="Editorially designed learning arcs—not prompt presets. Every structure adapts to your audience and evidence." />
     <div className="template-banner"><div><span className="section-kicker"><Star size={14} /> Featured learning arc</span><h2>Build intuition, then earn the formula.</h2><p>A purpose-built sequence for technical concepts: misconception, visual model, derivation, worked example, and transfer check.</p><button className="light-button" onClick={() => onUse("explain-hard-idea")}>Use this structure <ArrowRight size={15} /></button></div><ConceptDiagram /></div>
     <div className="toolbar template-toolbar"><div className="filter-pills">{["All", "Concept", "Code", "Humanities", "Mathematics", "Software", "Illustrated"].map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}</button>)}</div></div>
-    <div className="template-grid">{shown.map((template) => <article className={`template-card template-${template.color}`} key={template.id}><div className="template-visual"><img src={TEMPLATE_PREVIEWS[template.id]} alt="" width="832" height="468" loading="eager" decoding="async" /><span>{template.category}</span></div><div><small>{template.scenes} suggested scenes</small><h3>{template.name}</h3><p>{template.description}</p><button className="text-button" onClick={() => onUse(template.id)}>Use template <ArrowRight size={15} /></button></div></article>)}</div>
+    <div className="template-grid">{shown.map((template) => <article className={`template-card template-${template.color}`} key={template.id}><div className="template-visual"><TemplateArt id={template.id} /><span>{template.category}</span></div><div><small>{template.scenes} suggested scenes</small><h3>{template.name}</h3><p>{template.description}</p><button className="text-button" onClick={() => onUse(template.id)}>Use template <ArrowRight size={15} /></button></div></article>)}</div>
   </div>;
 }
 
-function LibraryView({ project, onNotify, onImportSources }: { project: ProjectRecord | null; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void; onImportSources: (files: File[]) => Promise<SourceImportReceipt[]> }) {
-  const [tab, setTab] = useState("Sources");
-  if (!project) return <div className="page"><PageTitle kicker="Reusable material" title="Library" description="Sources, visuals, audio, and brand kits stay local and carry their rights information with them." /><EmptyState icon={Library} title="No project library yet" detail="Create or open a tutorial before importing project-owned material." /></div>;
+function LibraryView({ project, onNotify, onImportSources, onUseBundledAsset }: { project: ProjectRecord | null; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void; onImportSources: (files: File[]) => Promise<SourceImportReceipt[]>; onUseBundledAsset: (asset: BundledAsset) => Promise<void> }) {
+  const [tab, setTab] = useState("Included assets");
   return <div className="page">
-    <PageTitle kicker="Reusable material" title="Library" description="Sources, visuals, audio, and brand kits stay local and carry their rights information with them." action={<SourceImportControl label="Import assets" onImport={onImportSources} onNotify={onNotify} />} />
-    <div className="subtabs">{["Sources", "Visuals", "Audio", "Brand kits"].map((item) => <button className={tab === item ? "active" : ""} onClick={() => setTab(item)} key={item}>{item}</button>)}</div>
-    {tab === "Sources" ? <div className="library-layout"><div className="library-list"><div className="library-list-head"><strong>{project.sources.length} source records</strong><span>{project.sources.filter((source) => source.status === "verified").length} verified · {project.sources.filter((source) => source.privacy !== "public").length} private</span></div>{project.sources.map((source) => <button key={source.id}><span className={`source-icon ${source.kind}`}><FileText size={18} /></span><span><strong>{source.title}</strong><small>{source.origin}{source.byteSize ? ` · ${formatBytes(source.byteSize)}` : ""}</small></span><span className="license-tag">{source.license}</span><ChevronRight size={16} /></button>)}</div><aside className="library-summary"><span className="section-kicker">Rights at a glance</span><h3>Every reusable asset has a paper trail.</h3><div className="donut-wrap"><div className="donut"><span>{project.sources.length ? Math.round(project.sources.filter((source) => source.status === "verified").length / project.sources.length * 100) : 0}%<small>cleared</small></span></div></div><ul><li><i className="teal-bg" /> Cleared for export <b>{project.sources.filter((source) => source.status === "verified").length}</b></li><li><i className="amber-bg" /> Needs review <b>{project.sources.filter((source) => source.status === "review").length}</b></li><li><i className="ink-bg" /> Local/private <b>{project.sources.filter((source) => source.privacy !== "public").length}</b></li></ul></aside></div> : <EmptyState icon={tab === "Visuals" ? Image : tab === "Audio" ? AudioLines : Presentation} title={`${tab} library is ready`} detail={`Import ${tab.toLowerCase()} with provenance, or create them inside a project.`} action={<SourceImportControl label={`Import ${tab.toLowerCase()}`} onImport={onImportSources} onNotify={onNotify} secondary />} />}
+    <PageTitle kicker="Ready to teach" title="Library" description="Slide backgrounds and supporting illustrations are ready offline. Add sources or generate more artwork when you need it." />
+    <div className="subtabs">{["Included assets", "Project sources"].map((item) => <button className={tab === item ? "active" : ""} onClick={() => setTab(item)} key={item}>{item}</button>)}</div>
+    {tab === "Included assets" ? <><p className="inspector-note">{project ? `Choosing an asset adds it to ${project.title}.` : "Browse or download the included collection now. Create a tutorial to use an asset in the editor."}</p><BundledAssetLibrary {...(project ? { onUse: onUseBundledAsset } : {})} /></> : project ? <div className="library-list"><div className="library-list-head"><strong>{project.sources.length} source records</strong><SourceImportControl label="Add source files" onImport={onImportSources} onNotify={onNotify} /></div>{project.sources.length ? project.sources.map((source) => <article className="library-source-record" key={source.id}><span className={`source-icon ${source.kind}`}><FileText size={18} /></span><div><strong>{source.title}</strong><p>{source.origin}{source.byteSize ? ` · ${formatBytes(source.byteSize)}` : ""}</p><small>{source.license} · {source.status}</small></div></article>) : <EmptyState icon={FileText} title="Add evidence for this tutorial" detail="Import your notes, reference documents, or reading material. Their source and rights records stay with the project." />}</div> : <EmptyState icon={Library} title="Open a tutorial to add sources" detail="Your included teaching collection is available in the first tab." />}
   </div>;
 }
-
 function catalogItemsFromDiscovery(response: CatalogDiscoveryResponse): CatalogItem[] {
   if (response.source === "hugging-face") {
     return response.items.flatMap((item) => isRecord(item) && typeof item.id === "string"
@@ -1742,7 +1970,7 @@ function catalogItemsFromDiscovery(response: CatalogDiscoveryResponse): CatalogI
       const name = typeof item.name === "string" ? item.name : typeof item.id === "string" ? item.id : null;
       if (!name) return [];
       const endpoints = Array.isArray(item.endpoints) ? item.endpoints.filter((value): value is string => typeof value === "string") : [];
-      const capabilities: CatalogCapability[] = endpoints.some((endpoint) => /embed/i.test(endpoint)) ? ["retrieval.embed"] : endpoints.some((endpoint) => /rerank/i.test(endpoint)) ? ["retrieval.embed", "llm.structured"] : ["llm.text", "llm.structured"];
+      const capabilities: CatalogCapability[] = endpoints.some((endpoint) => /embed/i.test(endpoint)) ? ["retrieval.embed"] : endpoints.some((endpoint) => /chat/i.test(endpoint)) ? ["llm.text", "llm.structured"] : [];
       const raw: CloudCatalogEndpoint = {
         id: `cohere/${name}`,
         providerId: "cohere",
@@ -1751,7 +1979,7 @@ function catalogItemsFromDiscovery(response: CatalogDiscoveryResponse): CatalogI
         revision: null,
         capabilities,
         modalities: ["text"],
-        operationIds: endpoints.length ? endpoints : ["POST /v2/chat"],
+        operationIds: endpoints,
         endpointBaseUrl: "https://api.cohere.com",
         openAiCompatible: false,
         tags: ["cohere", "live-endpoint"],
@@ -1768,7 +1996,7 @@ function catalogItemsFromDiscovery(response: CatalogDiscoveryResponse): CatalogI
   return response.items.flatMap((item) => {
     if (!isRecord(item) || typeof item.id !== "string") return [];
     const id = item.id;
-    const capabilities = nvidiaCapabilities(id);
+    const capabilities: CatalogCapability[] = [];
     const raw: RawNvidiaCatalogEntry = {
       catalog: "nim",
       id,
@@ -1784,7 +2012,7 @@ function catalogItemsFromDiscovery(response: CatalogDiscoveryResponse): CatalogI
       operationIds: ["GET /v1/models"],
       endpointBaseUrl: "https://integrate.api.nvidia.com",
       openAiCompatible: true,
-      entitlement: "available",
+      entitlement: "unknown",
       sourceUrl: `https://build.nvidia.com/${encodeURIComponent(id)}`,
       documentationUrl: "https://docs.api.nvidia.com/nim/",
       publisherVerifiedBySource: true,
@@ -1794,14 +2022,6 @@ function catalogItemsFromDiscovery(response: CatalogDiscoveryResponse): CatalogI
   });
 }
 
-function nvidiaCapabilities(id: string): CatalogCapability[] {
-  const normalized = id.toLowerCase();
-  if (/flux|stable-diffusion|image|diffusion/u.test(normalized)) return ["image.generate", "image.edit"];
-  if (/embed/u.test(normalized)) return ["retrieval.embed"];
-  if (/rerank/u.test(normalized)) return ["retrieval.embed", "llm.structured"];
-  if (/vision|vlm|multimodal|gemma-3/u.test(normalized)) return ["llm.text", "vlm.review"];
-  return ["llm.text", "llm.structured"];
-}
 
 function mergeCatalogItems(existing: readonly CatalogItem[], incoming: readonly CatalogItem[]): CatalogItem[] {
   const merged = new Map(existing.map((item) => [`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`, item]));
@@ -1952,7 +2172,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     <PageTitle kicker="Your compute, your choice" title="Models & providers" description={`${PRODUCT_NAME} only routes work to providers you configure and approve. Local mode blocks project-content networking.`} />
     <section className="routing-card"><div><span className="section-kicker">Default routing boundary</span><h3>{mode} creation</h3><p>{mode === "Local" ? "All generation remains on this device. No cloud fallback." : mode === "Cloud" ? "Use only connected cloud providers after cost and privacy approval." : "Keep private sources local; route approved creative tasks to cloud providers."}</p></div><div className="segmented-large" role="group" aria-label="Provider routing mode">{["Local", "Hybrid", "Cloud"].map((item) => <button key={item} className={mode === item ? "active" : ""} onClick={() => setMode(item)}><span>{item === "Local" ? <HardDrive /> : item === "Cloud" ? <Cloud /> : <Network />}</span>{item}</button>)}</div><div className="routing-facts"><span><ShieldCheck /> No silent fallback</span><span><CircleDollarSign /> Hard budgets enabled</span><span><Lock /> Keys in OS vault</span></div></section>
     <section className="federated-catalog-panel" aria-labelledby="federated-catalog-title">
-      <div className="federated-catalog-heading"><div><span className="section-kicker">LM Studio-style discovery, widened for production</span><h2 id="federated-catalog-title">One model library for every capability</h2><p>Search supported recipe candidates now; sync live hub rows only from a dated API response, a connected provider, or a verified local scan. Unknown revisions and licenses stay visibly blocked.</p></div><span><Cpu size={16} /> {catalogHardware.gpuNames[0] ?? "Hardware probe pending"}</span></div>
+      <div className="federated-catalog-heading"><div><span className="section-kicker">Find and compare models</span><h2 id="federated-catalog-title">One model library for every capability</h2><p>Browse local models and connected services. Compare supported tasks, download sizes, hardware needs, and usage terms before choosing a model.</p></div><span><Cpu size={16} /> {catalogHardware.gpuNames[0] ?? "Hardware probe pending"}</span></div>
       <div className="catalog-source-strip" aria-label="Federated catalog sources">{defaultCatalogSources.map((source) => {
         const syncable = (["hugging-face", "civitai", "nvidia-nim", "cohere"] as const).find((candidate) => candidate === source.id);
         const count = syncable ? catalogSyncedCounts[syncable] ?? 0 : 0;
@@ -1990,7 +2210,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
         const selection = activeProfile.routes[medium] ?? { providerId: "local-runtime", modelId: "choose before generation" };
         const updateSelection = (changes: Partial<typeof selection>) => updateProfile(activeProfile.id, (profile) => ({ ...profile, routes: { ...profile.routes, [medium]: { ...selection, ...changes } } }));
         const presenterBound = medium === "presenter" || medium === "portraitAnimation" || medium === "lipSync";
-        return <label className="profile-route-choice" key={medium}><span>{label}</span><div className="profile-route-fields"><select aria-label={`${label} provider`} value={selection.providerId} onChange={(event) => updateSelection({ providerId: event.target.value })}>{profileProviderOptions.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select><input value={selection.modelId} aria-label={`${label} model`} onChange={(event) => updateSelection({ modelId: event.target.value })} placeholder="Exact model ID" />{medium === "voice" && <input value={selection.voiceId ?? ""} aria-label={`${label} voice ID`} onChange={(event) => updateSelection({ voiceId: event.target.value || null })} placeholder="Voice ID" />}{presenterBound && <input value={selection.presenterProfileId ?? ""} aria-label={`${label} presenter profile ID`} onChange={(event) => updateSelection({ presenterProfileId: event.target.value || null })} placeholder="Presenter profile ID" />}{selection.providerId === "local-runtime" && <><input value={selection.modelRevision ?? ""} aria-label={`${label} model revision`} onChange={(event) => updateSelection({ modelRevision: event.target.value || null })} placeholder="Immutable revision" /><input value={selection.installFingerprint ?? ""} aria-label={`${label} install fingerprint`} onChange={(event) => updateSelection({ installFingerprint: event.target.value || null })} placeholder="Verified SHA-256" /></>}</div></label>;
+        return <label className="profile-route-choice" key={medium}><span>{label}{medium === "images" && <small> · optional</small>}</span><div className="profile-route-fields"><select aria-label={`${label} provider`} value={selection.providerId} onChange={(event) => updateSelection({ providerId: event.target.value })}>{profileProviderOptions.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select><input value={selection.modelId} aria-label={`${label} model`} onChange={(event) => updateSelection({ modelId: event.target.value })} placeholder="Exact model ID" />{medium === "voice" && <input value={selection.voiceId ?? ""} aria-label={`${label} voice ID`} onChange={(event) => updateSelection({ voiceId: event.target.value || null })} placeholder="Voice ID" />}{presenterBound && <input value={selection.presenterProfileId ?? ""} aria-label={`${label} presenter profile ID`} onChange={(event) => updateSelection({ presenterProfileId: event.target.value || null })} placeholder="Presenter profile ID" />}{selection.providerId === "local-runtime" && <><input value={selection.modelRevision ?? ""} aria-label={`${label} model revision`} onChange={(event) => updateSelection({ modelRevision: event.target.value || null })} placeholder="Immutable revision" /><input value={selection.installFingerprint ?? ""} aria-label={`${label} install fingerprint`} onChange={(event) => updateSelection({ installFingerprint: event.target.value || null })} placeholder="Verified SHA-256" /></>}</div>{medium === "images" && <button type="button" className="secondary-button small" onClick={() => updateSelection({ modelId: "off" })}>{selection.modelId.trim().toLowerCase().startsWith("off") ? "Using designed slides · image generation off" : "Use designed slides without image generation"}</button>}</label>;
       })}</div></div></> : <div className="profile-loading">Loading local profiles…</div>}
       <div className="profile-save-row"><span><ShieldCheck size={15} /> Preferences only · credentials stay in the OS vault · project approval remains required</span><button className="primary-button" disabled={!setup || setupSaving} onClick={() => { void saveSetup(); }}>{setupSaving ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}{setupSaving ? "Saving…" : "Save setup & active profile"}</button></div>
     </section>
@@ -2031,6 +2251,7 @@ const DEFAULT_ALYSTRIA_PREFERENCES: AlystriaPreferences = {
 
 function DiagnosticsView({ runtime, onNotify, onReset, onReplayOnboarding, onReplayTour }: { runtime: RuntimeState; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void; onReset: () => void; onReplayOnboarding: () => void; onReplayTour: () => void }) {
   const [checking, setChecking] = useState(false);
+  const [resetPending, setResetPending] = useState(false);
   const [report, setReport] = useState<DiagnosticReport | null>(null);
   const [preferences, setPreferences] = usePersistentState<AlystriaPreferences>("alystria-preferences-v1", DEFAULT_ALYSTRIA_PREFERENCES);
   const updatePreference = <K extends keyof AlystriaPreferences>(key: K, value: AlystriaPreferences[K]) => setPreferences((current) => ({ ...current, [key]: value }));
@@ -2049,19 +2270,19 @@ function DiagnosticsView({ runtime, onNotify, onReset, onReplayOnboarding, onRep
   const rows = report?.checks ?? [
     { id: "project-storage", label: "Project storage", level: runtime.bootstrap ? "pass" : "info", summary: runtime.bootstrap?.paths.projects ?? "Waiting for desktop bootstrap" },
     { id: "pipeline-worker", label: "Pipeline worker", level: runtime.bootstrap?.worker.state === "ready" ? "pass" : "warning", summary: workerLabel(runtime.bootstrap?.worker) },
-    { id: "frame-renderer", label: "Frame renderer", level: "pass", summary: "Shared deterministic SceneView" },
+    { id: "frame-renderer", label: "Frame renderer", level: "info", summary: "Run diagnostics to verify the installed renderer" },
     { id: "power-profile", label: "Power profile", level: "info", summary: "Silent profile respected; no changes requested" },
   ];
   return <div className="page">
     <PageTitle kicker="Settings & diagnostics" title="A healthy studio is predictable." description="Inspect local runtimes, storage, privacy, accessibility, and recovery without changing your Windows power profile." action={<button className="primary-button" onClick={() => { void runChecks(); }} disabled={checking}>{checking ? <RefreshCw className="spin" size={17} /> : <Activity size={17} />}{checking ? " Running checks" : " Run diagnostics"}</button>} />
     <div className="diagnostics-grid">
       <section className="diagnostic-panel wide"><div className="panel-heading"><div><span className="section-kicker">System readiness</span><h3>{runtime.environment === "native" ? "Native toolchain" : "Browser preview"}</h3></div><span className="health-score">{rows.filter((row) => row.level === "pass").length} / {rows.length} passed</span></div><div className="diagnostic-rows">{rows.map((row) => { const Icon = diagnosticIcon(row.id); const ready = row.level === "pass"; return <div key={row.id}><span className="diagnostic-icon"><Icon size={17} /></span><span><strong>{row.label}</strong><small>{row.summary}</small></span><span className={`check-state ${ready ? "ready" : "attention"}`}>{ready ? <Check size={13} /> : <CircleAlert size={13} />}{row.level}</span></div>; })}</div></section>
-      <section className="diagnostic-panel"><span className="section-kicker">Privacy boundary</span><div className="privacy-orbit"><Lock size={22} /><i /><i /></div><h3>Local means local.</h3><p>Analytics are off. Private source contents cannot leave this device unless you explicitly reclassify them.</p><button className="text-button">Review privacy controls <ArrowRight size={15} /></button></section>
+      <section className="diagnostic-panel"><span className="section-kicker">Privacy boundary</span><div className="privacy-orbit"><Lock size={22} /><i /><i /></div><h3>Local means local.</h3><p>Analytics are off. Private source contents cannot leave this device unless you explicitly reclassify them.</p><button className="text-button" onClick={() => document.getElementById("privacy-controls")?.scrollIntoView({ behavior: preferences.reducedMotion ? "instant" : "smooth", block: "center" })}>Review privacy controls <ArrowRight size={15} /></button></section>
       <section className="diagnostic-panel"><span className="section-kicker">Power & performance</span><div className="power-mode"><Moon size={22} /><span><strong>Silent profile respected</strong><small>Benchmarks are estimation-only</small></span></div><p>{PRODUCT_NAME} won’t change Windows or G-Helper power modes. Use a performance profile only for deliberate benchmark runs.</p><button className="text-button" onClick={() => onNotify("Power profile unchanged", "No benchmark needs boost for functional acceptance.", "info")}>Why this is recommended <ArrowRight size={15} /></button></section>
-      <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Storage & recovery</span><h3>Keep heavy work away from the system drive</h3></div><HardDrive size={21} /></div><div className="settings-form-grid"><label><span>Model cache</span><input value={preferences.modelCacheDirectory} onChange={(event) => updatePreference("modelCacheDirectory", event.target.value)} /></label><label><span>Render scratch</span><input value={preferences.renderScratchDirectory} onChange={(event) => updatePreference("renderScratchDirectory", event.target.value)} /></label><label><span>Autosave interval</span><select value={preferences.autosaveSeconds} onChange={(event) => updatePreference("autosaveSeconds", Number(event.target.value))}><option value="3">3 seconds</option><option value="8">8 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select></label><label><span>Local backup versions</span><input type="number" min="3" max="100" value={preferences.backupCount} onChange={(event) => updatePreference("backupCount", Number(event.target.value))} /></label></div></section>
-      <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Privacy & trust</span><h3>Every external boundary remains deliberate</h3></div><ShieldCheck size={21} /></div><div className="settings-toggle-grid"><SettingsToggle checked={preferences.confirmCloudTransfer} title="Confirm every new cloud content class" detail="A saved provider route never implies consent for private source transfer." onChange={(value) => updatePreference("confirmCloudTransfer", value)} /><SettingsToggle checked={preferences.redactLogs} title="Redact paths, keys and source excerpts from logs" detail="Keep diagnostic bundles useful without leaking project or credential content." onChange={(value) => updatePreference("redactLogs", value)} /><SettingsToggle checked={preferences.crashReports} title="Send anonymous crash reports" detail="Off by default; source text and media are never attached." onChange={(value) => updatePreference("crashReports", value)} /></div></section>
-      <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Editor & accessibility</span><h3>Fit the creative surface to the person</h3></div><MonitorPlay size={21} /></div><div className="settings-toggle-grid"><SettingsToggle checked={preferences.reducedMotion} title="Reduce interface motion" detail="Preserve hierarchy and feedback without camera-like transitions." onChange={(value) => updatePreference("reducedMotion", value)} /><SettingsToggle checked={preferences.highContrast} title="High-contrast controls and guides" detail="Increase control boundaries, focus rings and canvas guide contrast." onChange={(value) => updatePreference("highContrast", value)} /><SettingsToggle checked={preferences.denseEditor} title="Dense multitrack editor" detail="Show more tracks and inspector fields on large displays." onChange={(value) => updatePreference("denseEditor", value)} /></div><div className="settings-form-grid"><label><span>Caption language</span><select value={preferences.defaultCaptionLanguage} onChange={(event) => updatePreference("defaultCaptionLanguage", event.target.value)}><option>Match tutorial</option><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Default export rate</span><select value={preferences.defaultExportFps} onChange={(event) => updatePreference("defaultExportFps", Number(event.target.value))}><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div></section>
-      <section className="diagnostic-panel wide compact-settings"><div><span className="section-kicker">Tutorial & maintenance</span><h3>Replay guidance or clean local UI state</h3></div><div className="setting-actions"><button className="secondary-button" onClick={onReplayOnboarding}><PlayCircle size={16} /> Replay setup</button><button className="secondary-button" onClick={onReplayTour}><Sparkles size={16} /> Replay guided tour</button><button className="secondary-button" onClick={() => onNotify("Backup queued", "A copy-first local project backup will be created by the desktop service.", "info")}><Archive size={16} /> Create backup</button><button className="secondary-button danger-text" onClick={onReset}><RotateCcw size={16} /> Reset local workspace</button></div></section>
+      <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Storage & recovery</span><h3>Keep heavy work away from the system drive</h3></div><HardDrive size={21} /></div><div className="settings-form-grid"><label><span>Model cache</span><input readOnly value={runtime.bootstrap?.paths.models ?? "Open the desktop app to inspect the model directory"} /></label><label><span>Render scratch</span><input readOnly value={runtime.bootstrap?.paths.cache ?? "Open the desktop app to inspect the cache directory"} /></label><label><span>Autosave interval</span><select value={preferences.autosaveSeconds} onChange={(event) => updatePreference("autosaveSeconds", Number(event.target.value))}><option value="3">3 seconds</option><option value="8">8 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select></label><p className="settings-intro">These are the active desktop locations. Attach existing model folders in Models & providers. Export a portable project archive to make a backup.</p></div></section>
+      <section id="privacy-controls" className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Privacy & trust</span><h3>Every external boundary remains deliberate</h3></div><ShieldCheck size={21} /></div><div className="settings-toggle-grid"><div className="settings-policy"><Cloud size={20} /><strong>Cloud use needs project approval</strong><p>A provider connection does not grant permission to transfer private sources.</p></div><div className="settings-policy"><Lock size={20} /><strong>Credentials stay in the OS vault</strong><p>Project files store credential references, never key values.</p></div><div className="settings-policy"><ShieldCheck size={20} /><strong>Crash reports stay local</strong><p>No automatic reporting service is connected.</p></div></div></section>
+      <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Editor & accessibility</span><h3>Fit the creative surface to the person</h3></div><MonitorPlay size={21} /></div><div className="settings-toggle-grid"><SettingsToggle checked={preferences.reducedMotion} title="Reduce interface motion" detail="Preserve hierarchy and feedback without camera-like transitions." onChange={(value) => updatePreference("reducedMotion", value)} /><SettingsToggle checked={preferences.highContrast} title="High-contrast controls and guides" detail="Increase control boundaries, focus rings and canvas guide contrast." onChange={(value) => updatePreference("highContrast", value)} /><SettingsToggle checked={preferences.denseEditor} title="Dense multitrack editor" detail="Show more tracks and inspector fields on large displays." onChange={(value) => updatePreference("denseEditor", value)} /></div><div className="settings-form-grid"><p className="settings-intro">Captions follow the narration language. Select that language when creating a tutorial.</p><label><span>Default export rate</span><select value={preferences.defaultExportFps} onChange={(event) => updatePreference("defaultExportFps", Number(event.target.value))}><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div></section>
+      <section className="diagnostic-panel wide compact-settings"><div><span className="section-kicker">Tutorial & maintenance</span><h3>Replay guidance or clean local UI state</h3></div><div className="setting-actions"><button className="secondary-button" onClick={onReplayOnboarding}><PlayCircle size={16} /> Replay setup</button><button className="secondary-button" onClick={onReplayTour}><Sparkles size={16} /> Replay guided tour</button><button className="secondary-button" onClick={() => onNotify("Export a project backup", "Open a tutorial and choose Export → Export portable .alytutorial to save a verified project archive.", "info")}><Archive size={16} /> How to back up</button><button className="secondary-button danger-text" onClick={() => setResetPending(true)}><RotateCcw size={16} /> Reset workspace view</button>{resetPending && <div className="workspace-reset-confirm" role="alert"><p>Clear recent tutorial links and the visible job list? Saved project folders and provider settings remain on disk.</p><button className="secondary-button" onClick={() => setResetPending(false)}>Keep workspace view</button><button className="secondary-button danger-text" onClick={() => { onReset(); setResetPending(false); }}>Clear workspace view</button></div>}</div></section>
     </div>
   </div>;
 }
@@ -2084,6 +2305,7 @@ function ProjectWorkspace(props: {
   onSceneUpdate: (sceneId: string, update: Partial<Scene>) => void;
   onProjectCustomization: (customization: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => void;
   onProjectCreative: (creative: CreativeConfiguration) => void;
+  onProjectEdit: (update: Pick<Partial<ProjectRecord>, "scenes" | "sceneCandidates" | "customization" | "editorDocument" | "reviewNotes" | "nativeHeadRevisionId" | "nativeRevisionNumber">) => void;
   onRegenerate: (scene: Scene) => void;
   onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void;
   onAddJob: (job: JobRecord) => void;
@@ -2111,72 +2333,163 @@ function ProjectHeader({ project, step, title, description, action }: { project:
 
 function PlanWorkspace({ project, onNotify, onApproveGeneration, onImportSources, onSceneUpdate, onUndo, onRedo }: ProjectWorkspaceProps) {
   const [tab, setTab] = useState("Learning plan");
-  const objectives = ["Explain why the school method creates four half-size products", "Derive the identity that recovers both cross terms from one product", "Work through 1234 × 5678 without skipping place-value reconstruction", "Compare T(n) = 4T(n/2) + O(n) with Karatsuba’s recurrence"];
+  const objectiveScenes = project.scenes.filter((scene) => scene.objective.trim());
+  const reviewedSources = project.sources.filter((source) => source.status === "verified").length;
   return <div className="page project-page plan-workspace">
-    <ProjectHeader project={project} step="1 · Plan" title="Shape the learning journey" description="Keep the audience, evidence, objectives, and script connected before a single frame is rendered." action={<button className="primary-button" onClick={onApproveGeneration}>Approve learning plan <ArrowRight size={16} /></button>} />
-    <div className="plan-progress" aria-label="Plan progress">{["Brief", "Sources", "Research", "Learning plan", "Script"].map((item, index) => <button key={item} className={tab === item ? "active" : index < 3 ? "complete" : ""} onClick={() => setTab(item)}><i>{index < 3 ? <Check size={13} /> : index + 1}</i><span>{item}</span></button>)}</div>
-    <div className="plan-grid">
-      <section className="plan-main-card">
-        <div className="card-title-row"><div><span className="section-kicker">Instructional blueprint</span><h2>{tab === "Learning plan" ? "From intuition to recurrence" : tab}</h2></div><button className="secondary-button small"><WandSparkles size={15} /> Refine</button></div>
-        {tab === "Learning plan" ? <>
-          <div className="learner-strip"><div><UserRoundCheck size={18} /><span><small>Learner</small><strong>{project.audience}</strong></span></div><div><Clock3 size={18} /><span><small>Target</small><strong>{project.duration} minutes</strong></span></div><div><Languages size={18} /><span><small>Language</small><strong>{project.locale}</strong></span></div></div>
-          <div className="objective-section"><div className="section-number">01</div><div><span className="section-kicker">Learning objectives</span><div className="objective-list">{objectives.map((objective, index) => <div key={objective}><span>{index + 1}</span><p>{objective}</p><button aria-label="Edit objective"><TextCursorInput size={15} /></button></div>)}</div></div></div>
-          <div className="objective-section"><div className="section-number">02</div><div><span className="section-kicker">Prerequisite thread</span><div className="prerequisite-thread"><span>Place value</span><ArrowRight /><span>Algebraic expansion</span><ArrowRight /><span>Recursion</span><ArrowRight /><span className="active">Divide & conquer</span></div></div></div>
-          <div className="objective-section"><div className="section-number">03</div><div><span className="section-kicker">Misconceptions to surface</span><div className="misconception-grid"><article><CircleAlert /><strong>“Three products means an approximation.”</strong><p>Show the exact identity before discussing speed.</p></article><article><CircleAlert /><strong>“Fewer calls always means faster.”</strong><p>Name base-case and overhead tradeoffs honestly.</p></article></div></div></div>
-        </> : tab === "Sources" || tab === "Research" ? <SourceEvidence project={project} research={tab === "Research"} onImportSources={onImportSources} onNotify={onNotify} /> : <ScriptEditor project={project} onNotify={onNotify} onSceneUpdate={onSceneUpdate} onUndo={onUndo} onRedo={onRedo} />}
-      </section>
-      <aside className="plan-aside">
-        <div className="grounding-card"><div className="grounding-head"><span><ShieldCheck size={17} /> Grounded mode</span><span className="toggle-on"><i /></span></div><p>Externally verifiable claims must be connected to evidence before export.</p><div className="grounding-meter"><span><strong>18 / 18</strong><small>claims supported</small></span><ProgressBar value={100} /></div></div>
-        <div className="concept-map-card"><span className="section-kicker">Concept map</span><h3>The dependency thread</h3><ConceptDiagram /><div className="legend"><span><i className="indigo-bg" /> objective</span><span><i className="teal-bg" /> evidence</span><span><i className="amber-bg" /> review</span></div></div>
-        <div className="approval-note"><Quote size={18} /><p>“The learner should feel the missing multiplication before they see the algebra.”</p><small>Director’s note · version 12</small></div>
-      </aside>
-    </div>
+    <ProjectHeader project={project} step="1 · Plan" title="Shape the learning journey" description="Start with the learner. Connect each scene to something they should understand." action={<button className="primary-button" data-tour-target="approve-plan" onClick={onApproveGeneration}>Approve learning plan <ArrowRight size={16} /></button>} />
+    <div className="plan-progress" aria-label="Plan sections">{["Brief", "Sources", "Research", "Learning plan", "Script"].map((item, index) => <button key={item} data-tour-route={item === "Sources" ? "plan-sources" : undefined} className={tab === item ? "active" : ""} onClick={() => setTab(item)}><i>{index + 1}</i><span>{item}</span></button>)}</div>
+    <div className="plan-grid"><section className="plan-main-card">
+      <div className="card-title-row"><div><span className="section-kicker">{project.title}</span><h2>{tab === "Learning plan" ? "What should the learner take away?" : tab}</h2></div></div>
+      {tab === "Learning plan" ? <><div className="learner-strip"><div><UserRoundCheck size={18} /><span><small>Learner</small><strong>{project.audience}</strong></span></div><div><Clock3 size={18} /><span><small>Target</small><strong>{project.duration} minutes</strong></span></div><div><Languages size={18} /><span><small>Language</small><strong>{project.locale}</strong></span></div></div>
+        <div className="objective-section"><div className="section-number"><BookOpen size={22} /></div><div><span className="section-kicker">Scene learning objectives</span><div className="objective-list">{objectiveScenes.map((scene) => <div key={scene.id}><span>{scene.index}</span><label className="objective-edit"><small>{scene.title}</small><textarea aria-label={`Objective for ${scene.title}`} rows={2} value={scene.objective} onChange={(event) => onSceneUpdate(scene.id, { objective: event.target.value })} /></label></div>)}</div>{!objectiveScenes.length && <p>Add a scene objective in Studio to begin the learning plan.</p>}</div></div>
+        <div className="learning-sequence"><span className="section-kicker">The teaching sequence</span>{project.scenes.map((scene) => <div key={scene.id}><span>{String(scene.index).padStart(2, "0")}</span><strong>{scene.title}</strong><small>{formatTime(scene.duration)}</small></div>)}</div>
+      </> : tab === "Brief" ? <div className="brief-document"><span className="section-kicker">The question</span><h3>{project.topic}</h3><p>{project.description}</p><dl><div><dt>Who is learning?</dt><dd>{project.audience}</dd></div><div><dt>Available time</dt><dd>{project.duration} minutes</dd></div><div><dt>Language</dt><dd>{project.locale}</dd></div><div><dt>Privacy</dt><dd>{project.privacy}</dd></div></dl><p>Review and edit the scene objectives and script before approving this plan.</p></div> : tab === "Sources" || tab === "Research" ? <SourceEvidence project={project} research={tab === "Research"} onImportSources={onImportSources} onNotify={onNotify} /> : <ScriptEditor project={project} onNotify={onNotify} onSceneUpdate={onSceneUpdate} onUndo={onUndo} onRedo={onRedo} />}
+    </section><aside className="plan-aside"><div className="grounding-card"><div className="grounding-head"><span><ShieldCheck size={17} /> Sources & support</span></div><p>Source review and claim support are separate. Review the rendered lesson before export.</p><div className="grounding-meter"><span><strong>{reviewedSources} / {project.sources.length}</strong><small>source records reviewed</small></span><ProgressBar value={project.sources.length ? reviewedSources / project.sources.length * 100 : 0} /></div><button className="text-button" onClick={() => setTab("Sources")}>Review sources <ArrowRight size={15} /></button></div><div className="teaching-note"><span className="section-kicker">A useful review question</span><h3>Could they explain it back?</h3><p>Give each scene one job. Show an example, let the learner predict the next step, then explain what changed.</p><button className="text-button" onClick={() => setTab("Script")}>Read the full script <ArrowRight size={15} /></button></div></aside></div>
   </div>;
 }
 
 function SourceEvidence({ project, research, onImportSources, onNotify }: { project: ProjectRecord; research: boolean; onImportSources: (files: File[]) => Promise<SourceImportReceipt[]>; onNotify: ProjectWorkspaceProps["onNotify"] }) {
-  return <div className="source-evidence"><div className="source-table-head"><span>{research ? "Evidence ledger" : "Project sources"}</span><SourceImportControl label="Add source" onImport={onImportSources} onNotify={onNotify} secondary small /></div>{project.sources.length ? project.sources.map((source) => <article key={source.id}><span className={`source-icon ${source.kind}`}><FileText size={17} /></span><div><strong>{source.title}</strong><small>{source.origin} · {source.license}{source.byteSize ? ` · ${formatBytes(source.byteSize)}` : ""}</small></div><span className="evidence-count">{source.evidence} {research ? "spans" : "claims"}</span><span className={`source-state ${source.status}`}>{source.status === "verified" ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />} {source.status}</span><button className="icon-button"><ChevronRight size={16} /></button></article>) : <EmptyState icon={FileText} title="No source files yet" detail="Choose local files to validate in quarantine and preserve in this project’s content-addressed store." />}</div>;
+  return <div className="source-evidence"><div className="source-table-head"><span>{research ? "Evidence ledger" : "Project sources"}</span><SourceImportControl label="Add source" onImport={onImportSources} onNotify={onNotify} secondary small tourTarget="source-import" /></div>{project.sources.length ? project.sources.map((source) => <article key={source.id}><span className={`source-icon ${source.kind}`}><FileText size={17} /></span><div><strong>{source.title}</strong><small>{source.origin} · {source.license}{source.byteSize ? ` · ${formatBytes(source.byteSize)}` : ""}</small></div><span className="evidence-count">{source.evidence} {research ? "spans" : "claims"}</span><span className={`source-state ${source.status}`}>{source.status === "verified" ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />} {source.status}</span><span aria-hidden="true"><ChevronRight size={16} /></span></article>) : <EmptyState icon={FileText} title="No source files yet" detail="Choose local files to validate in quarantine and preserve in this project’s content-addressed store." />}</div>;
 }
 
-function ScriptEditor({ project, onNotify, onSceneUpdate, onUndo, onRedo }: { project: ProjectRecord; onNotify: ProjectWorkspaceProps["onNotify"]; onSceneUpdate: ProjectWorkspaceProps["onSceneUpdate"]; onUndo?: () => void; onRedo?: () => void }) {
-  return <div className="script-editor"><div className="script-toolbar"><span>{project.scenes.reduce((count, scene) => count + scene.narration.split(/\s+/u).filter(Boolean).length, 0)} words · debounced to project history</span><div><button onClick={onUndo} aria-label="Undo durable revision"><Undo2 size={15} /></button><button onClick={onRedo} aria-label="Redo durable revision"><Redo2 size={15} /></button><button onClick={() => onNotify("Script save scheduled", "Scene edits are appended to project.sqlite after a short debounce.")}><Check size={15} /> Save snapshot</button></div></div>{project.scenes.slice(0, 4).map((scene) => <div className="script-block" key={scene.id}><span>S{scene.index.toString().padStart(2, "0")}</span><div><strong>{scene.title}</strong><p contentEditable suppressContentEditableWarning onBlur={(event) => onSceneUpdate(scene.id, { narration: event.currentTarget.textContent ?? "" })}>{scene.narration}</p><small>{scene.citations} citations · {scene.duration}s target</small></div></div>)}</div>;
+function ScriptEditor({ project, onSceneUpdate, onUndo, onRedo }: { project: ProjectRecord; onNotify: ProjectWorkspaceProps["onNotify"]; onSceneUpdate: ProjectWorkspaceProps["onSceneUpdate"]; onUndo?: () => void; onRedo?: () => void }) {
+  return <div className="script-editor"><div className="script-toolbar"><span>{project.scenes.reduce((count, scene) => count + scene.narration.split(/\s+/u).filter(Boolean).length, 0)} words · debounced to project history</span><div><button onClick={onUndo} aria-label="Undo durable revision"><Undo2 size={15} /></button><button onClick={onRedo} aria-label="Redo durable revision"><Redo2 size={15} /></button><span className="script-save-status"><Check size={15} /> Edits save automatically</span></div></div>{project.scenes.map((scene) => <div className="script-block" key={scene.id}><span>S{scene.index.toString().padStart(2, "0")}</span><div><strong>{scene.title}</strong><p contentEditable suppressContentEditableWarning onBlur={(event) => onSceneUpdate(scene.id, { narration: event.currentTarget.textContent ?? "" })}>{scene.narration}</p><small>{scene.citations} citations · {scene.duration}s target</small></div></div>)}</div>;
 }
 
-function StoryboardWorkspace({ project, onScene, onRegenerate, onWorkspace }: ProjectWorkspaceProps) {
+function StoryboardWorkspace({ project, onScene, onRegenerate, onWorkspace, onProjectEdit }: ProjectWorkspaceProps) {
   const [view, setView] = useState<"cards" | "list">("cards");
   const approved = project.scenes.filter((scene) => scene.status === "approved").length;
+  const addScene = () => {
+    const scene: Scene = { id: `scene-${crypto.randomUUID()}`, index: project.scenes.length + 1, title: "New teaching moment", kind: "definition", duration: 20, narration: "", objective: "Describe what the learner should understand.", status: "draft", visual: "thread", citations: 0, locked: false };
+    onProjectEdit({ scenes: [...project.scenes, scene] });
+    onScene(scene);
+  };
   return <div className="page project-page storyboard-workspace">
     <ProjectHeader project={project} step="2 · Storyboard" title="See the teaching sequence" description="Every card joins a learning objective, narration beat, evidence, and visual treatment." action={<div className="header-action-group"><button className="secondary-button" onClick={() => onWorkspace("plan")}><ArrowLeft size={16} /> Learning plan</button><button className="primary-button" onClick={() => onWorkspace("studio")}>Open studio <ArrowRight size={16} /></button></div>} />
-    <div className="storyboard-status"><div><span className="status-ring"><strong>{approved}</strong><small>of {project.scenes.length}</small></span><span><strong>{approved} scenes approved</strong><small>Scene 4 needs evidence review before production.</small></span></div><div className="storyboard-toolbar"><button><Sparkles size={15} /> Suggest a scene</button><button><RefreshCw size={15} /> Regenerate all draft scenes</button><span className="view-toggle"><button className={view === "cards" ? "active" : ""} onClick={() => setView("cards")} aria-label="Card view"><TableProperties size={16} /></button><button className={view === "list" ? "active" : ""} onClick={() => setView("list")} aria-label="List view"><AlignLeft size={16} /></button></span></div></div>
+    <div className="storyboard-status"><div><span className="status-ring"><strong>{approved}</strong><small>of {project.scenes.length}</small></span><span><strong>{approved} scenes approved</strong><small>{project.scenes.filter((scene) => scene.status === "attention").length} scenes need review · {project.scenes.filter((scene) => scene.status === "draft").length} drafts</small></span></div><div className="storyboard-toolbar"><button onClick={() => onWorkspace("plan")}><AlignLeft size={15} /> Edit learning plan</button><span className="view-toggle"><button className={view === "cards" ? "active" : ""} onClick={() => setView("cards")} aria-label="Card view"><TableProperties size={16} /></button><button className={view === "list" ? "active" : ""} onClick={() => setView("list")} aria-label="List view"><AlignLeft size={16} /></button></span></div></div>
     <div className={`storyboard-list ${view}`}>
-      <div className="section-thread-label"><span>Section 01</span><strong>The surprising shortcut</strong><small>4:02</small></div>
-      {project.scenes.map((scene, index) => <article className={`storyboard-card status-${scene.status}`} key={scene.id}>
+      <div className="section-thread-label"><span>Section 01</span><strong>{project.topic}</strong><small>{formatTime(project.scenes.reduce((total, scene) => total + scene.duration, 0))}</small></div>
+      {project.scenes.map((scene) => <article className={`storyboard-card status-${scene.status}`} key={scene.id}>
         <div className="scene-order"><span>{String(scene.index).padStart(2, "0")}</span><i /></div>
-        <button className="scene-thumbnail" onClick={() => onScene(scene)} aria-label={`Edit ${scene.title}`}><SceneArtwork scene={scene} compact /><span className="scene-duration">{formatTime(scene.duration)}</span><span className="scene-play"><Play size={15} fill="currentColor" /></span></button>
+        <button className="scene-thumbnail" onClick={() => onScene(scene)} aria-label={`Edit ${scene.title}`}><SceneArtwork scene={scene} project={project} compact /><span className="scene-duration">{formatTime(scene.duration)}</span><span className="scene-play"><Play size={15} fill="currentColor" /></span></button>
         <div className="scene-card-copy"><div className="scene-card-top"><span className={`scene-kind kind-${scene.kind}`}>{scene.kind.replace("-", " ")}</span><SceneStatus status={scene.status} /></div><button className="scene-title-button" onClick={() => onScene(scene)}><h3>{scene.title}</h3></button><p>{scene.narration}</p><div className="scene-objective"><span>Teaches</span>{scene.objective}</div><div className="scene-metadata"><span><Link2 size={14} /> {scene.citations} citations</span><span><AudioLines size={14} /> Narration draft</span>{scene.locked && <span><Lock size={13} /> Preserved</span>}</div></div>
-        <div className="scene-card-actions"><button className="icon-button"><MoreHorizontal size={17} /></button><button className="secondary-button small" onClick={() => onRegenerate(scene)}><RefreshCw size={14} /> Regenerate</button></div>
-        {index === 3 && <div className="review-ribbon"><CircleAlert size={14} /> One source span is link-only</div>}
+        <div className="scene-card-actions"><button className="icon-button" aria-label={`Edit ${scene.title} details`} onClick={() => onScene(scene)}><Pencil size={17} /></button><button className="secondary-button small" onClick={() => onRegenerate(scene)}><RefreshCw size={14} /> Regenerate</button></div>
+        {scene.status === "attention" && <div className="review-ribbon"><CircleAlert size={14} /> This scene needs review</div>}
       </article>)}
-      <button className="add-scene-card"><Plus size={19} /><span><strong>Add a teaching moment</strong><small>Choose from 28 purpose-built scene families</small></span></button>
+      <button className="add-scene-card" onClick={addScene}><Plus size={19} /><span><strong>Add a teaching moment</strong><small>Start a scene, then choose its visual treatment in Studio</small></span></button>
     </div>
   </div>;
 }
 
-function StudioWorkspace({ project, activeScene, mode, version, onSelectScene, onSceneUpdate, onProjectCustomization, onProjectCreative, onRegenerate, onUndo, onRedo, onRenderScene, onNotify, onAddJob }: ProjectWorkspaceProps) {
+function StudioWorkspace({ project, activeScene, mode, version, environment, jobs, onSelectScene, onSceneUpdate, onProjectCustomization, onProjectCreative, onRegenerate, onUndo, onRedo, onRenderScene, onNotify, onProjectEdit, onAddJob }: ProjectWorkspaceProps) {
   const [playing, setPlaying] = useState(false);
+  const [previewSeconds, setPreviewSeconds] = useState(0);
+  const activeIndex = project.scenes.findIndex((scene) => scene.id === activeScene.id);
+  useEffect(() => { setPreviewSeconds(0); setPlaying(false); }, [activeScene.id]);
+  useEffect(() => {
+    if (!playing) return;
+    let previous = performance.now();
+    const timer = window.setInterval(() => {
+      const now = performance.now();
+      const elapsed = (now - previous) / 1000;
+      previous = now;
+      setPreviewSeconds((current) => Math.min(activeScene.duration, current + elapsed));
+    }, 33);
+    return () => window.clearInterval(timer);
+  }, [playing, activeScene.duration]);
+  useEffect(() => { if (previewSeconds >= activeScene.duration) setPlaying(false); }, [previewSeconds, activeScene.duration]);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editorProject, setEditorProject] = useState<EditorProject>(() => createEditorProjectFromAlystriaProject(project, { now: new Date().toISOString() }));
+  const [editorProject, setEditorProject] = useState<EditorProject>(() => project.editorDocument ?? createEditorProjectFromAlystriaProject(project, { now: new Date().toISOString() }));
+  const [editorImportRights, setEditorImportRights] = useState<"unknown" | "owned" | "licensed" | "publicDomain">("unknown");
+  const editorImportController = useRef<BrowserMediaImportController | null>(null);
+  if (!editorImportController.current) editorImportController.current = new BrowserMediaImportController(editorProject.frameRate);
+  useEffect(() => () => editorImportController.current?.dispose(), []);
   const [inspectorTab, setInspectorTab] = useState("Content");
   const [zoom, setZoom] = useState(72);
   const [assetPreviews, setAssetPreviews] = useState<Record<string, string>>({});
   const assetPreviewsRef = useRef(assetPreviews);
   const projectRef = useRef(project);
   projectRef.current = project;
+  const openAdvancedEditor = async () => {
+    try {
+      const current = projectRef.current;
+      const identity = nativeProjectLink(current);
+      const generationComplete = jobs.some((job) => job.id === current.nativeGenerationId && job.status === "complete");
+      const mediaBindings = environment === "native" && identity && current.nativeGenerationId && generationComplete
+        ? await editorBindingsGet({ ...identity, generationId: current.nativeGenerationId }) : undefined;
+      const now = new Date().toISOString();
+      let document = current.editorDocument
+        ? mediaBindings ? mergeAlystriaMediaBindings(current.editorDocument, mediaBindings, now) : current.editorDocument
+        : createEditorProjectFromAlystriaProject(current, { now, ...(mediaBindings ? { mediaBindings } : {}) });
+      if (current.editorDocument) {
+        const derived = createEditorProjectFromAlystriaProject(current, { now });
+        const existingIds = new Set(document.assets.map((asset) => asset.id));
+        document = { ...document, assets: [...document.assets, ...derived.assets.filter((asset) => asset.hash && !existingIds.has(asset.id))] };
+      }
+      if (environment === "native" && identity) document = await resolveNativeEditorMedia(document, identity, projectAssetResolve);
+      else document = { ...document, assets: document.assets.map((asset) => {
+        const included = bundledAssets.find((item) => item.sha256 === asset.hash);
+        return included ? { ...asset, status: "ready" as const, uri: included.url, previewUrl: included.url, thumbnailUrl: included.url } : asset;
+      }) };
+      setEditorProject(document);
+      setEditorOpen(true);
+    } catch (error) {
+      onNotify("Editor media needs attention", errorMessage(error), "warning");
+    }
+  };
+  const importEditorMedia = async (files: readonly File[]) => {
+    const identity = nativeProjectLink(projectRef.current);
+    if (!identity) throw new Error("Open a saved desktop project before importing media.");
+    return importNativeEditorMedia(files, identity, editorImportController.current!, editorImportRights, projectAssetResolve, (update) => {
+      projectRef.current = { ...projectRef.current, ...update };
+      onProjectEdit(update);
+    });
+  };
+  const resolveEditorWaveform = async (asset: EditorMediaAsset) => {
+    const identity = nativeProjectLink(projectRef.current);
+    if (!identity) throw new Error("Open a desktop project before loading waveforms.");
+    return resolveEditorWaveformNative(asset, editorProject.frameRate, identity, editorWaveformGet, convertFileSrc);
+  };
+  const renderEditorTimeline = async (document: EditorProject) => {
+    const identity = nativeProjectLink(projectRef.current);
+    if (!identity) throw new Error("Open a saved desktop project before rendering a timeline.");
+    const current = await projectSnapshotGet(identity);
+    const saved = await projectSnapshotSave({ ...identity, expectedHeadRevisionId: current.headRevisionId, snapshot: { ...current.snapshot, editorDocument: prepareEditorProjectForPersistence(document) }, message: "Saved timeline before render" });
+    onProjectEdit({ editorDocument: prepareEditorProjectForPersistence(document), nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber });
+    const submitted = await exportEditorTimelineNative(document, { ...identity, expectedHeadRevisionId: saved.headRevisionId }, editorTimelineExport, { name: "vp9" });
+    let receipt: JobReceipt = { ...submitted, operation: "editor_timeline_export" };
+    const link = { ...identity, jobId: receipt.jobId };
+    const recordReceipt = (value: JobReceipt) => onAddJob(receiptJob(value, `Timeline · ${project.title}`, value.message, link));
+    recordReceipt(receipt);
+    while (!["SUCCEEDED", "FAILED", "CANCELLED", "STALE", "BLOCKED"].includes(receipt.state)) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      receipt = await jobStatus(link);
+      recordReceipt(receipt);
+    }
+    const result = editorTimelineExportResult(receipt, identity.projectId);
+    if (!result) throw new Error(receipt.message || "Timeline render did not complete.");
+    onNotify("Edited video exported", result.outputPath, "success");
+    return result;
+  };
   const customization = canvasCustomization(project);
   const creative = project.creative ?? DEFAULT_CREATIVE_CONFIGURATION;
-  useEffect(() => { setEditorProject(createEditorProjectFromAlystriaProject(projectRef.current, { now: new Date().toISOString() })); }, [project.id]);
+  useEffect(() => { setEditorProject(projectRef.current.editorDocument ?? createEditorProjectFromAlystriaProject(projectRef.current, { now: new Date().toISOString() })); }, [project.id]);
   useEffect(() => { assetPreviewsRef.current = assetPreviews; }, [assetPreviews]);
   useEffect(() => () => Object.values(assetPreviewsRef.current).forEach((url) => URL.revokeObjectURL(url)), []);
+  const previewIdentity = useMemo(() => project.nativeProjectId && project.nativeProjectDirectory ? { projectId: project.nativeProjectId, projectDirectory: project.nativeProjectDirectory } : null, [project.nativeProjectId, project.nativeProjectDirectory]);
+  const previewAssetKey = JSON.stringify(customization.assets.filter((asset) => asset.source !== "starter-pack" && ["presenter", "background"].includes(asset.kind) && asset.sha256).map((asset) => ({ id: asset.id, hash: asset.sha256 })));
+  useEffect(() => {
+    let cancelled = false;
+    const assets = JSON.parse(previewAssetKey) as Array<{ id: string; hash: string }>;
+    void Promise.all(assets.map(async (asset) => {
+      const included = bundledAssets.find((item) => item.sha256 === asset.hash);
+      if (included) return [asset.id, included.url] as const;
+      if (environment !== "native" || !previewIdentity) return null;
+      try { const stored = await projectAssetResolve({ ...previewIdentity, artifactHash: asset.hash }); return [asset.id, convertFileSrc(stored.path)] as const; }
+      catch { return null; }
+    })).then((entries) => { if (!cancelled) setAssetPreviews((previous) => ({ ...previous, ...Object.fromEntries(entries.filter((entry) => entry !== null)) })); });
+    return () => { cancelled = true; };
+  }, [previewAssetKey, environment, previewIdentity]);
   const selectedPresenter = customization.presenter.assetId ? assetPreviews[customization.presenter.assetId] : undefined;
   const selectedBackground = customization.backgroundAssetId ? assetPreviews[customization.backgroundAssetId] ?? STARTER_BACKGROUND_PREVIEWS[customization.backgroundAssetId] : undefined;
   const canvasStyle = {
@@ -2190,24 +2503,97 @@ function StudioWorkspace({ project, activeScene, mode, version, onSelectScene, o
     "--project-corner": `${customization.cornerRadius}px`,
     "--project-shadow": customization.shadowStrength / 100,
   } as React.CSSProperties;
-  const queueCreativeJob = (operation: "visual_review" | "presenter_generate", title: string, detail: string) => {
-    onAddJob({ id: `${operation}-${Date.now()}`, title, detail, status: "queued", progress: 0, eta: "Waiting for an approved model route", operation });
-    onNotify(`${title} queued`, "This user-started proposal is visible in Jobs. It will not overwrite an accepted scene or portrait.", "info");
+  const [generatingVisual, setGeneratingVisual] = useState(false);
+  const candidateImages = visualCandidates(project.sceneCandidates).filter((candidate) => candidate.sceneId === activeScene.id);
+  const resolveCandidateImage = useCallback(async (artifactHash: string) => {
+    const identity = nativeProjectLink(projectRef.current);
+    if (!identity) throw new Error("Open a desktop project to review saved images.");
+    const resolved = await projectAssetResolve({ ...identity, artifactHash });
+    return convertFileSrc(resolved.path);
+  }, []);
+  const reloadCandidateProject = async () => {
+    const current = projectRef.current;
+    const identity = nativeProjectLink(current);
+    if (!identity) return;
+    const durable = await projectSnapshotGet(identity);
+    const next = hydrateDurableProject(current, durable.snapshot, { nativeProjectId: identity.projectId, nativeProjectDirectory: identity.projectDirectory, nativeHeadRevisionId: durable.headRevisionId, nativeRevisionNumber: durable.revisionNumber });
+    projectRef.current = next;
+    onProjectEdit(next);
+  };
+  const acceptCandidateImage = async (candidate: VisualCandidate) => {
+    const identity = nativeProjectLink(projectRef.current);
+    if (!identity) throw new Error("Open a desktop project before choosing artwork.");
+    const durable = await projectSnapshotGet(identity);
+    await sceneCandidateAccept({ ...identity, expectedHeadRevisionId: durable.headRevisionId, candidateId: candidate.id });
+    await reloadCandidateProject();
+    onNotify("Image selected", "Your choice, source, and usage rights are saved with this tutorial.", "success");
+  };
+  const generateVisual = async (role: "scene" | "presenter") => {
+    if (generatingVisual) return;
+    const current = projectRef.current;
+    const identity = nativeProjectLink(current);
+    if (environment !== "native" || !identity) { onNotify("Open the desktop app", "New images use your connected image provider or an installed local model. Included assets are available in Library.", "info"); return; }
+    setGeneratingVisual(true);
+    try {
+      const durable = await projectSnapshotGet(identity);
+      const saved = await projectSnapshotSave({ ...identity, expectedHeadRevisionId: durable.headRevisionId, snapshot: { ...durable.snapshot, creative }, message: "Saved image generation recipe" });
+      onProjectEdit({ nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber });
+      const imageModel = role === "presenter" ? creative.presenter.baseModel : creative.slide.imageModel;
+      const loras = role === "presenter" ? creative.presenter.loras : creative.slide.loras;
+      if (loras.some((id) => id !== "local/sdxl-offset-lora-1.0")) throw new Error("Choose the supported official SDXL LoRA in the generation panel before continuing.");
+      let receipt = await sceneRegenerate({ ...identity, baseRevisionId: saved.headRevisionId, sceneId: activeScene.id, role, seed: role === "presenter" ? creative.presenter.seed ?? creative.slide.seed : creative.slide.seed, ...(imageModel === "local/sdxl-base-1.0" ? { imageRecipe: { model: "local/sdxl-base-1.0" as const, loras: loras as Array<"local/sdxl-offset-lora-1.0">, negativePrompt: role === "presenter" ? creative.presenter.negativePrompt : "text, watermark, labels, captions" } } : {}), instruction: role === "presenter" ? `${creative.presenter.style}. ${creative.presenter.prompt}` : `${creative.slide.prompt || "Calm text-free educational artwork with room for editable lesson content"}. Lesson context: ${activeScene.title}. ${activeScene.objective}. No text, labels, letters, or watermark.`, preservationLocks: ["narration", "citations", "learningobjective"], alternatives: 1 });
+      const link = { ...identity, jobId: receipt.jobId };
+      const record = () => onAddJob(receiptJob(receipt, role === "presenter" ? "New teacher portrait" : `Artwork · ${activeScene.title}`, receipt.message, link));
+      record();
+      while (!["SUCCEEDED", "FAILED", "CANCELLED", "STALE", "BLOCKED"].includes(receipt.state)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        receipt = await jobStatus(link);
+        record();
+      }
+      await reloadCandidateProject();
+      if (receipt.state !== "SUCCEEDED") throw new Error(receipt.message || "Image generation did not complete.");
+      onNotify("Image ready to review", "Inspect the candidate below, then choose whether to use it.", "success");
+    } catch (error) { onNotify("Image generation needs attention", errorMessage(error), "warning"); }
+    finally { setGeneratingVisual(false); }
+  };
+  const searchStockImages = async (providerId: StockProvider, searchQuery: string) => {
+    if (generatingVisual) return;
+    const current = projectRef.current;
+    const identity = nativeProjectLink(current);
+    if (environment !== "native" || !identity) { onNotify("Open the desktop app", "Stock searches use this tutorial's approved photo library and image reviewer.", "info"); return; }
+    setGeneratingVisual(true);
+    try {
+      const durable = await projectSnapshotGet(identity);
+      let receipt = await searchVisualCandidates({ ...identity, expectedHeadRevisionId: durable.headRevisionId, sceneId: activeScene.id, instruction: `Choose a clear, relevant photograph for this lesson: ${activeScene.title}. Learning objective: ${activeScene.objective}. Avoid watermarks, misleading content, and unreadable embedded text.`, preservationLocks: ["narration", "citations", "learningobjective"], alternatives: 3, providerId, searchQuery, desiredAspectRatio: "16:9", locale: project.locale });
+      const link = { ...identity, jobId: receipt.jobId };
+      const record = () => onAddJob(receiptJob(receipt, `Photos · ${activeScene.title}`, receipt.message, link));
+      record();
+      while (!["SUCCEEDED", "FAILED", "CANCELLED", "STALE", "BLOCKED"].includes(receipt.state)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        receipt = await jobStatus(link);
+        record();
+      }
+      await reloadCandidateProject();
+      if (receipt.state !== "SUCCEEDED") throw new Error(receipt.message || "The photo search did not complete.");
+      const readyCount = typeof receipt.result?.readyCount === "number" ? receipt.result.readyCount : 0;
+      onNotify(readyCount ? "Photos ready to review" : "No suitable photos found", readyCount ? "Inspect the images and credits below, then choose which to use." : "Try a more concrete search. Your selected scene artwork is unchanged.", readyCount ? "success" : "info");
+    } catch (error) { onNotify("Photo search needs attention", errorMessage(error), "warning"); }
+    finally { setGeneratingVisual(false); }
   };
   return <div className="studio-workspace">
-    <div className="studio-toolbar"><div><span className="scene-crumb">Scene {String(activeScene.index).padStart(2, "0")}</span><strong>{activeScene.title}</strong><SceneStatus status={activeScene.status} /></div><div className="studio-toolbar-center"><button onClick={onUndo} aria-label="Undo durable revision"><Undo2 size={16} /></button><button onClick={onRedo} aria-label="Redo durable revision"><Redo2 size={16} /></button><span className="separator" /><button><Square size={14} /> Fit</button><label><input aria-label="Canvas zoom" type="range" min="45" max="110" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />{zoom}%</label></div><div><button className="secondary-button small" onClick={() => setEditorOpen(true)}><Film size={15} /> Advanced editor</button><button className="secondary-button small" onClick={() => onRegenerate(activeScene)}><WandSparkles size={15} /> New candidate</button><button className="primary-button small" onClick={() => onRenderScene(activeScene)}><Play size={14} /> Render scene</button></div></div>
+    <div className="studio-toolbar"><div><span className="scene-crumb">Scene {String(activeScene.index).padStart(2, "0")}</span><strong>{activeScene.title}</strong><SceneStatus status={activeScene.status} /></div><div className="studio-toolbar-center"><button onClick={onUndo} aria-label="Undo durable revision"><Undo2 size={16} /></button><button onClick={onRedo} aria-label="Redo durable revision"><Redo2 size={16} /></button><span className="separator" /><button onClick={() => setZoom(72)}><Square size={14} /> Fit</button><label><input aria-label="Canvas zoom" type="range" min="45" max="110" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />{zoom}%</label></div><div><button className="secondary-button small" onClick={() => { void openAdvancedEditor(); }}><Film size={15} /> Advanced editor</button><button className="secondary-button small" onClick={() => onRegenerate(activeScene)}><WandSparkles size={15} /> New candidate</button><button className="primary-button small" data-tour-target="render-scene" onClick={() => onRenderScene(activeScene)}><Play size={14} /> Render scene</button></div></div>
     <div className="studio-layout">
-      <aside className="scene-rail"><div className="scene-rail-head"><span>Scenes</span><button><Plus size={15} /></button></div><div className="scene-rail-list">{project.scenes.map((scene) => <button className={scene.id === activeScene.id ? "active" : ""} onClick={() => onSelectScene(scene.id)} key={scene.id}><span className="rail-index">{String(scene.index).padStart(2, "0")}</span><span className="rail-thumb"><SceneArtwork scene={scene} compact /></span><span className="rail-copy"><strong>{scene.title}</strong><small>{formatTime(scene.duration)} · {scene.kind.replace("-", " ")}</small></span><i className={`rail-state ${scene.status}`} /></button>)}</div></aside>
-      <section className="canvas-stage"><div className="canvas-surround"><div className="canvas-rulers top" /><div className="canvas-rulers side" /><div className={`preview-canvas canvas-${customization.backgroundMode} treatment-${customization.sceneTreatment} density-${customization.density} contrast-${customization.contrast}`} style={{ ...canvasStyle, width: `${Math.min(92, zoom + 20)}%`, ...(selectedBackground ? { backgroundImage: `url(${selectedBackground})` } : {}) }} data-testid="customized-canvas"><SharedScenePreview scene={activeScene} project={project} fallback={<SceneArtwork scene={activeScene} />} />{customization.presenter.placement !== "off" && <div className={`presenter-preview placement-${customization.presenter.placement} side-${customization.presenter.side} frame-${customization.presenter.frame} crop-${customization.presenter.crop}`} style={{ width: `${Math.round(customization.presenter.scale * .42)}%` }} data-testid="presenter-preview">{selectedPresenter ? <img src={selectedPresenter} alt="Uploaded presenter preview" /> : <PresenterPortrait assetId={customization.presenter.assetId} />}</div>}<CaptionPreview settings={customization.captions} fontFamily={customization.bodyFont} /><div className="safe-area" style={{ inset: `${customization.captions.safeInset}%` }} aria-hidden="true" /><div className="frame-badge">VISUAL BIBLE · v{version} · FRAME 01842</div></div></div><div className="playback-bar"><button aria-label="Previous scene"><ArrowLeft size={17} /></button><button className="play-toggle" onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pause preview" : "Play preview"}>{playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><button aria-label="Next scene"><ArrowRight size={17} /></button><span className="timecode">{playing ? "00:00:18:08" : "00:00:00:00"} <i>/</i> 00:01:34:00</span><div className="playback-progress"><i style={{ width: playing ? "24%" : "0%" }} /></div><button><Volume2 size={16} /></button><button>1×</button></div>
+      <aside className="scene-rail"><div className="scene-rail-head"><span>Scenes</span><small>{project.scenes.length}</small></div><div className="scene-rail-list">{project.scenes.map((scene) => <button className={scene.id === activeScene.id ? "active" : ""} onClick={() => onSelectScene(scene.id)} key={scene.id}><span className="rail-index">{String(scene.index).padStart(2, "0")}</span><span className="rail-thumb"><SceneArtwork scene={scene} project={project} compact /></span><span className="rail-copy"><strong>{scene.title}</strong><small>{formatTime(scene.duration)} · {scene.kind.replace("-", " ")}</small></span><i className={`rail-state ${scene.status}`} /></button>)}</div></aside>
+      <section className="canvas-stage"><div className="canvas-surround"><div className="canvas-rulers top" /><div className="canvas-rulers side" /><div className={`preview-canvas canvas-${customization.backgroundMode} treatment-${customization.sceneTreatment} density-${customization.density} contrast-${customization.contrast}`} style={{ ...canvasStyle, width: `${Math.min(92, zoom + 20)}%`, ...(selectedBackground ? { backgroundImage: `url(${selectedBackground})` } : {}) }} data-testid="customized-canvas"><SharedScenePreview scene={activeScene} project={project} tick={Math.round(previewSeconds * 240000)} fallback={<SceneArtwork scene={activeScene} />} />{customization.presenter.placement !== "off" && <div className={`presenter-preview placement-${customization.presenter.placement} side-${customization.presenter.side} frame-${customization.presenter.frame} crop-${customization.presenter.crop}`} style={{ width: `${Math.round(customization.presenter.scale * .42)}%` }} data-testid="presenter-preview">{selectedPresenter ? <img src={selectedPresenter} alt="Uploaded presenter preview" /> : <PresenterPortrait assetId={customization.presenter.assetId} />}</div>}{inspectorTab === "Design" && <CaptionPreview settings={customization.captions} fontFamily={customization.bodyFont} />}<div className="safe-area" style={{ inset: `${customization.captions.safeInset}%` }} aria-hidden="true" /><div className="frame-badge">Scene animation preview · frame {Math.round(previewSeconds * 30)}</div></div></div><div className="playback-bar"><button aria-label="Previous scene" disabled={activeIndex <= 0} onClick={() => onSelectScene(project.scenes[activeIndex - 1]!.id)}><ArrowLeft size={17} /></button><button className="play-toggle" onClick={() => { if (previewSeconds >= activeScene.duration) setPreviewSeconds(0); setPlaying((value) => !value); }} aria-label={playing ? "Pause preview" : "Play preview"}>{playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><button aria-label="Next scene" disabled={activeIndex >= project.scenes.length - 1} onClick={() => onSelectScene(project.scenes[activeIndex + 1]!.id)}><ArrowRight size={17} /></button><span className="timecode">{formatTime(Math.floor(previewSeconds))} <i>/</i> {formatTime(activeScene.duration)}</span><input className="scene-scrubber" aria-label="Scene playhead" type="range" min="0" max={activeScene.duration} step="0.033333" value={previewSeconds} onChange={(event) => { setPlaying(false); setPreviewSeconds(Number(event.target.value)); }} /><small>Animation preview</small></div>
       </section>
       <aside className="inspector"><div className="inspector-tabs">{["Content", "Generate", "Design", "Motion"].map((tab) => <button className={inspectorTab === tab ? "active" : ""} onClick={() => setInspectorTab(tab)} key={tab}>{tab}</button>)}</div>
-        {inspectorTab === "Content" ? <div className="inspector-body"><InspectorSection title="Scene identity"><label>Title<input value={activeScene.title} onChange={(event) => onSceneUpdate(activeScene.id, { title: event.target.value })} /></label><label>Scene family<select value={activeScene.kind} onChange={(event) => onSceneUpdate(activeScene.id, { kind: event.target.value as Scene["kind"] })}><option value="title">Title</option><option value="definition">Definition</option><option value="diagram">Diagram</option><option value="worked-example">Worked example</option><option value="comparison">Comparison</option><option value="code">Code trace</option><option value="recap">Recap</option></select></label></InspectorSection><InspectorSection title="Narration"><textarea rows={7} value={activeScene.narration} onChange={(event) => onSceneUpdate(activeScene.id, { narration: event.target.value })} /><div className="field-meta"><span>{activeScene.narration.split(" ").length} words</span><span>~{activeScene.duration}s</span></div><button className="secondary-button full"><Mic2 size={15} /> Voice & pronunciation</button></InspectorSection><InspectorSection title="Evidence"><button className="evidence-chip"><ShieldCheck size={15} /><span><strong>{activeScene.citations} supported claims</strong><small>View evidence spans</small></span><ChevronRight size={15} /></button></InspectorSection>{mode === "studio" && <InspectorSection title="Dependency impact"><p className="inspector-note">Editing narration invalidates alignment, captions, presenter timing, scene render, and final composition.</p></InspectorSection>}</div>
-        : inspectorTab === "Generate" ? <CreativeInspector configuration={creative} onChange={onProjectCreative} onQueueVisualReview={() => queueCreativeJob("visual_review", `Visual review · scene ${activeScene.index}`, `${creative.slide.mode} slide · ${creative.slide.visualReviewModel}`)} onGeneratePresenter={() => queueCreativeJob("presenter_generate", "Presenter candidate", `${creative.presenter.style} · ${creative.presenter.baseModel}`)} />
-        : inspectorTab === "Design" ? <DesignInspector project={project} customization={customization} onChange={onProjectCustomization} onNotify={onNotify} onPreviewAsset={(id, url) => setAssetPreviews((current) => ({ ...current, [id]: url }))} /> : <MotionInspector studioMode={mode === "studio"} />}
+        {inspectorTab === "Content" ? <div className="inspector-body"><InspectorSection title="Scene identity"><label>Title<input value={activeScene.title} onChange={(event) => onSceneUpdate(activeScene.id, { title: event.target.value })} /></label><label>Scene family<select value={activeScene.kind} onChange={(event) => onSceneUpdate(activeScene.id, { kind: event.target.value as Scene["kind"] })}><option value="title">Title</option><option value="definition">Definition</option><option value="diagram">Diagram</option><option value="worked-example">Worked example</option><option value="comparison">Comparison</option><option value="code">Code trace</option><option value="recap">Recap</option></select></label></InspectorSection><InspectorSection title="Narration"><textarea data-tour-target="scene-narration" aria-label="Scene narration" rows={7} value={activeScene.narration} onChange={(event) => onSceneUpdate(activeScene.id, { narration: event.target.value })} /><div className="field-meta"><span>{activeScene.narration.split(" ").length} words</span><span>~{activeScene.duration}s</span></div><button className="secondary-button full" onClick={() => setInspectorTab("Design")}><Mic2 size={15} /> Presenter & voice direction</button></InspectorSection><InspectorSection title="Evidence"><div className="evidence-chip"><Link2 size={15} /><span><strong>{activeScene.citations} citation references</strong><small>Review claim support in the Sources and Review workspaces.</small></span></div></InspectorSection><InspectorSection title="Your scene review"><button className="secondary-button full" onClick={() => onSceneUpdate(activeScene.id, { status: activeScene.status === "approved" ? "draft" : "approved" })}><CheckCircle2 size={15} />{activeScene.status === "approved" ? "Reopen scene review" : "Mark scene reviewed"}</button><p className="inspector-note">This records your review. Editing the explanation clears this mark; export checks still run separately.</p></InspectorSection>{mode === "studio" && <InspectorSection title="Dependency impact"><p className="inspector-note">Editing narration invalidates alignment, captions, presenter timing, scene render, and final composition.</p></InspectorSection>}</div>
+        : inspectorTab === "Generate" ? <div><fieldset className="creative-generation-fields" disabled={generatingVisual}><CreativeInspector configuration={creative} onChange={onProjectCreative} onQueueVisualReview={() => { void generateVisual("scene"); }} onGeneratePresenter={() => { void generateVisual("presenter"); }} /></fieldset><StockImageSearch policy={project.providerRoutingPolicy} sceneId={activeScene.id} suggestedQuery={activeScene.title} busy={generatingVisual} onSearch={searchStockImages} />{generatingVisual && <p role="status" className="inspector-note">Preparing image candidates… You can follow or cancel this task in Jobs.</p>}<VisualCandidateReview candidates={candidateImages} resolve={resolveCandidateImage} onAccept={acceptCandidateImage} /></div>
+        : inspectorTab === "Design" ? <DesignInspector project={project} customization={customization} onChange={onProjectCustomization} onNotify={onNotify} onPreviewAsset={(id, url) => setAssetPreviews((current) => ({ ...current, [id]: url }))} /> : <MotionInspector scene={activeScene} onChange={(update) => onSceneUpdate(activeScene.id, update)} />}
       </aside>
     </div>
-    <div className="timeline-panel"><div className="timeline-tools"><button><PanelRightClose size={15} /> Timeline</button><span>00:00</span><span>00:20</span><span>00:40</span><span>01:00</span><span>01:20</span></div><div className="timeline-tracks"><div className="track-labels"><span><Eye size={14} /> Visual</span><span><AudioLines size={14} /> Narration</span><span><AlignLeft size={14} /> Captions</span></div><div className="track-content"><div className="timeline-cursor" style={{ left: playing ? "25%" : "2%" }} /><div className="visual-clip">Formula reveal <small>00:00–01:34</small></div><div className="audio-wave">{Array.from({ length: 90 }, (_, i) => <i key={i} style={{ height: `${8 + ((i * 13) % 24)}px` }} />)}</div><div className="caption-clips"><span style={{ width: "28%" }}>Multiply a plus b…</span><span style={{ width: "34%" }}>Subtract ac and bd…</span><span style={{ width: "29%" }}>Four products become three.</span></div></div></div><div className="version-stamp"><History size={14} /> v{version} saved</div></div>
-    {editorOpen && <div className="integrated-editor-layer" role="dialog" aria-modal="true" aria-label="Integrated advanced video editor"><div className="integrated-editor-layer__bar"><div><span className="section-kicker">Non-destructive finishing room</span><strong>{project.title}</strong></div><span>Slides · presenter · titles · captions · narration · music · SFX</span><button className="secondary-button small" onClick={() => setEditorOpen(false)}><X size={15} /> Return to scene</button></div><AdvancedVideoEditor project={editorProject} onProjectChange={(next) => setEditorProject(next)} onExportProject={() => onNotify("Editor project ready", "The versioned editor document is ready for project-owned JSON export.", "success")} onExportOtio={() => onNotify("OTIO-like timeline ready", "The interchange document preserves timing, tracks and provenance; media remains in the project store.", "success")} onCreateProjectCopy={(copy) => { setEditorProject(copy); onNotify("Version copy created", `${copy.name} is an independent non-destructive edit.`, "success"); }} /></div>}
+    <div className="scene-sequence-panel"><div className="scene-sequence-heading"><strong><Layers3 size={15} /> Teaching sequence</strong><button className="text-button" onClick={() => { void openAdvancedEditor(); }}>Edit tracks & timing <ArrowRight size={14} /></button><small>v{version}</small></div><div className="scene-sequence-clips">{project.scenes.map((scene) => <button className={scene.id === activeScene.id ? "active" : ""} style={{ flexGrow: scene.duration }} key={scene.id} onClick={() => onSelectScene(scene.id)}><span>{String(scene.index).padStart(2, "0")} · {formatTime(scene.duration)}</span><strong>{scene.title}</strong></button>)}</div></div>
+    {editorOpen && <div className="integrated-editor-layer" role="dialog" aria-modal="true" aria-label="Integrated advanced video editor"><div className="integrated-editor-layer__bar"><div><span className="section-kicker">Non-destructive finishing room</span><strong>{project.title}</strong></div><label className="editor-import-rights">New media rights<select aria-label="Rights for new editor media" value={editorImportRights} onChange={(event) => setEditorImportRights(event.target.value as typeof editorImportRights)}><option value="unknown">Not reviewed · preview only</option><option value="owned">I own the media</option><option value="licensed">Licensed for distribution</option><option value="publicDomain">Public domain</option></select></label><button className="secondary-button small" onClick={() => setEditorOpen(false)}><X size={15} /> Return to scene</button></div><AdvancedVideoEditor project={editorProject} {...(environment === "native" ? { onImportMedia: importEditorMedia, onRenderTimeline: renderEditorTimeline, onResolveWaveform: resolveEditorWaveform } : {})} onProjectChange={(next) => { setEditorProject(next); onProjectEdit({ editorDocument: prepareEditorProjectForPersistence(next) }); }} onCreateProjectCopy={(copy) => { setEditorProject(copy); onProjectEdit({ editorDocument: prepareEditorProjectForPersistence(copy) }); onNotify("Version copy created", `${copy.name} is saved with this tutorial.`, "success"); }} /></div>}
   </div>;
 }
 
@@ -2370,25 +2756,21 @@ function DesignInspector({ project, customization, onChange, onNotify, onPreview
     {section === "identity" && <>
       <InspectorSection title="Typography system">
         <div className="font-pair-list">{FONT_PAIRS.map((pair) => <button key={pair.fontPairId} className={customization.fontPairId === pair.fontPairId ? "active" : ""} onClick={() => update({ fontPairId: pair.fontPairId, displayFont: pair.displayFont, bodyFont: pair.bodyFont })}><span className={`font-specimen font-${pair.fontPairId}`}>Aa</span><span><strong>{pair.name}</strong><small>{pair.note}</small></span>{customization.fontPairId === pair.fontPairId && <Check size={14} />}</button>)}</div>
-        {customization.assets.some((asset) => asset.kind === "font" && asset.source === "user-upload") && <><label>Uploaded display font<select value={customization.fonts.displayAssetId ?? ""} onChange={(event) => { const asset = customization.assets.find((item) => item.id === event.target.value); update({ fontPairId: asset ? "custom" : customization.fontPairId, displayFont: asset?.label ?? customization.displayFont, fonts: { ...customization.fonts, displayAssetId: asset?.id ?? null } }); }}><option value="">Use theme display font</option>{customization.assets.filter((asset) => asset.kind === "font" && asset.source === "user-upload").map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label><label>Uploaded body font<select value={customization.fonts.bodyAssetId ?? ""} onChange={(event) => { const asset = customization.assets.find((item) => item.id === event.target.value); update({ fontPairId: asset ? "custom" : customization.fontPairId, bodyFont: asset?.label ?? customization.bodyFont, fonts: { ...customization.fonts, bodyAssetId: asset?.id ?? null } }); }}><option value="">Use theme body font</option>{customization.assets.filter((asset) => asset.kind === "font" && asset.source === "user-upload").map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label></>}
-        <div className="range-field"><label><span>Type scale</span><output>{customization.typeScale}%</output></label><input aria-label="Project type scale" type="range" min="85" max="125" value={customization.typeScale} onChange={(event) => update({ typeScale: Number(event.target.value) })} /></div>
-        <label>Reading rhythm<select value={customization.lineHeight} onChange={(event) => update({ lineHeight: event.target.value as CanvasCustomization["lineHeight"] })}><option value="compact">Compact · data dense</option><option value="balanced">Balanced · general teaching</option><option value="airy">Airy · young learners</option></select></label>
+        {customization.assets.some((asset) => asset.kind === "font" && asset.source !== "starter-pack") && <><label>Uploaded display font<select value={customization.fonts.displayAssetId ?? ""} onChange={(event) => { const asset = customization.assets.find((item) => item.id === event.target.value); update({ fontPairId: asset ? "custom" : customization.fontPairId, displayFont: asset?.label ?? customization.displayFont, fonts: { ...customization.fonts, displayAssetId: asset?.id ?? null } }); }}><option value="">Use theme display font</option>{customization.assets.filter((asset) => asset.kind === "font" && asset.source !== "starter-pack").map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label><label>Uploaded body font<select value={customization.fonts.bodyAssetId ?? ""} onChange={(event) => { const asset = customization.assets.find((item) => item.id === event.target.value); update({ fontPairId: asset ? "custom" : customization.fontPairId, bodyFont: asset?.label ?? customization.bodyFont, fonts: { ...customization.fonts, bodyAssetId: asset?.id ?? null } }); }}><option value="">Use theme body font</option>{customization.assets.filter((asset) => asset.kind === "font" && asset.source !== "starter-pack").map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label></>}
         <AssetUpload label="Upload a font file" accept=".woff,.woff2,.ttf,.otf" onFile={(file) => { void acceptAsset(file, "font"); }} />
       </InspectorSection>
       <InspectorSection title="Color language">
         <div className="palette-list">{PALETTE_PRESETS.map((palette) => <button key={palette.id} className={customization.paletteId === palette.id ? "active" : ""} onClick={() => update({ paletteId: palette.id, colors: palette.colors })}><span>{Object.values(palette.colors).map((color) => <i key={color} style={{ background: color }} />)}</span><strong>{palette.name}</strong></button>)}</div>
         <div className="color-field-grid">{(["paper", "ink", "accent", "evidence"] as const).map((key) => <label key={key}><span>{key}</span><input aria-label={`${key} color`} type="color" value={customization.colors[key]} onChange={(event) => update({ paletteId: "custom", colors: { ...customization.colors, [key]: event.target.value } })} /></label>)}</div>
       </InspectorSection>
-      <InspectorSection title="Canvas & material">
-        <div className="choice-grid compact">{(["paper", "grid", "gradient", "image"] as const).map((mode) => <button key={mode} className={customization.backgroundMode === mode ? "active" : ""} onClick={() => update({ backgroundMode: mode })}><span className={`material-swatch ${mode}`} />{mode}</button>)}</div>
+      <InspectorSection title="Canvas">
+        <div className="choice-grid compact">{(["paper", "image"] as const).map((mode) => <button key={mode} className={customization.backgroundMode === mode ? "active" : ""} onClick={() => update({ backgroundMode: mode })}><span className={`material-swatch ${mode}`} />{mode === "paper" ? "Color" : "Image"}</button>)}</div>
         <div className="starter-backgrounds" aria-label="Generated starter backgrounds">{Object.entries(STARTER_BACKGROUND_PREVIEWS).map(([id, src]) => { const asset = customization.assets.find((item) => item.id === id); return <button key={id} className={customization.backgroundAssetId === id ? "active" : ""} onClick={() => update({ backgroundMode: "image", backgroundAssetId: id })}><img src={src} alt="" /><span><strong>{asset?.label}</strong><small>Generated · MIT starter pack</small></span></button>; })}</div>
-        {customization.assets.some((asset) => asset.kind === "background" && asset.source === "user-upload") && <label>Uploaded background<select value={customization.backgroundAssetId ?? ""} onChange={(event) => update({ backgroundMode: "image", backgroundAssetId: event.target.value || null })}><option value="">Choose an imported background</option>{customization.assets.filter((asset) => asset.kind === "background" && asset.source === "user-upload").map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label>}
-        <div className="range-field"><label><span>Material strength</span><output>{customization.materialStrength}%</output></label><input aria-label="Material strength" type="range" min="0" max="80" value={customization.materialStrength} onChange={(event) => update({ materialStrength: Number(event.target.value) })} /></div>
+        {customization.assets.some((asset) => asset.kind === "background" && asset.source !== "starter-pack") && <label>Project background<select value={customization.backgroundAssetId ?? ""} onChange={(event) => update({ backgroundMode: "image", backgroundAssetId: event.target.value || null })}><option value="">Choose a project background</option>{customization.assets.filter((asset) => asset.kind === "background" && asset.source !== "starter-pack").map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label>}
         <AssetUpload label="Upload a background" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" onFile={(file) => { void acceptAsset(file, "background"); }} />
       </InspectorSection>
-      <InspectorSection title="Scene framing">
-        <div className="segmented-control three">{(["edge-to-edge", "card", "editorial-frame"] as const).map((item) => <button key={item} className={customization.sceneTreatment === item ? "active" : ""} onClick={() => update({ sceneTreatment: item })}>{item.replace("-", " ")}</button>)}</div>
-        <div className="compact-row"><label>Density<select value={customization.density} onChange={(event) => update({ density: event.target.value as CanvasCustomization["density"] })}><option value="compact">Compact</option><option value="balanced">Balanced</option><option value="spacious">Spacious</option></select></label><label>Contrast<select value={customization.contrast} onChange={(event) => update({ contrast: event.target.value as CanvasCustomization["contrast"] })}><option value="standard">Standard</option><option value="high">High</option></select></label></div>
+      <InspectorSection title="Frame & motion">
+        <div className="range-field"><label><span>Corner radius</span><output>{customization.cornerRadius}px</output></label><input aria-label="Corner radius" type="range" min="0" max="32" value={customization.cornerRadius} onChange={(event) => update({ cornerRadius: Number(event.target.value) })} /></div>
         <label className="mini-toggle"><input type="checkbox" checked={customization.reducedMotion} onChange={(event) => update({ reducedMotion: event.target.checked })} /><span><strong>Reduced motion master</strong><small>Replace non-essential movement with gentle dissolves.</small></span></label>
       </InspectorSection>
     </>}
@@ -2417,21 +2799,17 @@ function DesignInspector({ project, customization, onChange, onNotify, onPreview
         <p className="inspector-note">Every upload stores its filename, SHA-256, creator, license, attribution, and export status—never just a loose file path.</p>
       </InspectorSection>
       <InspectorSection title="Presenter">
-        <div className="presenter-grid">{[...Object.keys(STARTER_PRESENTER_PREVIEWS), ...customization.assets.filter((asset) => asset.kind === "presenter" && asset.source === "user-upload").map((asset) => asset.id)].map((id) => { const asset = customization.assets.find((item) => item.id === id); const voiceMatch = presenterVoiceMatch(id, asset?.label); return <button key={id} aria-label={asset?.label ?? id} className={customization.presenter.assetId === id ? "active" : ""} onClick={() => updatePresenter({ assetId: id, placement: "picture-in-picture", ...voiceMatch })}><PresenterPortrait assetId={id} /><span><strong>{asset?.label}</strong><small>{STARTER_PRESENTER_PREVIEWS[id]?.idleReady ? "Front-facing · idle-ready" : "Presenter style"}</small></span></button>; })}</div>
+        <div className="presenter-grid">{[...Object.keys(STARTER_PRESENTER_PREVIEWS).filter((id) => presenterCollection.has(id)), ...customization.assets.filter((asset) => asset.kind === "presenter" && asset.source !== "starter-pack").map((asset) => asset.id)].map((id) => { const asset = customization.assets.find((item) => item.id === id); const voiceMatch = presenterVoiceMatch(id, asset?.label); return <button key={id} aria-label={asset?.label ?? id} className={customization.presenter.assetId === id ? "active" : ""} onClick={() => updatePresenter({ assetId: id, placement: "picture-in-picture", ...voiceMatch })}><PresenterPortrait assetId={id} /><span><strong>{asset?.label}</strong><small>{STARTER_PRESENTER_PREVIEWS[id] ? "Front-facing portrait" : "Presenter portrait"}</small></span></button>; })}</div>
         <div className="presenter-upload-identity"><span>Uploaded portrait identity</span><div className="rights-selector two"><button className={presenterIdentity === "synthetic" ? "active" : ""} onClick={() => setPresenterIdentity("synthetic")}>Fictional / generated</button><button className={presenterIdentity === "realPerson" ? "active" : ""} onClick={() => setPresenterIdentity("realPerson")}>Real person</button></div><label>Presenter name<input value={presenterName} onChange={(event) => setPresenterName(event.target.value)} /></label>{presenterIdentity === "synthetic" ? <label className="mini-toggle"><input type="checkbox" checked={syntheticAttested} onChange={(event) => setSyntheticAttested(event.target.checked)} /><span><strong>I attest this identity is fictional or generated</strong><small>Required before local lip-sync or presenter animation.</small></span></label> : <div className="consent-fields"><label>Person shown<input value={consentSubject} onChange={(event) => { setConsentSubject(event.target.value); if (consentAuthority === "selfConsent") setConsentAttestor(event.target.value); }} /></label><label>Consent authority<select value={consentAuthority} onChange={(event) => { const authority = event.target.value as typeof consentAuthority; setConsentAuthority(authority); if (authority === "selfConsent") setConsentAttestor(consentSubject); }}><option value="selfConsent">Self-consent</option><option value="parentOrGuardian">Parent or guardian</option><option value="authorizedRepresentative">Authorized representative</option></select></label><label>Authorized distribution<select value={presenterDistributionScope} onChange={(event) => setPresenterDistributionScope(event.target.value as typeof presenterDistributionScope)}><option value="privatePreview">Private preview only</option><option value="publicNonCommercial">Public, non-commercial</option><option value="publicCommercial">Public and commercial</option></select></label><label>Consent attested by<input value={consentAttestor} readOnly={consentAuthority === "selfConsent"} onChange={(event) => setConsentAttestor(event.target.value)} /></label><label className="mini-toggle"><input type="checkbox" checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} /><span><strong>Portrait animation and the selected distribution scope are authorized</strong><small>Synthetic-media disclosure stays required. Revocation remains attached to this profile.</small></span></label></div>}</div>
         <AssetUpload label="Upload your presenter picture" accept="image/png,image/jpeg,image/webp" onFile={(file) => { void acceptAsset(file, "presenter"); }} />
         <label>Presenter layout<select value={customization.presenter.placement} onChange={(event) => updatePresenter({ placement: event.target.value as CanvasCustomization["presenter"]["placement"] })}><option value="off">Off</option><option value="picture-in-picture">Picture in picture</option><option value="split">Split stage</option><option value="full-frame">Full frame</option></select></label>
-        <div className="presenter-voice-match" role="note"><Mic2 size={16} /><span><strong>Voice matched to the presenter persona</strong><small>{customization.presenter.voiceDirection}{customization.presenter.preferredVoiceId ? " · curated ElevenLabs voice attached" : " · provider voice chosen at generation"}</small></span></div>
-        <label className="mini-toggle"><input type="checkbox" checked={customization.presenter.idleAnimation} onChange={(event) => updatePresenter({ idleAnimation: event.target.checked, blink: event.target.checked, breathing: event.target.checked })} /><span><strong>Natural idle motion</strong><small>Generate quiet breathing and irregular blinks between spoken phrases.</small></span></label>
-        <div className="compact-row"><label className="mini-toggle"><input type="checkbox" checked={customization.presenter.blink} disabled={!customization.presenter.idleAnimation} onChange={(event) => updatePresenter({ blink: event.target.checked })} /><span><strong>Blinking</strong><small>Seeded, non-looping cadence</small></span></label><label className="mini-toggle"><input type="checkbox" checked={customization.presenter.breathing} disabled={!customization.presenter.idleAnimation} onChange={(event) => updatePresenter({ breathing: event.target.checked })} /><span><strong>Breathing</strong><small>Subtle torso motion only</small></span></label></div>
         <p className="inspector-note"><strong>Rest-mouth guard:</strong> supplied idle portraits use closed lips. Speech animation owns mouth opening only while aligned narration is active.</p>
         <div className="compact-row"><label>Side<select value={customization.presenter.side} onChange={(event) => updatePresenter({ side: event.target.value as "left" | "right" })}><option value="left">Left</option><option value="right">Right</option></select></label><label>Crop<select value={customization.presenter.crop} onChange={(event) => updatePresenter({ crop: event.target.value as CanvasCustomization["presenter"]["crop"] })}><option value="portrait">Portrait safe</option><option value="contain">Contain</option><option value="cover">Fill</option></select></label></div>
-        <div className="range-field"><label><span>Presenter scale</span><output>{customization.presenter.scale}%</output></label><input aria-label="Presenter scale" type="range" min="28" max="100" value={customization.presenter.scale} onChange={(event) => updatePresenter({ scale: Number(event.target.value) })} /></div>
       </InspectorSection>
       <InspectorSection title="Music & sound cues">
-        <label>Music bed<select value={customization.audio.musicAssetId ?? "music-none"} onChange={(event) => updateAudio({ musicAssetId: event.target.value === "music-none" ? null : event.target.value })}><option value="music-none">No music · recommended</option><option value="starter.audio.music.focus-loop">Focus loop · starter pack</option><option value="starter.audio.music.inquiry-loop">Inquiry loop · starter pack</option>{customization.assets.filter((asset) => asset.kind === "music" && asset.source === "user-upload").map((asset) => <option value={asset.id} key={asset.id}>{asset.label} · uploaded</option>)}</select></label>
+        <label>Music bed<select value={customization.audio.musicAssetId ?? "music-none"} onChange={(event) => updateAudio({ musicAssetId: event.target.value === "music-none" ? null : event.target.value })}><option value="music-none">No music · recommended</option><option value="starter.audio.music.focus-loop">Focus loop · starter pack</option><option value="starter.audio.music.inquiry-loop">Inquiry loop · starter pack</option>{customization.assets.filter((asset) => asset.kind === "music" && asset.source !== "starter-pack").map((asset) => <option value={asset.id} key={asset.id}>{asset.label} · uploaded</option>)}</select></label>
         <AssetUpload label="Upload music" accept="audio/wav,audio/mpeg,audio/flac,audio/ogg,audio/opus,.wav,.mp3,.flac,.ogg,.opus" onFile={(file) => { void acceptAsset(file, "music"); }} />
-        <label>Sound cue<select value={customization.audio.sfxAssetId ?? "sfx-none"} onChange={(event) => updateAudio({ sfxAssetId: event.target.value === "sfx-none" ? null : event.target.value })}><option value="sfx-none">No sound cues · recommended</option><option value="starter.audio.sfx.emphasis-a">Quiet teaching cue</option><option value="starter.audio.sfx.emphasis-b">Technical emphasis</option>{customization.assets.filter((asset) => asset.kind === "sfx" && asset.source === "user-upload").map((asset) => <option value={asset.id} key={asset.id}>{asset.label} · uploaded</option>)}</select></label>
+        <label>Sound cue<select value={customization.audio.sfxAssetId ?? "sfx-none"} onChange={(event) => updateAudio({ sfxAssetId: event.target.value === "sfx-none" ? null : event.target.value })}><option value="sfx-none">No sound cues · recommended</option><option value="starter.audio.sfx.emphasis-a">Quiet teaching cue</option><option value="starter.audio.sfx.emphasis-b">Technical emphasis</option>{customization.assets.filter((asset) => asset.kind === "sfx" && asset.source !== "starter-pack").map((asset) => <option value={asset.id} key={asset.id}>{asset.label} · uploaded</option>)}</select></label>
         <AssetUpload label="Upload a sound cue" accept="audio/wav,audio/mpeg,audio/flac,audio/ogg,audio/opus,.wav,.mp3,.flac,.ogg,.opus" onFile={(file) => { void acceptAsset(file, "sfx"); }} />
         <div className="range-field"><label><span>Music under narration</span><output>{customization.audio.musicLevel}%</output></label><input aria-label="Music level" type="range" min="0" max="40" value={customization.audio.musicLevel} onChange={(event) => updateAudio({ musicLevel: Number(event.target.value) })} /></div>
         <div className="range-field"><label><span>Automatic ducking</span><output>{customization.audio.narrationDucking}%</output></label><input aria-label="Narration ducking" type="range" min="30" max="90" value={customization.audio.narrationDucking} onChange={(event) => updateAudio({ narrationDucking: Number(event.target.value) })} /></div>
@@ -2446,7 +2824,7 @@ function AssetUpload({ label, accept, onFile }: { label: string; accept: string;
 }
 
 function AssetLedger({ assets }: { assets: StudioAssetReference[] }) {
-  const selected = assets.filter((asset) => asset.source === "user-upload");
+  const selected = assets.filter((asset) => asset.source !== "starter-pack");
   return <InspectorSection title="Project asset ledger">{selected.length ? <div className="asset-ledger">{selected.map((asset) => <div key={asset.id}><span className={`asset-state ${asset.rightsStatus}`}><FileCheck2 size={14} /></span><span><strong>{asset.label}</strong><small>{asset.kind} · {asset.license}{asset.byteSize ? ` · ${formatBytes(asset.byteSize)}` : ""}</small><code>{asset.sha256?.slice(0, 12)}…</code></span></div>)}</div> : <p className="inspector-note">No custom files yet. Starter-pack assets are already cleared and attributed.</p>}</InspectorSection>;
 }
 
@@ -2457,38 +2835,44 @@ function PresenterPortrait({ assetId }: { assetId: string | null }) {
 }
 
 function CaptionPreview({ settings, fontFamily }: { settings: CanvasCustomization["captions"]; fontFamily: string }) {
-  return <div className={`caption-preview position-${settings.position} style-${settings.style}`} style={{ color: settings.textColor, backgroundColor: settings.style === "outline" ? "transparent" : `${settings.panelColor}e8`, fontFamily: `"${fontFamily}", sans-serif`, fontSize: `${Math.round(12 * settings.size / 100)}px`, maxWidth: `calc(100% - ${settings.safeInset * 2}%)` }} data-testid="caption-preview"><span>Four products become <em>three</em>.</span><small>Open-caption preview · {settings.maxLines} line{settings.maxLines === 1 ? "" : "s"} max</small></div>;
+  return <div className={`caption-preview position-${settings.position} style-${settings.style}`} style={{ color: settings.textColor, backgroundColor: settings.style === "outline" ? "transparent" : `${settings.panelColor}e8`, fontFamily: `"${fontFamily}", sans-serif`, fontSize: `${Math.round(12 * settings.size / 100)}px`, maxWidth: `calc(100% - ${settings.safeInset * 2}%)` }} data-testid="caption-preview"><span>A clear explanation, <em>one step at a time</em>.</span><small>Caption style sample · {settings.maxLines} line{settings.maxLines === 1 ? "" : "s"} max</small></div>;
 }
 
-function MotionInspector({ studioMode }: { studioMode: boolean }) { return <div className="inspector-body"><InspectorSection title="Choreography"><div className="motion-row"><span><small>Entrance</small><strong>Thread draw</strong></span><span>0.8s</span></div><div className="motion-row"><span><small>Emphasis</small><strong>Term isolate</strong></span><span>2 beats</span></div><div className="motion-row"><span><small>Exit</small><strong>Carry forward</strong></span><span>0.5s</span></div></InspectorSection>{studioMode ? <InspectorSection title="Frame controls"><label>Start tick<input value="240000" readOnly /></label><label>Duration ticks<input value="22560000" readOnly /></label><label>Seed<input value="alya-scene-004" readOnly /></label></InspectorSection> : <div className="guided-callout"><Sparkles size={18} /><strong>Timing is guided by narration.</strong><p>Switch to Studio mode for exact ticks, easing curves, and responsive overrides.</p></div>}</div>; }
+function MotionInspector({ scene, onChange }: { scene: Scene; onChange: (update: Partial<Scene>) => void }) {
+  return <div className="inspector-body"><InspectorSection title="Scene timing"><label>Duration in seconds<input aria-label="Scene duration in seconds" type="number" min="1" max="3600" value={scene.duration} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value) && value >= 1 && value <= 3600) onChange({ duration: value }); }} /></label><p className="inspector-note">Keep enough time for the narration and each visual step. Re-render the scene after a timing change.</p></InspectorSection><div className="guided-callout"><Clock3 size={18} /><strong>Rehearse the explanation.</strong><p>Scrub the preview to inspect the animation. Open the advanced editor for track timing, trimming, and keyframes.</p></div></div>;
+}
 
-function ReviewWorkspace({ project, jobs, environment, onWorkspace, onScene, onRepairQa }: ProjectWorkspaceProps) {
+function ReviewWorkspace({ project, jobs, environment, onWorkspace, onScene, onRepairQa, onProjectEdit }: ProjectWorkspaceProps) {
   const [mediaError, setMediaError] = useState<string | null>(null);
   const media = authoritativeReviewMedia(project, jobs, environment);
+  useEffect(() => { setMediaError(null); }, [media?.src]);
+  const frameReview = project.renderedFrameReview ?? (project.payload && typeof project.payload === "object" ? (project.payload as Record<string, unknown>).renderedFrameReview : undefined);
+  const reviewed = project.scenes.filter((scene) => scene.status === "approved").length;
+  const attention = project.scenes.filter((scene) => scene.status === "attention").length;
   const checks = [
-    { title: "Claim support", result: "18 / 18 supported", tone: "pass", icon: ShieldCheck },
-    { title: "Caption safety", result: "8 / 8 scenes pass", tone: "pass", icon: AlignLeft },
-    { title: "Narration timing", result: "1 scene needs review", tone: "warn", icon: AudioLines },
-    { title: "Visual contrast", result: "AA across all targets", tone: "pass", icon: Eye },
-    { title: "Asset rights", result: "1 link-only source", tone: "warn", icon: FileCheck2 },
-    { title: "Frame continuity", result: "No blank frames", tone: "pass", icon: Film },
+    { title: "Scene review", result: `${reviewed} of ${project.scenes.length} approved`, tone: reviewed === project.scenes.length ? "pass" : "warn", icon: Eye },
+    { title: "Source records", result: project.sources.length ? `${project.sources.filter((source) => source.status === "verified").length} of ${project.sources.length} reviewed` : "No source records attached", tone: project.sources.length && project.sources.every((source) => source.status === "verified") ? "pass" : "warn", icon: FileCheck2 },
+    { title: "Rendered media", result: media ? "Promoted output available" : "Generate an output first", tone: media ? "pass" : "warn", icon: Film },
+    { title: "Caption & audio quality", result: "Review the exported media and subtitle files", tone: "warn", icon: AudioLines },
   ];
   const reviewReady = Boolean(media && !mediaError);
   const ReviewBoundaryIcon = mediaError ? CircleAlert : Film;
   const reviewBoundaryTitle = mediaError ? "Generated media could not be loaded" : "No authoritative media yet";
   const reviewBoundaryDetail = mediaError ?? (environment === "native" ? "Render a scene or complete a master export. Review only plays a promoted native artifact." : "The browser UI contract does not create video. Packaged-native acceptance must supply a promoted scene or master render.");
   return <div className="page project-page review-workspace"><ProjectHeader project={project} step="4 · Review" title="Review the whole argument" description="Play the latest promoted render, inspect the evidence behind it, and resolve the checks that can block export." action={<div className="header-action-group"><button className="secondary-button" onClick={() => onWorkspace("studio")}>Back to studio</button><button className="primary-button" disabled={!reviewReady} onClick={() => onWorkspace("export")}>Prepare export <ArrowRight size={16} /></button></div>} />
-    <div className="review-layout"><section className="review-player">{reviewReady ? <><div className="review-canvas"><video aria-label="Authoritative generated tutorial media" controls preload="metadata" src={media!.src} onError={() => setMediaError("The promoted media could not be loaded. Re-render it before export.")} style={{ width: "100%", height: "100%", objectFit: "contain", background: "#090b11" }} /></div><div className="review-controls" role="status"><FileCheck2 size={16} /><span style={{ flex: 1 }}>{media!.label}</span><span>{media!.mediaType}</span></div></> : <div className="review-canvas"><div className="empty-state"><span><ReviewBoundaryIcon size={25} /></span><h3 style={{ color: "#f7f8fc" }}>{reviewBoundaryTitle}</h3><p>{reviewBoundaryDetail}</p><button className="secondary-button" onClick={() => onWorkspace("studio")}>Return to Studio</button></div></div>}<div className="review-scene-strip">{project.scenes.map((scene) => <button key={scene.id} onClick={() => onScene(scene)}><span>{scene.index}</span><SceneArtwork scene={scene} compact /></button>)}</div></section>
-      <aside className="review-inspector"><div className="review-score"><div className="score-ring"><strong>91</strong><span>quality</span></div><div><span className="section-kicker">Review summary</span><h3>Nearly ready to export</h3><p>Resolve two review items. All blocking factual checks pass.</p></div></div><div className="check-list">{checks.map(({ title, result, tone, icon: Icon }) => <button key={title}><span className={`check-icon ${tone}`}><Icon size={17} /></span><span><strong>{title}</strong><small>{result}</small></span><ChevronRight size={16} /></button>)}</div><button className="secondary-button full" onClick={onRepairQa}><WandSparkles size={16} /> Repair selected review item</button></aside>
+    <div className="review-layout"><section className="review-player">{reviewReady ? <><div className="review-canvas"><video aria-label="Authoritative generated tutorial media" controls preload="metadata" src={media!.src} onError={() => setMediaError("The promoted media could not be loaded. Re-render it before export.")} style={{ width: "100%", height: "100%", objectFit: "contain", background: "#090b11" }} /></div><div className="review-controls" role="status"><FileCheck2 size={16} /><span style={{ flex: 1 }}>{media!.label}</span><span>{media!.mediaType}</span></div></> : <div className="review-canvas"><div className="empty-state"><span><ReviewBoundaryIcon size={25} /></span><h3 style={{ color: "#f7f8fc" }}>{reviewBoundaryTitle}</h3><p>{reviewBoundaryDetail}</p><button className="secondary-button" onClick={() => onWorkspace("studio")}>Return to Studio</button></div></div>}<div className="review-scene-strip">{project.scenes.map((scene) => <button key={scene.id} onClick={() => onScene(scene)}><span>{scene.index}</span><SceneArtwork scene={scene} project={project} compact /></button>)}</div></section>
+      <aside className="review-inspector"><div className="review-score"><div className="score-ring"><strong>{reviewed}</strong><span>reviewed</span></div><div><span className="section-kicker">Review summary</span><h3>{attention ? `${attention} scenes need attention` : "Look at the complete lesson"}</h3><p>Check the explanation, timing, and visible output. Scene approval is your review record.</p></div></div><div className="check-list">{checks.map(({ title, result, tone, icon: Icon }) => <div className="review-check" key={title}><span className={`check-icon ${tone}`}><Icon size={17} /></span><span><strong>{title}</strong><small>{result}</small></span></div>)}</div><RenderedFrameReviewPanel value={frameReview} generationId={project.nativeGenerationId} mediaHash={media?.artifactHash} />{Boolean(project.nativeRepairableFindingIds?.length) && <button className="secondary-button full" onClick={onRepairQa}><WandSparkles size={16} /> Repair flagged review items ({project.nativeRepairableFindingIds?.length})</button>}</aside>
     </div>
-    <section className="claims-panel"><div className="panel-heading"><div><span className="section-kicker">Evidence at this moment</span><h3>Three-product identity</h3></div><span className="source-state verified"><CheckCircle2 size={14} /> Supported</span></div><div className="claim-grid"><article><span>Claim 12</span><p>Subtracting <code>ac</code> and <code>bd</code> from <code>(a+b)(c+d)</code> yields <code>ad+bc</code>.</p><small><Link2 size={13} /> 3 exact source spans</small></article><blockquote>“The middle coefficient can be computed using one additional multiplication…”<cite>Karatsuba & Ofman · 1962 · translated abstract</cite></blockquote><div className="annotation-box"><MessageSquareText size={16} /><textarea aria-label="Review annotation" placeholder="Leave a local review note…" /><button>Save note</button></div></div></section>
+    <section className="claims-panel"><div className="panel-heading"><div><span className="section-kicker">Your review record</span><h3>Notes for this tutorial</h3></div><span>{project.title}</span></div><div className="review-notes"><label><span>What needs another pass?</span><textarea aria-label="Review annotation" rows={4} placeholder="Record a scene, time, or explanation to improve…" value={project.reviewNotes ?? ""} onChange={(event) => onProjectEdit({ reviewNotes: event.target.value })} /></label><p>Notes save with this project. Open a scene above to edit its explanation or request a new candidate.</p></div></section>
+
   </div>;
 }
 
 function ExportWorkspace({ project, onWorkspace, onNotify, onExportArchive, onExportMaster }: ProjectWorkspaceProps) {
+  const [preferences] = usePersistentState<AlystriaPreferences>("alystria-preferences-v1", DEFAULT_ALYSTRIA_PREFERENCES);
   const [aspect, setAspect] = useState("16:9");
   const [quality, setQuality] = useState("1440p");
-  const [fps, setFps] = useState<MasterExportRequest["fps"]>(30);
+  const [fps, setFps] = useState<MasterExportRequest["fps"]>(() => [24, 30, 60].includes(preferences.defaultExportFps) ? preferences.defaultExportFps as MasterExportRequest["fps"] : 30);
   const [codecPreference, setCodecPreference] = useState<CodecPreference>("h264-hardware");
   const [captionDeliveryMode, setCaptionDeliveryMode] = useState<CaptionDeliveryMode>("sidecar");
   const [bibliography, setBibliography] = useState(true);
@@ -2529,18 +2913,18 @@ function ExportWorkspace({ project, onWorkspace, onNotify, onExportArchive, onEx
   };
   const openCaptions = captionDeliveryMode === "burned" || captionDeliveryMode === "both";
   return <div className="page project-page export-workspace"><ProjectHeader project={project} step="5 · Export" title="Package the finished lesson" description="A clean master with accessible caption files, transcript, sources, and provenance—assembled locally." action={<button className="secondary-button" onClick={() => onWorkspace("review")}><ArrowLeft size={16} /> Review</button>} />
-    <div className="export-layout"><section className="export-preview-panel"><div className="export-preview"><SceneArtwork scene={project.scenes[0]!} /><span className={`export-caption-status ${openCaptions ? "open" : "clean"}`}>{openCaptions ? "Open captions in picture" : "Clean picture · no caption pixels"}</span><span className="export-resolution">2560 × 1440</span></div><div className="export-summary"><span><Film size={17} /><b>{project.duration}:00</b><small>estimated duration</small></span><span><HardDrive size={17} /><b>~1.8 GB</b><small>estimated master</small></span><span><TimerReset size={17} /><b>8–14 min</b><small>silent profile estimate</small></span></div><div className="export-ready"><PackageCheck size={21} /><div><strong>Ready to render</strong><p>All blocking export gates pass. Caption timing and sidecar files will be validated with the master.</p></div></div></section>
-      <section className="export-settings"><div className="settings-section"><span className="section-kicker">Frame</span><h3>Format and resolution</h3><label>Aspect ratio<div className="format-options">{([['16:9', 'Landscape'], ['9:16', 'Portrait'], ['1:1', 'Square']] as const).map(([ratio, label]) => <button key={ratio} className={aspect === ratio ? "active" : ""} onClick={() => setAspect(ratio)}><i className={`aspect-shape ratio-${ratio.replace(":", "-")}`} /><span><strong>{ratio}</strong><small>{label}</small></span></button>)}</div></label><label>Resolution<select value={quality} onChange={(event) => setQuality(event.target.value)}><option>1080p</option><option>1440p</option><option>4K</option></select></label><div className="setting-row"><label>Frame rate<select aria-label="Frame rate" value={fps} onChange={(event) => setFps(Number(event.target.value) as MasterExportRequest["fps"])}><option value="30">30 fps</option><option value="60">60 fps</option><option value="24">24 fps</option></select></label><label>Codec preference<select aria-label="Codec preference" value={codecPreference} onChange={(event) => setCodecPreference(event.target.value as CodecPreference)}><option value="h264-hardware">H.264 hardware</option><option value="hevc-hardware">HEVC hardware</option><option value="av1">AV1</option></select></label></div><p className="settings-intro" role="note"><strong>Encoder boundary:</strong> frame rate is sent to the native export command. Codec preference is recorded with this request, but the current command contract does not yet select an encoder.</p></div>
+    <div className="export-layout"><section className="export-preview-panel"><div className="export-preview"><SceneArtwork scene={project.scenes[0]!} project={project} /><span className={`export-caption-status ${openCaptions ? "open" : "clean"}`}>{openCaptions ? "Open captions in picture" : "Clean picture · no caption pixels"}</span><span className="export-resolution">{quality} · {aspect}</span></div><div className="export-summary"><span><Film size={17} /><b>{project.duration}:00</b><small>estimated duration</small></span><span><HardDrive size={17} /><b>After render</b><small>measured file size</small></span><span><TimerReset size={17} /><b>At generation</b><small>runtime estimate</small></span></div><div className="export-ready"><PackageCheck size={21} /><div><strong>Export checks run before rendering</strong><p>The app checks the generation, sources, rights, and requested output before starting. Any blocker appears in Jobs.</p></div></div></section>
+      <section className="export-settings"><div className="settings-section"><span className="section-kicker">Frame</span><h3>Format and resolution</h3><label>Aspect ratio<div className="format-options">{([['16:9', 'Landscape'], ['9:16', 'Portrait'], ['1:1', 'Square']] as const).map(([ratio, label]) => <button key={ratio} className={aspect === ratio ? "active" : ""} onClick={() => setAspect(ratio)}><i className={`aspect-shape ratio-${ratio.replace(":", "-")}`} /><span><strong>{ratio}</strong><small>{label}</small></span></button>)}</div></label><label>Resolution<select value={quality} onChange={(event) => setQuality(event.target.value)}><option>1080p</option><option>1440p</option><option>4K</option></select></label><div className="setting-row"><label>Frame rate<select aria-label="Frame rate" value={fps} onChange={(event) => setFps(Number(event.target.value) as MasterExportRequest["fps"])}><option value="30">30 fps</option><option value="60">60 fps</option><option value="24">24 fps</option></select></label><label>Codec preference<select aria-label="Codec preference" value={codecPreference} onChange={(event) => setCodecPreference(event.target.value as CodecPreference)}><option value="h264-hardware">H.264 hardware</option><option value="hevc-hardware">HEVC hardware</option><option value="av1">AV1</option></select></label></div><p className="settings-intro" role="note">Frame rate and codec are applied during native export. If the selected encoder is unavailable, the job reports the failure so you can choose another.</p></div>
         <div className="settings-section caption-delivery-section"><span className="section-kicker">Captions</span><h3>Choose how viewers receive captions</h3><p className="settings-intro">Every option includes named UTF-8 <strong>.srt</strong> and <strong>.vtt</strong> files. The recommended clean master is ready for YouTube upload without text baked into the picture.</p><div className="caption-delivery-options" role="radiogroup" aria-label="Caption delivery"><>{CAPTION_DELIVERY_OPTIONS.map(({ id, label, eyebrow, detail, icon: Icon }, index) => <button type="button" role="radio" aria-checked={captionDeliveryMode === id} tabIndex={captionDeliveryMode === id ? 0 : -1} key={id} className={captionDeliveryMode === id ? "active" : ""} onClick={() => setCaptionDeliveryMode(id)} onKeyDown={(event) => moveCaptionDelivery(event, index)}><span className="caption-delivery-icon"><Icon size={17} /></span><span><small>{eyebrow}</small><strong>{label}</strong><em>{detail}</em></span>{captionDeliveryMode === id && <CheckCircle2 size={16} />}</button>)}</></div><div className="caption-file-receipt"><FileCheck2 size={17} /><span><strong>Caption files included</strong><small>{project.title}.{captionLocale}.srt · {project.title}.{captionLocale}.vtt</small></span></div>{openCaptions ? <div className="burned-caption-warning" role="note"><TextCursorInput size={17} /><span><strong>Open captions will become picture pixels.</strong><small>Font, color, size, and placement come from the Studio caption style. They cannot be hidden after export.</small></span><button type="button" onClick={() => onWorkspace("studio")}>Edit open-caption style</button></div> : <p className="caption-player-note"><MonitorPlay size={15} /><span><strong>Appearance stays with the viewer.</strong> Sidecar and selectable captions use YouTube or the video player's font, color, size, and position controls.</span></p>}</div>
         <div className="settings-section"><span className="section-kicker">Accessibility & evidence</span><h3>Export companions</h3><ToggleRow checked={transcript} onChange={setTranscript} title="Accessible transcript" detail="Scene headings and descriptions" /><ToggleRow checked={bibliography} onChange={setBibliography} title="Sources & bibliography" detail="Human-readable + JSON manifest" /><ToggleRow checked={true} onChange={() => {}} title="Provenance manifest" detail="Required · cannot be disabled" locked /></div>
-        <div className="export-cost"><ShieldCheck size={18} /><div><strong>Local export · no provider cost</strong><small>Project content stays on this device.</small></div></div><button className="secondary-button full" onClick={() => { void archiveProject(); }} disabled={archiving}>{archiving ? <RefreshCw className="spin" size={17} /> : <Archive size={17} />}{archiving ? "Archiving project…" : "Export portable .alytutorial"}</button>{project.nativeArchivePath && <small className="archive-path"><CheckCircle2 size={13} /> Last archive: {project.nativeArchivePath}</small>}<button className="export-button" onClick={() => { void exportProject(); }} disabled={exporting}>{exporting ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}{exporting ? "Submitting render…" : `Render ${quality} master`}<span>{aspect} · {fps} fps · {codecPreferenceLabel(codecPreference)}</span></button>
+        <div className="export-cost"><ShieldCheck size={18} /><div><strong>Local export · no provider cost</strong><small>Project content stays on this device.</small></div></div><button className="secondary-button full" onClick={() => { void archiveProject(); }} disabled={archiving}>{archiving ? <RefreshCw className="spin" size={17} /> : <Archive size={17} />}{archiving ? "Archiving project…" : "Export portable .alytutorial"}</button>{project.nativeArchivePath && <small className="archive-path"><CheckCircle2 size={13} /> Last archive: {project.nativeArchivePath}</small>}<button className="export-button" data-tour-target="export-master" onClick={() => { void exportProject(); }} disabled={exporting}>{exporting ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}{exporting ? "Submitting render…" : `Render ${quality} master`}<span>{aspect} · {fps} fps · {codecPreferenceLabel(codecPreference)}</span></button>
       </section></div>
   </div>;
 }
 
-function ToggleRow({ checked, onChange, title, detail, locked }: { checked: boolean; onChange: (checked: boolean) => void; title: string; detail: string; locked?: boolean }) { return <button className="toggle-row" onClick={() => !locked && onChange(!checked)} aria-pressed={checked}><span className={`switch ${checked ? "on" : ""}`}><i /></span><span><strong>{title}</strong><small>{detail}</small></span>{locked && <Lock size={14} />}</button>; }
+function ToggleRow({ checked, onChange, title, detail, locked }: { checked: boolean; onChange: (checked: boolean) => void; title: string; detail: string; locked?: boolean }) { return <button className="toggle-row" disabled={locked} onClick={() => onChange(!checked)} aria-pressed={checked}><span className={`switch ${checked ? "on" : ""}`}><i /></span><span><strong>{title}</strong><small>{detail}</small></span>{locked && <Lock size={14} />}</button>; }
 
-function SourceImportControl({ label, onImport, onNotify, secondary = false, small = false }: { label: string; onImport: (files: File[]) => Promise<SourceImportReceipt[]>; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void; secondary?: boolean; small?: boolean }) {
+function SourceImportControl({ label, onImport, onNotify, secondary = false, small = false, tourTarget }: { label: string; onImport: (files: File[]) => Promise<SourceImportReceipt[]>; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void; secondary?: boolean; small?: boolean; tourTarget?: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<"idle" | "importing">("idle");
   const choose = async (files: File[]) => {
@@ -2556,23 +2940,15 @@ function SourceImportControl({ label, onImport, onNotify, secondary = false, sma
       if (inputRef.current) inputRef.current.value = "";
     }
   };
-  return <span className="source-import-control"><input ref={inputRef} aria-label={`${label} files`} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => { void choose(Array.from(event.target.files ?? [])); }} /><button className={`${secondary ? "secondary-button" : "primary-button"}${small ? " small" : ""}`} onClick={() => inputRef.current?.click()} disabled={status === "importing"}>{status === "importing" ? <RefreshCw className="spin" size={16} /> : <Upload size={16} />}{status === "importing" ? " Importing…" : ` ${label}`}</button></span>;
+  return <span className="source-import-control"><input ref={inputRef} aria-label={`${label} files`} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => { void choose(Array.from(event.target.files ?? [])); }} /><button data-tour-target={tourTarget} className={`${secondary ? "secondary-button" : "primary-button"}${small ? " small" : ""}`} onClick={() => inputRef.current?.click()} disabled={status === "importing"}>{status === "importing" ? <RefreshCw className="spin" size={16} /> : <Upload size={16} />}{status === "importing" ? " Importing…" : ` ${label}`}</button></span>;
 }
 
-function SceneArtwork({ scene, compact = false }: { scene: Scene; compact?: boolean }) {
-  return <div className={`scene-art scene-art-${scene.visual} ${compact ? "compact" : ""}`} aria-hidden="true">
-    <div className="art-grid" /><div className="art-code">ALY / {String(scene.index).padStart(2, "0")}</div>
-    {scene.visual === "thread" && <><div className="art-kicker">THE FASTER WAY TO MULTIPLY</div><div className="art-headline">One product<br /><em>disappears.</em></div><div className="art-thread"><i /><i /><i /><i /></div><div className="art-footnote">Karatsuba · divide and conquer</div></>}
-    {scene.visual === "split" && <><div className="art-kicker">SPLIT THE PROBLEM</div><div className="number-split"><span>12<small>a</small></span><i>·100 +</i><span>34<small>b</small></span><b>×</b><span>56<small>c</small></span><i>·100 +</i><span>78<small>d</small></span></div><div className="split-brace left" /><div className="split-brace right" /><div className="art-caption">high half <b>→</b> low half</div></>}
-    {scene.visual === "formula" && <><div className="art-kicker">THE THREE-PRODUCT INSIGHT</div><div className="formula-stack"><span><small>z₂</small> ac</span><span className="formula-middle"><small>z₁</small> (a+b)(c+d) − ac − bd</span><span><small>z₀</small> bd</span></div><div className="formula-result"><i />3 multiplications, exactly</div></>}
-    {scene.visual === "whiteboard" && <><div className="art-kicker">DRAW WITH THE EXPLANATION</div><div className="whiteboard-preview"><svg viewBox="0 0 640 300"><path d="M58 74 C128 68 184 72 234 74" /><path d="M235 78 C310 108 346 158 406 194" /><path d="M235 78 C304 54 352 42 414 44" /><path className="accent" d="M62 240 C188 246 366 232 562 240" /></svg><span className="board-label input">1234</span><span className="board-label high">12 × 100</span><span className="board-label low">+ 34</span><i className="pencil-cursor" /></div><div className="trace-pill">narration-timed strokes</div></>}
-    {scene.visual === "code" && <><div className="art-kicker">TRACE THE RECURSION</div><div className="code-window"><div><i /><i /><i /></div><pre><span>function</span> karatsuba(x, y) {'{'}{"\n"}  <b>if</b> (small) <em>return</em> x * y;{"\n"}  z2 = karatsuba(a, c);{"\n"}  z0 = karatsuba(b, d);{"\n"}  z1 = karatsuba(a+b, c+d);{"\n"}{'}'}</pre></div><div className="trace-pill">call depth · 03</div></>}
-    {scene.visual === "live-code" && <><div className="art-kicker">CODE AS THE PRESENTER SPEAKS</div><div className="code-window live-code-window"><div><i /><i /><i /></div><pre><span>def</span> karatsuba(x, y):{"\n"}  <b>if</b> x &lt; 10 or y &lt; 10:{"\n"}    <em>return</em> x * y<span className="typing-cursor">▌</span>{"\n"}  high, low = split(x)</pre></div><div className="trace-pill">type · explain · run · verify</div></>}
-    {scene.visual === "summary" && <><div className="art-kicker">THE THREAD, COMPLETE</div><div className="summary-flow"><span>split</span><i /><span>three products</span><i /><span>recover middle</span><i /><span>combine</span></div><div className="summary-equation">T(n) = 3T(n/2) + O(n)</div></>}
-  </div>;
+function SceneArtwork({ scene, compact = false, project }: { scene: Scene; compact?: boolean; project?: ProjectRecord }) {
+  const placeholder = <div className={`scene-art scene-art-authored ${compact ? "compact" : ""}`} aria-hidden="true"><small>{scene.kind.replaceAll("-", " ")} · {String(scene.index).padStart(2, "0")}</small><strong>{scene.title}</strong><p>{scene.objective}</p></div>;
+  return project ? <SharedScenePreview scene={scene} project={project} fallback={placeholder} /> : placeholder;
 }
 
-function ConceptDiagram() { return <svg className="concept-diagram" viewBox="0 0 320 180" role="img" aria-label="A concept map connecting split, expand, reuse, and compare"><path d="M24 92 C68 24,112 30,146 78 S218 156,296 84" /><path d="M54 130 C110 154,176 36,266 42" className="secondary-path" /><g transform="translate(28,82)"><circle r="15" /><text x="24" y="5">split</text></g><g transform="translate(113,51)"><circle r="11" /><text x="18" y="5">expand</text></g><g transform="translate(190,116)"><circle r="13" /><text x="20" y="5">reuse</text></g><g transform="translate(286,84)"><circle r="16" /><text x="-64" y="-24">compare</text></g></svg>; }
+function ConceptDiagram() { return <svg className="concept-diagram" viewBox="0 0 320 180" role="img" aria-label="A concept map connecting split, expand, reuse, and compare"><path d="M28 82 C56 82,73 51,113 51 S151 116,190 116 S246 84,286 84" /><path d="M54 130 C110 154,176 36,266 42" className="secondary-path" /><g transform="translate(28,82)"><circle r="15" /><text x="24" y="5">split</text></g><g transform="translate(113,51)"><circle r="11" /><text x="18" y="5">expand</text></g><g transform="translate(190,116)"><circle r="13" /><text x="20" y="5">reuse</text></g><g transform="translate(286,84)"><circle r="16" /><text x="-64" y="-24">compare</text></g></svg>; }
 
 const TEMPLATE_SCENE_LABELS: Readonly<Record<string, readonly string[]>> = {
   "explain-hard-idea": ["The question", "What we already know", "Build the visual model", "Name the parts", "Earn the formal idea", "Work one example", "Test the intuition", "Thread it together"],
@@ -2640,6 +3016,7 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
   const [dataClassification, setDataClassification] = useState<"public" | "project">("project");
   const [hardLimitMinorUnits, setHardLimitMinorUnits] = useState("100");
   const [routingLoading, setRoutingLoading] = useState(true);
+  const [providerAccountIds, setProviderAccountIds] = usePersistentState<Record<string, string>>("alystria-provider-account-ids-v1", {});
   const dialogRef = useRef<HTMLDivElement>(null);
   const sourceInputRef = useRef<HTMLInputElement>(null);
   const selectedTemplate = templates.find((template) => template.id === templateId) ?? templates[0]!;
@@ -2661,6 +3038,9 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
     return () => { active = false; };
   }, [environment]);
   const selectedProfile = setup?.profiles.find((profile) => profile.id === selectedProfileId) ?? setup?.profiles[0] ?? null;
+  const usesCloudflare = selectedProfile
+    ? Object.values(selectedProfile.routes).some((route) => route?.providerId === "cloudflare-workers-ai" && !/^(?:off|none|disabled)\b/i.test(route.modelId.trim()))
+    : false;
   const effectiveClassification = sourceFiles.length ? "project" : dataClassification;
   const routingReview = selectedProfile ? buildProviderRoutingReview({
     profile: selectedProfile,
@@ -2670,6 +3050,7 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
     approvalChecked: routingApproval,
     hasPrivateSources: sourceFiles.length > 0,
     groundingMode: grounding.toLowerCase() as GroundingMode,
+    providerAccountIds,
     ...(routingReviewedAt ? { reviewedAt: routingReviewedAt } : {}),
   }) : null;
   const create = async () => {
@@ -2736,7 +3117,7 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
       {step === 4 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration === "custom" ? exactDuration : duration} minutes</dd></div><div><dt>Method</dt><dd>{TUTORIAL_MODE_LABELS[tutorialMode]}</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} private file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Privacy</dt><dd>{routingReview?.privacy ?? "Pending review"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
         <section className="routing-review" aria-labelledby="routing-review-title">
           <div className="routing-review-heading"><div><span className="section-kicker">Project provider policy</span><h3 id="routing-review-title">Name every route before work starts.</h3></div><span className={`routing-readiness ${routingReview?.policy ? "ready" : "attention"}`}>{routingLoading ? "Loading" : routingReview?.policy ? <><CheckCircle2 size={13} /> Ready</> : <><CircleAlert size={13} /> Review needed</>}</span></div>
-          <div className="routing-review-controls"><label><span>Creation profile</span><select aria-label="Creation profile" value={selectedProfile?.id ?? ""} disabled={routingLoading || !setup} onChange={(event) => { setSelectedProfileId(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }}>{setup?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><label><span>Content class</span><select aria-label="Content class" value={effectiveClassification} disabled={sourceFiles.length > 0} onChange={(event) => { setDataClassification(event.target.value as "public" | "project"); setRoutingApproval(false); setRoutingReviewedAt(null); }}><option value="project">Project content</option><option value="public">Public / synthetic</option></select></label><label><span>Hard budget</span><span className="currency-input"><b>$</b><input aria-label="Hard budget in cents" type="number" min="0" max="100000" value={hardLimitMinorUnits} onChange={(event) => { setHardLimitMinorUnits(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }} /><em>cents</em></span></label></div>
+          <div className="routing-review-controls"><label><span>Creation profile</span><select aria-label="Creation profile" value={selectedProfile?.id ?? ""} disabled={routingLoading || !setup} onChange={(event) => { setSelectedProfileId(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }}>{setup?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><label><span>Content class</span><select aria-label="Content class" value={effectiveClassification} disabled={sourceFiles.length > 0} onChange={(event) => { setDataClassification(event.target.value as "public" | "project"); setRoutingApproval(false); setRoutingReviewedAt(null); }}><option value="project">Project content</option><option value="public">Public / synthetic</option></select></label><label><span>Hard budget</span><span className="currency-input"><b>$</b><input aria-label="Hard budget in cents" type="number" min="0" max="100000" value={hardLimitMinorUnits} onChange={(event) => { setHardLimitMinorUnits(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }} /><em>cents</em></span></label>{usesCloudflare && <label><span>Cloudflare Account ID</span><input aria-label="Cloudflare Account ID" autoComplete="off" value={providerAccountIds["cloudflare-workers-ai"] ?? ""} onChange={(event) => { setProviderAccountIds((current) => ({ ...current, "cloudflare-workers-ai": event.target.value.trim() })); setRoutingApproval(false); setRoutingReviewedAt(null); }} /><small>Nonsecret account setting. The API token stays in the OS vault.</small></label>}</div>
           {routingReview?.routeRows.length ? <div className="routing-route-list" aria-label="Reviewed provider routes">{routingReview.routeRows.map((route) => <div key={`${route.medium}-${route.providerId}`}><span>{route.medium}</span><strong>{providerDisplayName(route.providerId)}</strong><code>{route.modelId}</code><em className={route.boundary}>{route.boundary}</em></div>)}</div> : <div className="routing-empty">Choose a saved profile with explicit writing, research, image, and narration models.</div>}
           {routingReview?.errors.length ? <div className="routing-errors" role="status">{routingReview.errors.map((error) => <span key={error}><CircleAlert size={13} /> {error}</span>)}</div> : null}
           <label className="routing-consent"><input type="checkbox" checked={routingApproval} onChange={(event) => { setRoutingApproval(event.target.checked); setRoutingReviewedAt(event.target.checked ? new Date().toISOString() : null); }} /><span><strong>Approve this exact routing policy</strong><small>I approve the named providers, current retention and provider-managed region, the content class above, and the hard budget. No unlisted fallback is allowed.{routingReview?.routeRows.some((route) => route.providerId === "nvidia-nim") ? " This includes NVIDIA API Trial Terms and a current per-model access check." : ""}</small></span></label>
@@ -2751,7 +3132,7 @@ function RegenerationSheet({ scene, onClose, onRun }: { scene: Scene; onClose: (
   const [instruction, setInstruction] = useState("");
   const [preserve, setPreserve] = useState(true);
   const [alternatives, setAlternatives] = useState(1);
-  return <div className="sheet-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="regen-sheet" role="dialog" aria-modal="true" aria-labelledby="regen-title"><header><div><span className="section-kicker">Scoped regeneration</span><h2 id="regen-title">Create a new candidate</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></header><div className="regen-scene"><span>{String(scene.index).padStart(2, "0")}</span><div><strong>{scene.title}</strong><small>{scene.kind.replace("-", " ")} · {scene.duration}s</small></div></div><label className="instruction-field"><span>What should change?</span><textarea autoFocus rows={5} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Make the transition from four products to three feel inevitable. Keep the exact algebra and citations." /></label><div className="quick-instructions"><button onClick={() => setInstruction("Make the explanation more concrete without adding length.")}>More concrete</button><button onClick={() => setInstruction("Reduce narration by 20% while preserving every factual claim.")}>Tighter</button><button onClick={() => setInstruction("Try a more visual treatment using the concept thread.")}>More visual</button></div><section className="preservation-section"><span className="section-kicker">Preservation locks</span><ToggleRow checked={preserve} onChange={setPreserve} title="Keep narration and citations" detail="Regenerate only the visual treatment" /><ToggleRow checked={true} onChange={() => {}} title="Keep learning objective" detail={scene.objective} locked /><label>Alternatives<select value={alternatives} onChange={(event) => setAlternatives(Number(event.target.value))}><option value={1}>1 candidate</option><option value={2}>2 candidates</option><option value={3}>3 candidates</option><option value={4}>4 candidates</option></select></label></section><section className="impact-preview"><div><Network size={17} /><span><strong>Dependency impact</strong><small>Visual layout, scene render, visual QA, and final composition</small></span></div><div><CircleDollarSign size={17} /><span><strong>Estimated cost</strong><small>$0.03–$0.08 · one image call at most</small></span></div><div><History size={17} /><span><strong>Accepted version is safe</strong><small>This creates a candidate. Nothing is overwritten.</small></span></div></section><footer><button className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={!instruction.trim()} onClick={() => onRun(instruction, preserve, alternatives)}><WandSparkles size={16} /> Generate candidate</button></footer></aside></div>;
+  return <div className="sheet-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="regen-sheet" role="dialog" aria-modal="true" aria-labelledby="regen-title"><header><div><span className="section-kicker">Scoped regeneration</span><h2 id="regen-title">Create a new candidate</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></header><div className="regen-scene"><span>{String(scene.index).padStart(2, "0")}</span><div><strong>{scene.title}</strong><small>{scene.kind.replace("-", " ")} · {scene.duration}s</small></div></div><label className="instruction-field"><span>What should change?</span><textarea autoFocus rows={5} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Make the transition from four products to three feel inevitable. Keep the exact algebra and citations." /></label><div className="quick-instructions"><button onClick={() => setInstruction("Make the explanation more concrete without adding length.")}>More concrete</button><button onClick={() => setInstruction("Reduce narration by 20% while preserving every factual claim.")}>Tighter</button><button onClick={() => setInstruction("Try a more visual treatment using the concept thread.")}>More visual</button></div><section className="preservation-section"><span className="section-kicker">Preservation locks</span><ToggleRow checked={preserve} onChange={setPreserve} title="Keep narration and citations" detail="Regenerate only the visual treatment" /><ToggleRow checked={true} onChange={() => {}} title="Keep learning objective" detail={scene.objective} locked /><label>Alternatives<select value={alternatives} onChange={(event) => setAlternatives(Number(event.target.value))}><option value={1}>1 candidate</option><option value={2}>2 candidates</option><option value={3}>3 candidates</option><option value={4}>4 candidates</option></select></label></section><section className="impact-preview"><div><Network size={17} /><span><strong>Dependency impact</strong><small>Visual layout, scene render, visual QA, and final composition</small></span></div><div><CircleDollarSign size={17} /><span><strong>Estimated cost</strong><small>Checked against the approved route and project budget</small></span></div><div><History size={17} /><span><strong>Accepted version is safe</strong><small>This creates a candidate. Nothing is overwritten.</small></span></div></section><footer><button className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={!instruction.trim()} onClick={() => onRun(instruction, preserve, alternatives)}><WandSparkles size={16} /> Generate candidate</button></footer></aside></div>;
 }
 
 function JobsDrawer({ open, jobs, nativeJobIds, onClose, onCancel, onRetry }: { open: boolean; jobs: JobRecord[]; nativeJobIds: ReadonlySet<string>; onClose: () => void; onCancel: (id: string) => void; onRetry: (id: string) => void }) {
@@ -2767,9 +3148,9 @@ function CommandPalette({ projects, onClose, onNavigate, onOpen }: { projects: P
 function Toast({ toast, onClose }: { toast: ToastMessage; onClose: () => void }) { return <div className={`toast ${toast.tone ?? "success"}`}><span>{toast.tone === "warning" ? <CircleAlert size={17} /> : toast.tone === "info" ? <CircleHelp size={17} /> : <CheckCircle2 size={17} />}</span><div><strong>{toast.title}</strong><p>{toast.detail}</p></div><button onClick={onClose}><X size={14} /></button></div>; }
 
 function RuntimeBadge({ runtime }: { runtime: RuntimeState }) {
-  const ready = runtime.bootstrap?.worker.state === "ready";
+  const ready = runtime.environment === "native" && runtime.bootstrap?.worker.state === "ready";
   const boundary = runtime.environment === "native" ? "Packaged native runtime" : "Browser adapter only; no native artifact";
-  return <span className={`runtime-badge ${ready ? "ready" : "attention"}`} title={runtime.error ? `${boundary}: ${runtime.error}` : `${boundary}: ${workerLabel(runtime.bootstrap?.worker)}`}><span className="runtime-dot" />{runtime.environment === "native" ? "Native" : "UI contract"}<i />{runtime.loading ? "Connecting" : ready ? "Worker ready" : workerLabel(runtime.bootstrap?.worker)}</span>;
+  return <span className={`runtime-badge ${ready ? "ready" : "attention"}`} title={runtime.error ? `${boundary}: ${runtime.error}` : `${boundary}: ${workerLabel(runtime.bootstrap?.worker)}`}><span className="runtime-dot" />{runtime.environment === "native" ? "Native" : "Browser preview"}{runtime.environment === "native" && <><i />{runtime.loading ? "Connecting" : ready ? "Worker ready" : workerLabel(runtime.bootstrap?.worker)}</>}</span>;
 }
 
 function PageTitle({ kicker, title, description, action }: { kicker: string; title: string; description: string; action?: React.ReactNode }) { return <div className="page-title"><div><span className="section-kicker">{kicker}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>; }
@@ -2813,6 +3194,15 @@ function projectSnapshotDocument(project: ProjectRecord, additions: Record<strin
   delete portable.nativeRevisionNumber;
   delete portable.nativeArchivePath;
   delete portable.nativeRepairableFindingIds;
+  const payload = isRecord(portable.payload) ? portable.payload : null;
+  const storyboard = payload && isRecord(payload.storyboard) ? payload.storyboard : null;
+  if (payload && storyboard && Array.isArray(storyboard.scenes)) {
+    portable.payload = { ...payload, storyboard: { ...storyboard, scenes: storyboard.scenes.map((raw) => {
+      if (!isRecord(raw)) return raw;
+      const edited = project.scenes.find((scene) => scene.id === raw.id);
+      return edited ? { ...raw, title: edited.title, narration: edited.narration, visualIntent: edited.objective, durationTicks: Math.round(edited.duration * 240000) } : raw;
+    }) } };
+  }
   return { ...portable, ...additions };
 }
 
@@ -2961,24 +3351,25 @@ function codecPreferenceLabel(codec: CodecPreference): string {
   return "H.264 hardware";
 }
 
-function authoritativeReviewMedia(project: ProjectRecord, jobs: readonly JobRecord[], environment: RuntimeState["environment"]): { src: string; label: string; mediaType: string } | null {
+function authoritativeReviewMedia(project: ProjectRecord, jobs: readonly JobRecord[], environment: RuntimeState["environment"]): { src: string; label: string; mediaType: string; artifactHash?: string } | null {
   const candidate = jobs.find((job) => {
-    const path = job.result?.path;
+    const path = job.result?.path ?? job.result?.outputPath;
     const mediaType = job.result?.mediaType;
     return job.projectId === project.nativeProjectId
       && job.status === "complete"
-      && (job.operation === "export_master" || job.operation === "render_scene")
+      && (job.operation === "export_master" || job.operation === "render_scene" || job.operation === "editor_timeline_export" || job.id === project.nativeGenerationId)
       && typeof path === "string"
       && path.length > 0
       && (typeof mediaType !== "string" || mediaType.startsWith("video/"));
   });
-  const path = candidate?.result?.path;
+  const path = candidate?.result?.path ?? candidate?.result?.outputPath;
   if (!candidate || typeof path !== "string") return null;
   const direct = /^(blob:|data:|https?:)/u.test(path);
   return {
     src: environment === "native" && !direct ? convertFileSrc(path) : path,
-    label: candidate.operation === "export_master" ? "Promoted master export" : "Promoted scene render",
+    label: candidate.operation === "editor_timeline_export" ? "Edited timeline export" : candidate.operation === "export_master" ? "Promoted master export" : candidate.id === project.nativeGenerationId ? "Generated tutorial" : "Promoted scene render",
     mediaType: typeof candidate.result?.mediaType === "string" ? candidate.result.mediaType : "video",
+    ...(typeof candidate.result?.artifactHash === "string" ? { artifactHash: candidate.result.artifactHash } : {}),
   };
 }
 

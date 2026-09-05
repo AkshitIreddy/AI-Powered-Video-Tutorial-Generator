@@ -1,6 +1,10 @@
 import { useState } from "react";
-import { Aperture, Boxes, Eye, Image, Layers3, ScanLine, SlidersHorizontal, UserRoundCheck, WandSparkles } from "lucide-react";
+import { Aperture, Boxes, Image, Layers3, SlidersHorizontal, UserRoundCheck, WandSparkles } from "lucide-react";
 import type { CreativeConfiguration } from "../types";
+
+const SDXL_MODEL_ID = "local/sdxl-base-1.0";
+const SDXL_OFFSET_LORA_ID = "local/sdxl-offset-lora-1.0";
+const TUTORIAL_IMAGE_ROUTE = "tutorial-route";
 
 interface CreativeInspectorProps {
   configuration: CreativeConfiguration;
@@ -17,7 +21,7 @@ export function CreativeInspector({ configuration, onChange, onQueueVisualReview
   return <div className="creative-inspector">
     <div className="creative-inspector__tabs" role="tablist" aria-label="Creative generation controls">
       <button role="tab" aria-selected={tab === "slides"} className={tab === "slides" ? "active" : ""} onClick={() => setTab("slides")}><Layers3 size={15} /> Slides</button>
-      <button role="tab" aria-selected={tab === "presenter"} className={tab === "presenter" ? "active" : ""} onClick={() => setTab("presenter")}><UserRoundCheck size={15} /> Presenter lab</button>
+      <button role="tab" aria-selected={tab === "presenter"} className={tab === "presenter" ? "active" : ""} onClick={() => setTab("presenter")}><UserRoundCheck size={15} /> Presenter recipe</button>
     </div>
 
     {tab === "slides" ? <div className="creative-inspector__body">
@@ -30,48 +34,28 @@ export function CreativeInspector({ configuration, onChange, onQueueVisualReview
       </section>
 
       {configuration.slide.mode === "designed" ? <>
-        <ControlSelect label="Layout system" value={configuration.slide.layoutSystem} onChange={(value) => updateSlide({ layoutSystem: value as CreativeConfiguration["slide"]["layoutSystem"] })} options={["editorial-grid", "teaching-cards", "cinematic", "custom"]} />
-        <ControlSelect label="Information density" value={configuration.slide.density} onChange={(value) => updateSlide({ density: value as CreativeConfiguration["slide"]["density"] })} options={["focused", "balanced", "dense"]} />
-        <Toggle checked={configuration.slide.alignmentGuides} label="Alignment and optical-centering guides" detail="Detect overlap, drift, uneven padding and off-center card content." onChange={(alignmentGuides) => updateSlide({ alignmentGuides })} />
-        <Toggle checked={configuration.slide.safeAreas} label="Caption, presenter and title safe areas" detail="Reserve composition space before content is laid out." onChange={(safeAreas) => updateSlide({ safeAreas })} />
+        <section className="creative-control-card"><span className="section-kicker">Designed scene</span><h4>Edit the authored layout in Design.</h4><p>Typography, colors, presenter placement and safe areas are applied by the real scene controls in the Design panel.</p></section>
       </> : <>
-        <ControlInput label="Image model route" value={configuration.slide.imageModel} onChange={(imageModel) => updateSlide({ imageModel })} hint="Search Hugging Face, Civitai, NVIDIA NIM, connected APIs or local installs in Models & providers." />
-        <ControlInput label="LoRA stack" value={configuration.slide.loras.join(", ")} onChange={(value) => updateSlide({ loras: list(value) })} hint="Comma-separated, ordered, revision-pinned adapters." />
-        <ControlInput label="Control / reference adapter" value={configuration.slide.controlAdapter} onChange={(controlAdapter) => updateSlide({ controlAdapter })} />
-        <RangeControl label="Reference strength" value={configuration.slide.referenceStrength} min={0} max={100} suffix="%" onChange={(referenceStrength) => updateSlide({ referenceStrength })} />
-        <ControlInput label="Seed" value={String(configuration.slide.seed)} onChange={(value) => updateSlide({ seed: Number.parseInt(value, 10) || 0 })} />
-        <Toggle checked={configuration.slide.inpaintEnabled} label="Inpaint repair pass" detail="Mask only the rejected region; preserve accepted pixels and seed." onChange={(inpaintEnabled) => updateSlide({ inpaintEnabled })} />
-        <ControlInput label="Upscale route" value={configuration.slide.upscaleModel} onChange={(upscaleModel) => updateSlide({ upscaleModel })} />
-        <Toggle checked={configuration.slide.authoritativeTextLayer} label="Keep text deterministic" detail="AI artwork never rasterizes titles, equations, captions or citations." onChange={(authoritativeTextLayer) => updateSlide({ authoritativeTextLayer })} />
+        <ImageModelSelect label="Image route" value={configuration.slide.imageModel} onChange={(imageModel) => updateSlide({ imageModel, ...(imageModel === SDXL_MODEL_ID ? {} : { loras: [] }) })} />
+        <label className="creative-field"><span>Artwork direction</span><textarea rows={4} value={configuration.slide.prompt} onChange={(event) => updateSlide({ prompt: event.target.value })} /><small>Describe the background or visual metaphor. Titles, equations, captions and citations are added as editable app text.</small></label>
+        <Toggle disabled={configuration.slide.imageModel !== SDXL_MODEL_ID} checked={configuration.slide.imageModel === SDXL_MODEL_ID && configuration.slide.loras.includes(SDXL_OFFSET_LORA_ID)} label="Official SDXL offset LoRA" detail="Optional pinned adapter at its measured 0.35 strength; available only for local SDXL." onChange={(enabled) => updateSlide({ loras: enabled ? [SDXL_OFFSET_LORA_ID] : [] })} />
+        <ControlInput label="Seed" value={String(configuration.slide.seed)} onChange={(value) => updateSlide({ seed: seed(value) })} hint="The exact seed is sent to the selected image route and stored with the candidate." />
+        <div className="creative-safety-note"><Aperture size={17} /><span><strong>Editable text stays authoritative</strong><small>Generated artwork cannot replace titles, equations, captions or citations.</small></span></div>
+        <button className="primary-button full" onClick={onQueueVisualReview}><WandSparkles size={15} /> Generate scene artwork</button>
       </>}
-
-      <section className="creative-control-card review-loop-card">
-        <div><span className="section-kicker"><Eye size={13} /> Visual QA loop</span><h4>Review, propose, patch—never silently overwrite.</h4><p>Render the scene, ask the selected vision model for structured findings, and cap automatic patch proposals before a human accepts them.</p></div>
-        <ControlInput label="Vision review model" value={configuration.slide.visualReviewModel} onChange={(visualReviewModel) => updateSlide({ visualReviewModel })} />
-        <RangeControl label="Maximum patch proposals" value={configuration.slide.patchLimit} min={1} max={8} suffix="" onChange={(patchLimit) => updateSlide({ patchLimit })} />
-        <button className="primary-button full" onClick={onQueueVisualReview}><ScanLine size={15} /> Queue visual review</button>
-      </section>
     </div> : <div className="creative-inspector__body">
       <section className="creative-control-card presenter-workflow-card">
-        <span className="section-kicker">Composable portrait workflow</span>
-        <div className="segmented-creative" role="group" aria-label="Presenter generation workflow">
-          {(["guided", "advanced", "graph"] as const).map((workflow) => <button className={configuration.presenter.workflow === workflow ? "active" : ""} key={workflow} onClick={() => updatePresenter({ workflow })}>{workflow}</button>)}
-        </div>
-        <p>{configuration.presenter.workflow === "guided" ? "The app chooses a compatible base, identity reference, detailer and upscaler while showing every choice." : configuration.presenter.workflow === "advanced" ? "Tune every adapter and refinement stage directly." : "Build a node graph with explicit inputs, masks, revisions and outputs."}</p>
+        <span className="section-kicker">Portrait generation</span>
+        <h4>Generate a review candidate with the selected image route.</h4>
+        <p>The portrait stays separate from the accepted presenter until you review and choose it.</p>
       </section>
-      <ControlInput label="Base model route" value={configuration.presenter.baseModel} onChange={(baseModel) => updatePresenter({ baseModel })} hint="Local checkpoint, Hugging Face/Civitai revision, NIM endpoint or connected image API." />
-      <ControlInput label="Visual style" value={configuration.presenter.style} onChange={(style) => updatePresenter({ style })} />
+      <ImageModelSelect label="Image route" value={configuration.presenter.baseModel} onChange={(baseModel) => updatePresenter({ baseModel, ...(baseModel === SDXL_MODEL_ID ? {} : { loras: [] }) })} />
       <label className="creative-field"><span>Portrait direction</span><textarea rows={4} value={configuration.presenter.prompt} onChange={(event) => updatePresenter({ prompt: event.target.value })} /></label>
-      <label className="creative-field"><span>Negative direction</span><textarea rows={3} value={configuration.presenter.negativePrompt} onChange={(event) => updatePresenter({ negativePrompt: event.target.value })} /></label>
-      <ControlInput label="LoRA stack" value={configuration.presenter.loras.join(", ")} onChange={(value) => updatePresenter({ loras: list(value) })} hint="Each adapter should retain source, license, weight and immutable revision." />
-      <ControlInput label="Control pipeline" value={configuration.presenter.controlAdapter} onChange={(controlAdapter) => updatePresenter({ controlAdapter })} />
-      <Toggle checked={configuration.presenter.referenceImageEnabled} label="Use an identity reference" detail="Reference images remain consent- and provenance-gated." onChange={(referenceImageEnabled) => updatePresenter({ referenceImageEnabled })} />
-      <Toggle checked={configuration.presenter.faceDetailer} label="Face detail repair" detail="A bounded region pass after the base generation." onChange={(faceDetailer) => updatePresenter({ faceDetailer })} />
-      <Toggle checked={configuration.presenter.inpaintEnabled} label="Mask and inpaint tools" detail="Repair hair, mouth, hands or wardrobe without replacing the whole portrait." onChange={(inpaintEnabled) => updatePresenter({ inpaintEnabled })} />
-      <ControlInput label="Upscale route" value={configuration.presenter.upscaleModel} onChange={(upscaleModel) => updatePresenter({ upscaleModel })} />
-      <Toggle checked={configuration.presenter.provenanceRequired} label="Require provenance before animation" detail="Store prompt, seed, revisions, rights and consent with the accepted portrait." onChange={(provenanceRequired) => updatePresenter({ provenanceRequired })} />
-      <button className="primary-button full" onClick={onGeneratePresenter}><WandSparkles size={15} /> Create presenter candidate</button>
-      <div className="creative-safety-note"><Aperture size={17} /><span><strong>Animation-safe framing</strong><small>Front-facing adult, visible mouth and chin, no celebrity likeness, no unsupported identity claim.</small></span></div>
+      {configuration.presenter.baseModel === SDXL_MODEL_ID && <label className="creative-field"><span>Negative direction</span><textarea rows={3} value={configuration.presenter.negativePrompt} onChange={(event) => updatePresenter({ negativePrompt: event.target.value })} /><small>This local SDXL recipe sends the negative direction exactly as written.</small></label>}
+      <Toggle disabled={configuration.presenter.baseModel !== SDXL_MODEL_ID} checked={configuration.presenter.baseModel === SDXL_MODEL_ID && configuration.presenter.loras.includes(SDXL_OFFSET_LORA_ID)} label="Official SDXL offset LoRA" detail="Optional pinned adapter at its measured 0.35 strength; available only for local SDXL." onChange={(enabled) => updatePresenter({ loras: enabled ? [SDXL_OFFSET_LORA_ID] : [] })} />
+      <ControlInput label="Seed" value={String(configuration.presenter.seed)} onChange={(value) => updatePresenter({ seed: seed(value) })} hint="The exact seed is sent to the selected image route and stored with the candidate." />
+      <button className="primary-button full" onClick={onGeneratePresenter}><WandSparkles size={15} /> Generate presenter portrait</button>
+      <div className="creative-safety-note"><Aperture size={17} /><span><strong>Animation-ready target</strong><small>Front-facing adult, visible mouth and chin, no celebrity likeness, no unsupported identity claim. Prompt, model, LoRA, seed and license are stored with the candidate.</small></span></div>
     </div>}
   </div>;
 }
@@ -80,18 +64,16 @@ function ControlInput({ label, value, onChange, hint }: { label: string; value: 
   return <label className="creative-field"><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} />{hint && <small>{hint}</small>}</label>;
 }
 
-function ControlSelect({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
-  return <label className="creative-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option}>{option}</option>)}</select></label>;
+function ImageModelSelect({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const selected = value === SDXL_MODEL_ID ? SDXL_MODEL_ID : TUTORIAL_IMAGE_ROUTE;
+  return <label className="creative-field"><span>{label}</span><select value={selected} onChange={(event) => onChange(event.target.value)}><option value={TUTORIAL_IMAGE_ROUTE}>Use tutorial image route</option><option value={SDXL_MODEL_ID}>Local SDXL 1.0</option></select><small>The tutorial route uses the connected provider chosen in Models &amp; providers.</small></label>;
 }
 
-function RangeControl({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix: string; onChange: (value: number) => void }) {
-  return <label className="creative-field creative-range"><span>{label}<b>{value}{suffix}</b></span><input type="range" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>;
+function Toggle({ checked, label, detail, onChange, disabled = false }: { checked: boolean; label: string; detail: string; onChange: (checked: boolean) => void; disabled?: boolean }) {
+  return <label className="creative-toggle"><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /><span><strong>{label}</strong><small>{detail}</small></span><SlidersHorizontal size={15} /></label>;
 }
 
-function Toggle({ checked, label, detail, onChange }: { checked: boolean; label: string; detail: string; onChange: (checked: boolean) => void }) {
-  return <label className="creative-toggle"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span><strong>{label}</strong><small>{detail}</small></span><SlidersHorizontal size={15} /></label>;
-}
-
-function list(value: string): string[] {
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
+function seed(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
 }

@@ -7,6 +7,10 @@ export type SceneKind = "title" | "definition" | "diagram" | "whiteboard" | "wor
 export type TutorialMode = "visual-explanation" | "whiteboard-lesson" | "live-coding" | "presenter-slides" | "worked-derivation" | "hybrid-teaching";
 
 export interface Scene {
+  visualAssetId?: string;
+  visualArtifactHash?: string;
+  /** Unmodified generated storyboard content; never filled from visual specimens. */
+  authored?: import("@alystria/scenes").AuthoredStoryboardScene;
   id: string;
   index: number;
   title: string;
@@ -49,7 +53,7 @@ export interface StudioAssetReference {
   id: string;
   kind: StudioAssetKind;
   label: string;
-  source: "starter-pack" | "user-upload";
+  source: "starter-pack" | "user-upload" | "generated" | "licensed-media";
   filename?: string;
   mediaType?: string;
   byteSize?: number;
@@ -57,6 +61,7 @@ export interface StudioAssetReference {
   creator: string;
   license: string;
   attribution: string;
+  sourceUrl?: string;
   rightsStatus: "cleared" | "review";
 }
 
@@ -129,13 +134,13 @@ export interface CreativeConfiguration {
     visualReviewModel: string;
     patchLimit: number;
     imageModel: string;
+    prompt: string;
     loras: string[];
     controlAdapter: string;
     referenceStrength: number;
     seed: number;
     inpaintEnabled: boolean;
     upscaleModel: string;
-    authoritativeTextLayer: boolean;
   };
   presenter: {
     workflow: "guided" | "advanced" | "graph";
@@ -144,6 +149,7 @@ export interface CreativeConfiguration {
     prompt: string;
     negativePrompt: string;
     loras: string[];
+    seed: number;
     controlAdapter: string;
     referenceImageEnabled: boolean;
     faceDetailer: boolean;
@@ -178,7 +184,12 @@ export interface ProjectRecord {
   customization?: CanvasCustomization;
   /** Reproducible slide and presenter generation choices. */
   creative?: CreativeConfiguration;
+  sceneCandidates?: unknown[];
+  renderedFrameReview?: unknown;
+  payload?: unknown;
   /** Desktop project identity; safe to persist because it contains no credentials. */
+  editorDocument?: import("./editor/types").EditorProject;
+  reviewNotes?: string;
   nativeProjectId?: string;
   nativeProjectDirectory?: string;
   nativeHeadRevisionId?: string;
