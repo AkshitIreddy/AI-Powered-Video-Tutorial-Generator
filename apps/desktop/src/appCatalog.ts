@@ -486,7 +486,7 @@ export const stockAndReviewCloudCatalogItems: readonly CatalogItem[] = Object.fr
     operationIds: ["POST /v1/chat/completions"],
     endpointBaseUrl: "https://integrate.api.nvidia.com/v1",
     openAiCompatible: true,
-    tags: ["visual-review", "multimodal", "public-synthetic-only", "current-provider-model", "live-transport-unverified"],
+    tags: ["visual-review", "multimodal", "public-synthetic-only", "current-provider-model", "live-semantic-unverified"],
     license: {
       identifier: null,
       name: "NVIDIA Trial Terms and Open Model License Agreement",
