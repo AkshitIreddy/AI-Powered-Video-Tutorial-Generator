@@ -399,13 +399,147 @@ foreach ($Dependency in @("playwright-core", "react", "react-dom", "scheduler"))
     $ResolvedDependencies[$Dependency] = $DependencySource
 }
 
-$OwnedRuntimeDirectories = @("node", "chromium", "ffmpeg", "renderer")
-foreach ($OwnedName in $OwnedRuntimeDirectories) {
-    $OwnedPath = Join-Path $RuntimeDirectory $OwnedName
-    if (Test-Path -LiteralPath $OwnedPath) {
-        if (-not $Force) { throw "Portable runtime payload already exists: $OwnedPath" }
-        Remove-Item -LiteralPath $OwnedPath -Recurse -Force
+# Keep the previous immutable application/runtime payload reviewable. A forced
+# refresh rotates only packager-owned files; projects, models, exports, and
+# evidence remain in place. Directory.Move also avoids recursive deletion in a
+# path that may contain a large Chromium dependency tree.
+function Assert-NoExistingReparsePathSegment {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    $Cursor = [IO.Path]::GetFullPath($Path)
+    while ($Cursor) {
+        if (Test-Path -LiteralPath $Cursor) {
+            $Item = Get-Item -LiteralPath $Cursor -Force
+            if ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "$Label contains a link, junction, or other reparse point: $Cursor"
+            }
+        }
+        $Root = [IO.Path]::GetPathRoot($Cursor)
+        if ($Cursor.TrimEnd('\') -eq $Root.TrimEnd('\')) { break }
+        $Cursor = Split-Path -Parent $Cursor
     }
+}
+
+function New-PortableRefreshArchiveRoot {
+    $ArchiveParent = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $Destination) `
+        "AI Video Tutorial Generator\proof-history"))
+    $AllowedParent = [IO.Path]::GetFullPath((Split-Path -Parent $Destination)).TrimEnd('\') + '\'
+    if (-not ($ArchiveParent.TrimEnd('\') + '\').StartsWith($AllowedParent, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Portable payload archive escapes the approved E: test parent: $ArchiveParent"
+    }
+    Assert-NoExistingReparsePathSegment -Path $Destination -Label "Portable destination"
+    Assert-NoExistingReparsePathSegment -Path $ArchiveParent -Label "Portable payload archive parent"
+    [IO.Directory]::CreateDirectory($ArchiveParent) | Out-Null
+    $ArchiveLeaf = "portable-payload-before-refresh-{0}-{1}" -f `
+        [DateTime]::UtcNow.ToString("yyyyMMdd-HHmmssfff"), [Guid]::NewGuid().ToString("N").Substring(0, 8)
+    $ArchiveRoot = [IO.Path]::GetFullPath((Join-Path $ArchiveParent $ArchiveLeaf))
+    if (-not ($ArchiveRoot + '\').StartsWith($ArchiveParent.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Portable payload archive target escapes its reviewed parent: $ArchiveRoot"
+    }
+    if (Test-Path -LiteralPath $ArchiveRoot) {
+        throw "Portable payload archive already exists: $ArchiveRoot"
+    }
+    [IO.Directory]::CreateDirectory($ArchiveRoot) | Out-Null
+    return $ArchiveRoot
+}
+
+function Invoke-PortableRefreshRollback {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ArchiveRoot
+    )
+
+    $ArchiveRoot = [IO.Path]::GetFullPath($ArchiveRoot)
+    $FailedReplacementRoot = [IO.Path]::GetFullPath((Join-Path $ArchiveRoot (
+        "failed-replacement-{0}-{1}" -f `
+            [DateTime]::UtcNow.ToString("yyyyMMdd-HHmmssfff"),
+            [Guid]::NewGuid().ToString("N").Substring(0, 8)
+    )))
+    if (-not ($FailedReplacementRoot + '\').StartsWith(
+        $ArchiveRoot.TrimEnd('\') + '\',
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "Failed replacement archive escapes the reviewed refresh archive."
+    }
+    [IO.Directory]::CreateDirectory($FailedReplacementRoot) | Out-Null
+
+    $RollbackEntries = @(
+        [ordered]@{ Name = "App"; Destination = $AppDirectory; Directory = $true },
+        [ordered]@{ Name = "Runtime"; Destination = $RuntimeDirectory; Directory = $true },
+        [ordered]@{ Name = (Split-Path -Leaf $ManifestPath); Destination = $ManifestPath; Directory = $false },
+        [ordered]@{ Name = "Start AI Video Tutorial Generator Hidden.pyw"; Destination = (Join-Path $Destination "Start AI Video Tutorial Generator Hidden.pyw"); Directory = $false }
+    )
+    $Restored = @()
+    foreach ($Entry in $RollbackEntries) {
+        $Archived = [IO.Path]::GetFullPath((Join-Path $ArchiveRoot $Entry.Name))
+        if (-not (Test-Path -LiteralPath $Archived)) { continue }
+        if (-not ($Archived + '\').StartsWith($ArchiveRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Rollback source escapes the reviewed refresh archive: $Archived"
+        }
+        $DestinationPath = [IO.Path]::GetFullPath([string]$Entry.Destination)
+        if (-not ($DestinationPath + '\').StartsWith($Destination.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Rollback destination escapes the reviewed portable root: $DestinationPath"
+        }
+
+        if (Test-Path -LiteralPath $DestinationPath) {
+            Assert-NoReparsePoints -CandidatePath $DestinationPath -Label "Incomplete portable replacement" -Recurse
+            $FailedTarget = [IO.Path]::GetFullPath((Join-Path $FailedReplacementRoot $Entry.Name))
+            if (-not ($FailedTarget + '\').StartsWith($FailedReplacementRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Failed replacement target escapes its reviewed archive: $FailedTarget"
+            }
+            if ([bool]$Entry.Directory) {
+                [IO.Directory]::Move($DestinationPath, $FailedTarget)
+            }
+            else {
+                [IO.File]::Move($DestinationPath, $FailedTarget)
+            }
+        }
+
+        Assert-NoReparsePoints -CandidatePath $Archived -Label "Archived portable payload" -Recurse
+        if ([bool]$Entry.Directory) {
+            [IO.Directory]::Move($Archived, $DestinationPath)
+        }
+        else {
+            [IO.File]::Move($Archived, $DestinationPath)
+        }
+        $Restored += $Entry.Name
+    }
+    return [ordered]@{
+        failedReplacementRoot = $FailedReplacementRoot
+        restored = $Restored
+    }
+}
+
+$RefreshArchiveRoot = $null
+$RefreshCommitted = $false
+try {
+if ($Force -and ((Test-Path -LiteralPath $AppDirectory) -or (Test-Path -LiteralPath $RuntimeDirectory))) {
+    $RefreshArchiveRoot = New-PortableRefreshArchiveRoot
+    foreach ($OwnedPath in @($AppDirectory, $RuntimeDirectory)) {
+        if (Test-Path -LiteralPath $OwnedPath) {
+            Assert-NoExistingReparsePathSegment -Path $OwnedPath -Label "Portable payload source"
+            Assert-NoReparsePoints -CandidatePath $OwnedPath -Label "Portable payload source" -Recurse
+            $ResolvedOwnedPath = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $OwnedPath).Path)
+            if (-not ($ResolvedOwnedPath + '\').StartsWith($Destination.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Portable payload source escapes its reviewed destination root: $ResolvedOwnedPath"
+            }
+            $ArchiveTarget = [IO.Path]::GetFullPath((Join-Path $RefreshArchiveRoot (Split-Path -Leaf $OwnedPath)))
+            if (-not ($ArchiveTarget + '\').StartsWith($RefreshArchiveRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Portable payload archive target escapes its unique archive root: $ArchiveTarget"
+            }
+            [IO.Directory]::Move($ResolvedOwnedPath, $ArchiveTarget)
+        }
+    }
+    if (Test-Path -LiteralPath $ManifestPath -PathType Leaf) {
+        Assert-NoReparsePoints -CandidatePath $ManifestPath -Label "Portable test-area manifest"
+        [IO.File]::Move($ManifestPath, (Join-Path $RefreshArchiveRoot (Split-Path -Leaf $ManifestPath)))
+    }
+    Write-Host "Preserved previous portable application/runtime payload: $RefreshArchiveRoot"
 }
 
 $PortableDirectories = @(
@@ -575,10 +709,19 @@ $RuntimeManifestSha256 = (Get-FileHash -LiteralPath $RuntimeManifestPath -Algori
 
 $LegacyLauncherPath = Join-Path $Destination "Start AI Video Tutorial Generator Hidden.pyw"
 if (Test-Path -LiteralPath $LegacyLauncherPath -PathType Leaf) {
-    Remove-Item -LiteralPath $LegacyLauncherPath -Force
+    if (-not $RefreshArchiveRoot) {
+        $RefreshArchiveRoot = New-PortableRefreshArchiveRoot
+    }
+    $ResolvedLegacyLauncher = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $LegacyLauncherPath).Path)
+    if (-not $ResolvedLegacyLauncher.StartsWith($Destination.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Legacy launcher escapes the reviewed portable root: $ResolvedLegacyLauncher"
+    }
+    Assert-NoReparsePoints -CandidatePath $LegacyLauncherPath -Label "Legacy launcher"
+    [IO.File]::Move($ResolvedLegacyLauncher, (Join-Path $RefreshArchiveRoot (Split-Path -Leaf $LegacyLauncherPath)))
 }
 
 $Manifest = [ordered]@{
+    schemaVersion = 1
     kind = "ai-video-tutorial-generator-portable-debug-test-area"
     createdAt = [DateTime]::UtcNow.ToString("o")
     desktop = [ordered]@{
@@ -630,6 +773,22 @@ $Manifest = [ordered]@{
     )
 }
 $Manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
+$RefreshCommitted = $true
+}
+catch {
+    $PackagingFailure = $_
+    if ($RefreshArchiveRoot -and -not $RefreshCommitted) {
+        try {
+            $Rollback = Invoke-PortableRefreshRollback -ArchiveRoot $RefreshArchiveRoot
+            Write-Warning "Portable refresh failed; restored the previous payload. Incomplete replacement preserved at: $($Rollback.failedReplacementRoot)"
+        }
+        catch {
+            $RollbackFailure = $_
+            throw "Portable refresh failed ($($PackagingFailure.Exception.Message)); rollback also failed ($($RollbackFailure.Exception.Message)). The preserved payload remains under $RefreshArchiveRoot."
+        }
+    }
+    throw $PackagingFailure
+}
 
 Write-Host "Created AI Video Tutorial Generator portable debug test area: $Destination"
 Write-Host "Launch without a console window by double-clicking: $DesktopDestination"
