@@ -95,11 +95,12 @@ Primary evidence:
   layers, programme audio, audio gain/fades, codec, and output containment.
 - [x] Real waveforms are generated from the selected CAS audio stream, cached by
   source hash and profile, and cropped according to source offsets and trims.
-- [x] Editor tests are included in the 235-test desktop pass; TypeScript and
+- [x] Editor tests are included in the 236-test desktop pass; TypeScript and
   editor lint pass. A pinned-FFmpeg proof verifies decoded first/middle/last
   keyframed frames, source audio, title/caption pixels, and matching VTT/SRT cues.
-  Final native inspection subsequently exposed an imported-media sizing and
-  rotation-bounds defect; corrected decoded-export acceptance is still required.
+  Native inspection exposed an imported-media sizing and rotation-bounds
+  defect. The corrected packaged three-second export now passes decoded frame
+  and audio inspection; the full-length edited tutorial remains required below.
 
 ### Native source and lifecycle evidence
 
@@ -132,13 +133,14 @@ tests or the older portable binary cannot substitute for them.
 - [ ] Complete the packaged editor journey: CAS import, reload, playback,
   waveform, title and trim edit, durable revision, edited timeline render,
   preserved audio, and approximately three-minute output.
-- [x] Complete cancellation and restart recovery through the real Tauri app and
-  verify the durable terminal receipt after restart. The refreshed package
+- [ ] Repeat cancellation and restart recovery through the final Tauri package
+  and verify the durable terminal receipt after restart. An earlier package
   retained BLOCKED across restart and persisted CANCELLED afterward; both
   desktops and workers exited. Evidence:
   `E:\temp\AI Video Tutorial Generator Test Sandbox\Evidence\native-recovery\report.json`
-  (2026-09-05 10:04:03 UTC). One WebView2 shutdown diagnostic was logged;
-  this is not a zero-stderr claim.
+  (2026-09-05 10:04:03 UTC). This receipt predates the final provider and editor
+  changes. One WebView2 shutdown diagnostic was logged; this is not a
+  zero-stderr claim.
 - [x] Produce and inspect the current complex live-code proof: the 84.008-second
   binary-search lesson uses independently checked Python/JavaScript traces,
   timed code writing, found/missing cases, eight narration clips, and ten
