@@ -35,6 +35,14 @@ LICENSE_RULES: dict[str, LicenseRule] = {
     "CC-BY-ND-4.0": LicenseRule("CC-BY-ND-4.0", True, True, False, True),
     "PDM-1.0": LicenseRule("PDM-1.0", True, True, True, False),
     "USER-OWNED": LicenseRule("USER-OWNED", True, True, True, False),
+    # NVIDIA API Trial Terms 1.2/1.4 permit internal evaluation only; 4.2
+    # restricts external distribution of Generated Content. Ownership under
+    # 6.3 does not grant production/distribution rights. The legacy identifier
+    # was emitted by this app's hosted-preview adapter and stays conservative.
+    "NVIDIA-API-TRIAL-OUTPUT": LicenseRule("NVIDIA-API-TRIAL-OUTPUT", False, False, True, False),
+    "LicenseRef-NVIDIA-AI-FOUNDATION-MODELS": LicenseRule(
+        "LicenseRef-NVIDIA-AI-FOUNDATION-MODELS", False, False, True, False
+    ),
     "PEXELS": LicenseRule("PEXELS", True, True, True, False),
     "PROPRIETARY-EXPLICIT": LicenseRule("PROPRIETARY-EXPLICIT", True, True, True, False),
     # ElevenLabs retains plan-specific commercial restrictions, but its terms

@@ -354,3 +354,22 @@ the verified master boundaries. Commit `22643e7` corrects future generation
 chapter metadata and final snapshots to carry the immutable rendered
 storyboard. The already-running older worker is not retroactively qualified
 by either source change; its original export remains rejection evidence.
+
+### NVIDIA trial-output policy and export recovery
+
+The original render completed at 08:13 UTC; export then failed only on five
+unknown-license findings for narration tagged
+`LicenseRef-NVIDIA-AI-FOUNDATION-MODELS`. That label conflated the model license
+with the hosted API output terms. The [NVIDIA API Trial Terms](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf),
+sections 1.2, 1.4, and 4.2, limit the trial and Generated Content to internal
+evaluation and restrict external distribution. Section 6.3's ownership
+language does not remove those use restrictions. Reviewed September 7, 2026.
+
+The adapter now labels newly returned hosted media `NVIDIA-API-TRIAL-OUTPUT`,
+preserving a visual model's separate license in metadata. The compatibility
+policy permits private evaluation for that label and the legacy narration
+label, while blocking public noncommercial and commercial distribution.
+Unverified/revoked rights remain blocked. The provider connection description
+now states the restriction before use. The security/NVIDIA selection passed
+41 tests, with Ruff and strict mypy passing. This is a local evaluation export,
+not permission to publish the NVIDIA-generated assets.

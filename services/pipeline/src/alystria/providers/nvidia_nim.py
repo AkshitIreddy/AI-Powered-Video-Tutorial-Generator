@@ -636,7 +636,7 @@ class NvidiaNimAdapter(GuardedAdapter):
         response: HttpResponse,
     ) -> ProviderResult[MediaOutput]:
         assets: list[MediaAsset] = []
-        license_id = NVIDIA_VISUAL_LICENSES.get(request.model)
+        license_id = "NVIDIA-API-TRIAL-OUTPUT"
         rows = _records(payload.get("artifacts") or payload.get("data"))
         if any(
             isinstance(finish_reason := row.get("finishReason"), str)
@@ -689,7 +689,11 @@ class NvidiaNimAdapter(GuardedAdapter):
         return ProviderResult(
             "nvidia-nim",
             request.model,
-            MediaOutput(tuple(assets), {"previewService": True}),
+            MediaOutput(tuple(assets), {
+                "previewService": True,
+                "modelLicenseId": NVIDIA_VISUAL_LICENSES.get(request.model),
+                "usageRestriction": "internal-testing-and-evaluation-only",
+            }),
             usage,
             _string(payload.get("id")),
         )
@@ -705,7 +709,7 @@ class NvidiaNimAdapter(GuardedAdapter):
             data_base64=base64.b64encode(decoded.content).decode("ascii"),
             media_type="audio/wav",
             duration_seconds=duration_seconds,
-            license="LicenseRef-NVIDIA-AI-FOUNDATION-MODELS",
+            license="NVIDIA-API-TRIAL-OUTPUT",
         )
         return ProviderResult(
             "nvidia-nim",
@@ -794,7 +798,7 @@ class NvidiaNimAdapter(GuardedAdapter):
             data_base64=base64.b64encode(content).decode("ascii"),
             media_type="audio/wav",
             duration_seconds=duration_seconds,
-            license="LicenseRef-NVIDIA-AI-FOUNDATION-MODELS",
+            license="NVIDIA-API-TRIAL-OUTPUT",
         )
         return ProviderResult(
             "nvidia-nim",

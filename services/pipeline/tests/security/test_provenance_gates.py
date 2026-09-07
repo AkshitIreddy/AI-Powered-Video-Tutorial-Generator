@@ -102,6 +102,25 @@ class ProvenanceTests(unittest.TestCase):
 
 
 class LicensingTests(unittest.TestCase):
+    def test_nvidia_trial_output_is_limited_to_private_evaluation(self) -> None:
+        for license_id in (
+            "NVIDIA-API-TRIAL-OUTPUT", "LicenseRef-NVIDIA-AI-FOUNDATION-MODELS"
+        ):
+            with self.subTest(license_id=license_id):
+                for purpose in DistributionPurpose:
+                    decision = evaluate_license(
+                        asset(license_id=license_id),
+                        AssetUse(purpose, transformed=True, attribution_included=False),
+                        now=NOW,
+                    )
+                    self.assertEqual(decision.allowed, purpose is DistributionPurpose.PRIVATE)
+                revoked = evaluate_license(
+                    asset(license_id=license_id, rights=RightsStatus.REVOKED),
+                    AssetUse(DistributionPurpose.PRIVATE, transformed=True, attribution_included=False),
+                    now=NOW,
+                )
+                self.assertFalse(revoked.allowed)
+
     def test_apache_two_generated_asset_allows_transformed_commercial_export(self) -> None:
         generated = AssetProvenance(
             asset_id="scene-visual:nvidia-flux",

@@ -617,7 +617,7 @@ def test_visual_models_require_exact_active_allowlisted_configuration() -> None:
     assert "mode" not in request.json_body
 
 
-def test_flux_klein_visual_response_preserves_its_exact_model_license() -> None:
+def test_flux_klein_visual_response_distinguishes_trial_output_from_model_license() -> None:
     jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\xff\xd9"
     transport = FakeTransport({"artifacts": [{"base64": base64.b64encode(jpeg).decode("ascii")}]})
     adapter = NvidiaNimAdapter(
@@ -635,7 +635,9 @@ def test_flux_klein_visual_response_preserves_its_exact_model_license() -> None:
         preview_context(),
     )
 
-    assert result.value.assets[0].license == "Apache-2.0"
+    assert result.value.assets[0].license == "NVIDIA-API-TRIAL-OUTPUT"
+    assert result.value.metadata["modelLicenseId"] == "Apache-2.0"
+    assert result.value.metadata["usageRestriction"] == "internal-testing-and-evaluation-only"
     assert result.value.assets[0].media_type == "image/jpeg"
     assert result.usage.units == {"outputs": 1.0}
     assert result.usage.actual_cost_micros == 0

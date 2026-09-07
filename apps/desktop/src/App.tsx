@@ -332,7 +332,7 @@ const providerConfigs = [
   { id: "openrouter", name: "OpenRouter", icon: Network, detail: "Vetted free structured-output route", tone: "teal" },
   { id: "cohere", name: "Cohere", icon: Layers3, detail: "Command · Embed · Rerank", tone: "teal" },
   { id: "gemini", name: "Google AI", icon: Globe2, detail: "Gemini language and structured output", tone: "neutral" },
-  { id: "nvidia-nim", name: "NVIDIA NIM (dev/test)", icon: Cpu, detail: "One key · public/synthetic hosted previews · per-model checks", tone: "teal" },
+  { id: "nvidia-nim", name: "NVIDIA NIM (dev/test)", icon: Cpu, detail: "One key · public/synthetic hosted previews · internal evaluation only; outputs cannot be published or used in production", tone: "teal" },
   { id: "cloudflare-workers-ai", name: "Cloudflare Workers AI", icon: Cloud, detail: "Exact FLUX.1 Schnell image route · Account ID required", tone: "amber" },
   { id: "black-forest-labs", name: "Black Forest Labs", icon: Image, detail: "FLUX image generation and editing", tone: "neutral" },
   { id: "recraft", name: "Recraft", icon: Sparkles, detail: "Illustration and design assets", tone: "indigo" },
