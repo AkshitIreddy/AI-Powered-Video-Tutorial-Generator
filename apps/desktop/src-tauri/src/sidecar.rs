@@ -17,7 +17,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+#[cfg(windows)]
+use sysinfo::{Pid, ProcessesToUpdate, System};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -25,7 +27,10 @@ const PROTOCOL_VERSION: u32 = 1;
 const START_TIMEOUT: Duration = Duration::from_secs(12);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+const FORCE_CLEANUP_TIMEOUT: Duration = Duration::from_millis(750);
 const CREDENTIAL_BROKER_TIMEOUT: Duration = Duration::from_secs(15);
+const CREDENTIAL_BROKER_POLL: Duration = Duration::from_millis(100);
+const CREDENTIAL_BROKER_STOP_TIMEOUT: Duration = Duration::from_millis(250);
 const MAX_RESPONSE_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
@@ -56,6 +61,21 @@ struct RunningWorker {
     _credential_broker: Option<CredentialBroker>,
 }
 
+#[derive(Clone)]
+struct WorkerConnection {
+    endpoint: SocketAddr,
+    token: Zeroizing<String>,
+}
+
+impl RunningWorker {
+    fn connection(&self) -> WorkerConnection {
+        WorkerConnection {
+            endpoint: self.endpoint,
+            token: Zeroizing::new(self.token.to_string()),
+        }
+    }
+}
+
 enum WorkerLifecycle {
     Unavailable(String),
     Stopped,
@@ -74,6 +94,7 @@ pub struct WorkerSupervisor {
     runtime_verification: Option<PortableRuntimeVerification>,
     credentials: Option<Arc<CredentialManager>>,
     lifecycle: Mutex<WorkerLifecycle>,
+    shutdown: Mutex<()>,
 }
 
 impl std::fmt::Debug for WorkerSupervisor {
@@ -127,6 +148,7 @@ impl WorkerSupervisor {
             runtime_verification,
             credentials: None,
             lifecycle: Mutex::new(lifecycle),
+            shutdown: Mutex::new(()),
         }
     }
 
@@ -223,44 +245,26 @@ impl WorkerSupervisor {
 
     pub fn restart(&self) -> Result<WorkerStatus, CommandError> {
         self.stop();
-        {
-            let mut lifecycle = self.lifecycle.lock();
-            if self.executable.is_file() {
-                *lifecycle = WorkerLifecycle::Stopped;
-            } else {
-                *lifecycle = WorkerLifecycle::Unavailable(
-                    "The pipeline worker binary is not installed. Desktop editing remains available."
-                        .into(),
-                );
-            }
-        }
         self.start()
     }
 
     pub fn stop(&self) {
-        let mut lifecycle = self.lifecycle.lock();
-        let previous = std::mem::replace(&mut *lifecycle, WorkerLifecycle::Stopping);
+        // Serialize stop/restart teardown. A concurrent stop must not publish
+        // Stopped while another caller still owns a live child process.
+        let _shutdown = self.shutdown.lock();
+        let previous = {
+            let mut lifecycle = self.lifecycle.lock();
+            std::mem::replace(&mut *lifecycle, WorkerLifecycle::Stopping)
+        };
         match previous {
             WorkerLifecycle::Ready(mut running) => {
-                let _ = call_running_with_timeout(
-                    &running,
-                    "system.shutdown",
-                    Value::Null,
-                    SHUTDOWN_TIMEOUT,
-                );
-                let _ = running.child.try_wait().and_then(|status| {
-                    if status.is_none() {
-                        running.child.kill()?;
-                        let _ = running.child.wait();
-                    }
-                    Ok(())
-                });
-                *lifecycle = WorkerLifecycle::Stopped;
+                stop_running_worker(&mut running);
+                *self.lifecycle.lock() = WorkerLifecycle::Stopped;
             }
             WorkerLifecycle::Unavailable(reason) => {
-                *lifecycle = WorkerLifecycle::Unavailable(reason);
+                *self.lifecycle.lock() = WorkerLifecycle::Unavailable(reason);
             }
-            _ => *lifecycle = WorkerLifecycle::Stopped,
+            _ => *self.lifecycle.lock() = WorkerLifecycle::Stopped,
         }
     }
 
@@ -274,14 +278,17 @@ impl WorkerSupervisor {
         if !matches!(self.status(), WorkerStatus::Ready { .. }) {
             self.start()?;
         }
-        let lifecycle = self.lifecycle.lock();
-        let WorkerLifecycle::Ready(running) = &*lifecycle else {
-            return Err(CommandError::worker(
-                "The pipeline worker is not ready.",
-                true,
-            ));
+        let connection = {
+            let lifecycle = self.lifecycle.lock();
+            let WorkerLifecycle::Ready(running) = &*lifecycle else {
+                return Err(CommandError::worker(
+                    "The pipeline worker is not ready.",
+                    true,
+                ));
+            };
+            running.connection()
         };
-        call_running(running, method, payload)
+        call_connection(&connection, method, payload)
     }
 }
 
@@ -387,7 +394,13 @@ impl Drop for CredentialBroker {
         self.stop.store(true, Ordering::Release);
         let _ = TcpStream::connect_timeout(&self.endpoint, Duration::from_millis(100));
         if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+            let deadline = Instant::now() + CREDENTIAL_BROKER_STOP_TIMEOUT;
+            while !thread.is_finished() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            if thread.is_finished() {
+                let _ = thread.join();
+            }
         }
     }
 }
@@ -445,8 +458,17 @@ fn spawn_credential_broker(
         while !thread_stop.load(Ordering::Acquire) {
             match listener.accept() {
                 Ok((stream, peer)) => {
+                    if thread_stop.load(Ordering::Acquire) {
+                        break;
+                    }
                     if peer.ip().is_loopback() {
-                        handle_credential_lease(stream, &credentials, &thread_token, &mut nonces);
+                        handle_credential_lease(
+                            stream,
+                            &credentials,
+                            &thread_token,
+                            &thread_stop,
+                            &mut nonces,
+                        );
                     }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -468,6 +490,7 @@ fn handle_credential_lease(
     mut stream: TcpStream,
     credentials: &CredentialManager,
     authentication_token: &str,
+    stop: &AtomicBool,
     nonces: &mut HashSet<String>,
 ) {
     // The supervising listener is nonblocking. Accepted sockets can inherit
@@ -478,19 +501,32 @@ fn handle_credential_lease(
     if stream.set_nonblocking(false).is_err() {
         return;
     }
-    let _ = stream.set_read_timeout(Some(CREDENTIAL_BROKER_TIMEOUT));
+    let _ = stream.set_read_timeout(Some(CREDENTIAL_BROKER_POLL));
     let _ = stream.set_write_timeout(Some(CREDENTIAL_BROKER_TIMEOUT));
     let mut line = Zeroizing::new(String::new());
     // Read and write through the same Winsock handle. A cloned handle can be
     // dropped after the request read while the original writes the response;
     // on Windows that cross-handle lifetime can abort the peer with 10053.
-    if BufReader::new(&mut stream)
-        .take(16 * 1024 + 1)
-        .read_line(&mut line)
-        .is_err()
-        || line.len() > 16 * 1024
-        || !line.ends_with('\n')
-    {
+    let deadline = Instant::now() + CREDENTIAL_BROKER_TIMEOUT;
+    let mut reader = BufReader::new(&mut stream).take(16 * 1024 + 1);
+    loop {
+        if stop.load(Ordering::Acquire) || Instant::now() >= deadline {
+            return;
+        }
+        match reader.read_line(&mut line) {
+            Ok(_) if line.ends_with('\n') => break,
+            Ok(0) => return,
+            Ok(_) if line.len() > 16 * 1024 => return,
+            Ok(_) => continue,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            Err(_) => return,
+        }
+    }
+    if line.len() > 16 * 1024 {
         return;
     }
     let request: CredentialLeaseRequest = match serde_json::from_str(line.trim_end()) {
@@ -759,16 +795,252 @@ fn verify_worker_executable(
     Ok(())
 }
 
-fn call_running(
-    running: &RunningWorker,
+#[cfg(windows)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ProcessSnapshot {
+    pid: u32,
+    parent_pid: Option<u32>,
+    start_time: u64,
+    executable: Option<PathBuf>,
+    name: OsString,
+}
+
+#[cfg(windows)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OwnedProcessIdentity {
+    process: ProcessSnapshot,
+    depth: usize,
+}
+
+#[cfg(windows)]
+fn system_process_snapshot() -> Vec<ProcessSnapshot> {
+    let mut system = System::new();
+    system.refresh_processes(ProcessesToUpdate::All, true);
+    system
+        .processes()
+        .iter()
+        .map(|(pid, process)| ProcessSnapshot {
+            pid: pid.as_u32(),
+            parent_pid: process.parent().map(Pid::as_u32),
+            start_time: process.start_time(),
+            executable: process.exe().map(Path::to_path_buf),
+            name: process.name().to_os_string(),
+        })
+        .collect()
+}
+
+#[cfg(windows)]
+fn owned_processes_from_snapshot(
+    processes: &[ProcessSnapshot],
+    root_pid: u32,
+) -> Vec<OwnedProcessIdentity> {
+    if !processes.iter().any(|process| process.pid == root_pid) {
+        return Vec::new();
+    }
+    owned_processes_from_seeds(processes, BTreeMap::from([(root_pid, 0_usize)]))
+}
+
+#[cfg(windows)]
+fn owned_processes_from_seeds(
+    processes: &[ProcessSnapshot],
+    mut depths: BTreeMap<u32, usize>,
+) -> Vec<OwnedProcessIdentity> {
+    loop {
+        let mut changed = false;
+        for process in processes {
+            if depths.contains_key(&process.pid) {
+                continue;
+            }
+            let Some(parent_depth) = process
+                .parent_pid
+                .and_then(|parent_pid| depths.get(&parent_pid).copied())
+            else {
+                continue;
+            };
+            depths.insert(process.pid, parent_depth + 1);
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
+    let mut owned = processes
+        .iter()
+        .filter_map(|process| {
+            depths
+                .get(&process.pid)
+                .copied()
+                .map(|depth| OwnedProcessIdentity {
+                    process: process.clone(),
+                    depth,
+                })
+        })
+        .collect::<Vec<_>>();
+    owned.sort_by(|left, right| {
+        right
+            .depth
+            .cmp(&left.depth)
+            .then_with(|| right.process.pid.cmp(&left.process.pid))
+    });
+    owned
+}
+
+#[cfg(windows)]
+fn snapshot_owned_process_tree(root_pid: u32) -> Vec<OwnedProcessIdentity> {
+    owned_processes_from_snapshot(&system_process_snapshot(), root_pid)
+}
+
+#[cfg(windows)]
+fn snapshot_descendants_of_owned_processes(
+    owned: &[OwnedProcessIdentity],
+) -> Vec<OwnedProcessIdentity> {
+    let processes = system_process_snapshot();
+    let seed_depths = owned
+        .iter()
+        .filter(|identity| {
+            processes
+                .iter()
+                .any(|process| same_process_snapshot(process, &identity.process))
+        })
+        .map(|identity| (identity.process.pid, identity.depth))
+        .collect();
+    owned_processes_from_seeds(&processes, seed_depths)
+}
+
+#[cfg(windows)]
+fn same_process_snapshot(current: &ProcessSnapshot, expected: &ProcessSnapshot) -> bool {
+    current.pid == expected.pid
+        && current.start_time == expected.start_time
+        && current.executable == expected.executable
+        && current.name == expected.name
+}
+
+#[cfg(windows)]
+fn same_process(process: &sysinfo::Process, expected: &ProcessSnapshot) -> bool {
+    process.start_time() == expected.start_time
+        && process.exe().map(Path::to_path_buf) == expected.executable
+        && process.name() == expected.name
+}
+
+#[cfg(windows)]
+fn owned_processes_are_gone(owned: &[OwnedProcessIdentity]) -> bool {
+    let pids = owned
+        .iter()
+        .map(|identity| Pid::from_u32(identity.process.pid))
+        .collect::<Vec<_>>();
+    let mut system = System::new();
+    system.refresh_processes(ProcessesToUpdate::Some(&pids), true);
+    owned.iter().all(|identity| {
+        system
+            .process(Pid::from_u32(identity.process.pid))
+            .is_none_or(|process| !same_process(process, &identity.process))
+    })
+}
+
+#[cfg(windows)]
+fn merge_process_snapshots(
+    destination: &mut Vec<OwnedProcessIdentity>,
+    additional: Vec<OwnedProcessIdentity>,
+) {
+    for identity in additional {
+        if !destination.iter().any(|existing| {
+            existing.process.pid == identity.process.pid
+                && existing.process.start_time == identity.process.start_time
+                && existing.process.executable == identity.process.executable
+        }) {
+            destination.push(identity);
+        }
+    }
+    destination.sort_by(|left, right| {
+        right
+            .depth
+            .cmp(&left.depth)
+            .then_with(|| right.process.pid.cmp(&left.process.pid))
+    });
+}
+
+#[cfg(windows)]
+fn terminate_owned_processes(owned: &[OwnedProcessIdentity]) {
+    let pids = owned
+        .iter()
+        .map(|identity| Pid::from_u32(identity.process.pid))
+        .collect::<Vec<_>>();
+    let mut system = System::new();
+    system.refresh_processes(ProcessesToUpdate::Some(&pids), true);
+    for identity in owned {
+        if let Some(process) = system.process(Pid::from_u32(identity.process.pid))
+            && same_process(process, &identity.process)
+        {
+            let _ = process.kill();
+        }
+    }
+}
+
+fn stop_running_worker(running: &mut RunningWorker) {
+    let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
+    #[cfg(windows)]
+    let mut owned_processes = snapshot_owned_process_tree(running.child.id());
+
+    // A generation request can legitimately occupy the worker for minutes.
+    // Shutdown gets its own connection and deadline instead of waiting behind
+    // that request or extending the deadline with IPC connect/read timeouts.
+    let connection = running.connection();
+    let (sender, _receiver) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let result = call_connection_with_timeout(
+            &connection,
+            "system.shutdown",
+            Value::Null,
+            SHUTDOWN_TIMEOUT,
+        );
+        let _ = sender.send(result);
+    });
+    while Instant::now() < deadline {
+        if matches!(running.child.try_wait(), Ok(Some(_))) {
+            #[cfg(windows)]
+            if owned_processes_are_gone(&owned_processes) {
+                return;
+            }
+            #[cfg(not(windows))]
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    #[cfg(windows)]
+    {
+        let additional_processes = snapshot_descendants_of_owned_processes(&owned_processes);
+        merge_process_snapshots(&mut owned_processes, additional_processes);
+        terminate_owned_processes(&owned_processes);
+    }
+    let _ = running.child.kill();
+    let cleanup_deadline = deadline + FORCE_CLEANUP_TIMEOUT;
+    while Instant::now() < cleanup_deadline {
+        let child_is_gone = matches!(running.child.try_wait(), Ok(Some(_)));
+        #[cfg(windows)]
+        if child_is_gone && owned_processes_are_gone(&owned_processes) {
+            break;
+        }
+        #[cfg(not(windows))]
+        if child_is_gone {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    #[cfg(windows)]
+    terminate_owned_processes(&owned_processes);
+}
+
+fn call_connection(
+    connection: &WorkerConnection,
     method: &str,
     payload: Value,
 ) -> Result<Value, CommandError> {
-    call_running_with_timeout(running, method, payload, REQUEST_TIMEOUT)
+    call_connection_with_timeout(connection, method, payload, REQUEST_TIMEOUT)
 }
 
-fn call_running_with_timeout(
-    running: &RunningWorker,
+fn call_connection_with_timeout(
+    connection: &WorkerConnection,
     method: &str,
     payload: Value,
     timeout: Duration,
@@ -777,7 +1049,7 @@ fn call_running_with_timeout(
     let request = RpcRequest {
         protocol_version: PROTOCOL_VERSION,
         id,
-        authentication_token: &running.token,
+        authentication_token: &connection.token,
         method,
         payload,
     };
@@ -785,10 +1057,11 @@ fn call_running_with_timeout(
         serde_json::to_vec(&request)
             .map_err(|_| CommandError::worker("Worker request could not be encoded.", false))?,
     );
-    let mut stream = TcpStream::connect_timeout(&running.endpoint, Duration::from_secs(3))
-        .map_err(|_| {
-            CommandError::worker("The pipeline worker IPC channel is unavailable.", true)
-        })?;
+    let mut stream =
+        TcpStream::connect_timeout(&connection.endpoint, timeout.min(Duration::from_secs(3)))
+            .map_err(|_| {
+                CommandError::worker("The pipeline worker IPC channel is unavailable.", true)
+            })?;
     stream
         .set_read_timeout(Some(timeout))
         .and_then(|_| stream.set_write_timeout(Some(timeout)))
@@ -887,6 +1160,17 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    #[cfg(windows)]
+    fn process_snapshot(pid: u32, parent_pid: Option<u32>) -> ProcessSnapshot {
+        ProcessSnapshot {
+            pid,
+            parent_pid,
+            start_time: u64::from(pid),
+            executable: Some(PathBuf::from(format!(r"C:\worker\{pid}.exe"))),
+            name: OsString::from(format!("{pid}.exe")),
+        }
+    }
+
     #[test]
     fn unavailable_binary_is_a_supported_state() {
         let supervisor = WorkerSupervisor::new(
@@ -950,5 +1234,165 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn owned_process_cleanup_selects_only_descendants_and_orders_children_first() {
+        let processes = vec![
+            process_snapshot(10, Some(1)),
+            process_snapshot(11, Some(10)),
+            process_snapshot(12, Some(11)),
+            process_snapshot(20, Some(1)),
+            process_snapshot(21, Some(20)),
+        ];
+
+        let owned = owned_processes_from_snapshot(&processes, 10);
+
+        assert_eq!(
+            owned
+                .iter()
+                .map(|identity| identity.process.pid)
+                .collect::<Vec<_>>(),
+            vec![12, 11, 10]
+        );
+
+        let reparented_child = process_snapshot(11, Some(1));
+        let late_grandchild = process_snapshot(13, Some(11));
+        let refreshed = owned_processes_from_seeds(
+            &[reparented_child, late_grandchild],
+            BTreeMap::from([(11, 1)]),
+        );
+        assert_eq!(
+            refreshed
+                .iter()
+                .map(|identity| identity.process.pid)
+                .collect::<Vec<_>>(),
+            vec![13, 11]
+        );
+    }
+
+    #[test]
+    fn credential_broker_drop_never_waits_for_a_stuck_handler() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = listener.local_addr().unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread_stop = stop.clone();
+        let thread = std::thread::spawn(move || {
+            while !thread_stop.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        });
+        let broker = CredentialBroker {
+            endpoint,
+            token: Zeroizing::new("fixture-token".into()),
+            stop,
+            thread: Some(thread),
+        };
+
+        let started = Instant::now();
+        drop(broker);
+
+        assert!(started.elapsed() < Duration::from_millis(600));
+        drop(listener);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn shutdown_deadline_is_not_blocked_by_an_in_flight_worker_call() {
+        use std::os::windows::process::CommandExt;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = listener.local_addr().unwrap();
+        let (accepted_sender, accepted_receiver) = mpsc::sync_channel(1);
+        let server = std::thread::spawn(move || {
+            let (mut request_stream, _) = listener.accept().unwrap();
+            let mut request_line = String::new();
+            BufReader::new(&mut request_stream)
+                .read_line(&mut request_line)
+                .unwrap();
+            let request: Value = serde_json::from_str(&request_line).unwrap();
+            accepted_sender.send(()).unwrap();
+            std::thread::sleep(Duration::from_secs(5));
+            let response = serde_json::json!({
+                "protocolVersion": PROTOCOL_VERSION,
+                "id": request["id"],
+                "ok": true,
+                "result": null,
+                "error": null
+            });
+            writeln!(request_stream, "{}", response).unwrap();
+            let _ = request_stream.flush();
+
+            listener.set_nonblocking(true).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(1);
+            while Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((_shutdown_stream, _)) => break,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        let mut child_command = Command::new("cmd.exe");
+        child_command
+            .args(["/D", "/S", "/C", "ping -n 30 127.0.0.1 >NUL"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x0800_0000);
+        let child = child_command.spawn().unwrap();
+        let supervisor = Arc::new(WorkerSupervisor {
+            executable: PathBuf::from("fixture-worker.exe"),
+            working_directory: PathBuf::from("fixture-work"),
+            expected_sha256: None,
+            environment: BTreeMap::new(),
+            runtime_verification: None,
+            credentials: None,
+            lifecycle: Mutex::new(WorkerLifecycle::Ready(RunningWorker {
+                child,
+                endpoint,
+                token: Zeroizing::new("fixture-token".into()),
+                _credential_broker: None,
+            })),
+            shutdown: Mutex::new(()),
+        });
+        let calling_supervisor = supervisor.clone();
+        let call = std::thread::spawn(move || calling_supervisor.call("system.ping", Value::Null));
+        accepted_receiver
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap();
+
+        let stopping_supervisor = supervisor.clone();
+        let first_stop = std::thread::spawn(move || {
+            let started = Instant::now();
+            stopping_supervisor.stop();
+            started.elapsed()
+        });
+        let state_deadline = Instant::now() + Duration::from_secs(1);
+        while !matches!(supervisor.status(), WorkerStatus::Stopping)
+            && Instant::now() < state_deadline
+        {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(matches!(supervisor.status(), WorkerStatus::Stopping));
+        let concurrent_supervisor = supervisor.clone();
+        let concurrent_stop = std::thread::spawn(move || concurrent_supervisor.stop());
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(matches!(supervisor.status(), WorkerStatus::Stopping));
+
+        let shutdown_elapsed = first_stop.join().unwrap();
+        concurrent_stop.join().unwrap();
+
+        assert!(
+            shutdown_elapsed < Duration::from_millis(4_500),
+            "shutdown took {shutdown_elapsed:?}"
+        );
+        assert!(call.join().unwrap().is_ok());
+        server.join().unwrap();
+        assert!(matches!(supervisor.status(), WorkerStatus::Stopped));
     }
 }
