@@ -63,6 +63,9 @@ NVIDIA_RERANK_MODELS = frozenset({"nvidia/nv-rerankqa-mistral-4b-v3"})
 NVIDIA_MAGPIE_MODEL = "nvidia/magpie-tts-multilingual"
 NVIDIA_MAGPIE_MODELS = frozenset({NVIDIA_MAGPIE_MODEL})
 NVIDIA_MAGPIE_VOICE = "Magpie-Multilingual.EN-US.Aria"
+# This conservative text budget keeps each generated 48 kHz WAV below the
+# hosted response transport cap; it is not an NVIDIA API input-length limit.
+NVIDIA_MAGPIE_MAX_CHARACTERS = 350
 NVIDIA_VISUAL_POLICY_FINISH_REASONS = frozenset({"CONTENT_FILTERED"})
 
 
@@ -73,6 +76,17 @@ class NvidiaVisualEndpoint:
     endpoint: str
     active: bool
     note: str
+
+
+@dataclass(frozen=True, slots=True)
+class _NvidiaSpeechWave:
+    content: bytes
+    pcm: bytes
+    channels: int
+    sample_width: int
+    sample_rate: int
+    frame_count: int
+    request_id: str | None
 
 
 # Absolute URLs are copied from NVIDIA's per-model API reference. A model may
@@ -159,6 +173,8 @@ class NvidiaNimAdapter(GuardedAdapter):
         )
 
     def invoke(self, request: ProviderRequest, context: RequestContext) -> ProviderResult[Any]:
+        if isinstance(request, SpeechRequest) and len(request.text) > NVIDIA_MAGPIE_MAX_CHARACTERS:
+            return self._invoke_chunked_speech(request, context)
         built = self.build_request(request, context)
         response = self._send(built, context)
         if isinstance(request, SpeechRequest):
@@ -265,6 +281,16 @@ class NvidiaNimAdapter(GuardedAdapter):
                 raise ProviderFailure(
                     FailureCode.INVALID_REQUEST,
                     "NVIDIA Magpie launch narration requires en-US, WAV, and 48 kHz",
+                    provider_id="nvidia-nim",
+                )
+            if (
+                request.speed != 1.0
+                or request.style is not None
+                or request.pronunciation_lexicon
+            ):
+                raise ProviderFailure(
+                    FailureCode.INVALID_REQUEST,
+                    "NVIDIA Magpie hosted narration supports fixed speed and no style or lexicon controls",
                     provider_id="nvidia-nim",
                 )
             boundary = "alystria-" + hashlib.sha256(
@@ -673,24 +699,97 @@ class NvidiaNimAdapter(GuardedAdapter):
         request: SpeechRequest,
         response: HttpResponse,
     ) -> ProviderResult[MediaOutput]:
-        request_id = next(
-            (value for key, value in response.headers.items() if key.casefold() == "x-request-id"),
-            None,
+        decoded = self._decode_speech_wave(response)
+        duration_seconds = decoded.frame_count / decoded.sample_rate
+        asset = MediaAsset(
+            data_base64=base64.b64encode(decoded.content).decode("ascii"),
+            media_type="audio/wav",
+            duration_seconds=duration_seconds,
+            license="LicenseRef-NVIDIA-AI-FOUNDATION-MODELS",
         )
-        if not 200 <= response.status < 300:
-            raise failure_from_http("nvidia-nim", response.status, request_id=request_id)
-        content = response.body
-        try:
-            with wave.open(io.BytesIO(content), "rb") as stream:
-                channels = stream.getnchannels()
-                sample_width = stream.getsampwidth()
-                sample_rate = stream.getframerate()
-                frame_count = stream.getnframes()
-        except (EOFError, wave.Error) as error:
-            raise _malformed("NVIDIA Magpie TTS response was not a valid WAV file") from error
-        if channels not in {1, 2} or sample_width != 2 or sample_rate != 48_000 or frame_count <= 0:
-            raise _malformed("NVIDIA Magpie TTS response was not non-empty 48 kHz 16-bit PCM")
-        duration_seconds = frame_count / sample_rate
+        return ProviderResult(
+            "nvidia-nim",
+            request.model,
+            MediaOutput(
+                (asset,),
+                {
+                    "voiceId": request.voice,
+                    "locale": request.locale,
+                    "sampleRateHz": decoded.sample_rate,
+                    "channels": decoded.channels,
+                    "durationMs": round(duration_seconds * 1_000),
+                    "hostedPreview": True,
+                },
+            ),
+            Usage(
+                "nvidia-nim",
+                request.model,
+                {"characters": float(len(request.text))},
+                0,
+                request_id=decoded.request_id,
+            ),
+            decoded.request_id,
+        )
+
+    def _invoke_chunked_speech(
+        self,
+        request: SpeechRequest,
+        context: RequestContext,
+    ) -> ProviderResult[MediaOutput]:
+        chunks = _split_magpie_text(request.text)
+        decoded_chunks: list[_NvidiaSpeechWave] = []
+        billable_characters = 0
+        billable_request_ids: list[str] = []
+
+        for index, chunk in enumerate(chunks):
+            chunk_request = replace(request, text=chunk)
+            chunk_context = replace(
+                context,
+                idempotency_key=(
+                    f"{context.idempotency_key}:magpie-chunk-{index + 1}-of-{len(chunks)}"
+                ),
+            )
+            try:
+                built = self.build_request(chunk_request, chunk_context)
+                response = self._send(built, chunk_context)
+                decoded = self._decode_speech_wave(response)
+            except ProviderFailure as error:
+                raise _speech_chunk_failure(
+                    error,
+                    request,
+                    chunks,
+                    attempt_index=index,
+                    completed_count=len(decoded_chunks),
+                    billable_characters=billable_characters,
+                    billable_request_ids=billable_request_ids,
+                ) from error
+
+            billable_characters += len(chunk)
+            if decoded.request_id is not None:
+                billable_request_ids.append(decoded.request_id)
+            if decoded_chunks and _speech_shape(decoded) != _speech_shape(decoded_chunks[0]):
+                incompatible_error = _malformed(
+                    "NVIDIA Magpie TTS chunks returned inconsistent PCM formats"
+                )
+                raise _speech_chunk_failure(
+                    incompatible_error,
+                    request,
+                    chunks,
+                    attempt_index=index,
+                    completed_count=len(decoded_chunks),
+                    billable_characters=billable_characters,
+                    billable_request_ids=billable_request_ids,
+                ) from incompatible_error
+            decoded_chunks.append(decoded)
+
+        first = decoded_chunks[0]
+        content = _write_pcm_wav(first, b"".join(chunk.pcm for chunk in decoded_chunks))
+        frame_count = sum(chunk.frame_count for chunk in decoded_chunks)
+        duration_seconds = frame_count / first.sample_rate
+        request_ids = [
+            chunk.request_id for chunk in decoded_chunks if chunk.request_id is not None
+        ]
+        representative_request_id = request_ids[0] if request_ids else None
         asset = MediaAsset(
             data_base64=base64.b64encode(content).decode("ascii"),
             media_type="audio/wav",
@@ -705,10 +804,15 @@ class NvidiaNimAdapter(GuardedAdapter):
                 {
                     "voiceId": request.voice,
                     "locale": request.locale,
-                    "sampleRateHz": sample_rate,
-                    "channels": channels,
+                    "sampleRateHz": first.sample_rate,
+                    "channels": first.channels,
                     "durationMs": round(duration_seconds * 1_000),
                     "hostedPreview": True,
+                    "chunkCount": len(chunks),
+                    "chunkFrameCounts": [chunk.frame_count for chunk in decoded_chunks],
+                    "requestIds": request_ids,
+                    "pcmJoin": "exact-no-gap-v1",
+                    "normalization": "none",
                 },
             ),
             Usage(
@@ -716,8 +820,43 @@ class NvidiaNimAdapter(GuardedAdapter):
                 request.model,
                 {"characters": float(len(request.text))},
                 0,
-                request_id=request_id,
+                request_id=representative_request_id,
             ),
+            representative_request_id,
+        )
+
+    @staticmethod
+    def _decode_speech_wave(response: HttpResponse) -> _NvidiaSpeechWave:
+        request_id = _nvidia_speech_request_id(response)
+        if not 200 <= response.status < 300:
+            raise failure_from_http("nvidia-nim", response.status, request_id=request_id)
+        content = response.body
+        try:
+            with wave.open(io.BytesIO(content), "rb") as stream:
+                channels = stream.getnchannels()
+                sample_width = stream.getsampwidth()
+                sample_rate = stream.getframerate()
+                frame_count = stream.getnframes()
+                compression = stream.getcomptype()
+                pcm = stream.readframes(frame_count)
+        except (EOFError, wave.Error) as error:
+            raise _malformed("NVIDIA Magpie TTS response was not a valid WAV file") from error
+        if (
+            channels not in {1, 2}
+            or sample_width != 2
+            or sample_rate != 48_000
+            or frame_count <= 0
+            or compression != "NONE"
+            or len(pcm) != frame_count * channels * sample_width
+        ):
+            raise _malformed("NVIDIA Magpie TTS response was not non-empty 48 kHz 16-bit PCM")
+        return _NvidiaSpeechWave(
+            content,
+            pcm,
+            channels,
+            sample_width,
+            sample_rate,
+            frame_count,
             request_id,
         )
 
@@ -749,6 +888,107 @@ def _multipart_body(boundary: str, fields: dict[str, str]) -> bytes:
         body.extend(b"\r\n")
     body.extend(f"--{boundary}--\r\n".encode("ascii"))
     return bytes(body)
+
+
+def _split_magpie_text(
+    text: str,
+    *,
+    max_characters: int = NVIDIA_MAGPIE_MAX_CHARACTERS,
+) -> tuple[str, ...]:
+    """Split losslessly to bound hosted WAV size, not because of an API input limit."""
+
+    if len(text) <= max_characters:
+        return (text,)
+
+    chunks: list[str] = []
+    start = 0
+    while len(text) - start > max_characters:
+        limit = start + max_characters
+        sentence_end = 0
+        for position in range(start, limit):
+            if text[position] not in ".!?":
+                continue
+            following = position + 1
+            if following == len(text) or text[following].isspace():
+                sentence_end = following
+
+        if sentence_end:
+            split_at = sentence_end
+            while split_at < limit and text[split_at].isspace():
+                split_at += 1
+        elif text[limit].isspace():
+            split_at = limit
+        else:
+            whitespace = max(
+                (position for position in range(start, limit) if text[position].isspace()),
+                default=-1,
+            )
+            if whitespace < start:
+                raise ProviderFailure(
+                    FailureCode.INVALID_REQUEST,
+                    "NVIDIA Magpie narration contains a word longer than 350 characters",
+                    provider_id="nvidia-nim",
+                )
+            split_at = whitespace + 1
+
+        chunks.append(text[start:split_at])
+        start = split_at
+
+    chunks.append(text[start:])
+    if any(not chunk or len(chunk) > max_characters for chunk in chunks):
+        raise AssertionError("Magpie chunking invariant violated")
+    if "".join(chunks) != text:
+        raise AssertionError("Magpie chunking did not preserve exact text")
+    return tuple(chunks)
+
+
+def _speech_shape(decoded: _NvidiaSpeechWave) -> tuple[int, int, int]:
+    return (decoded.channels, decoded.sample_width, decoded.sample_rate)
+
+
+def _write_pcm_wav(reference: _NvidiaSpeechWave, pcm: bytes) -> bytes:
+    destination = io.BytesIO()
+    with wave.open(destination, "wb") as stream:
+        stream.setnchannels(reference.channels)
+        stream.setsampwidth(reference.sample_width)
+        stream.setframerate(reference.sample_rate)
+        stream.setcomptype("NONE", "not compressed")
+        stream.writeframes(pcm)
+    return destination.getvalue()
+
+
+def _speech_chunk_failure(
+    error: ProviderFailure,
+    request: SpeechRequest,
+    chunks: tuple[str, ...],
+    *,
+    attempt_index: int,
+    completed_count: int,
+    billable_characters: int,
+    billable_request_ids: list[str],
+) -> ProviderFailure:
+    details = {
+        **error.details,
+        "completedChunkCount": completed_count,
+        "attemptCount": attempt_index + 1,
+        "chunkCount": len(chunks),
+        "billableUsage": {
+            "model": request.model,
+            "characters": billable_characters,
+            "actualCostMicros": 0,
+            "usageComplete": False,
+            "requestIds": list(billable_request_ids),
+        },
+    }
+    return ProviderFailure(
+        error.code,
+        error.message,
+        provider_id=error.provider_id,
+        retryable=error.retryable,
+        http_status=error.http_status,
+        request_id=error.request_id,
+        details=details,
+    )
 
 
 def _nvidia_dimensions(size: str | None, aspect_ratio: str) -> tuple[int, int]:
@@ -805,13 +1045,25 @@ def _nvcf_request_id(response: HttpResponse) -> str | None:
     for key, value in response.headers.items():
         if key.casefold() != "nvcf-reqid":
             continue
-        candidate = value.strip()
-        if 1 <= len(candidate) <= 128 and all(
-            character.isascii()
-            and (character.isalnum() or character in {"-", "_", ".", ":"})
-            for character in candidate
-        ):
-            return candidate
+        return _safe_request_id(value)
+    return None
+
+
+def _nvidia_speech_request_id(response: HttpResponse) -> str | None:
+    for expected_name in ("x-request-id", "nvcf-reqid"):
+        for key, value in response.headers.items():
+            if key.casefold() == expected_name:
+                return _safe_request_id(value)
+    return None
+
+
+def _safe_request_id(value: str) -> str | None:
+    candidate = value.strip()
+    if 1 <= len(candidate) <= 128 and all(
+        character.isascii() and (character.isalnum() or character in {"-", "_", ".", ":"})
+        for character in candidate
+    ):
+        return candidate
     return None
 
 

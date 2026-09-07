@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
+import wave
+from itertools import pairwise
 from typing import Any
 
 import pytest
@@ -54,6 +57,45 @@ class FakeTransport:
             self.response_headers,
             json.dumps(self.payloads.pop(0)).encode(),
         )
+
+
+class SpeechSequenceTransport:
+    def __init__(self, *responses: HttpResponse) -> None:
+        self.responses = list(responses)
+        self.requests: list[HttpRequest] = []
+
+    def send(self, request: HttpRequest) -> HttpResponse:
+        self.requests.append(request)
+        if not self.responses:
+            raise AssertionError("unexpected NVIDIA speech request")
+        return self.responses.pop(0)
+
+
+def _speech_request_text(request: HttpRequest) -> str:
+    assert request.body is not None
+    content_type = request.headers["Content-Type"]
+    boundary = content_type.removeprefix("multipart/form-data; boundary=")
+    marker = b'name="text"\r\n\r\n'
+    encoded = request.body.split(marker, 1)[1].split(
+        f"\r\n--{boundary}".encode("ascii"), 1
+    )[0]
+    return encoded.decode("utf-8")
+
+
+def _wav_pcm(content: bytes) -> tuple[tuple[int, int, int], bytes, int]:
+    with wave.open(io.BytesIO(content), "rb") as stream:
+        shape = (stream.getnchannels(), stream.getsampwidth(), stream.getframerate())
+        frame_count = stream.getnframes()
+        return shape, stream.readframes(frame_count), frame_count
+
+
+def _speech_response(
+    content: bytes,
+    request_id: str,
+    *,
+    status: int = 200,
+) -> HttpResponse:
+    return HttpResponse(status, {"Nvcf-Reqid": request_id}, content)
 
 
 def preview_context(**overrides: Any) -> RequestContext:
@@ -167,6 +209,233 @@ def test_magpie_tts_uses_pinned_endpoint_voice_and_validates_wav() -> None:
     assert result.value.metadata["voiceId"] == NVIDIA_MAGPIE_VOICE
     assert result.usage.units == {"characters": 47.0}
     assert result.usage.actual_cost_micros == 0
+    assert len(transport.requests) == 1
+
+
+def test_magpie_tts_chunks_long_text_and_concatenates_pcm_exactly() -> None:
+    sentences = (
+        "First, " + " ".join(["alpha"] * 44) + ". ",
+        "Second, " + " ".join(["beta"] * 48) + ". ",
+        "Finally, " + " ".join(["gamma"] * 43) + ".",
+    )
+    text = "".join(sentences)
+    wavs = (
+        generate_sine_wav(WavFixtureSpec(duration_ms=120, frequency_hz=220)),
+        generate_sine_wav(WavFixtureSpec(duration_ms=160, frequency_hz=330)),
+        generate_sine_wav(WavFixtureSpec(duration_ms=200, frequency_hz=440)),
+    )
+    transport = SpeechSequenceTransport(
+        *(
+            _speech_response(wav, f"magpie-chunk-{index}")
+            for index, wav in enumerate(wavs, start=1)
+        )
+    )
+    adapter = NvidiaNimAdapter(
+        transport,
+        configured_tts_models=frozenset({NVIDIA_MAGPIE_MODEL}),
+    )
+
+    result = adapter.invoke(
+        SpeechRequest(
+            text,
+            NVIDIA_MAGPIE_MODEL,
+            NVIDIA_MAGPIE_VOICE,
+            "en-US",
+        ),
+        preview_context(),
+    )
+
+    assert len(transport.requests) == 3
+    chunks = tuple(_speech_request_text(request) for request in transport.requests)
+    assert chunks == sentences
+    assert "".join(chunks) == text
+    assert all(len(chunk) <= 350 for chunk in chunks)
+    for sent in transport.requests:
+        assert sent.body is not None
+        assert NVIDIA_MAGPIE_VOICE.encode() in sent.body
+        assert b'name="sample_rate_hz"\r\n\r\n48000' in sent.body
+    combined = base64.b64decode(result.value.assets[0].data_base64 or "", validate=True)
+    shape, pcm, frame_count = _wav_pcm(combined)
+    expected = tuple(_wav_pcm(wav) for wav in wavs)
+    assert shape == (1, 2, 48_000)
+    assert pcm == b"".join(item[1] for item in expected)
+    assert frame_count == sum(item[2] for item in expected)
+    assert result.value.assets[0].duration_seconds == pytest.approx(0.48)
+    assert result.value.metadata["durationMs"] == 480
+    assert result.value.metadata["chunkCount"] == 3
+    assert result.value.metadata["chunkFrameCounts"] == [
+        item[2] for item in expected
+    ]
+    assert result.value.metadata["requestIds"] == [
+        "magpie-chunk-1",
+        "magpie-chunk-2",
+        "magpie-chunk-3",
+    ]
+    assert result.value.metadata["pcmJoin"] == "exact-no-gap-v1"
+    assert result.value.metadata["normalization"] == "none"
+    assert result.usage.units == {"characters": float(len(text))}
+    assert result.usage.actual_cost_micros == 0
+
+
+def test_magpie_tts_splits_one_long_sentence_without_dropping_or_duplicating_words() -> None:
+    text = " ".join(f"word{index:03d}" for index in range(100))
+    wav = generate_sine_wav(WavFixtureSpec(duration_ms=50, frequency_hz=220))
+    transport = SpeechSequenceTransport(
+        *(_speech_response(wav, f"long-sentence-{index}") for index in range(10))
+    )
+    adapter = NvidiaNimAdapter(
+        transport,
+        configured_tts_models=frozenset({NVIDIA_MAGPIE_MODEL}),
+    )
+
+    adapter.invoke(
+        SpeechRequest(
+            text,
+            NVIDIA_MAGPIE_MODEL,
+            NVIDIA_MAGPIE_VOICE,
+            "en-US",
+        ),
+        preview_context(),
+    )
+
+    chunks = tuple(_speech_request_text(request) for request in transport.requests)
+    assert len(chunks) > 1
+    assert all(len(chunk) <= 350 for chunk in chunks)
+    assert all(
+        left[-1].isspace() or right[0].isspace()
+        for left, right in pairwise(chunks)
+    )
+    assert "".join(chunks) == text
+    assert [word for chunk in chunks for word in chunk.split()] == text.split()
+
+
+def test_magpie_tts_second_chunk_failure_returns_no_partial_media_or_retry() -> None:
+    text = "".join(
+        (
+            "First, " + " ".join(["alpha"] * 44) + ". ",
+            "Second, " + " ".join(["beta"] * 48) + ". ",
+            "Finally, " + " ".join(["gamma"] * 43) + ".",
+        )
+    )
+    first_wav = generate_sine_wav(WavFixtureSpec(duration_ms=100, frequency_hz=220))
+    transport = SpeechSequenceTransport(
+        _speech_response(first_wav, "completed-chunk-1"),
+        _speech_response(b'{"detail":"remote body must stay private"}', "failed-chunk-2", status=400),
+        _speech_response(first_wav, "must-not-be-requested"),
+    )
+    adapter = NvidiaNimAdapter(
+        transport,
+        configured_tts_models=frozenset({NVIDIA_MAGPIE_MODEL}),
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        adapter.invoke(
+            SpeechRequest(
+                text,
+                NVIDIA_MAGPIE_MODEL,
+                NVIDIA_MAGPIE_VOICE,
+                "en-US",
+            ),
+            preview_context(),
+        )
+
+    assert len(transport.requests) == 2
+    assert caught.value.retryable is False
+    assert caught.value.http_status == 400
+    assert caught.value.request_id == "failed-chunk-2"
+    assert caught.value.details["completedChunkCount"] == 1
+    assert caught.value.details["attemptCount"] == 2
+    assert caught.value.details["chunkCount"] == 3
+    assert caught.value.details["billableUsage"] == {
+        "model": NVIDIA_MAGPIE_MODEL,
+        "characters": len(_speech_request_text(transport.requests[0])),
+        "actualCostMicros": 0,
+        "usageComplete": False,
+        "requestIds": ["completed-chunk-1"],
+    }
+    assert "remote body must stay private" not in json.dumps(caught.value.to_dict())
+
+
+def test_magpie_tts_rejects_inconsistent_chunk_pcm_formats() -> None:
+    text = (
+        "First, "
+        + " ".join(["alpha"] * 44)
+        + ". Second, "
+        + " ".join(["beta"] * 48)
+        + "."
+    )
+    mono = generate_sine_wav(WavFixtureSpec(duration_ms=100, channels=1))
+    stereo = generate_sine_wav(WavFixtureSpec(duration_ms=100, channels=2))
+    transport = SpeechSequenceTransport(
+        _speech_response(mono, "format-1"),
+        _speech_response(stereo, "format-2"),
+    )
+    adapter = NvidiaNimAdapter(
+        transport,
+        configured_tts_models=frozenset({NVIDIA_MAGPIE_MODEL}),
+    )
+
+    with pytest.raises(ProviderFailure, match="inconsistent PCM formats") as caught:
+        adapter.invoke(
+            SpeechRequest(
+                text,
+                NVIDIA_MAGPIE_MODEL,
+                NVIDIA_MAGPIE_VOICE,
+                "en-US",
+            ),
+            preview_context(),
+        )
+
+    assert caught.value.code is FailureCode.MALFORMED_RESPONSE
+    assert len(transport.requests) == 2
+
+
+def test_magpie_tts_rejects_truncated_pcm_payload() -> None:
+    complete = generate_sine_wav(WavFixtureSpec(duration_ms=100))
+    transport = SpeechSequenceTransport(
+        _speech_response(complete[:-64], "truncated-wav-1"),
+    )
+    adapter = NvidiaNimAdapter(
+        transport,
+        configured_tts_models=frozenset({NVIDIA_MAGPIE_MODEL}),
+    )
+
+    with pytest.raises(ProviderFailure, match="non-empty 48 kHz 16-bit PCM") as caught:
+        adapter.invoke(
+            SpeechRequest(
+                "Narrate this",
+                NVIDIA_MAGPIE_MODEL,
+                NVIDIA_MAGPIE_VOICE,
+                "en-US",
+            ),
+            preview_context(),
+        )
+
+    assert caught.value.code is FailureCode.MALFORMED_RESPONSE
+    assert len(transport.requests) == 1
+
+
+def test_magpie_tts_rejects_unsupported_voice_controls_before_network() -> None:
+    transport = SpeechSequenceTransport()
+    adapter = NvidiaNimAdapter(
+        transport,
+        configured_tts_models=frozenset({NVIDIA_MAGPIE_MODEL}),
+    )
+
+    with pytest.raises(ProviderFailure, match="fixed speed and no style or lexicon") as caught:
+        adapter.invoke(
+            SpeechRequest(
+                "Narrate this",
+                NVIDIA_MAGPIE_MODEL,
+                NVIDIA_MAGPIE_VOICE,
+                "en-US",
+                speed=0.9,
+            ),
+            preview_context(),
+        )
+
+    assert caught.value.code is FailureCode.INVALID_REQUEST
+    assert transport.requests == []
 
 
 def test_magpie_tts_rejects_unapproved_voice_before_network() -> None:
