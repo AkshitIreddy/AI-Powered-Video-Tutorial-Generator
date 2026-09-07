@@ -316,6 +316,41 @@ bounded-tail policy. Its compact durable narration, cache, and timing receipt
 is `E:\temp\avt-final-media-inspection-20260907\narration-v3-branch-summary.json`.
 The presenter and full video/editor results remain pending at this milestone.
 
+### Caption single-pass verification — September 7
+
+The first successful caption stage exposed a consistency and readability defect.
+It retained 103 scene-local timing chunks, then treated each multiword chunk as
+one pseudo-word and reflowed them again into 62 WebVTT/SRT cues. The second pass
+therefore could not rebalance individual word boundaries. Nine delivery cues
+lasted less than one second, including 400, 420, and 540 ms fragments, and seven
+exceeded the configured 20-character-per-second reading rate. The files remained
+monotonic, in bounds, non-overlapping, and complete, but the renderer/editor cue
+ledger and delivery sidecars were not the same cue sequence.
+
+The caption compiler now rebalances the original aligned word groups before cue
+timings become immutable. A shared single-pass bundle supplies the same cues to
+scene rendering, editor bindings, WebVTT, and SRT, with scene boundaries as hard
+breaks. The exact approved five-scene narration produced 49 cues in every output,
+distributed 3, 11, 10, 10, and 15 by scene. The minimum duration is 700 ms, the
+maximum reading rate is exactly 20 characters per second, every cue stays within
+two lines of at most 42 characters, and there are no overlaps. All 490 approved
+word tokens remain in order. The resulting WebVTT SHA-256 is
+`48dc32affa5975f5ca3c436e7c1a13eea0742d984e196dc14749d10190fb19f8`;
+the SRT SHA-256 is
+`79a329ddace32d7c168b1b5bfbc91afde40aa175444af0b61f1031f0e5a255d2`;
+the transcript remains
+`9448b8be22cd14ebc22397938bc4b87082fa0bbe01397a9f5c0ea30aaed74cde`.
+The read-only source measurement and temporary-project CAS proof are under
+`E:\temp\avt-final-media-inspection-20260907\caption-engine-v2-exact-current`.
+
+The focused audio and shared-bundle verification passed 25 tests; the combined
+audio, caption-bundle, native-control, and editor selection passed 59 tests. The
+full generation coordinator suite separately passed 53 tests. This verification reused the
+existing narration payload and made no audio, provider, presenter, or GPU call.
+It checks timing, text identity, serialization, and policy limits. It does not
+claim auditory caption synchronization, intelligibility, burned-caption visual
+placement, or acceptance of a newly rendered master.
+
 ### Presenter integration and rejected teaching frames — September 7
 
 The same native branch completed the opening presenter at 07:33:04 UTC. The

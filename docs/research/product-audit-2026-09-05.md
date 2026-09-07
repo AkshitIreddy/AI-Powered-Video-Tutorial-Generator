@@ -47,17 +47,37 @@ Browser screenshots and simulated command tests prove UI behavior only. Determin
 
 ## Evidence location
 
-Root UI audit: `E:\temp\avt-audit-2026-09-05`. The current route capture inspected Home, Templates, Models, Settings, Plan, Storyboard, Studio, Design, Review, Export, creation wizard, narrow Home, and narrow Models. All 13 route captures reported no page error or document horizontal overflow. Detailed screenshots were inspected, and identified contrast/content defects were corrected. Native and final media evidence is recorded in the Windows audit report after the fresh build, not inferred from these browser images.
+September 5 root UI audit: `E:\temp\avt-audit-2026-09-05`. That browser-package route capture inspected Home, Templates, Models, Settings, Plan, Storyboard, Studio, Design, Review, Export, creation wizard, narrow Home, and narrow Models. All 13 captures reported no page error or document horizontal overflow. Detailed screenshots were inspected, and identified contrast/content defects were corrected. These are historical browser-package results. Native and final media evidence is recorded separately and is not inferred from these browser images.
 
-## Final browser and optional-image checks
+## September 5 browser and optional-image checks
 
-The final UI matrix passed 25 Playwright cases with 3 intentional viewport skips and no failures. Current desktop and narrow flows include the stock-photo controls and licensed candidate details. The Images setup action saves an `off` route, reaches a valid creation policy, and persists a tutorial policy with writing and narration but no image-generation capability. The backend's matching authored-only path skips image-provider calls and renders semantic teaching scenes; it does not fabricate a generated raster.
+The September 5 UI matrix passed 25 Playwright cases with 3 intentional viewport skips and no failures. That desktop and narrow package included the stock-photo controls and licensed candidate details. The Images setup action saved an `off` route, reached a valid creation policy, and persisted a tutorial policy with writing and narration but no image-generation capability. The backend's matching authored-only path skipped image-provider calls and rendered semantic teaching scenes; it did not fabricate a generated raster.
 
-Optional rendered-frame review is tied to the current generation ID and exact video hash. It samples six decoded frames in order and displays coverage limits, findings and timestamps; a report for an earlier render is labeled stale. Missing, private, unavailable, or malformed review is never displayed as a quality pass. The production VLM smoke did not obtain findings; its original error diagnostics were insufficient to distinguish network/provider causes, so no successful VLM assessment or provider outage is claimed. Subsequent reports retain sanitized failure codes and HTTP status when supplied. A later diagnostic returned HTTP 410 from the old NVIDIA hosted vision endpoint, matching its published deprecated status; that route now fails locally and requires explicit reselection. The current documented Omni route returned HTTP 503 during one bounded test, so semantic findings remain unverified. Neither response establishes a general provider outage.
+Optional rendered-frame review is tied to the generation ID and exact video hash. It samples six decoded frames in order and displays coverage limits, findings and timestamps; a report for an earlier render is labeled stale. Missing, private, unavailable, or malformed review is never displayed as a quality pass. The September 5 production VLM smoke did not obtain findings; its original error diagnostics were insufficient to distinguish network/provider causes, so no successful assessment or provider outage was claimed. A later diagnostic returned HTTP 410 from the old NVIDIA hosted vision endpoint, matching its published deprecated status. Another bounded Omni diagnostic returned HTTP 503. Neither response established a general provider outage.
 
-Review, stock-search and image-candidate unit checks passed 13 cases. The matched/stale review states were visually inspected at 860 pixels, and the stock UI was inspected at 1440 and 860 with no horizontal overflow. Evidence is under `E:\temp\avt-audit-2026-09-05\review-ui` and `stock-ui`.
-## Final source checks and capture conditions
+The September 7 native render later produced an Omni report with zero findings,
+but direct full-resolution frame inspection rejected its tiny whiteboard text,
+mostly empty board, and non-executable code scene. This is concrete evidence that
+a structurally successful or empty semantic-review report cannot qualify visual
+teaching quality. The rejected frames and subsequent source corrections are
+recorded in [the generation audit](generation-audit-2026-09-05.md).
 
-The complete desktop Vitest run passed **211 tests** under pinned Node 24.20.0 after the approval and source-audio fixes. The earlier 200-test run in 29 files took 143.58 seconds. The final desktop TypeScript build and ESLint run also passed. The browser matrix above exercises UI behavior independently of the pending provider/native media journey.
+Review, stock-search and image-candidate unit checks passed 13 cases in that September 5 source/package state. The matched/stale review states were visually inspected at 860 pixels, and the stock UI was inspected at 1440 and 860 with no horizontal overflow. Evidence is under `E:\temp\avt-audit-2026-09-05\review-ui` and `stock-ui`.
+
+## September 7 caption and visual regression status
+
+The first successful caption stage had 103 scene-local chunks but reflowed them
+again into 62 delivery cues, producing avoidable 400–540 ms fragments. The
+single-pass compiler now produces the same 49 cues for renderer/editor data,
+WebVTT, and SRT while preserving all 490 approved word tokens, a 700 ms minimum,
+20-character-per-second maximum, two lines of at most 42 characters, and no
+overlaps. Exact hashes, measurements, and limitations are in
+[the generation audit](generation-audit-2026-09-05.md).
+This source correction and the repaired whiteboard/code authoring do not qualify
+a new master; packaged native rendering and direct media inspection remain pending.
+
+## Source checks and capture conditions
+
+The complete desktop Vitest run at the September 5 checkpoint passed **211 tests** under pinned Node 24.20.0 after the approval and source-audio fixes. The earlier 200-test run in 29 files took 143.58 seconds. That checkpoint's desktop TypeScript build and ESLint run also passed. A later September 7 checkpoint passed 240 desktop tests before a subsequent strict native DTO regression was added; the focused native bridge group then passed 19 tests including that case. These counts bind to their stated source checkpoints and are not a current full-suite or new-master acceptance claim. The browser matrix above exercises UI behavior independently of provider/native media qualification.
 
 The owner runs a separate screen-dimming transparency overlay. It was left running. Visual acceptance uses captures from the hidden application WebView/Chromium render surface, rather than interpreting desktop-overlay darkness as an application palette defect. Other-project GPU work and its shared lease remain untouched; a busy lease delays our own model inference.
