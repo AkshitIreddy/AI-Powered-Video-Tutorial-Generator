@@ -285,4 +285,33 @@ Magpie selection passed eight tests. Ruff and strict mypy passed.
 
 The next packaged run must still prove four cached clips, one newly synthesized
 scene, acceptable measured timing and audio joins, the actual local presenter,
-and the full-length master/editor outputs. No native success is claimed here.
+and the full-length master/editor outputs. No native success was claimed at
+that source checkpoint.
+
+### Native narration recovery — September 7, 07:25 UTC
+
+The rebuilt worker from `86cbe5e` reopened the same project and approved version
+3 through the native UI as `rev_26143ae9fb4a416796d10d120dbae7f6`. Designed assets
+succeeded without image generation. Narration succeeded at
+`2026-09-07T07:26:10.590Z`, followed by captions. Its durable receipt records
+four reused clips and exactly one scene invoking synthesis. All five alignment
+records report `COMPLETE`, engine `onnx-ctc-v1`, and aligned-token ratio 1.0.
+This is forced alignment against known text, not independent ASR accuracy.
+
+The new final-scene WAV is SHA-256
+`e953b535289a8111f74661dcf9ef0d556349058a6daee145fb3ce23337483a08`.
+Independent decoding confirms 2,643,733 mono 48 kHz frames, or
+55.077770833 seconds, with zero clipped samples. The four chunk frame counts
+are 884,959, 577,341, 679,881, and 501,552. Their joins occur at 18.436646,
+30.464583, and 44.628771 seconds; adjacent sample differences are 46, 7, and
+10 PCM units, respectively, with no inserted samples. Measurements are in
+`E:\temp\avt-final-media-inspection-20260907\narration-v3-seams.json` and
+`narration-v3-scene5\inspection.json`. These measurements do not claim auditory
+listening. Raw narration loudness is -27.17 LUFS; final mastering is a separate
+render-stage check.
+
+The five actual clips total 173.778229 seconds. The accepted timeline is
+180 seconds, with 1.2444 seconds of visual tail per scene, within the existing
+bounded-tail policy. Its compact durable narration, cache, and timing receipt
+is `E:\temp\avt-final-media-inspection-20260907\narration-v3-branch-summary.json`.
+The presenter and full video/editor results remain pending at this milestone.
