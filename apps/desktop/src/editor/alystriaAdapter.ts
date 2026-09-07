@@ -108,7 +108,8 @@ function bindingAsset(role: "visual" | "render" | "narration" | "presenter", bin
     mimeType: binding.mediaType,
     hash: binding.artifactHash,
     provenance: { origin: "local-generation", createdAt: now, sourceId: binding.sceneId, humanApproved: exportEligible },
-    metadata: { nativeArtifactId: binding.artifactHash, exportEligible, generatedRole: role, alystriaSceneId: binding.sceneId },
+    metadata: { nativeArtifactId: binding.artifactHash, exportEligible, generatedRole: role, alystriaSceneId: binding.sceneId,
+      ...(role === "render" ? { generatedSourceStartFrame: Math.max(0, secondsToFrames((binding.sourceStartTicks ?? 0) / 240_000, frameRate)) } : {}) },
   };
 }
 
@@ -522,7 +523,7 @@ export function mergeAlystriaMediaBindings(
     ...project.assets.filter((asset) => !generatedById.has(asset.id)),
     ...generated.map((asset) => {
       const current = project.assets.find((candidate) => candidate.id === asset.id);
-      return current ? { ...asset, ...(current.uri ? { uri: current.uri } : {}), ...(current.previewUrl ? { previewUrl: current.previewUrl } : {}), ...(current.thumbnailUrl ? { thumbnailUrl: current.thumbnailUrl } : {}) } : asset;
+      return current && current.hash === asset.hash ? { ...asset, ...(current.uri ? { uri: current.uri } : {}), ...(current.previewUrl ? { previewUrl: current.previewUrl } : {}), ...(current.thumbnailUrl ? { thumbnailUrl: current.thumbnailUrl } : {}) } : asset;
     }),
   ];
 
@@ -534,12 +535,20 @@ export function mergeAlystriaMediaBindings(
       if (render) {
         if (track.kind === "slides" && canReplaceProjectDerivedMedia(clip, project.assets)) {
           const segmentFrames = Math.max(1, secondsToFrames((render.durationTicks ?? 0) / 240_000, project.frameRate));
-          if (clip.sourceRange.startFrame + clip.sourceRange.durationFrames > segmentFrames) return clip;
           const baseFrame = Math.max(0, secondsToFrames((render.sourceStartTicks ?? 0) / 240_000, project.frameRate));
+          const priorAsset = projectInput.assets.find((asset) => asset.id === clip.assetId);
+          const priorBase = priorAsset?.metadata.generatedSourceStartFrame;
+          // Existing composites already use master-relative offsets. Older
+          // documents have the same verified scene window but no saved base.
+          const previousBaseFrame = priorAsset?.metadata.generatedRole === "render"
+            ? typeof priorBase === "number" && Number.isSafeInteger(priorBase) && priorBase >= 0 ? priorBase : baseFrame
+            : 0;
+          const localStartFrame = clip.sourceRange.startFrame - previousBaseFrame;
+          if (localStartFrame < 0 || localStartFrame + clip.sourceRange.durationFrames > segmentFrames) return clip;
           return {
             ...clip,
             assetId: `generated-render-${sceneId}`,
-            sourceRange: { ...clip.sourceRange, startFrame: baseFrame + clip.sourceRange.startFrame },
+            sourceRange: { ...clip.sourceRange, startFrame: baseFrame + localStartFrame },
             metadata: { ...clip.metadata, authoredStructureOnly: false, includeSourceAudio: true, preservedCompositeRender: true },
           };
         }

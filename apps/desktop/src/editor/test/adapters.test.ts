@@ -313,6 +313,42 @@ describe("Alystria ProjectRecord adapter", () => {
     expect(preserved.tracks.find((track) => track.kind === "titles")?.clips[0]?.text).toBe("My corrected title");
   });
 
+  it("preserves trimmed composite offsets across reopen and master promotion", () => {
+    const bindings = {
+      renders: [{ sceneId: "scene-1", artifactHash: "a".repeat(64), mediaType: "video/mp4", durationTicks: 2_880_000, sourceStartTicks: 480_000, captionsBurnedIntoPixels: true }],
+      assets: [], narration: [], presenters: [],
+    };
+    const saved = createEditorProjectFromAlystriaProject({
+      id: "record-project", title: "Trimmed master", duration: 0.2,
+      scenes: [{ id: "scene-1", index: 1, title: "Scene", duration: 12, narration: "Narration." }],
+    }, { now: "2026-09-07T08:00:00Z", mediaBindings: bindings });
+    const clip = saved.tracks.find((track) => track.kind === "slides")!.clips[0]!;
+    clip.sourceRange = { startFrame: 90, durationFrames: 90 };
+    clip.timelineRange = { startFrame: 45, durationFrames: 90 };
+    clip.transform.x = 84;
+    saved.assets[0]!.uri = "asset://old-master";
+    saved.assets[0]!.previewUrl = "asset://old-master";
+    saved.assets[0]!.thumbnailUrl = "asset://old-thumbnail";
+    const reopened = mergeAlystriaMediaBindings(saved, bindings, "2026-09-07T08:01:00Z");
+    expect(reopened.tracks.find((track) => track.kind === "slides")!.clips[0]).toMatchObject({
+      sourceRange: { startFrame: 90, durationFrames: 90 }, timelineRange: { startFrame: 45, durationFrames: 90 }, transform: { x: 84 },
+    });
+    expect(reopened.assets[0]!.uri).toBe("asset://old-master");
+    const promoted = mergeAlystriaMediaBindings(reopened, {
+      ...bindings, renders: [{ ...bindings.renders[0]!, artifactHash: "b".repeat(64), sourceStartTicks: 960_000 }],
+    }, "2026-09-07T08:02:00Z");
+    expect(promoted.tracks.find((track) => track.kind === "slides")!.clips[0]).toMatchObject({
+      sourceRange: { startFrame: 150, durationFrames: 90 }, timelineRange: { startFrame: 45, durationFrames: 90 }, transform: { x: 84 },
+    });
+    expect(promoted.assets[0]!.hash).toBe("b".repeat(64));
+    expect(promoted.assets[0]!.uri).toBeUndefined();
+    expect(promoted.assets[0]!.previewUrl).toBeUndefined();
+    expect(promoted.assets[0]!.thumbnailUrl).toBeUndefined();
+    delete saved.assets[0]!.metadata.generatedSourceStartFrame;
+    const legacy = mergeAlystriaMediaBindings(saved, bindings, "2026-09-07T08:03:00Z");
+    expect(legacy.tracks.find((track) => track.kind === "slides")!.clips[0]!.sourceRange.startFrame).toBe(90);
+  });
+
   it("attaches late render bindings to placeholders without rebuilding saved user edits", () => {
     const saved = createEditorProjectFromAlystriaProject({
       id: "record-project",
