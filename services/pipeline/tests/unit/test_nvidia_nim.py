@@ -34,17 +34,24 @@ from alystria.providers import (
 
 
 class FakeTransport:
-    def __init__(self, *payloads: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        *payloads: dict[str, Any],
+        response_headers: dict[str, str] | None = None,
+        status: int = 200,
+    ) -> None:
         self.payloads = list(payloads)
         self.requests: list[HttpRequest] = []
+        self.response_headers = response_headers or {"Content-Type": "application/json"}
+        self.status = status
 
     def send(self, request: HttpRequest) -> HttpResponse:
         self.requests.append(request)
         if not self.payloads:
             raise AssertionError("unexpected NVIDIA request")
         return HttpResponse(
-            200,
-            {"Content-Type": "application/json"},
+            self.status,
+            self.response_headers,
             json.dumps(self.payloads.pop(0)).encode(),
         )
 
@@ -381,6 +388,104 @@ def test_flux_klein_binds_media_type_to_returned_bytes_not_requested_format() ->
         preview_context(),
     )
     assert result.value.assets[0].media_type == "image/jpeg"
+
+
+def test_flux_klein_reports_filtered_empty_asset_as_nonretryable_policy_block() -> None:
+    request_id = "ebeda63e-2a02-4941-9e28-82878de5c634"
+    adapter = NvidiaNimAdapter(
+        FakeTransport(
+            {
+                "artifacts": [
+                    {"base64": "", "finishReason": "CONTENT_FILTERED", "seed": 42}
+                ]
+            },
+            response_headers={
+                "Content-Type": "application/json",
+                "Nvcf-Reqid": request_id,
+            },
+        ),
+        configured_visual_models=frozenset({"black-forest-labs/flux.2-klein-4b"}),
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        adapter.invoke(
+            ImageRequest(
+                "A precise educational diagram",
+                "black-forest-labs/flux.2-klein-4b",
+                aspect_ratio="1:1",
+            ),
+            preview_context(),
+        )
+
+    assert caught.value.code is FailureCode.POLICY_BLOCKED
+    assert caught.value.retryable is False
+    assert caught.value.http_status == 200
+    assert caught.value.request_id == request_id
+    assert caught.value.details == {"providerReason": "CONTENT_FILTERED"}
+
+
+def test_flux_klein_mixed_filtered_and_usable_assets_fail_closed() -> None:
+    jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\xff\xd9"
+    adapter = NvidiaNimAdapter(
+        FakeTransport(
+            {
+                "artifacts": [
+                    {"base64": base64.b64encode(jpeg).decode("ascii")},
+                    {"base64": "", "finishReason": "CONTENT_FILTERED"},
+                ]
+            },
+            response_headers={"Nvcf-Reqid": "mixed-filtered-1"},
+        ),
+        configured_visual_models=frozenset({"black-forest-labs/flux.2-klein-4b"}),
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        adapter.invoke(
+            ImageRequest(
+                "A precise educational diagram",
+                "black-forest-labs/flux.2-klein-4b",
+                aspect_ratio="1:1",
+            ),
+            preview_context(),
+        )
+
+    assert caught.value.code is FailureCode.POLICY_BLOCKED
+    assert caught.value.retryable is False
+    assert caught.value.request_id == "mixed-filtered-1"
+
+
+def test_flux_klein_filtered_error_never_exposes_remote_detail() -> None:
+    secret_remote_detail = "blocked response echoed the complete private prompt"
+    adapter = NvidiaNimAdapter(
+        FakeTransport(
+            {
+                "artifacts": [
+                    {
+                        "base64": "",
+                        "finishReason": "CONTENT_FILTERED",
+                        "error": secret_remote_detail,
+                    }
+                ]
+            },
+            response_headers={"Nvcf-Reqid": "unsafe request id\r\n" + secret_remote_detail},
+        ),
+        configured_visual_models=frozenset({"black-forest-labs/flux.2-klein-4b"}),
+    )
+
+    with pytest.raises(ProviderFailure) as caught:
+        adapter.invoke(
+            ImageRequest(
+                "A precise educational diagram",
+                "black-forest-labs/flux.2-klein-4b",
+                aspect_ratio="1:1",
+            ),
+            preview_context(),
+        )
+
+    serialized = json.dumps(caught.value.to_dict(), sort_keys=True)
+    assert caught.value.code is FailureCode.POLICY_BLOCKED
+    assert caught.value.request_id is None
+    assert secret_remote_detail not in serialized
 
 
 @pytest.mark.parametrize("encoded", ["not-base64!", base64.b64encode(b"not an image").decode()])

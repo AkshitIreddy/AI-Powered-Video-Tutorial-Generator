@@ -63,6 +63,7 @@ NVIDIA_RERANK_MODELS = frozenset({"nvidia/nv-rerankqa-mistral-4b-v3"})
 NVIDIA_MAGPIE_MODEL = "nvidia/magpie-tts-multilingual"
 NVIDIA_MAGPIE_MODELS = frozenset({NVIDIA_MAGPIE_MODEL})
 NVIDIA_MAGPIE_VOICE = "Magpie-Multilingual.EN-US.Aria"
+NVIDIA_VISUAL_POLICY_FINISH_REASONS = frozenset({"CONTENT_FILTERED"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,7 +171,7 @@ class NvidiaNimAdapter(GuardedAdapter):
         if isinstance(request, RerankRequest):
             return self._parse_rerank(request, payload)
         if isinstance(request, (ImageRequest, MotionRequest)):
-            return self._parse_visual(request, payload)
+            return self._parse_visual(request, payload, response)
         raise ProviderFailure(
             FailureCode.UNSUPPORTED_CAPABILITY,
             "NVIDIA NIM does not implement this request contract",
@@ -603,11 +604,29 @@ class NvidiaNimAdapter(GuardedAdapter):
         )
 
     def _parse_visual(
-        self, request: ImageRequest | MotionRequest, payload: dict[str, Any]
+        self,
+        request: ImageRequest | MotionRequest,
+        payload: dict[str, Any],
+        response: HttpResponse,
     ) -> ProviderResult[MediaOutput]:
         assets: list[MediaAsset] = []
         license_id = NVIDIA_VISUAL_LICENSES.get(request.model)
-        for row in _records(payload.get("artifacts") or payload.get("data")):
+        rows = _records(payload.get("artifacts") or payload.get("data"))
+        if any(
+            isinstance(finish_reason := row.get("finishReason"), str)
+            and finish_reason in NVIDIA_VISUAL_POLICY_FINISH_REASONS
+            for row in rows
+        ):
+            raise ProviderFailure(
+                FailureCode.POLICY_BLOCKED,
+                "NVIDIA NIM blocked the visual response under its content policy",
+                provider_id="nvidia-nim",
+                retryable=False,
+                http_status=response.status,
+                request_id=_nvcf_request_id(response),
+                details={"providerReason": "CONTENT_FILTERED"},
+            )
+        for row in rows:
             encoded = row.get("base64") or row.get("b64_json")
             uri = row.get("url")
             if isinstance(encoded, str):
@@ -778,6 +797,22 @@ def _integer(value: Any) -> int:
 
 def _string(value: Any) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def _nvcf_request_id(response: HttpResponse) -> str | None:
+    """Return only a compact, safe NVIDIA request identifier."""
+
+    for key, value in response.headers.items():
+        if key.casefold() != "nvcf-reqid":
+            continue
+        candidate = value.strip()
+        if 1 <= len(candidate) <= 128 and all(
+            character.isascii()
+            and (character.isalnum() or character in {"-", "_", ".", ":"})
+            for character in candidate
+        ):
+            return candidate
+    return None
 
 
 def _malformed(message: str) -> ProviderFailure:
