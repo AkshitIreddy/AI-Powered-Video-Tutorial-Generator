@@ -29,7 +29,7 @@ const planReportPath = path.join(evidenceRoot, "plan-report.json");
 const failurePath = path.join(evidenceRoot, "failure.json");
 const ffprobePath = path.join(portableRoot, "Runtime", "ffmpeg", "ffprobe.exe");
 const projectTitle = titleFromTopic(parsed.topic);
-let activeProjectTitle = projectTitle;
+let activeProjectIdentity = null;
 const targetAudience = "Computer science learners familiar with multiplication and basic recursion";
 const startedAt = new Date();
 let child;
@@ -110,9 +110,10 @@ try {
   let jobs = page.getByRole("complementary", { name: /background jobs/i });
   let priorApprovedMediaBranch = null;
   if (parsed.resumeProject) {
-    activeProjectTitle = await relinkNativeProjectIfMissing(page, projectTitle, parsed.resumeProjectDirectory);
-    await waitForPersistedProjectByTitle(page, activeProjectTitle, parsed.actionTimeoutMs);
-    const recovered = await persistedProjectByTitle(page, activeProjectTitle);
+    const relinked = await relinkNativeProject(page, parsed.resumeProjectDirectory);
+    activeProjectIdentity = relinked;
+    await waitForPersistedProject(page, activeProjectIdentity, parsed.actionTimeoutMs);
+    const recovered = await persistedProject(page, activeProjectIdentity);
     const recoveredGenerationId = recovered.project.nativeGenerationId;
     if (typeof recoveredGenerationId !== "string" || recoveredGenerationId !== recovered.generationJob.id) {
       throw new Error("The recovered project and learning-plan job disagree on the native generation identity");
@@ -149,13 +150,13 @@ try {
       if (currentState === "FAILED") {
         try {
           await expect.poll(async () => {
-            currentState = receiptState((await persistedProjectByTitle(page, activeProjectTitle)).generationJob);
+            currentState = receiptState((await persistedProject(page, activeProjectIdentity)).generationJob);
             return currentState;
           }, { timeout: 10_000 }).not.toBe("FAILED");
         } catch {
           await planningJob.getByRole("button", { name: /retry creating learning plan/i }).click();
           await expect.poll(async () => {
-            currentState = receiptState((await persistedProjectByTitle(page, activeProjectTitle)).generationJob);
+            currentState = receiptState((await persistedProject(page, activeProjectIdentity)).generationJob);
             return currentState;
           }, { timeout: parsed.actionTimeoutMs }).not.toBe("FAILED");
         }
@@ -195,11 +196,17 @@ try {
 
     await waitForPersistedProjectByTitle(page, projectTitle, parsed.actionTimeoutMs);
     const recovered = await persistedProjectByTitle(page, projectTitle);
+    activeProjectIdentity = {
+      title: recovered.project.title,
+      projectId: recovered.project.nativeProjectId,
+      projectDirectory: recovered.project.nativeProjectDirectory,
+    };
     planningApproval = await waitForPlanningApproval(recovered.project.nativeProjectDirectory, recovered.generationJob.id, parsed.jobTimeoutMs);
     await expect(page.getByRole("heading", { name: /shape the learning journey/i })).toBeVisible({ timeout: parsed.actionTimeoutMs });
   }
   await expect(jobs).toHaveClass(/open/);
-  const planProject = await persistedProjectByTitle(page, activeProjectTitle);
+  if (!activeProjectIdentity) throw new Error("The native project identity was not established");
+  const planProject = await persistedProject(page, activeProjectIdentity);
   const planningJob = await jobCardById(page, jobs, planProject.generationJob.id);
   await expect(planningJob).toContainText(parsed.resumeFailedMedia ? "failed" : "blocked", { timeout: parsed.actionTimeoutMs });
   await page.screenshot({
@@ -235,7 +242,7 @@ try {
   }
   await jobs.locator("header .icon-button").click();
   await page.locator(".plan-progress button").filter({ hasText: "Script" }).click();
-  const reviewedProject = await persistedProjectByTitle(page, activeProjectTitle);
+  const reviewedProject = await persistedProject(page, activeProjectIdentity);
   if (parsed.reviewFile) {
     rootReviewedNarrationEdits = await applyReviewedNarrationFile(page, reviewedProject.project, parsed.reviewFile);
   }
@@ -270,15 +277,20 @@ try {
   if (failedMediaStage) {
     throw new Error(`${failedMediaStage.kind} finished in ${failedMediaStage.state}: ${failedMediaStage.message ?? "no durable error"}`);
   }
-  const completedGenerationState = await waitForProjectGenerationState(
-    page,
-    activeProjectTitle,
-    ["SUCCEEDED", "FAILED", "CANCELLED", "STALE"],
+  const finalBranchStage = await waitForApprovedBranchCompletion(
+    reviewedProject.project.nativeProjectDirectory,
+    approvedMediaBranch,
     parsed.jobTimeoutMs,
   );
-  if (completedGenerationState !== "SUCCEEDED") {
-    throw new Error(`Native generation finished in ${completedGenerationState}, expected SUCCEEDED`);
+  if (finalBranchStage?.state !== "SUCCEEDED") {
+    throw new Error(`Current approval branch export finished in ${finalBranchStage?.state ?? "an unknown state"}: ${finalBranchStage?.message ?? "no durable error"}`);
   }
+  await waitForProjectGenerationState(
+    page,
+    activeProjectIdentity.projectId,
+    ["SUCCEEDED"],
+    parsed.jobTimeoutMs,
+  );
   await expect(generationJob).toHaveClass(/complete/, { timeout: parsed.actionTimeoutMs });
   await expect(generationJob).toContainText("succeeded");
   if (gpuObserverTask) {
@@ -300,7 +312,7 @@ try {
   await expect(page.getByRole("heading", { name: /review the whole argument/i })).toBeVisible();
   let reviewVideo = page.getByLabel("Authoritative generated tutorial media");
   await expect(reviewVideo).toBeVisible();
-  await expect.poll(async () => reviewVideo.evaluate((video) => Number.isFinite(video.duration) && video.duration > 0), { timeout: parsed.actionTimeoutMs }).toBe(true);
+  await expect.poll(async () => reviewVideo.evaluate((video) => Number.isFinite(video.duration) && video.duration >= 178 && video.duration <= 182), { timeout: parsed.actionTimeoutMs }).toBe(true);
   const generatedReviewPlayback = await verifyVideoPlayback(reviewVideo, parsed.actionTimeoutMs);
   await page.screenshot({ path: path.join(evidenceRoot, "05-native-review.png"), fullPage: true });
 
@@ -309,15 +321,41 @@ try {
   await page.getByLabel("Resolution").selectOption("1080p");
   await page.getByLabel("Frame rate").selectOption("30");
   await page.getByLabel("Codec preference").selectOption(parsed.codecPreference);
-  await page.getByRole("button", { name: /export portable/i }).click();
-  await expect(page.getByText(/portable project archived/i)).toBeVisible({ timeout: parsed.actionTimeoutMs });
-  const archivePathText = await page.locator(".archive-path").textContent();
+  const priorMasterJobIds = await persistedJobIds(page, reviewedProject.project.nativeProjectId, "export_master");
   await page.getByRole("button", { name: /render 1080p master/i }).click();
   await expect(page.getByText(/export queued|export blocked/i)).toBeVisible({ timeout: parsed.actionTimeoutMs });
   await expect(jobs).toHaveClass(/open/);
-  const exportJob = jobs.locator(".job-card").filter({ hasText: "1080p" }).first();
-  await expect(exportJob).toContainText(/succeeded|failed|blocked|cancelled|stale/, { timeout: parsed.jobTimeoutMs });
+  const nativeExport = await waitForNewPersistedJob(
+    page,
+    reviewedProject.project.nativeProjectId,
+    "export_master",
+    priorMasterJobIds,
+    parsed.actionTimeoutMs,
+  );
+  const exportJob = await jobCardById(page, jobs, nativeExport.id);
+  const completedNativeExport = await waitForPersistedJobTerminal(page, nativeExport.id, parsed.jobTimeoutMs);
+  await expect(exportJob).toContainText("succeeded", { timeout: parsed.actionTimeoutMs });
+  if (receiptState(completedNativeExport) !== "SUCCEEDED") {
+    throw new Error(`Native export finished in ${receiptState(completedNativeExport) ?? "an unknown state"}, expected SUCCEEDED`);
+  }
   await page.screenshot({ path: path.join(evidenceRoot, "06-native-export.png"), fullPage: true });
+
+  const mediaBindings = await invokeNative(page, "editor_bindings_get", {
+    projectId: reviewedProject.project.nativeProjectId,
+    projectDirectory: reviewedProject.project.nativeProjectDirectory,
+    generationId: reviewedProject.project.nativeGenerationId,
+  });
+  if (mediaBindings.projectId !== reviewedProject.project.nativeProjectId
+    || mediaBindings.generationId !== reviewedProject.project.nativeGenerationId) {
+    throw new Error("Native editor bindings returned mismatched project or generation identity");
+  }
+  const reviewedScenes = planEvidence.storyboard.payload?.storyboard?.scenes;
+  if (!Array.isArray(reviewedScenes) || reviewedScenes.length === 0) {
+    throw new Error("The approved storyboard has no scenes for binding verification");
+  }
+  const expectedSceneIds = reviewedScenes.map((scene) => scene.id);
+  assertBindingCoverage(mediaBindings.narration, expectedSceneIds, "narration");
+  assertBindingCoverage(mediaBindings.renders, expectedSceneIds, "composite render");
 
   const importedImageName = "included-chapter-frame.png";
   const importedImagePath = path.join(repoRoot, "apps", "desktop", "src", "assets", "teaching", "slide-chapter-v1.png");
@@ -344,15 +382,15 @@ try {
   await editor.getByLabel("Text size").fill("32");
   await editor.getByLabel("Text size").press("Enter");
   await editor.getByLabel("Text placement").selectOption("bottom");
-  await page.waitForFunction(({ title, imported, text }) => {
+  await page.waitForFunction(({ projectId, imported, text }) => {
     const workspace = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
-    const project = workspace.projects?.find((candidate) => candidate.title === title);
+    const project = workspace.projects?.find((candidate) => candidate.nativeProjectId === projectId);
     const document = project?.editorDocument;
     if (!document) return false;
     const clips = (document.tracks ?? []).flatMap((track) => track.clips ?? []);
     return document.assets?.some((asset) => asset.name === imported && /^[0-9a-f]{64}$/u.test(asset.hash ?? ""))
       && clips.some((clip) => clip.kind === "titles" && clip.text === text);
-  }, { title: activeProjectTitle, imported: importedImageName, text: editedTitle });
+  }, { projectId: activeProjectIdentity.projectId, imported: importedImageName, text: editedTitle });
   await expect.poll(async () => {
     const durable = await invokeNative(page, "project_snapshot_get", {
       projectId: reviewedProject.project.nativeProjectId,
@@ -389,9 +427,23 @@ try {
   await expect(editor.getByLabel("On-screen text")).toHaveValue(editedTitle);
   await page.screenshot({ path: path.join(evidenceRoot, "08-editor-reloaded-cas-media.png"), fullPage: true });
 
+  const durableEditorProject = await persistedEditorDocument(page, activeProjectIdentity);
+  assertCurrentFullLengthEditorDocument(durableEditorProject, mediaBindings, 180);
+  const priorEditorJobIds = await persistedJobIds(page, reviewedProject.project.nativeProjectId, "editor_timeline_export");
   await editor.getByRole("button", { name: "Render timeline" }).click();
   const editorStatus = editor.locator(".aly-editor-shell__status");
   await expect(editorStatus).toContainText("Timeline rendered to", { timeout: parsed.jobTimeoutMs });
+  const nativeEditorExport = await waitForNewPersistedJob(
+    page,
+    reviewedProject.project.nativeProjectId,
+    "editor_timeline_export",
+    priorEditorJobIds,
+    parsed.actionTimeoutMs,
+  );
+  const completedNativeEditorExport = await waitForPersistedJobTerminal(page, nativeEditorExport.id, parsed.jobTimeoutMs);
+  if (receiptState(completedNativeEditorExport) !== "SUCCEEDED") {
+    throw new Error(`Native editor export finished in ${receiptState(completedNativeEditorExport) ?? "an unknown state"}, expected SUCCEEDED`);
+  }
   await page.screenshot({ path: path.join(evidenceRoot, "09-editor-render-complete.png"), fullPage: true });
   await editor.getByRole("button", { name: /return to scene/i }).click();
   await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^review$/i }).click();
@@ -403,18 +455,20 @@ try {
   const editedReviewPlayback = await verifyVideoPlayback(reviewVideo, parsed.actionTimeoutMs);
   await page.screenshot({ path: path.join(evidenceRoot, "10-review-edited-timeline.png"), fullPage: true });
 
-  const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}"));
-  const project = persisted.projects?.find((candidate) => candidate.title === activeProjectTitle);
-  if (!project) throw new Error("The native-created tutorial was not persisted in the desktop workspace");
+  await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^export$/i }).click();
+  await expect(page.getByRole("heading", { name: /package the finished lesson/i })).toBeVisible();
+  await page.getByRole("button", { name: /export portable/i }).click();
+  await expect(page.getByText(/portable project archived/i)).toBeVisible({ timeout: parsed.actionTimeoutMs });
+  const archivePathText = await page.locator(".archive-path").textContent();
+
+  const { project } = await persistedProject(page, activeProjectIdentity);
   if (project.duration !== 3) throw new Error(`Native tutorial duration was ${project.duration}, expected 3`);
-  const nativeExport = persisted.jobs?.find((job) => job.operation === "export_master" && job.projectId === project.nativeProjectId);
-  const nativeEditorExport = persisted.jobs?.find((job) => job.operation === "editor_timeline_export" && job.projectId === project.nativeProjectId);
-  const result = nativeExport?.result ?? null;
-  const editorResult = nativeEditorExport?.result ?? null;
-  const nativeGeneration = persisted.jobs?.find((job) => job.id === project.nativeGenerationId);
+  const result = completedNativeExport.result ?? null;
+  const editorResult = completedNativeEditorExport.result ?? null;
+  const nativeGeneration = (await persistedProject(page, activeProjectIdentity)).generationJob;
   const generationState = receiptState(nativeGeneration);
-  const exportState = receiptState(nativeExport);
-  const editorExportState = receiptState(nativeEditorExport);
+  const exportState = receiptState(completedNativeExport);
+  const editorExportState = receiptState(completedNativeEditorExport);
   if (generationState !== "SUCCEEDED") {
     throw new Error(`Native generation finished in ${generationState ?? "an unknown state"}, expected SUCCEEDED`);
   }
@@ -426,14 +480,6 @@ try {
   }
   if (typeof result?.path !== "string" || !result.path.trim()) {
     throw new Error("Successful native export did not return a media path");
-  }
-  const mediaBindings = await invokeNative(page, "editor_bindings_get", {
-    projectId: project.nativeProjectId,
-    projectDirectory: project.nativeProjectDirectory,
-    generationId: project.nativeGenerationId,
-  });
-  if (mediaBindings.projectId !== project.nativeProjectId || mediaBindings.generationId !== project.nativeGenerationId) {
-    throw new Error("Native editor bindings returned mismatched project or generation identity");
   }
   const presenterEvidence = [];
   for (const binding of mediaBindings.presenters ?? []) {
@@ -455,14 +501,21 @@ try {
   if (parsed.requirePresenter && presenterEvidence.length === 0) {
     throw new Error("Representative native acceptance required a presenter, but the generated binding set had none");
   }
-  if (parsed.requirePresenter && !presenterEvidence.some((binding) => binding.activeDurationSeconds > 0)) {
-    throw new Error("Representative native acceptance returned no positive presenter duration");
+  if (parsed.requirePresenter && (presenterEvidence.length !== 1
+    || presenterEvidence[0].sceneId !== expectedSceneIds[0]
+    || presenterEvidence[0].activeDurationSeconds <= 0)) {
+    throw new Error("Representative native acceptance did not bind exactly one positive-duration presenter to the opening scene");
   }
   if (parsed.requirePresenter) {
-    assertRepresentativeProviderPolicy(project.providerRoutingPolicy, parsed.profileId);
+    assertRepresentativeProjectContract(project, planEvidence.storyboard.payload, parsed.profileId);
   }
   if (!reviewedNarrationEdit) throw new Error("The native journey did not record its pre-approval narration edit");
-  const narrationStage = readGenerationStage(project.nativeProjectDirectory, project.nativeGenerationId, "generation.narration");
+  const narrationStage = readGenerationStage(
+    project.nativeProjectDirectory,
+    project.nativeGenerationId,
+    "generation.narration",
+    approvedMediaBranch.approvalRevisionId,
+  );
   const narrationItems = Array.isArray(narrationStage.payload?.narration) ? narrationStage.payload.narration : [];
   const narrationReuse = {
     reused: narrationItems.filter((item) => item.synthesis?.reused === true && item.synthesis?.providerInvoked === false).length,
@@ -472,15 +525,26 @@ try {
   if (parsed.expectedNarrationCacheHits !== null && narrationReuse.reused !== parsed.expectedNarrationCacheHits) {
     throw new Error(`Narration reused ${narrationReuse.reused} clips, expected ${parsed.expectedNarrationCacheHits}`);
   }
+  assertBindingCoverage(narrationItems, expectedSceneIds, "narration stage");
+  if (parsed.expectedNarrationCacheHits !== null
+    && (narrationReuse.total !== 5 || narrationReuse.providerInvoked !== narrationReuse.total - parsed.expectedNarrationCacheHits)) {
+    throw new Error(`Narration cache recovery produced ${JSON.stringify(narrationReuse)}, expected five clips with only cache misses invoking the provider`);
+  }
   const approvedNarration = narrationStage.payload?.narration?.find((item) => item.sceneId === reviewedNarrationEdit.sceneId);
   if (approvedNarration?.authoredText !== reviewedNarrationEdit.after) {
     throw new Error("Generated narration did not use the exact scene text reviewed immediately before approval");
   }
   await assertRegularFile(result.path, "exported master");
+  if (!/^[0-9a-f]{64}$/u.test(result.artifactHash ?? "") || await sha256(result.path) !== result.artifactHash) {
+    throw new Error("Exported master did not match its content-addressed artifact hash");
+  }
   if (typeof editorResult?.outputPath !== "string" || !editorResult.outputPath.trim()) {
     throw new Error("Successful native editor export did not return an output path");
   }
   await assertRegularFile(editorResult.outputPath, "edited timeline export");
+  if (!/^[0-9a-f]{64}$/u.test(editorResult.artifactHash ?? "") || await sha256(editorResult.outputPath) !== editorResult.artifactHash) {
+    throw new Error("Edited timeline export did not match its content-addressed artifact hash");
+  }
   if (!Array.isArray(result.sidecarPaths) || result.sidecarPaths.length < 2) {
     throw new Error("Successful native export did not return its VTT and SRT sidecars");
   }
@@ -730,6 +794,9 @@ function parseArguments(arguments_) {
     index += 1;
   }
   if (!result.portableRoot) throw new Error("--portable-root is required");
+  if (result.resumeProject && !result.resumeProjectDirectory) {
+    throw new Error("--resume-project-directory is required when resuming a native project");
+  }
   if (/(?:groq|mistral)-nvidia|nvidia-writing/iu.test(result.profileId) && !result.credentialFile) {
     throw new Error("--credential-file is required for representative provider acceptance");
   }
@@ -812,12 +879,34 @@ async function persistedProjectByTitle(page, title) {
   }, title);
 }
 
+async function persistedProject(page, identity) {
+  return await page.evaluate((expected) => {
+    const state = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+    const project = state.projects?.find((candidate) => candidate.nativeProjectId === expected.projectId
+      && candidate.nativeProjectDirectory === expected.projectDirectory);
+    if (!project) throw new Error(`No native project is linked to ${expected.projectId} at ${expected.projectDirectory}`);
+    const generationJob = (state.jobs ?? []).find((job) => job.id === project.nativeGenerationId
+      && job.projectId === expected.projectId
+      && job.projectDirectory === expected.projectDirectory);
+    if (!generationJob) throw new Error(`No durable generation job is linked to ${expected.projectId}`);
+    return { project, generationJob };
+  }, identity);
+}
+
 async function waitForPersistedProjectByTitle(page, title, timeoutMs) {
   await expect.poll(async () => page.evaluate((expectedTitle) => {
     const state = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
     const project = state.projects?.find((candidate) => candidate.title === expectedTitle);
     return Boolean(project?.nativeProjectId && project?.nativeProjectDirectory);
   }, title), { timeout: timeoutMs }).toBe(true);
+}
+
+async function waitForPersistedProject(page, identity, timeoutMs) {
+  await expect.poll(async () => page.evaluate((expected) => {
+    const state = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+    return Boolean(state.projects?.some((candidate) => candidate.nativeProjectId === expected.projectId
+      && candidate.nativeProjectDirectory === expected.projectDirectory));
+  }, identity), { timeout: timeoutMs }).toBe(true);
 }
 
 async function jobCardById(page, jobs, jobId) {
@@ -827,6 +916,85 @@ async function jobCardById(page, jobs, jobId) {
   }, jobId);
   if (jobIndex < 0) throw new Error(`No local job card is linked to ${jobId}`);
   return jobs.locator(".job-card").nth(jobIndex);
+}
+
+async function persistedJobIds(page, projectId, operation) {
+  return await page.evaluate(({ expectedProjectId, expectedOperation }) => {
+    const state = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+    return (state.jobs ?? [])
+      .filter((job) => job.projectId === expectedProjectId && job.operation === expectedOperation)
+      .map((job) => job.id);
+  }, { expectedProjectId: projectId, expectedOperation: operation });
+}
+
+async function waitForNewPersistedJob(page, projectId, operation, previousIds, timeoutMs) {
+  const previous = new Set(previousIds);
+  let found = null;
+  await expect.poll(async () => {
+    found = await page.evaluate(({ expectedProjectId, expectedOperation, excluded }) => {
+      const state = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+      return (state.jobs ?? []).find((job) => job.projectId === expectedProjectId
+        && job.operation === expectedOperation
+        && !excluded.includes(job.id)) ?? null;
+    }, { expectedProjectId: projectId, expectedOperation: operation, excluded: [...previous] });
+    return found?.id ?? null;
+  }, { timeout: timeoutMs }).not.toBeNull();
+  return found;
+}
+
+async function waitForPersistedJobTerminal(page, jobId, timeoutMs) {
+  let found = null;
+  await expect.poll(async () => {
+    found = await page.evaluate((expectedJobId) => {
+      const state = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+      return (state.jobs ?? []).find((job) => job.id === expectedJobId) ?? null;
+    }, jobId);
+    return receiptState(found);
+  }, { timeout: timeoutMs }).toMatch(/^(?:SUCCEEDED|FAILED|CANCELLED|STALE|BLOCKED)$/u);
+  return found;
+}
+
+async function persistedEditorDocument(page, identity) {
+  const durable = await invokeNative(page, "project_snapshot_get", {
+    projectId: identity.projectId,
+    projectDirectory: identity.projectDirectory,
+  });
+  if (!durable.snapshot?.editorDocument) {
+    throw new Error("The current project has no durable editor document");
+  }
+  return durable.snapshot.editorDocument;
+}
+
+function assertBindingCoverage(bindings, expectedSceneIds, label) {
+  if (!Array.isArray(bindings)) throw new Error(`Current ${label} bindings are unavailable`);
+  const actual = bindings.map((binding) => binding.sceneId);
+  if (actual.length !== expectedSceneIds.length
+    || new Set(actual).size !== actual.length
+    || expectedSceneIds.some((sceneId) => !actual.includes(sceneId))) {
+    throw new Error(`Current ${label} bindings do not cover the approved storyboard exactly`);
+  }
+}
+
+function assertCurrentFullLengthEditorDocument(document, mediaBindings, expectedSeconds) {
+  const numerator = Number(document.frameRate?.numerator);
+  const denominator = Number(document.frameRate?.denominator);
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || numerator <= 0 || denominator <= 0) {
+    throw new Error("The durable editor document has an invalid frame rate");
+  }
+  const expectedFrames = expectedSeconds * numerator / denominator;
+  if (Math.abs(Number(document.durationFrames) - expectedFrames) > 2 * numerator / denominator) {
+    throw new Error(`The durable editor timeline has ${document.durationFrames} frames, expected approximately ${expectedFrames}`);
+  }
+  const assets = new Map((document.assets ?? []).map((asset) => [asset.id, asset]));
+  const slides = (document.tracks ?? []).find((track) => track.kind === "slides")?.clips ?? [];
+  for (const binding of mediaBindings.renders ?? []) {
+    const assetId = `generated-render-${binding.sceneId}`;
+    const asset = assets.get(assetId);
+    const clip = slides.find((candidate) => candidate.metadata?.alystriaSceneId === binding.sceneId);
+    if (asset?.hash !== binding.artifactHash || clip?.assetId !== assetId) {
+      throw new Error(`Editor scene ${binding.sceneId} is not bound to the current composite render`);
+    }
+  }
 }
 
 async function applyReviewedNarrationFile(page, project, reviewFile) {
@@ -852,20 +1020,13 @@ async function applyReviewedNarrationFile(page, project, reviewFile) {
   return edits;
 }
 
-async function relinkNativeProjectIfMissing(page, title, projectDirectory) {
-  const alreadyLinked = await page.evaluate((expectedTitle) => {
-    const state = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
-    const project = state.projects?.find((candidate) => candidate.title === expectedTitle);
-    return Boolean(project?.nativeProjectId && project?.nativeProjectDirectory);
-  }, title);
-  if (alreadyLinked) return title;
-  if (!projectDirectory) {
-    throw new Error(`The native project ${title} is not linked in this WebView profile; pass --resume-project-directory to recover it`);
-  }
-
+async function relinkNativeProject(page, projectDirectory) {
   const handle = await invokeNative(page, "project_open", { projectDirectory, allowReadOnly: false });
   if (handle?.access !== "readWrite" || !handle?.manifest?.projectId) {
     throw new Error("The native project could not be reopened read-write for resume");
+  }
+  if (normalizedWindowsPath(handle.projectDirectory) !== normalizedWindowsPath(projectDirectory)) {
+    throw new Error(`The native app reopened ${handle.projectDirectory}, expected ${projectDirectory}`);
   }
   const identity = { projectId: handle.manifest.projectId, projectDirectory: handle.projectDirectory };
   const durable = await invokeNative(page, "project_snapshot_get", identity);
@@ -919,6 +1080,7 @@ async function relinkNativeProjectIfMissing(page, title, projectDirectory) {
       result: { ...(jobReceipt.result ?? {}), receiptState },
     };
     localStorage.setItem("alystria-studio-v2", JSON.stringify({
+      ...current,
       projects: [project, ...(current.projects ?? []).filter((candidate) => candidate.id !== project.id)],
       recentProjectId: project.id,
       studioMode: current.studioMode ?? "guided",
@@ -931,7 +1093,15 @@ async function relinkNativeProjectIfMissing(page, title, projectDirectory) {
   if (typeof durableTitle !== "string" || !durableTitle.trim()) {
     throw new Error("The reopened project snapshot has no durable title");
   }
-  return durableTitle;
+  return {
+    title: durableTitle,
+    projectId: identity.projectId,
+    projectDirectory: identity.projectDirectory,
+  };
+}
+
+function normalizedWindowsPath(value) {
+  return path.resolve(value).replace(/^\\\\\?\\/u, "").replace(/[\\/]+$/u, "").toLowerCase();
 }
 
 function equivalentNarrationEdit(value) {
@@ -968,13 +1138,14 @@ async function observeGpuCoordination(coordinationPath, signal) {
   return { path: coordinationPath, mode: "read-only-observer", transitions, finalState };
 }
 
-function readGenerationStage(projectDirectory, generationId, kind) {
+function readGenerationStage(projectDirectory, generationId, kind, approvalRevisionId = null) {
   const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
   try {
     const rows = database.prepare("SELECT parameters_json, result_json FROM jobs WHERE kind = ? AND state = 'SUCCEEDED' ORDER BY updated_at DESC").all(kind);
     for (const row of rows) {
       const parameters = JSON.parse(row.parameters_json);
-      if (parameters.generationId !== generationId) continue;
+      if (parameters.generationId !== generationId
+        || (approvalRevisionId !== null && parameters.approvalRevisionId !== approvalRevisionId)) continue;
       const result = JSON.parse(row.result_json);
       if (!result?.payload || !/^[0-9a-f]{64}$/u.test(result.artifactHash ?? "")) throw new Error(`${kind} returned an invalid persisted payload`);
       return result;
@@ -1053,6 +1224,37 @@ async function waitForGenerationStagesTerminal(projectDirectory, approvedBranch,
   throw new Error(`Timed out waiting for ${kinds.join(", ")} to finish for approved branch ${approvedBranch.approvalRevisionId}`);
 }
 
+async function waitForApprovedBranchCompletion(projectDirectory, approvedBranch, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  const active = new Set(["READY", "QUEUED", "RUNNING", "RETRY_WAIT"]);
+  while (Date.now() < deadline) {
+    const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
+    try {
+      const rows = database.prepare("SELECT kind, state, error_json, parameters_json FROM jobs WHERE kind LIKE 'generation.%' ORDER BY created_at DESC").all();
+      const branch = rows.filter((row) => {
+        const parameters = JSON.parse(row.parameters_json);
+        return parameters.generationId === approvedBranch.generationId
+          && parameters.approvalRevisionId === approvedBranch.approvalRevisionId;
+      });
+      const exportStage = branch.find((row) => row.kind === "generation.export");
+      if (exportStage?.state === "SUCCEEDED") {
+        return { kind: exportStage.kind, state: exportStage.state, message: null };
+      }
+      const failed = branch.find((row) => ["FAILED", "CANCELLED", "STALE"].includes(row.state));
+      if (failed && !branch.some((row) => active.has(row.state))) {
+        const error = failed.error_json ? JSON.parse(failed.error_json) : null;
+        return { kind: failed.kind, state: failed.state, message: error?.message ?? null };
+      }
+    } catch (error) {
+      if (!/database is locked/iu.test(error instanceof Error ? error.message : String(error))) throw error;
+    } finally {
+      database.close();
+    }
+    await delay(500);
+  }
+  throw new Error(`Timed out waiting for approved branch ${approvedBranch.approvalRevisionId} to finish`);
+}
+
 function readReviewablePlan(projectDirectory, generationId) {
   const stages = Object.fromEntries([
     ["learningPlan", "generation.learning_plan"],
@@ -1065,20 +1267,20 @@ function readReviewablePlan(projectDirectory, generationId) {
   return stages;
 }
 
-async function waitForProjectGenerationState(page, title, terminalStates, timeoutMs) {
+async function waitForProjectGenerationState(page, projectId, terminalStates, timeoutMs) {
   let state = null;
-  await expect.poll(async () => page.evaluate((projectTitle) => {
+  await expect.poll(async () => page.evaluate((expectedProjectId) => {
     const workspace = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
-    const project = workspace.projects?.find((candidate) => candidate.title === projectTitle);
+    const project = workspace.projects?.find((candidate) => candidate.nativeProjectId === expectedProjectId);
     return Boolean(project && workspace.jobs?.some((candidate) => candidate.id === project.nativeGenerationId));
-  }, title), { timeout: Math.min(timeoutMs, 30_000) }).toBe(true);
+  }, projectId), { timeout: Math.min(timeoutMs, 30_000) }).toBe(true);
   await expect.poll(async () => {
-    state = await page.evaluate((projectTitle) => {
+    state = await page.evaluate((expectedProjectId) => {
       const workspace = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
-      const project = workspace.projects?.find((candidate) => candidate.title === projectTitle);
+      const project = workspace.projects?.find((candidate) => candidate.nativeProjectId === expectedProjectId);
       const job = workspace.jobs?.find((candidate) => candidate.id === project?.nativeGenerationId);
       return job?.result?.receiptState ?? null;
-    }, title);
+    }, projectId);
     return terminalStates.includes(state);
   }, { timeout: timeoutMs }).toBe(true);
   return state;
