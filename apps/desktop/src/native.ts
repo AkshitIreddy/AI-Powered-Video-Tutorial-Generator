@@ -875,7 +875,10 @@ export function projectOpen(input: OpenProjectRequest): Promise<ProjectHandle> {
 }
 
 export function projectSnapshotGet(input: ProjectIdentityRequest): Promise<ProjectSnapshotReceipt> {
-  return command("project_snapshot_get", input, () => {
+  // Polling callers can pass structurally compatible job links. Keep the
+  // native DTO exact: Rust rejects jobId and other non-identity fields.
+  const identity = { projectId: input.projectId, projectDirectory: input.projectDirectory };
+  return command("project_snapshot_get", identity, () => {
     const project = browserProjects.get(input.projectId);
     if (!project || project.handle.projectDirectory !== input.projectDirectory) {
       throw new Error("Browser demo project snapshot is unavailable.");

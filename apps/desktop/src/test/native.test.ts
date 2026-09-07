@@ -175,6 +175,26 @@ describe("native desktop bridge", () => {
     expect(JSON.stringify(localStorage)).not.toContain(input.secret);
   });
 
+  it("refreshes a project snapshot from a job link without forwarding job-only fields", async () => {
+    const identity = {
+      projectId: "019d0000-0000-7000-8000-000000000011",
+      projectDirectory: "C:/Users/Akshit/Tutorials/karatsuba",
+    };
+    const jobLink = { ...identity, jobId: "generation-1" };
+    const receipt = { ...identity, headRevisionId: "rev_export", revisionNumber: 27, snapshot: {} };
+    tauri.invoke.mockImplementationOnce(async (_command, args) => {
+      // The native ProjectIdentityRequest denies unknown fields. TypeScript's
+      // structural typing still permits the richer polling link at this call.
+      if (Object.keys(args.input).some((key) => !["projectId", "projectDirectory"].includes(key))) {
+        throw new Error("unknown field jobId");
+      }
+      return receipt;
+    });
+
+    await expect(projectSnapshotGet(jobLink)).resolves.toEqual(receipt);
+    expect(tauri.invoke).toHaveBeenCalledWith("project_snapshot_get", { input: identity });
+  });
+
   it("uses narrow snapshot, source-import, and archive commands", async () => {
     const identity = {
       projectId: "019d0000-0000-7000-8000-000000000011",
