@@ -209,3 +209,38 @@ tests passed; unavailable provider telemetry is never invented.
 4. The representative native tutorial uses one Elena presenter opening and narrated teaching scenes after it. The workflow still invokes the local presenter once per presenter scene, so this audit does not claim efficient continuous presenter coverage across a presenter-heavy three-minute storyboard.
 5. No release or push occurred. Bounded live requests and their exact outcomes are recorded in the catalog, presenter, stock, and Windows reports. Groq structured writing has succeeded; Gemini returned HTTP 404, Openverse returned HTTP 504, and NVIDIA vision checks exposed a retired endpoint and a transient response from its replacement. Failed or unavailable calls are not reported as quality passes. GPU-heavy presenter evidence belongs to the separate real runtime proof and final packaged application run.
 6. The packaged three-minute Windows generation and final rendered-media inspection remain the final acceptance boundary. Passing component and worker suites establishes integration readiness but does not substitute for that app-driven run.
+
+## Native narration pacing and image diagnostic — September 7
+
+The current native Karatsuba attempt synthesized five NVIDIA Aria clips from
+reviewed prose through the packaged worker, then persisted each verified WAV
+and completed forced-alignment record before rejecting aggregate pacing.
+Independent PCM inspection confirmed durations of 8.219875, 37.941417,
+36.733979, 35.805188, and 41.656604 seconds: 160.357063 seconds total.
+All five are mono 48 kHz PCM with zero full-scale clipped samples. This is
+sample-level verification, not auditory listening or an ASR intelligibility
+claim. Exact hashes and measurements are preserved in
+`E:\temp\avt-final-media-inspection-20260907\narration-v2-measurements.json`.
+
+The durable narration failure at `2026-09-07T06:18:57.713Z` correctly rejected
+19,643 ms of unvoiced time against its 10,000 ms aggregate limit. Reviewed prose
+version 3 adds 33 words explaining the recursive tree to the final scene;
+the other four scenes remain identical. Its file is
+`E:\temp\avt-audit-2026-09-05\karatsuba-root-reviewed-narration-v3.json`,
+SHA-256 `771e49116ed5ece91559992f2b4793ede3738d95e3aa776c159e780f838dc063`.
+Actual reapproval, cache reuse, and resulting timing remain separate acceptance
+steps; the short calibration estimate is not substituted for measured audio.
+
+The first native image attempt failed with “NVIDIA NIM visual response contained
+no usable asset.” That attempt retained neither its HTTP status nor response
+shape/request ID, so the cause is unknown. A separate single public diagnostic
+through the same production adapter succeeded with HTTP 200 and one
+`artifacts[].base64` image, matching the
+[NVIDIA image response contract](https://docs.nvidia.com/nim/visual-genai/latest/getting-started.html?model=flux.2-klein-4b).
+Its sanitized receipt is
+`E:\temp\avt-final-media-inspection-20260907\nim-image-diagnostic.json`,
+request ID `c4e0a3dc-8f22-4027-8449-6ac592a9d689`. Only response structure, byte
+count, digest, and allowlisted headers were retained. This establishes one
+successful diagnostic, not success of the failed project image or a diagnosis
+of its failure. The current hosted-preview adapter reports zero-dollar cost;
+restricted TTS providers were not used.
