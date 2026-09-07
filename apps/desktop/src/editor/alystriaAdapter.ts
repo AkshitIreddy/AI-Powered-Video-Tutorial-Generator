@@ -308,7 +308,11 @@ export function createEditorProjectFromAlystriaProject(
 
   let cursor = 0;
   for (const scene of [...record.scenes].sort((left, right) => (left.index ?? 0) - (right.index ?? 0))) {
-    const durationFrames = Math.max(1, secondsToFrames(scene.duration, frameRate));
+    const renderBinding = bindings?.renders?.find((binding) => binding.sceneId === scene.id);
+    const sourceStartFrame = Math.max(0, secondsToFrames((renderBinding?.sourceStartTicks ?? 0) / 240_000, frameRate));
+    const durationFrames = renderBinding?.durationTicks === undefined
+      ? Math.max(1, secondsToFrames(scene.duration, frameRate))
+      : Math.max(1, secondsToFrames(((renderBinding.sourceStartTicks ?? 0) + renderBinding.durationTicks) / 240_000, frameRate) - sourceStartFrame);
     const linkedGroupId = `alystria-scene-${scene.id}`;
     const sceneMetadata = {
       alystriaSceneId: scene.id,
@@ -317,15 +321,13 @@ export function createEditorProjectFromAlystriaProject(
       visual: scene.visual ?? null,
       authoredStructureOnly: true,
     };
-    const renderBinding = bindings?.renders?.find((binding) => binding.sceneId === scene.id);
     const renderAsset = generatedAssets.find((asset) => asset.id === `generated-render-${scene.id}`);
     const visualAsset = renderAsset ?? generatedAssets.find((asset) => asset.id === `generated-visual-${scene.id}`);
     const narrationAsset = generatedAssets.find((asset) => asset.id === `generated-narration-${scene.id}`);
     const presenterAsset = generatedAssets.find((asset) => asset.id === `generated-presenter-${scene.id}`);
     const narrationDuration = Math.min(durationFrames, narrationAsset?.durationFrames ?? durationFrames);
     const presenterDuration = Math.min(durationFrames, presenterAsset?.durationFrames ?? durationFrames);
-    const renderDuration = renderBinding?.durationTicks === undefined ? durationFrames : Math.min(durationFrames, Math.max(1, secondsToFrames(renderBinding.durationTicks / 240_000, frameRate)));
-    const sourceStartFrame = renderBinding?.sourceStartTicks === undefined ? 0 : Math.max(0, secondsToFrames(renderBinding.sourceStartTicks / 240_000, frameRate));
+    const renderDuration = durationFrames;
     track("slides").clips.push(makeClip({ id: `scene-${scene.id}`, trackId: track("slides").id, kind: "slides", name: scene.title, startFrame: cursor, durationFrames: renderAsset ? renderDuration : durationFrames, sourceStartFrame, assetId: visualAsset?.id ?? null, linkedGroupId, locked: scene.locked, metadata: { ...sceneMetadata, authoredStructureOnly: !visualAsset, ...(renderAsset ? { includeSourceAudio: true, preservedCompositeRender: true } : {}) } }));
     const cues = sceneCaptionBindings(bindings, scene.id);
     const burnedIntoPixels = renderBinding?.captionsBurnedIntoPixels;

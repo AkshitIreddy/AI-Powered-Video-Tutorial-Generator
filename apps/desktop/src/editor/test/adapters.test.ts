@@ -313,6 +313,27 @@ describe("Alystria ProjectRecord adapter", () => {
     expect(preserved.tracks.find((track) => track.kind === "titles")?.clips[0]?.text).toBe("My corrected title");
   });
 
+  it("initializes contiguous master scenes from measured windows rather than planned durations", () => {
+    const document = createEditorProjectFromAlystriaProject({
+      id: "measured-project", title: "Measured timing", duration: 0.5,
+      scenes: [
+        { id: "scene-1", index: 1, title: "Short opening", duration: 15, narration: "Opening." },
+        { id: "scene-2", index: 2, title: "Long explanation", duration: 15, narration: "Explanation." },
+      ],
+    }, { now: "2026-09-07T08:00:00Z", mediaBindings: {
+      renders: [
+        { sceneId: "scene-1", artifactHash: "a".repeat(64), mediaType: "video/mp4", durationTicks: 1_200_000, sourceStartTicks: 0 },
+        { sceneId: "scene-2", artifactHash: "a".repeat(64), mediaType: "video/mp4", durationTicks: 6_000_000, sourceStartTicks: 1_200_000 },
+      ], assets: [], narration: [], presenters: [],
+    } });
+    const clips = document.tracks.find((track) => track.kind === "slides")!.clips;
+    expect(clips.map((clip) => clip.timelineRange)).toEqual([
+      { startFrame: 0, durationFrames: 150 }, { startFrame: 150, durationFrames: 750 },
+    ]);
+    expect(clips.map((clip) => clip.sourceRange)).toEqual(clips.map((clip) => clip.timelineRange));
+    expect(document.durationFrames).toBe(900);
+  });
+
   it("preserves trimmed composite offsets across reopen and master promotion", () => {
     const bindings = {
       renders: [{ sceneId: "scene-1", artifactHash: "a".repeat(64), mediaType: "video/mp4", durationTicks: 2_880_000, sourceStartTicks: 480_000, captionsBurnedIntoPixels: true }],
