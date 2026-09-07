@@ -108,11 +108,35 @@ try {
   await page.screenshot({ path: path.join(evidenceRoot, "01-native-home.png"), fullPage: true });
 
   let jobs = page.getByRole("complementary", { name: /background jobs/i });
+  let priorApprovedMediaBranch = null;
   if (parsed.resumeProject) {
     activeProjectTitle = await relinkNativeProjectIfMissing(page, projectTitle, parsed.resumeProjectDirectory);
     await waitForPersistedProjectByTitle(page, activeProjectTitle, parsed.actionTimeoutMs);
     const recovered = await persistedProjectByTitle(page, activeProjectTitle);
+    const recoveredGenerationId = recovered.project.nativeGenerationId;
+    if (typeof recoveredGenerationId !== "string" || recoveredGenerationId !== recovered.generationJob.id) {
+      throw new Error("The recovered project and learning-plan job disagree on the native generation identity");
+    }
     await page.getByRole("button", { name: /open project/i }).click();
+    if (parsed.designedVisuals) {
+      await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^studio$/i }).click();
+      await page.locator(".inspector-tabs").getByRole("button", { name: /^generate$/i }).click();
+      const designedLayout = page.getByRole("button", { name: /designed layout/i });
+      await designedLayout.click();
+      await expect(designedLayout).toHaveClass(/active/);
+      await expect.poll(async () => {
+        const durable = await invokeNative(page, "project_snapshot_get", {
+          projectId: recovered.project.nativeProjectId,
+          projectDirectory: recovered.project.nativeProjectDirectory,
+        });
+        return durable.snapshot?.creative?.slide?.mode ?? null;
+      }, { timeout: parsed.actionTimeoutMs }).toBe("designed");
+      await page.screenshot({ path: path.join(evidenceRoot, "02-designed-visual-mode.png"), fullPage: true });
+      await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^plan$/i }).click();
+    }
+    if (parsed.resumeFailedMedia && !(await page.getByRole("heading", { name: /shape the learning journey/i }).isVisible())) {
+      await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^plan$/i }).click();
+    }
     await expect(page.getByRole("heading", { name: /shape the learning journey/i })).toBeVisible({ timeout: parsed.actionTimeoutMs });
     if (await jobs.count() === 0 || !await jobs.evaluate((element) => element.classList.contains("open"))) {
       await page.getByRole("button", { name: /^jobs$/i }).click();
@@ -137,7 +161,12 @@ try {
         }
       }
     }
-    planningApproval = await waitForPlanningApproval(recovered.project.nativeProjectDirectory, recovered.generationJob.id, parsed.jobTimeoutMs);
+    planningApproval = parsed.resumeFailedMedia
+      ? { generationId: recoveredGenerationId }
+      : await waitForPlanningApproval(recovered.project.nativeProjectDirectory, recovered.generationJob.id, parsed.jobTimeoutMs);
+    if (parsed.resumeFailedMedia) {
+      priorApprovedMediaBranch = latestApprovedMediaBranch(recovered.project.nativeProjectDirectory, recoveredGenerationId);
+    }
   } else {
     await page.getByRole("button", { name: /new tutorial/i }).click();
     const wizard = page.locator(".wizard-modal");
@@ -172,8 +201,11 @@ try {
   await expect(jobs).toHaveClass(/open/);
   const planProject = await persistedProjectByTitle(page, activeProjectTitle);
   const planningJob = await jobCardById(page, jobs, planProject.generationJob.id);
-  await expect(planningJob).toContainText("blocked", { timeout: parsed.actionTimeoutMs });
-  await page.screenshot({ path: path.join(evidenceRoot, "03-native-plan-blocked.png"), fullPage: true });
+  await expect(planningJob).toContainText(parsed.resumeFailedMedia ? "failed" : "blocked", { timeout: parsed.actionTimeoutMs });
+  await page.screenshot({
+    path: path.join(evidenceRoot, parsed.resumeFailedMedia ? "03-native-media-revision.png" : "03-native-plan-blocked.png"),
+    fullPage: true,
+  });
   if (!planningApproval?.generationId) throw new Error("The durable planning gate returned no generation identity");
   const planEvidence = readReviewablePlan(planProject.project.nativeProjectDirectory, planningApproval.generationId);
   if (parsed.requirePresenter) {
@@ -222,11 +254,33 @@ try {
 
   await expect(jobs).toHaveClass(/open/, { timeout: parsed.actionTimeoutMs });
   const generationJob = await jobCardById(page, jobs, reviewedProject.generationJob.id);
-  const generationCompletion = (async () => {
-    await expect(generationJob).toHaveClass(/complete/, { timeout: parsed.jobTimeoutMs });
-    await expect(generationJob).toContainText("succeeded");
-  })();
-  await generationCompletion;
+  const approvedMediaBranch = await waitForNewApprovedMediaBranch(
+    reviewedProject.project.nativeProjectDirectory,
+    planningApproval.generationId,
+    priorApprovedMediaBranch,
+    parsed.actionTimeoutMs,
+  );
+  const mediaStageStates = await waitForGenerationStagesTerminal(
+    reviewedProject.project.nativeProjectDirectory,
+    approvedMediaBranch,
+    ["generation.assets", "generation.narration"],
+    parsed.jobTimeoutMs,
+  );
+  const failedMediaStage = mediaStageStates.find((stage) => stage.state !== "SUCCEEDED");
+  if (failedMediaStage) {
+    throw new Error(`${failedMediaStage.kind} finished in ${failedMediaStage.state}: ${failedMediaStage.message ?? "no durable error"}`);
+  }
+  const completedGenerationState = await waitForProjectGenerationState(
+    page,
+    activeProjectTitle,
+    ["SUCCEEDED", "FAILED", "CANCELLED", "STALE"],
+    parsed.jobTimeoutMs,
+  );
+  if (completedGenerationState !== "SUCCEEDED") {
+    throw new Error(`Native generation finished in ${completedGenerationState}, expected SUCCEEDED`);
+  }
+  await expect(generationJob).toHaveClass(/complete/, { timeout: parsed.actionTimeoutMs });
+  await expect(generationJob).toContainText("succeeded");
   if (gpuObserverTask) {
     gpuObserverAbort.abort();
     gpuCoordinationEvidence = await gpuObserverTask;
@@ -409,6 +463,15 @@ try {
   }
   if (!reviewedNarrationEdit) throw new Error("The native journey did not record its pre-approval narration edit");
   const narrationStage = readGenerationStage(project.nativeProjectDirectory, project.nativeGenerationId, "generation.narration");
+  const narrationItems = Array.isArray(narrationStage.payload?.narration) ? narrationStage.payload.narration : [];
+  const narrationReuse = {
+    reused: narrationItems.filter((item) => item.synthesis?.reused === true && item.synthesis?.providerInvoked === false).length,
+    providerInvoked: narrationItems.filter((item) => item.synthesis?.providerInvoked === true).length,
+    total: narrationItems.length,
+  };
+  if (parsed.expectedNarrationCacheHits !== null && narrationReuse.reused !== parsed.expectedNarrationCacheHits) {
+    throw new Error(`Narration reused ${narrationReuse.reused} clips, expected ${parsed.expectedNarrationCacheHits}`);
+  }
   const approvedNarration = narrationStage.payload?.narration?.find((item) => item.sceneId === reviewedNarrationEdit.sceneId);
   if (approvedNarration?.authoredText !== reviewedNarrationEdit.after) {
     throw new Error("Generated narration did not use the exact scene text reviewed immediately before approval");
@@ -502,6 +565,7 @@ try {
       verifiedInGeneratedMedia: true,
     },
     rootReviewedNarrationEdits,
+    narrationReuse,
     codecPreference: parsed.codecPreference,
     mediaDurationSeconds,
     pageErrors,
@@ -608,6 +672,9 @@ function parseArguments(arguments_) {
     resumeProject: false,
     resumeProjectDirectory: null,
     retryFailedPlan: false,
+    resumeFailedMedia: false,
+    designedVisuals: false,
+    expectedNarrationCacheHits: null,
     reviewFile: null,
     gpuCoordinationPath: null,
   };
@@ -630,6 +697,17 @@ function parseArguments(arguments_) {
       result.retryFailedPlan = true;
       continue;
     }
+    if (name === "--resume-failed-media") {
+      result.resumeProject = true;
+      result.resumeFailedMedia = true;
+      continue;
+    }
+    if (name === "--designed-visuals") {
+      result.resumeProject = true;
+      result.resumeFailedMedia = true;
+      result.designedVisuals = true;
+      continue;
+    }
     const value = arguments_[index + 1];
     if (name === "--portable-root") result.portableRoot = value;
     else if (name === "--startup-timeout-ms") result.startupTimeoutMs = positiveNumber(value, name);
@@ -638,6 +716,7 @@ function parseArguments(arguments_) {
     else if (name === "--topic") result.topic = requiredText(value, name, 240);
     else if (name === "--profile-id") result.profileId = requiredText(value, name, 100);
     else if (name === "--hard-budget-cents") result.hardBudgetCents = nonNegativeInteger(value, name);
+    else if (name === "--expected-narration-cache-hits") result.expectedNarrationCacheHits = nonNegativeInteger(value, name);
     else if (name === "--evidence-class") result.evidenceClass = requiredText(value, name, 100);
     else if (name === "--codec") result.codecPreference = codecPreference(value, name);
     else if (name === "--credential-file") result.credentialFile = path.resolve(requiredText(value, name, 500));
@@ -904,6 +983,74 @@ function readGenerationStage(projectDirectory, generationId, kind) {
     database.close();
   }
   throw new Error(`No successful ${kind} stage exists for generation ${generationId}`);
+}
+
+function latestApprovedMediaBranch(projectDirectory, expectedGenerationId) {
+  const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
+  try {
+    const rows = database.prepare("SELECT parameters_json, created_at FROM jobs WHERE kind = 'generation.narration' ORDER BY created_at DESC").all();
+    for (const row of rows) {
+      const parameters = JSON.parse(row.parameters_json);
+      if (parameters.generationId !== expectedGenerationId || typeof parameters.approvalRevisionId !== "string") continue;
+      return {
+        generationId: parameters.generationId,
+        approvalRevisionId: parameters.approvalRevisionId,
+        createdAt: row.created_at,
+      };
+    }
+    return null;
+  } finally {
+    database.close();
+  }
+}
+
+async function waitForNewApprovedMediaBranch(projectDirectory, expectedGenerationId, previous, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const current = latestApprovedMediaBranch(projectDirectory, expectedGenerationId);
+      if (current && (!previous
+        || current.generationId !== previous.generationId
+        || current.approvalRevisionId !== previous.approvalRevisionId
+        || current.createdAt !== previous.createdAt)) {
+        return current;
+      }
+    } catch (error) {
+      if (!/database is locked/iu.test(error instanceof Error ? error.message : String(error))) throw error;
+    }
+    await delay(250);
+  }
+  throw new Error("Timed out waiting for approval to create a new durable media branch");
+}
+
+async function waitForGenerationStagesTerminal(projectDirectory, approvedBranch, kinds, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  const terminal = new Set(["SUCCEEDED", "FAILED", "CANCELLED", "STALE"]);
+  while (Date.now() < deadline) {
+    const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
+    try {
+      const rows = database.prepare("SELECT kind, state, error_json, parameters_json FROM jobs WHERE kind LIKE 'generation.%' ORDER BY created_at DESC").all();
+      const stages = new Map();
+      for (const row of rows) {
+        const parameters = JSON.parse(row.parameters_json);
+        if (parameters.generationId !== approvedBranch.generationId
+          || parameters.approvalRevisionId !== approvedBranch.approvalRevisionId
+          || !kinds.includes(row.kind)
+          || stages.has(row.kind)) continue;
+        const error = row.error_json ? JSON.parse(row.error_json) : null;
+        stages.set(row.kind, { kind: row.kind, state: row.state, message: error?.message ?? null });
+      }
+      if (kinds.every((kind) => terminal.has(stages.get(kind)?.state))) {
+        return kinds.map((kind) => stages.get(kind));
+      }
+    } catch (error) {
+      if (!/database is locked/iu.test(error instanceof Error ? error.message : String(error))) throw error;
+    } finally {
+      database.close();
+    }
+    await delay(500);
+  }
+  throw new Error(`Timed out waiting for ${kinds.join(", ")} to finish for approved branch ${approvedBranch.approvalRevisionId}`);
 }
 
 function readReviewablePlan(projectDirectory, generationId) {
