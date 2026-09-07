@@ -28,7 +28,7 @@ from alystria.generation import (
     request_from_desktop,
     request_from_fixture,
 )
-from alystria.generation.coordinator import _prepare_narration_pacing_reapproval
+from alystria.generation.coordinator import _prepare_failed_media_reapproval
 from alystria.generation.education_provider import StructuredWritingEducationalProvider
 from alystria.generation.forced_alignment import AlignmentInput
 from alystria.generation.workflow import (
@@ -1216,6 +1216,26 @@ class RecordingMediaClient(DeterministicMediaClient):
         return super().synthesize_narration(scene, locale=locale, seed=seed)
 
 
+class FailingVisualMediaClient(RecordingMediaClient):
+    def narration_cache_runtime_identity(self) -> dict[str, object]:
+        value: dict[str, object] = {
+            "contract": "failing-visual-cache-fixture-v1",
+            "selectedProvider": self.provider_id,
+            "requestedModel": self.model_revision,
+            "requestedVoice": "deterministic-sine",
+            "synthesisControls": {"duration": "word-count-bounded"},
+        }
+        canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
+        return {
+            **value,
+            "runtimeIdentitySha256": hashlib.sha256(canonical.encode()).hexdigest(),
+        }
+
+    def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
+        self.visual_scene_ids.append(str(scene["id"]))
+        raise RuntimeError("image generation failed")
+
+
 class PacingRecoveryMediaClient(RecordingMediaClient):
     def narration_cache_runtime_identity(self) -> dict[str, object]:
         value: dict[str, object] = {
@@ -1553,12 +1573,13 @@ def test_pacing_reapproval_refreshes_stale_job_snapshots_before_superseding(
         retried = coordinator.runtime.retry(failed_narration.job_id)
         assert retried.state is JobState.QUEUED
         with pytest.raises(ApprovalNotReadyError, match="media work is active"):
-            _prepare_narration_pacing_reapproval(
+            _prepare_failed_media_reapproval(
                 coordinator.runtime,
                 stale_job_snapshots,
                 approval_revision_id=approval_revision_id,
                 previous_payload=previous_payload,
                 reviewed_payload=reviewed_payload,
+                request_visual_generation_mode="routed",
             )
         assert coordinator.runtime.get_job(failed_narration.job_id).state is JobState.QUEUED
         assert not any(
@@ -1620,6 +1641,53 @@ def test_reviewed_narration_cannot_branch_while_media_work_is_active(
         assert [revision.revision_id for revision in approval_revisions] == [
             approval_revision_id
         ]
+        assert len(coordinator._jobs(generation_id)) == total_jobs_before
+    finally:
+        store.close()
+
+
+def test_reviewed_visual_mode_cannot_branch_while_media_work_is_active(
+    tmp_path: Path,
+) -> None:
+    store, coordinator = open_coordinator(tmp_path)
+    try:
+        generation_id = coordinator.start(
+            replace(request(), metadata={"sceneVisualGeneration": "routed"})
+        ).generation_id
+        coordinator.run_pending()
+        generated_head = store.head_revision()
+        assert generated_head is not None
+        illustrated_snapshot = copy.deepcopy(generated_head.snapshot)
+        illustrated_snapshot["creative"] = {"slide": {"mode": "illustrated"}}
+        illustrated_review = store.create_revision(
+            snapshot=illustrated_snapshot,
+            expected_head=generated_head.revision_id,
+            message="Review illustrated mode",
+        )
+        approved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=illustrated_review.revision_id,
+        )
+        approval_revision_id = approved.approval_revision_id
+        assert approval_revision_id is not None
+        assert approved.state is GenerationState.QUEUED
+        total_jobs_before = len(coordinator._jobs(generation_id))
+
+        approval_head = store.head_revision()
+        assert approval_head is not None
+        designed_snapshot = copy.deepcopy(approval_head.snapshot)
+        designed_snapshot["creative"] = {"slide": {"mode": "designed"}}
+        designed_review = store.create_revision(
+            snapshot=designed_snapshot,
+            expected_head=approval_head.revision_id,
+            message="Attempt mode change while media is active",
+        )
+        with pytest.raises(ApprovalNotReadyError, match="media work is active"):
+            coordinator.approve(
+                generation_id,
+                expected_head_revision_id=designed_review.revision_id,
+            )
+        assert coordinator.status(generation_id).approval_revision_id == approval_revision_id
         assert len(coordinator._jobs(generation_id)) == total_jobs_before
     finally:
         store.close()
@@ -1874,6 +1942,179 @@ def test_authored_only_generation_never_calls_an_image_provider(tmp_path: Path) 
         store.close()
 
 
+def test_failed_illustrated_assets_can_be_reapproved_as_designed_without_new_media_calls(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Designed recovery", name="Designed recovery")
+    media = FailingVisualMediaClient()
+    renderer = RecordingRenderer()
+    coordinator = GenerationCoordinator(store, media_client=media, renderer_client=renderer)
+    try:
+        routed_request = replace(
+            pacing_recovery_request(),
+            presenter_mode="off",
+            metadata={
+                **pacing_recovery_request().metadata,
+                "sceneVisualGeneration": "routed",
+            },
+        )
+        generation_id = coordinator.start(routed_request).generation_id
+        coordinator.run_pending()
+        generated_head = store.head_revision()
+        assert generated_head is not None
+        illustrated_snapshot = copy.deepcopy(generated_head.snapshot)
+        illustrated_snapshot["creative"] = {"slide": {"mode": "illustrated"}}
+        illustrated_review = store.create_revision(
+            snapshot=illustrated_snapshot,
+            expected_head=generated_head.revision_id,
+            message="Review illustrated canvas",
+        )
+        first_approval = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=illustrated_review.revision_id,
+        )
+        first_approval_id = first_approval.approval_revision_id
+        assert first_approval_id is not None
+
+        failed = coordinator.run_pending()
+        assert failed is not None and failed.state is GenerationState.FAILED
+        failed_assets = next(
+            item for item in failed.stages if item.stage is GenerationStage.ASSETS
+        )
+        assert failed_assets.error is not None
+        assert len(media.visual_scene_ids) == 1
+        assert len(media.narration_scenes) == 5
+
+        failed_head = store.head_revision()
+        assert failed_head is not None
+        unchanged_snapshot = copy.deepcopy(store.get_revision(first_approval_id).snapshot)
+        unchanged_review = store.create_revision(
+            snapshot=unchanged_snapshot,
+            expected_head=failed_head.revision_id,
+            message="Keep illustrated mode after artwork failure",
+        )
+        with pytest.raises(ApprovalNotReadyError, match="failed illustrated assets"):
+            coordinator.approve(
+                generation_id,
+                expected_head_revision_id=unchanged_review.revision_id,
+            )
+
+        designed_snapshot = copy.deepcopy(store.get_revision(first_approval_id).snapshot)
+        designed_snapshot["creative"] = {"slide": {"mode": "designed"}}
+        designed_review = store.create_revision(
+            snapshot=designed_snapshot,
+            expected_head=unchanged_review.revision_id,
+            message="Use designed slide layout after artwork failure",
+        )
+        reapproved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=designed_review.revision_id,
+        )
+        second_approval_id = reapproved.approval_revision_id
+        assert second_approval_id not in {None, first_approval_id}
+        assert store.get_revision(first_approval_id).snapshot["payload"]["approval"][
+            "reviewedVisualMode"
+        ] == "illustrated"
+        assert store.get_revision(str(second_approval_id)).snapshot["payload"]["approval"][
+            "reviewedVisualMode"
+        ] == "designed"
+
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert len(media.visual_scene_ids) == 1
+        assert len(media.narration_scenes) == 5
+        narration_job = next(
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("approvalRevisionId") == second_approval_id
+            and job.parameters.get("stage") == GenerationStage.NARRATION.value
+        )
+        assert narration_job.result is not None
+        assert all(
+            item["synthesis"]["reused"] is True
+            and item["synthesis"]["providerInvoked"] is False
+            for item in narration_job.result["payload"]["narration"]
+        )
+        assets_job = next(
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("approvalRevisionId") == second_approval_id
+            and job.parameters.get("stage") == GenerationStage.ASSETS.value
+        )
+        assert assets_job.result is not None
+        assert assets_job.result["payload"]["visualGenerationMode"] == "authored-only"
+        assert assets_job.result["payload"]["assets"] == []
+    finally:
+        store.close()
+
+
+def test_designed_asset_reapproval_refreshes_jobs_before_superseding(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Designed recovery race", name="Designed race")
+    coordinator = GenerationCoordinator(store, media_client=FailingVisualMediaClient())
+    try:
+        routed_request = replace(
+            request(),
+            presenter_mode="off",
+            metadata={"sceneVisualGeneration": "routed"},
+        )
+        generation_id = coordinator.start(routed_request).generation_id
+        coordinator.run_pending()
+        head = store.head_revision()
+        assert head is not None
+        illustrated_snapshot = copy.deepcopy(head.snapshot)
+        illustrated_snapshot["creative"] = {"slide": {"mode": "illustrated"}}
+        illustrated_review = store.create_revision(
+            snapshot=illustrated_snapshot,
+            expected_head=head.revision_id,
+            message="Review illustrated canvas",
+        )
+        approved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=illustrated_review.revision_id,
+        )
+        approval_revision_id = approved.approval_revision_id
+        assert approval_revision_id is not None
+        failed = coordinator.run_pending()
+        assert failed is not None and failed.state is GenerationState.FAILED
+
+        stale_job_snapshots = coordinator._jobs(generation_id)
+        failed_assets = next(
+            job
+            for job in stale_job_snapshots
+            if job.parameters.get("approvalRevisionId") == approval_revision_id
+            and job.parameters.get("stage") == GenerationStage.ASSETS.value
+        )
+        assert failed_assets.state is JobState.FAILED
+        previous_payload = copy.deepcopy(
+            store.get_revision(approval_revision_id).snapshot["payload"]
+        )
+        reviewed_payload = copy.deepcopy(previous_payload)
+        reviewed_payload["approval"]["reviewedVisualMode"] = "designed"
+        reviewed_payload["approval"]["sceneVisualGeneration"] = "authored-only"
+
+        retried = coordinator.runtime.retry(failed_assets.job_id)
+        assert retried.state is JobState.QUEUED
+        with pytest.raises(ApprovalNotReadyError, match="media work is active"):
+            _prepare_failed_media_reapproval(
+                coordinator.runtime,
+                stale_job_snapshots,
+                approval_revision_id=approval_revision_id,
+                previous_payload=previous_payload,
+                reviewed_payload=reviewed_payload,
+                request_visual_generation_mode="routed",
+            )
+        assert coordinator.runtime.get_job(failed_assets.job_id).state is JobState.QUEUED
+        assert not any(
+            job.state is JobState.STALE
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("approvalRevisionId") == approval_revision_id
+        )
+    finally:
+        store.close()
+
+
 def test_renderer_client_receives_immutable_complete_request(tmp_path: Path) -> None:
     store = ProjectStore.create(tmp_path / "Tutorial Project", name="Tutorial Project")
     renderer = RecordingRenderer()
@@ -1998,6 +2239,208 @@ def test_split_presenter_placement_preserves_storyboard_and_provider_semantics(
         store.close()
 
 
+def _desktop_image_routing_policy() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "privacyMode": "local",
+        "dataClassification": "project",
+        "budget": {
+            "currency": "USD",
+            "hardLimitMicros": 0,
+            "requireKnownPricing": True,
+            "approved": True,
+        },
+        "approvals": [
+            {
+                "providerId": "mock",
+                "capabilities": ["image.generate"],
+                "credentialRef": None,
+                "boundary": "local",
+                "retention": "local_only",
+                "regions": ["local"],
+                "dataClasses": ["project"],
+                "privacyApproved": True,
+                "retentionApproved": True,
+                "regionApproved": True,
+                "budgetApproved": True,
+            }
+        ],
+        "routes": [
+            {
+                "capability": "image.generate",
+                "providerIds": ["mock"],
+                "model": "mock-image-v1",
+                "voice": None,
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("slide_mode", "expected_generation_mode", "expects_provider_images"),
+    [
+        ("designed", "authored-only", False),
+        ("illustrated", "routed", True),
+    ],
+)
+def test_desktop_slide_mode_controls_provider_images_even_when_a_route_exists(
+    tmp_path: Path,
+    slide_mode: str,
+    expected_generation_mode: str,
+    expects_provider_images: bool,
+) -> None:
+    store = ProjectStore.create(tmp_path / slide_mode, name=f"{slide_mode} tutorial")
+    media = RecordingMediaClient()
+    coordinator = GenerationCoordinator(store, media_client=media)
+    try:
+        store.create_revision(
+            snapshot={
+                "brief": {
+                    "topic": "Explain stable sorting",
+                    "audience": "Beginning programmers",
+                    "durationSeconds": 180,
+                    "locale": "en-US",
+                },
+                "groundingMode": "creative",
+                "sources": [],
+                "creative": {"slide": {"mode": slide_mode}},
+                "providerRoutingPolicy": _desktop_image_routing_policy(),
+            },
+            kind="edit",
+        )
+        converted = request_from_desktop(
+            store,
+            {
+                "quality": "standard",
+                "privacy": "local",
+                "approvedProviderIds": ["mock"],
+                "budget": {
+                    "currency": "USD",
+                    "hardLimitMinorUnits": 0,
+                    "requireKnownPricing": True,
+                },
+            },
+        )
+        assert converted.metadata["sceneVisualGeneration"] == expected_generation_mode
+        assert converted.metadata["imageGenerationApproved"] is True
+
+        generation_id = coordinator.start(converted).generation_id
+        waiting = coordinator.run_pending()
+        assert waiting is not None and waiting.state is GenerationState.WAITING_APPROVAL
+        reviewed = store.head_revision()
+        assert reviewed is not None
+        approved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=reviewed.revision_id,
+        )
+        approval_revision_id = approved.approval_revision_id
+        assert approval_revision_id is not None
+        approval_payload = store.get_revision(approval_revision_id).snapshot["payload"]
+        assert approval_payload["approval"]["reviewedVisualMode"] == slide_mode
+        assert approval_payload["approval"][
+            "sceneVisualGeneration"
+        ] == expected_generation_mode
+
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert bool(media.visual_scene_ids) is expects_provider_images
+    finally:
+        store.close()
+
+
+def test_default_designed_request_can_approve_illustrated_mode_with_its_frozen_route(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Illustrated at review", name="Illustrated review")
+    media = RecordingMediaClient()
+    coordinator = GenerationCoordinator(store, media_client=media)
+    try:
+        store.create_revision(
+            snapshot={
+                "brief": {
+                    "topic": "Explain stable sorting",
+                    "audience": "Beginning programmers",
+                    "durationSeconds": 180,
+                    "locale": "en-US",
+                },
+                "groundingMode": "creative",
+                "sources": [],
+                "providerRoutingPolicy": _desktop_image_routing_policy(),
+            },
+            kind="edit",
+        )
+        converted = request_from_desktop(
+            store,
+            {
+                "quality": "standard",
+                "privacy": "local",
+                "approvedProviderIds": ["mock"],
+                "budget": {"hardLimitMinorUnits": 0},
+            },
+        )
+        assert converted.metadata["sceneVisualGeneration"] == "authored-only"
+        assert converted.metadata["imageGenerationApproved"] is True
+
+        generation_id = coordinator.start(converted).generation_id
+        coordinator.run_pending()
+        head = store.head_revision()
+        assert head is not None
+        illustrated_snapshot = copy.deepcopy(head.snapshot)
+        illustrated_snapshot["creative"] = {"slide": {"mode": "illustrated"}}
+        illustrated_review = store.create_revision(
+            snapshot=illustrated_snapshot,
+            expected_head=head.revision_id,
+            message="Choose illustrated canvas during review",
+        )
+        approved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=illustrated_review.revision_id,
+        )
+        assert approved.approval_revision_id is not None
+        approval = store.get_revision(approved.approval_revision_id).snapshot["payload"][
+            "approval"
+        ]
+        assert approval["reviewedVisualMode"] == "illustrated"
+        assert approval["sceneVisualGeneration"] == "routed"
+
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert media.visual_scene_ids
+    finally:
+        store.close()
+
+
+def test_desktop_illustrated_mode_requires_an_approved_image_route(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Missing image route", name="Missing route")
+    try:
+        store.create_revision(
+            snapshot={
+                "brief": {
+                    "topic": "Explain stable sorting",
+                    "audience": "Beginning programmers",
+                    "durationSeconds": 180,
+                    "locale": "en-US",
+                },
+                "groundingMode": "creative",
+                "sources": [],
+                "creative": {"slide": {"mode": "illustrated"}},
+            },
+            kind="edit",
+        )
+        with pytest.raises(ValueError, match="requires an approved image generation route"):
+            request_from_desktop(
+                store,
+                {
+                    "quality": "standard",
+                    "privacy": "local",
+                    "approvedProviderIds": [],
+                    "budget": {"hardLimitMinorUnits": 0},
+                },
+            )
+    finally:
+        store.close()
+
+
 def test_desktop_policy_request_uses_authoritative_project_snapshot(tmp_path: Path) -> None:
     store, _ = open_coordinator(tmp_path)
     try:
@@ -2043,6 +2486,7 @@ def test_desktop_policy_request_uses_authoritative_project_snapshot(tmp_path: Pa
         assert converted.hard_budget_micros == 250_000
         assert converted.sources[0].source_id == "source.note"
         assert converted.metadata["preservationLocks"] == ["script"]
+        assert converted.metadata["sceneVisualGeneration"] == "authored-only"
     finally:
         store.close()
 

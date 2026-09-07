@@ -1194,9 +1194,16 @@ class GenerationWorkflow:
         assets: list[dict[str, Any]] = []
         links: list[dict[str, str]] = []
         scenes = approved["storyboard"]["scenes"]
-        visual_generation_mode = request.metadata.get(
-            "sceneVisualGeneration", "routed"
+        approval = approved.get("approval")
+        visual_generation_mode = (
+            approval.get("sceneVisualGeneration")
+            if isinstance(approval, dict)
+            else None
         )
+        if visual_generation_mode is None:
+            visual_generation_mode = request.metadata.get(
+                "sceneVisualGeneration", "routed"
+            )
         if visual_generation_mode not in {"routed", "authored-only"}:
             raise ValueError("sceneVisualGeneration must be routed or authored-only")
         for index, scene in enumerate(scenes):

@@ -351,6 +351,9 @@ class GenerationCoordinator:
                     f"Expected head {expected_head_revision_id}, but current head is "
                     f"{reviewed_head.revision_id}"
                 )
+            request = _request_from_job(approval_job.parameters)
+            request_visual_generation_mode = _request_visual_generation_mode(request)
+            image_generation_approved = _request_image_generation_approved(request)
             existing_revision = self._approval_revision(generation_id)
             if existing_revision is None:
                 if approval_job.result is None or not isinstance(
@@ -362,6 +365,8 @@ class GenerationCoordinator:
                     reviewed_head.snapshot,
                     generation_id=generation_id,
                     reviewed_revision_id=reviewed_head.revision_id,
+                    request_visual_generation_mode=request_visual_generation_mode,
+                    image_generation_approved=image_generation_approved,
                 )
                 supersedes_revision_id = None
             elif status.state is GenerationState.FAILED:
@@ -378,18 +383,21 @@ class GenerationCoordinator:
                     reviewed_head.snapshot,
                     generation_id=generation_id,
                     reviewed_revision_id=reviewed_head.revision_id,
+                    request_visual_generation_mode=request_visual_generation_mode,
+                    image_generation_approved=image_generation_approved,
                 )
                 previous_payload = self.store.get_revision(existing_revision).snapshot.get(
                     "payload"
                 )
                 if not isinstance(previous_payload, dict):
                     raise ApprovalNotReadyError("Prior approval payload is unavailable")
-                _prepare_narration_pacing_reapproval(
+                _prepare_failed_media_reapproval(
                     self.runtime,
                     jobs,
                     approval_revision_id=existing_revision,
                     previous_payload=previous_payload,
                     reviewed_payload=approval_payload,
+                    request_visual_generation_mode=request_visual_generation_mode,
                 )
                 supersedes_revision_id = existing_revision
             else:
@@ -408,10 +416,18 @@ class GenerationCoordinator:
                         reviewed_head.snapshot,
                         generation_id=generation_id,
                         reviewed_revision_id=reviewed_head.revision_id,
+                        request_visual_generation_mode=request_visual_generation_mode,
+                        image_generation_approved=image_generation_approved,
                     )
-                    if _reviewed_scene_prose_changed(previous_payload, reviewed_payload):
+                    if _reviewed_scene_prose_changed(
+                        previous_payload, reviewed_payload
+                    ) or _reviewed_visual_generation_changed(
+                        previous_payload,
+                        reviewed_payload,
+                        fallback=request_visual_generation_mode,
+                    ):
                         raise ApprovalNotReadyError(
-                            "Reviewed narration cannot be reapproved while post-approval "
+                            "Reviewed content cannot be reapproved while post-approval "
                             "media work is active"
                         )
                 approval_revision_id = existing_revision
@@ -443,7 +459,6 @@ class GenerationCoordinator:
                     expected_head=reviewed_head.revision_id,
                 )
                 approval_revision_id = revision.revision_id
-            request = _request_from_job(approval_job.parameters)
             self.workflow.enqueue_post_approval(
                 generation_id=generation_id,
                 request=request,
@@ -811,6 +826,25 @@ def request_from_canonical_fixture(fixture_id: str) -> GenerationRequest:
     raise FileNotFoundError(f"The bundled canonical fixture is unavailable: {fixture_id}")
 
 
+def _desktop_slide_mode(snapshot: dict[str, Any]) -> str:
+    creative = snapshot.get("creative")
+    if creative is None:
+        return "designed"
+    if not isinstance(creative, dict):
+        raise ValueError("Project creative configuration must be an object")
+    slide = creative.get("slide")
+    if slide is None:
+        return "designed"
+    if not isinstance(slide, dict):
+        raise ValueError("Project slide configuration must be an object")
+    mode = slide.get("mode")
+    if mode is None:
+        return "designed"
+    if mode not in {"designed", "illustrated"}:
+        raise ValueError("Project slide mode must be designed or illustrated")
+    return str(mode)
+
+
 def request_from_desktop(
     store: ProjectStore,
     params: dict[str, Any],
@@ -885,16 +919,17 @@ def request_from_desktop(
     routing_policy = (
         parse_routing_policy(routing_value).to_dict() if isinstance(routing_value, dict) else None
     )
-    scene_visual_generation = (
-        "routed"
-        if routing_policy is None
-        or any(
+    slide_mode = _desktop_slide_mode(snapshot)
+    has_approved_image_route = routing_policy is not None and any(
             route.get("capability") == "image.generate"
             for route in routing_policy.get("routes", [])
             if isinstance(route, dict)
-        )
-        else "authored-only"
     )
+    if slide_mode == "illustrated" and not has_approved_image_route:
+        raise ValueError(
+            "Illustrated slide mode requires an approved image generation route"
+        )
+    scene_visual_generation = "routed" if slide_mode == "illustrated" else "authored-only"
     if starter_audio_root is None:
         configured_starter_root = os.environ.get("ALYSTRIA_STARTER_AUDIO_ROOT")
         starter_audio_root = (
@@ -931,6 +966,7 @@ def request_from_desktop(
         "requireKnownPricing": bool(budget_value.get("requireKnownPricing", True)),
         "providerRoutingPolicy": routing_policy,
         "sceneVisualGeneration": scene_visual_generation,
+        "imageGenerationApproved": has_approved_image_route,
         "audioCustomization": audio_customization,
         "visualCustomization": visual_customization,
         "fontCustomization": font_customization,
@@ -1166,15 +1202,59 @@ _NARRATION_PACING_FAILURE_PREFIXES = (
 )
 
 
-def _prepare_narration_pacing_reapproval(
+def _request_visual_generation_mode(request: GenerationRequest) -> str:
+    mode = request.metadata.get("sceneVisualGeneration", "routed")
+    if mode not in {"routed", "authored-only"}:
+        raise ApprovalNotReadyError(
+            "Generation request sceneVisualGeneration must be routed or authored-only"
+        )
+    return str(mode)
+
+
+def _request_image_generation_approved(request: GenerationRequest) -> bool:
+    approved = request.metadata.get("imageGenerationApproved")
+    if approved is None:
+        return _request_visual_generation_mode(request) == "routed"
+    if not isinstance(approved, bool):
+        raise ApprovalNotReadyError("Generation request imageGenerationApproved must be boolean")
+    return approved
+
+
+def _approved_visual_generation_mode(
+    payload: dict[str, Any], *, fallback: str
+) -> str:
+    approval = payload.get("approval")
+    mode = approval.get("sceneVisualGeneration") if isinstance(approval, dict) else None
+    if mode is None:
+        mode = fallback
+    if mode not in {"routed", "authored-only"}:
+        raise ApprovalNotReadyError(
+            "Approved sceneVisualGeneration must be routed or authored-only"
+        )
+    return str(mode)
+
+
+def _reviewed_visual_generation_changed(
+    previous_payload: dict[str, Any],
+    reviewed_payload: dict[str, Any],
+    *,
+    fallback: str,
+) -> bool:
+    return _approved_visual_generation_mode(
+        previous_payload, fallback=fallback
+    ) != _approved_visual_generation_mode(reviewed_payload, fallback=fallback)
+
+
+def _prepare_failed_media_reapproval(
     runtime: SQLiteWorkflowRuntime,
     jobs: list[Job],
     *,
     approval_revision_id: str,
     previous_payload: dict[str, Any],
     reviewed_payload: dict[str, Any],
+    request_visual_generation_mode: str,
 ) -> None:
-    """Retire one failed approval branch before a reviewed narration restart."""
+    """Retire one inactive failed branch after a narrow reviewed correction."""
 
     post_job_ids = [
         job.job_id
@@ -1182,17 +1262,56 @@ def _prepare_narration_pacing_reapproval(
         if job.parameters.get("stage") in {stage.value for stage in POST_APPROVAL_STAGES}
         and job.parameters.get("approvalRevisionId") == approval_revision_id
     ]
-    # ``approve`` computes its high-level state before opening this transaction.
-    # Refresh every branch job under the transaction before checking activity;
-    # a concurrent Retry or worker claim must never be hidden by the earlier
-    # FAILED snapshots and then superseded as if it were idle.
+    # ``approve`` computed its high-level state before opening the transaction.
+    # Refresh branch jobs here so a concurrent Retry cannot be superseded using
+    # stale FAILED snapshots.
     post_jobs = [runtime.get_job(job_id) for job_id in post_job_ids]
     active = [job for job in post_jobs if job.state in _ACTIVE_MEDIA_STATES]
     if active:
         stages = sorted(str(job.parameters.get("stage")) for job in active)
         raise ApprovalNotReadyError(
-            "Narration cannot be reapproved while media work is active: " + ", ".join(stages)
+            "Reviewed media cannot be reapproved while media work is active: "
+            + ", ".join(stages)
         )
+
+    assets_failed = any(
+        job.parameters.get("stage") == GenerationStage.ASSETS.value
+        and job.state is JobState.FAILED
+        for job in post_jobs
+    )
+    previous_visual_mode = _approved_visual_generation_mode(
+        previous_payload, fallback=request_visual_generation_mode
+    )
+    reviewed_visual_mode = _approved_visual_generation_mode(
+        reviewed_payload, fallback=request_visual_generation_mode
+    )
+    is_designed_asset_recovery = (
+        assets_failed
+        and previous_visual_mode == "routed"
+        and reviewed_visual_mode == "authored-only"
+        and not _reviewed_scene_prose_changed(previous_payload, reviewed_payload)
+    )
+    if is_designed_asset_recovery:
+        stale_reason = "superseded_by_reviewed_visual_mode"
+    else:
+        _validate_narration_pacing_reapproval(
+            post_jobs,
+            previous_payload=previous_payload,
+            reviewed_payload=reviewed_payload,
+        )
+        stale_reason = "superseded_by_reviewed_narration"
+
+    for job in post_jobs:
+        if job.state is not JobState.STALE:
+            runtime.mark_stale(job.job_id, reason=stale_reason)
+
+
+def _validate_narration_pacing_reapproval(
+    post_jobs: list[Job],
+    *,
+    previous_payload: dict[str, Any],
+    reviewed_payload: dict[str, Any],
+) -> None:
     narration_job = next(
         (
             job
@@ -1211,15 +1330,13 @@ def _prepare_narration_pacing_reapproval(
         _NARRATION_PACING_FAILURE_PREFIXES
     ):
         raise ApprovalNotReadyError(
-            "A new approval branch is available only after measured narration pacing fails"
+            "A new approval branch requires either failed illustrated assets switched to "
+            "Designed layout or measured narration pacing with revised prose"
         )
     if not _reviewed_narration_changed(previous_payload, reviewed_payload):
         raise ApprovalNotReadyError(
             "Revise at least one narration before reapproving a measured pacing failure"
         )
-    for job in post_jobs:
-        if job.state is not JobState.STALE:
-            runtime.mark_stale(job.job_id, reason="superseded_by_reviewed_narration")
 
 
 def _reviewed_narration_changed(
@@ -1278,12 +1395,15 @@ def _freeze_reviewed_approval_payload(
     *,
     generation_id: str,
     reviewed_revision_id: str,
+    request_visual_generation_mode: str,
+    image_generation_approved: bool,
 ) -> dict[str, Any]:
-    """Copy only reviewed prose edits into the immutable approval payload.
+    """Copy reviewed prose and the explicit slide mode into the approval payload.
 
     The webview project snapshot is user-editable JSON.  It may supply revised
-    scene prose, but it cannot replace scene identities, claims, timing,
-    visual structure, or any other generated contract while approving.
+    scene prose and choose Designed or Illustrated output, but it cannot replace
+    scene identities, claims, timing, provider policy, visual structure, or any
+    other generated contract while approving.
     """
 
     if reviewed_snapshot.get("generationId") != generation_id:
@@ -1362,10 +1482,28 @@ def _freeze_reviewed_approval_payload(
 
     frozen = copy.deepcopy(approval_payload)
     frozen["storyboard"] = {**copy.deepcopy(baseline_storyboard), "scenes": frozen_scenes}
+    if "creative" in reviewed_snapshot:
+        try:
+            reviewed_visual_mode = _desktop_slide_mode(reviewed_snapshot)
+        except ValueError as error:
+            raise ApprovalNotReadyError(str(error)) from error
+    else:
+        reviewed_visual_mode = (
+            "illustrated" if request_visual_generation_mode == "routed" else "designed"
+        )
+    if reviewed_visual_mode == "illustrated" and not image_generation_approved:
+        raise ApprovalNotReadyError(
+            "Illustrated slide mode requires an approved image generation route"
+        )
+    scene_visual_generation = (
+        "routed" if reviewed_visual_mode == "illustrated" else "authored-only"
+    )
     approval = frozen.get("approval")
     frozen["approval"] = {
         **(copy.deepcopy(approval) if isinstance(approval, dict) else {}),
         "reviewedRevisionId": reviewed_revision_id,
+        "reviewedVisualMode": reviewed_visual_mode,
+        "sceneVisualGeneration": scene_visual_generation,
     }
     return frozen
 
