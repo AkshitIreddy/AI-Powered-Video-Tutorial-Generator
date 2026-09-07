@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 from pathlib import Path
@@ -52,6 +53,18 @@ class VersionedVideoRenderer:
         )
 
 
+class ConstantVideoRenderer(VersionedVideoRenderer):
+    def render(self, request: dict[str, Any]) -> RenderedTutorial:
+        rendered = super().render(request)
+        return RenderedTutorial(
+            content=b"identical-sidecar-mode-video",
+            media_type=rendered.media_type,
+            original_name=rendered.original_name,
+            manifest=rendered.manifest,
+            metrics=rendered.metrics,
+        )
+
+
 def _completed_generation(
     tmp_path: Path,
 ) -> tuple[ProjectStore, NativeControlCoordinator, str, str]:
@@ -86,6 +99,7 @@ def _export_master(
     generation_id: str,
     *,
     fps: int,
+    caption_mode: str = "burned",
 ) -> dict[str, Any]:
     head = control.store.head_revision()
     assert head is not None
@@ -96,7 +110,7 @@ def _export_master(
             "aspect": "16:9",
             "resolution": "1080p",
             "fps": fps,
-            "captionDeliveryMode": "burned",
+            "captionDeliveryMode": caption_mode,
             "transcript": False,
             "bibliography": False,
         }
@@ -144,6 +158,95 @@ def _clone_succeeded_job(
             f"INSERT INTO jobs ({','.join(columns)}) VALUES ({placeholders})",
             tuple(values[column] for column in columns),
         )
+
+
+def _replace_narration_timing(
+    store: ProjectStore,
+    control: NativeControlCoordinator,
+    generation_id: str,
+) -> str:
+    narration, previous_hash = control._verified_stage_payload(generation_id, "narration")
+    corrected = copy.deepcopy(narration)
+    first_word = corrected["narration"][0]["words"][0]
+    assert first_word["start_ms"] + 1 < first_word["end_ms"]
+    first_word["start_ms"] += 1
+    previous_row = store.connection.execute(
+        "SELECT media_type,original_name,metadata_json FROM artifacts WHERE hash=?",
+        (previous_hash,),
+    ).fetchone()
+    job_row = store.connection.execute(
+        "SELECT job_id,result_json FROM jobs WHERE project_id=? "
+        "AND kind='generation.narration' AND state='SUCCEEDED' "
+        "AND json_extract(parameters_json,'$.generationId')=? "
+        "ORDER BY completed_at DESC LIMIT 1",
+        (store.manifest.project_id, generation_id),
+    ).fetchone()
+    assert previous_row is not None and job_row is not None
+    replacement = store.add_artifact_bytes(
+        json.dumps(corrected, sort_keys=True, separators=(",", ":")).encode(),
+        media_type=str(previous_row["media_type"]),
+        original_name=previous_row["original_name"],
+        metadata=json.loads(str(previous_row["metadata_json"])),
+    )
+    job_result = json.loads(str(job_row["result_json"]))
+    job_result.update({"artifactHash": replacement.hash, "payload": corrected})
+    with store.connection:
+        store.connection.execute(
+            "UPDATE jobs SET result_json=? WHERE job_id=?",
+            (json.dumps(job_result), job_row["job_id"]),
+        )
+    head = store.head_revision()
+    assert head is not None
+    store.create_revision(
+        snapshot=head.snapshot,
+        kind="generation",
+        message="Persist corrected narration timing fixture",
+        expected_head=head.revision_id,
+        artifact_links=[
+            {
+                "artifactHash": replacement.hash,
+                "role": "generation-stage:narration",
+                "stableId": generation_id,
+            },
+            *[
+                {
+                    "artifactHash": str(item["artifactHash"]),
+                    "role": "scene-narration",
+                    "stableId": str(item["sceneId"]),
+                }
+                for item in corrected["narration"]
+            ],
+        ],
+    )
+    return replacement.hash
+
+
+def _replace_master_receipt(
+    store: ProjectStore,
+    promoted: dict[str, Any],
+    document: dict[str, Any],
+    *,
+    result_updates: dict[str, Any] | None = None,
+) -> str:
+    replacement = store.add_artifact_bytes(
+        json.dumps(document, sort_keys=True, separators=(",", ":")).encode(),
+        media_type="application/vnd.alystria.master-provenance+json",
+        original_name="forged-master-provenance.json",
+        metadata=copy.deepcopy(document),
+    )
+    row = store.connection.execute(
+        "SELECT result_json FROM jobs WHERE job_id=?", (promoted["jobId"],)
+    ).fetchone()
+    assert row is not None
+    result = json.loads(str(row["result_json"]))
+    result["masterProvenanceArtifactHash"] = replacement.hash
+    result.update(result_updates or {})
+    with store.connection:
+        store.connection.execute(
+            "UPDATE jobs SET result_json=? WHERE job_id=?",
+            (json.dumps(result), promoted["jobId"]),
+        )
+    return replacement.hash
 
 
 def test_editor_prefers_latest_verified_master_and_uses_its_scene_windows(
@@ -228,6 +331,58 @@ def test_editor_uses_verified_generation_render_when_no_promoted_master_exists(
         store.close()
 
 
+def test_repeated_sidecar_master_uses_new_receipt_when_video_bytes_deduplicate(
+    tmp_path: Path,
+) -> None:
+    store, control, generation_id, _ = _completed_generation(tmp_path)
+    try:
+        renderer = ConstantVideoRenderer()
+        control.renderer = renderer
+        first = _export_master(control, generation_id, fps=24, caption_mode="sidecar")
+        corrected_narration_hash = _replace_narration_timing(
+            store, control, generation_id
+        )
+        latest = _export_master(control, generation_id, fps=24, caption_mode="sidecar")
+
+        assert first["artifactHash"] == latest["artifactHash"]
+        assert first["captionBundleArtifactHash"] != latest["captionBundleArtifactHash"]
+        assert (
+            first["masterProvenanceArtifactHash"]
+            != latest["masterProvenanceArtifactHash"]
+        )
+        video_row = store.connection.execute(
+            "SELECT metadata_json FROM artifacts WHERE hash=?", (latest["artifactHash"],)
+        ).fetchone()
+        assert video_row is not None
+        historical_video_metadata = json.loads(str(video_row["metadata_json"]))
+        assert (
+            historical_video_metadata["captionBundleArtifactHash"]
+            == first["captionBundleArtifactHash"]
+        )
+        assert (
+            historical_video_metadata["sourceNarrationStageArtifactHash"]
+            != corrected_narration_hash
+        )
+
+        bindings = control.editor_bindings(generation_id)
+        latest_bundle = json.loads(
+            store.cas.object_path(latest["captionBundleArtifactHash"]).read_bytes()
+        )
+        narration, narration_hash = control._verified_stage_payload(
+            generation_id, "narration"
+        )
+        assert narration_hash == corrected_narration_hash
+        assert {item["artifactHash"] for item in bindings["renders"]} == {
+            latest["artifactHash"]
+        }
+        assert bindings["captions"] == _editor_caption_bindings(
+            latest_bundle["captions"], narration
+        )
+        assert renderer.requests[-1]["captions"] == latest_bundle["captions"]
+    finally:
+        store.close()
+
+
 def test_editor_excludes_newer_stale_approval_and_other_generation_masters(
     tmp_path: Path,
 ) -> None:
@@ -281,6 +436,43 @@ def test_editor_fails_closed_when_promoted_caption_bundle_is_corrupt(tmp_path: P
         )
 
         with pytest.raises(ValueError, match="caption bundle is missing or corrupt"):
+            control.editor_bindings(generation_id)
+    finally:
+        store.close()
+
+
+def test_editor_rejects_receipt_forged_for_another_export_job(tmp_path: Path) -> None:
+    store, control, generation_id, _ = _completed_generation(tmp_path)
+    try:
+        promoted = _export_master(control, generation_id, fps=24)
+        receipt = json.loads(
+            store.cas.object_path(promoted["masterProvenanceArtifactHash"]).read_bytes()
+        )
+        receipt["exportJobId"] = str(uuid.uuid4())
+        _replace_master_receipt(store, promoted, receipt)
+
+        with pytest.raises(ValueError, match="provenance receipt is incoherent"):
+            control.editor_bindings(generation_id)
+    finally:
+        store.close()
+
+
+def test_editor_rejects_non_boolean_caption_delivery_in_receipt(tmp_path: Path) -> None:
+    store, control, generation_id, _ = _completed_generation(tmp_path)
+    try:
+        promoted = _export_master(control, generation_id, fps=24)
+        receipt = json.loads(
+            store.cas.object_path(promoted["masterProvenanceArtifactHash"]).read_bytes()
+        )
+        receipt["captionDelivery"]["burnedIntoPixels"] = 1
+        _replace_master_receipt(
+            store,
+            promoted,
+            receipt,
+            result_updates={"captionDelivery": receipt["captionDelivery"]},
+        )
+
+        with pytest.raises(ValueError, match="provenance receipt is incoherent"):
             control.editor_bindings(generation_id)
     finally:
         store.close()
@@ -364,7 +556,7 @@ def test_editor_rejects_foreign_caption_bundle_even_when_master_claims_it(
                 (json.dumps(job_result), promoted["jobId"]),
             )
 
-        with pytest.raises(ValueError, match="caption bundle provenance is invalid"):
+        with pytest.raises(ValueError, match="provenance receipt is incoherent"):
             control.editor_bindings(generation_id)
     finally:
         store.close()

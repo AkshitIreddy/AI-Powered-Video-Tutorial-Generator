@@ -287,7 +287,7 @@ class NativeControlCoordinator:
         approval_revision_id = generation_status.approval_revision_id
         if approval_revision_id is not None:
             master_rows = self.store.connection.execute(
-                "SELECT result_json FROM jobs WHERE project_id=? "
+                "SELECT job_id,result_json FROM jobs WHERE project_id=? "
                 "AND kind='native.export_master' AND state='SUCCEEDED' "
                 "AND json_valid(parameters_json)=1 "
                 "AND json_extract(parameters_json,'$.baseGenerationId')=? "
@@ -295,6 +295,7 @@ class NativeControlCoordinator:
                 (self.store.manifest.project_id, validated_generation_id),
             ).fetchall()
             promoted: dict[str, Any] | None = None
+            promoted_job_id: str | None = None
             for master_row in master_rows:
                 try:
                     candidate = json.loads(str(master_row["result_json"]))
@@ -308,6 +309,7 @@ class NativeControlCoordinator:
                     and candidate.get("sourceRenderStageArtifactHash") == render_stage_hash
                 ):
                     promoted = candidate
+                    promoted_job_id = str(master_row["job_id"])
                     break
 
             if promoted is not None:
@@ -338,73 +340,120 @@ class NativeControlCoordinator:
                     raise ValueError("Latest promoted master artifact is missing or corrupt")
                 if artifact_row["media_type"] != declared_media_type:
                     raise ValueError("Latest promoted master media type does not match its artifact")
-                try:
-                    artifact_metadata = json.loads(str(artifact_row["metadata_json"]))
-                except (TypeError, json.JSONDecodeError) as error:
-                    raise ValueError("Latest promoted master artifact metadata is invalid") from error
-                if (
-                    not isinstance(artifact_metadata, dict)
-                    or artifact_metadata.get("generationId") != validated_generation_id
-                    or artifact_metadata.get("approvalRevisionId") != approval_revision_id
-                    or artifact_metadata.get("sourceRenderStageArtifactHash")
-                    != render_stage_hash
-                    or artifact_metadata.get("renderSceneWindows") != windows
-                    or artifact_metadata.get("rightsStatus") != "owned"
-                ):
-                    raise ValueError("Latest promoted master artifact provenance is invalid")
-                bundle_hash = promoted.get("captionBundleArtifactHash")
-                source_narration_hash = promoted.get(
-                    "sourceNarrationStageArtifactHash"
+                caption_locale = str(
+                    narration.get("storyboard", {}).get("locale", "en-US")
                 )
-                artifact_bundle_hash = artifact_metadata.get(
-                    "captionBundleArtifactHash"
-                )
-                artifact_source_narration_hash = artifact_metadata.get(
-                    "sourceNarrationStageArtifactHash"
-                )
-                compiler_version = promoted.get("captionCompilerVersion")
-                artifact_compiler_version = artifact_metadata.get(
-                    "captionCompilerVersion"
-                )
-                has_caption_bundle_provenance = any(
-                    value is not None
-                    for value in (
-                        bundle_hash,
-                        source_narration_hash,
-                        artifact_bundle_hash,
-                        artifact_source_narration_hash,
-                        compiler_version,
-                        artifact_compiler_version,
-                    )
-                )
-                if has_caption_bundle_provenance:
+                provenance_hash = promoted.get("masterProvenanceArtifactHash")
+                if provenance_hash is not None:
                     if (
-                        not isinstance(bundle_hash, str)
-                        or not SHA256_PATTERN.fullmatch(bundle_hash)
-                        or source_narration_hash != narration_stage_hash
-                        or artifact_bundle_hash != bundle_hash
-                        or artifact_source_narration_hash != narration_stage_hash
-                        or not isinstance(compiler_version, str)
-                        or not compiler_version
-                        or artifact_compiler_version != compiler_version
+                        not isinstance(provenance_hash, str)
+                        or not SHA256_PATTERN.fullmatch(provenance_hash)
+                        or promoted_job_id is None
                     ):
                         raise ValueError(
-                            "Latest promoted master caption bundle provenance is invalid"
+                            "Latest promoted master provenance receipt is invalid"
                         )
+                    receipt = self._verified_promoted_master_receipt(
+                        provenance_hash,
+                        export_job_id=promoted_job_id,
+                        promoted=promoted,
+                        generation_id=validated_generation_id,
+                        approval_revision_id=approval_revision_id,
+                        render_stage_hash=render_stage_hash,
+                        narration_stage_hash=narration_stage_hash,
+                        video_artifact_hash=digest,
+                        video_media_type=declared_media_type,
+                        render_scene_windows=windows,
+                    )
+                    receipt_bundle_hash = str(receipt["captionBundleArtifactHash"])
+                    receipt_compiler_version = str(receipt["captionCompilerVersion"])
                     captions = self._verified_promoted_caption_bundle(
-                        bundle_hash,
+                        receipt_bundle_hash,
                         generation_id=validated_generation_id,
                         approval_revision_id=approval_revision_id,
                         narration_stage_hash=narration_stage_hash,
-                        locale=str(
-                            narration.get("storyboard", {}).get("locale", "en-US")
-                        ),
+                        locale=caption_locale,
                     )
-                    if captions.get("compilerVersion") != compiler_version:
+                    if captions.get("compilerVersion") != receipt_compiler_version:
                         raise ValueError(
                             "Latest promoted master caption compiler provenance is invalid"
                         )
-                captions_burned = artifact_metadata.get("captionsBurnedIntoPixels")
+                    caption_delivery = receipt["captionDelivery"]
+                    assert isinstance(caption_delivery, dict)
+                    captions_burned = caption_delivery["burnedIntoPixels"]
+                else:
+                    try:
+                        artifact_metadata = json.loads(str(artifact_row["metadata_json"]))
+                    except (TypeError, json.JSONDecodeError) as error:
+                        raise ValueError(
+                            "Latest promoted master artifact metadata is invalid"
+                        ) from error
+                    if (
+                        not isinstance(artifact_metadata, dict)
+                        or artifact_metadata.get("generationId") != validated_generation_id
+                        or artifact_metadata.get("approvalRevisionId")
+                        != approval_revision_id
+                        or artifact_metadata.get("sourceRenderStageArtifactHash")
+                        != render_stage_hash
+                        or artifact_metadata.get("renderSceneWindows") != windows
+                        or artifact_metadata.get("rightsStatus") != "owned"
+                    ):
+                        raise ValueError(
+                            "Latest promoted master artifact provenance is invalid"
+                        )
+                    bundle_hash = promoted.get("captionBundleArtifactHash")
+                    source_narration_hash = promoted.get(
+                        "sourceNarrationStageArtifactHash"
+                    )
+                    artifact_bundle_hash = artifact_metadata.get(
+                        "captionBundleArtifactHash"
+                    )
+                    artifact_source_narration_hash = artifact_metadata.get(
+                        "sourceNarrationStageArtifactHash"
+                    )
+                    compiler_version = promoted.get("captionCompilerVersion")
+                    artifact_compiler_version = artifact_metadata.get(
+                        "captionCompilerVersion"
+                    )
+                    has_caption_bundle_provenance = any(
+                        value is not None
+                        for value in (
+                            bundle_hash,
+                            source_narration_hash,
+                            artifact_bundle_hash,
+                            artifact_source_narration_hash,
+                            compiler_version,
+                            artifact_compiler_version,
+                        )
+                    )
+                    if has_caption_bundle_provenance:
+                        if (
+                            not isinstance(bundle_hash, str)
+                            or not SHA256_PATTERN.fullmatch(bundle_hash)
+                            or source_narration_hash != narration_stage_hash
+                            or artifact_bundle_hash != bundle_hash
+                            or artifact_source_narration_hash != narration_stage_hash
+                            or not isinstance(compiler_version, str)
+                            or not compiler_version
+                            or artifact_compiler_version != compiler_version
+                        ):
+                            raise ValueError(
+                                "Latest promoted master caption bundle provenance is invalid"
+                            )
+                        captions = self._verified_promoted_caption_bundle(
+                            bundle_hash,
+                            generation_id=validated_generation_id,
+                            approval_revision_id=approval_revision_id,
+                            narration_stage_hash=narration_stage_hash,
+                            locale=caption_locale,
+                        )
+                        if captions.get("compilerVersion") != compiler_version:
+                            raise ValueError(
+                                "Latest promoted master caption compiler provenance is invalid"
+                            )
+                    captions_burned = artifact_metadata.get(
+                        "captionsBurnedIntoPixels"
+                    )
                 if not isinstance(captions_burned, bool):
                     raise ValueError("Latest promoted master caption provenance is invalid")
                 promoted_bindings: list[dict[str, Any]] = []
@@ -763,6 +812,12 @@ class NativeControlCoordinator:
             }
         )
         rendered = self.renderer.render(master_render_request)
+        caption_delivery = {
+            "mode": caption_delivery_mode,
+            "sidecars": ["vtt", "srt"],
+            "burnedIntoPixels": caption_delivery_mode in {"burned", "both"},
+            "embeddedInContainer": caption_delivery_mode in {"embedded", "both"},
+        }
         artifact = self.store.add_artifact_bytes(
             rendered.content,
             media_type=rendered.media_type,
@@ -787,6 +842,32 @@ class NativeControlCoordinator:
                 "captionSidecars": ["vtt", "srt"],
             },
         )
+        master_provenance = {
+            "schemaVersion": 1,
+            "exportJobId": context.job_id,
+            "generationId": generation_id,
+            "approvalRevisionId": generation_status.approval_revision_id,
+            "sourceRenderStageArtifactHash": render_stage_hash,
+            "sourceNarrationStageArtifactHash": narration_stage_hash,
+            "captionBundleArtifactHash": caption_bundle_artifact.hash,
+            "captionCompilerVersion": caption_compiler_version,
+            "videoArtifactHash": artifact.hash,
+            "videoMediaType": rendered.media_type,
+            "renderSceneWindows": copy.deepcopy(scene_windows),
+            "captionDelivery": caption_delivery,
+            "rightsStatus": "owned",
+        }
+        master_provenance_artifact = self.store.add_artifact_bytes(
+            json.dumps(
+                master_provenance,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8"),
+            media_type="application/vnd.alystria.master-provenance+json",
+            original_name="master-provenance.json",
+            metadata=copy.deepcopy(master_provenance),
+        )
         extension = ".webm" if rendered.media_type == "video/webm" else ".mp4"
         target = params["target"]
         destination = self.store.root / "exports" / (
@@ -810,17 +891,13 @@ class NativeControlCoordinator:
             "sourceNarrationStageArtifactHash": narration_stage_hash,
             "captionBundleArtifactHash": caption_bundle_artifact.hash,
             "captionCompilerVersion": caption_compiler_version,
+            "masterProvenanceArtifactHash": master_provenance_artifact.hash,
             "renderSceneWindows": copy.deepcopy(scene_windows),
             "artifactHash": artifact.hash,
             "path": str(destination),
             "mediaType": rendered.media_type,
             "sidecarPaths": sidecars,
-            "captionDelivery": {
-                "mode": caption_delivery_mode,
-                "sidecars": ["vtt", "srt"],
-                "burnedIntoPixels": caption_delivery_mode in {"burned", "both"},
-                "embeddedInContainer": caption_delivery_mode in {"embedded", "both"},
-            },
+            "captionDelivery": caption_delivery,
             "codecPreference": params["codecPreference"],
             "rendererCodec": params["rendererCodec"],
             "qualityGate": gate,
@@ -971,6 +1048,89 @@ class NativeControlCoordinator:
         if inline_payload != persisted:
             raise ValueError(f"Generation stage {stage} result does not match its immutable artifact")
         return persisted, artifact_hash
+
+    def _verified_promoted_master_receipt(
+        self,
+        artifact_hash: str,
+        *,
+        export_job_id: str,
+        promoted: dict[str, Any],
+        generation_id: str,
+        approval_revision_id: str,
+        render_stage_hash: str,
+        narration_stage_hash: str,
+        video_artifact_hash: str,
+        video_media_type: str,
+        render_scene_windows: list[Any],
+    ) -> dict[str, Any]:
+        """Verify per-export provenance without relying on shared video metadata."""
+
+        row = self.store.connection.execute(
+            "SELECT media_type,metadata_json FROM artifacts WHERE hash=?",
+            (artifact_hash,),
+        ).fetchone()
+        if (
+            row is None
+            or row["media_type"] != "application/vnd.alystria.master-provenance+json"
+            or not self.store.cas.verify(artifact_hash)
+        ):
+            raise ValueError("Latest promoted master provenance receipt is missing or corrupt")
+        try:
+            metadata = json.loads(str(row["metadata_json"]))
+            document = json.loads(self.store.cas.object_path(artifact_hash).read_bytes())
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("Latest promoted master provenance receipt is invalid") from error
+        if not isinstance(document, dict) or metadata != document:
+            raise ValueError("Latest promoted master provenance receipt metadata is invalid")
+        bundle_hash = document.get("captionBundleArtifactHash")
+        compiler_version = document.get("captionCompilerVersion")
+        delivery = document.get("captionDelivery")
+        mode = delivery.get("mode") if isinstance(delivery, dict) else None
+        expected_delivery = (
+            {
+                "mode": mode,
+                "sidecars": ["vtt", "srt"],
+                "burnedIntoPixels": mode in {"burned", "both"},
+                "embeddedInContainer": mode in {"embedded", "both"},
+            }
+            if isinstance(mode, str) and mode in CAPTION_DELIVERY_MODES
+            else None
+        )
+        if (
+            document.get("schemaVersion") != 1
+            or document.get("exportJobId") != export_job_id
+            or document.get("generationId") != generation_id
+            or document.get("approvalRevisionId") != approval_revision_id
+            or document.get("sourceRenderStageArtifactHash") != render_stage_hash
+            or document.get("sourceNarrationStageArtifactHash") != narration_stage_hash
+            or not isinstance(bundle_hash, str)
+            or not SHA256_PATTERN.fullmatch(bundle_hash)
+            or not isinstance(compiler_version, str)
+            or not compiler_version
+            or document.get("videoArtifactHash") != video_artifact_hash
+            or document.get("videoMediaType") != video_media_type
+            or document.get("renderSceneWindows") != render_scene_windows
+            or expected_delivery is None
+            or not isinstance(delivery, dict)
+            or not isinstance(delivery.get("burnedIntoPixels"), bool)
+            or not isinstance(delivery.get("embeddedInContainer"), bool)
+            or delivery != expected_delivery
+            or document.get("rightsStatus") != "owned"
+            or promoted.get("generationId") != document.get("generationId")
+            or promoted.get("approvalRevisionId") != document.get("approvalRevisionId")
+            or promoted.get("sourceRenderStageArtifactHash")
+            != document.get("sourceRenderStageArtifactHash")
+            or promoted.get("sourceNarrationStageArtifactHash")
+            != document.get("sourceNarrationStageArtifactHash")
+            or promoted.get("captionBundleArtifactHash") != bundle_hash
+            or promoted.get("captionCompilerVersion") != compiler_version
+            or promoted.get("artifactHash") != video_artifact_hash
+            or promoted.get("mediaType") != video_media_type
+            or promoted.get("renderSceneWindows") != render_scene_windows
+            or promoted.get("captionDelivery") != delivery
+        ):
+            raise ValueError("Latest promoted master provenance receipt is incoherent")
+        return document
 
     def _verified_promoted_caption_bundle(
         self,
