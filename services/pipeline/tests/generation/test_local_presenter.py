@@ -30,6 +30,7 @@ from alystria.generation.local_presenter import (
     LocalPresenterMediaClient,
     LocalPresenterOutputError,
     LocalPresenterPolicyError,
+    LocalPresenterProcessSurvivedError,
     LocalPresenterProfileBinding,
     LocalPresenterRuntime,
     LocalPresenterRuntimeError,
@@ -48,6 +49,13 @@ from alystria.generation.local_presenter import (
 from alystria.project import ProjectStore
 
 
+@pytest.fixture(autouse=True)
+def _configured_gpu_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    marker = tmp_path / "gpu use.txt"
+    marker.write_text("no\n", encoding="utf-8")
+    monkeypatch.setenv("ALYSTRIA_GPU_LOCK_PATH", str(marker))
+
+
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -64,6 +72,9 @@ class FakePresenterRunner:
     invalid_probe: bool = False
     mismatched_stream_durations: bool = False
     worker_exit_code: int = 0
+    gpu_marker: Path | None = None
+    cancel_during_worker: bool = False
+    process_survives: bool = False
 
     def __post_init__(self) -> None:
         self.calls: list[tuple[str, ...]] = []
@@ -83,7 +94,17 @@ class FakePresenterRunner:
         assert not cancelled()
         call = tuple(argv)
         self.calls.append(call)
+        if self.gpu_marker is not None and Path(call[0]) != self.worker.resolve():
+            assert self.gpu_marker.read_text(encoding="utf-8") == "no\n"
         if Path(call[0]) == self.worker.resolve():
+            if self.gpu_marker is not None:
+                assert self.gpu_marker.read_text(encoding="utf-8") == "yes\n"
+            if self.cancel_during_worker:
+                raise LocalPresenterCancelledError("Presenter generation cancelled")
+            if self.process_survives:
+                raise LocalPresenterProcessSurvivedError(
+                    "Presenter failure could not confirm the GPU process stopped"
+                )
             portrait = Path(call[call.index("--portrait") + 1])
             output = Path(call[call.index("--output") + 1])
             if "--job" in call:
@@ -341,7 +362,8 @@ def test_presenter_environment_path_normalizes_windows_extended_prefixes() -> No
 def test_managed_worker_returns_ffprobe_validated_video_generated_media(tmp_path: Path) -> None:
     store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
     runtime, worker, ffprobe = _runtime(tmp_path / "runtime")
-    runner = FakePresenterRunner(worker, ffprobe)
+    gpu_marker = Path(os.environ["ALYSTRIA_GPU_LOCK_PATH"])
+    runner = FakePresenterRunner(worker, ffprobe, gpu_marker=gpu_marker)
     try:
         media = _client(store, runtime, portrait_hash, runner).create_presenter(
             {"id": "scene/unsafe name", "presenterProfileId": "presenter.ada"},
@@ -374,6 +396,7 @@ def test_managed_worker_returns_ffprobe_validated_video_generated_media(tmp_path
         assert len(runner.calls) == 3
         assert "lavfi" in runner.calls[0]
         assert all("scene/unsafe name" not in item for call in runner.calls for item in call)
+        assert gpu_marker.read_text(encoding="utf-8") == "no\n"
     finally:
         store.close()
 
@@ -757,14 +780,87 @@ def test_promoted_delivery_is_recovered_without_rerunning_worker(tmp_path: Path)
     client = _client(store, runtime, portrait_hash, runner)
     try:
         first = client.create_presenter({"id": "scene-1"}, narration_hash=narration_hash, seed=9)
+        gpu_marker = Path(os.environ["ALYSTRIA_GPU_LOCK_PATH"])
+        gpu_marker.write_text("yes\n", encoding="utf-8")
         second = client.create_presenter({"id": "scene-1"}, narration_hash=narration_hash, seed=9)
         worker_calls = [call for call in runner.calls if Path(call[0]) == worker.resolve()]
         assert len(worker_calls) == 1
         assert first.content == second.content
         assert second.metadata["recoveredFromPromotion"] is True
+        assert gpu_marker.read_text(encoding="utf-8") == "yes\n"
         completed = store.root / "staging" / "presenter" / "completed"
         assert len(tuple(completed.glob("*/receipt.json"))) == 1
+        gpu_marker.write_text("no\n", encoding="utf-8")
     finally:
+        store.close()
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_presenter_releases_gpu_marker_after_worker_failure_or_cancellation(
+    tmp_path: Path,
+    cancelled: bool,
+) -> None:
+    store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
+    runtime, worker, ffprobe = _runtime(tmp_path / "runtime")
+    gpu_marker = Path(os.environ["ALYSTRIA_GPU_LOCK_PATH"])
+    runner = FakePresenterRunner(
+        worker,
+        ffprobe,
+        worker_exit_code=7 if not cancelled else 0,
+        gpu_marker=gpu_marker,
+        cancel_during_worker=cancelled,
+    )
+    try:
+        expected = LocalPresenterCancelledError if cancelled else LocalPresenterRuntimeError
+        with pytest.raises(expected):
+            _client(store, runtime, portrait_hash, runner).create_presenter(
+                {"id": "scene-1"}, narration_hash=narration_hash, seed=1
+            )
+        assert gpu_marker.read_text(encoding="utf-8") == "no\n"
+    finally:
+        store.close()
+
+
+def test_busy_gpu_marker_fails_before_presenter_worker_and_is_not_reset(
+    tmp_path: Path,
+) -> None:
+    store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
+    runtime, worker, ffprobe = _runtime(tmp_path / "runtime")
+    gpu_marker = Path(os.environ["ALYSTRIA_GPU_LOCK_PATH"])
+    gpu_marker.write_text("yes\n", encoding="utf-8")
+    runner = FakePresenterRunner(worker, ffprobe)
+    try:
+        with pytest.raises(LocalPresenterRuntimeError, match="already claimed"):
+            _client(store, runtime, portrait_hash, runner).create_presenter(
+                {"id": "scene-1"}, narration_hash=narration_hash, seed=1
+            )
+        assert not any(Path(call[0]) == worker.resolve() for call in runner.calls)
+        assert gpu_marker.read_text(encoding="utf-8") == "yes\n"
+    finally:
+        gpu_marker.write_text("no\n", encoding="utf-8")
+        store.close()
+
+
+def test_presenter_preserves_gpu_claim_when_child_survival_is_unresolved(
+    tmp_path: Path,
+) -> None:
+    store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
+    runtime, worker, ffprobe = _runtime(tmp_path / "runtime")
+    gpu_marker = Path(os.environ["ALYSTRIA_GPU_LOCK_PATH"])
+    runner = FakePresenterRunner(
+        worker,
+        ffprobe,
+        gpu_marker=gpu_marker,
+        process_survives=True,
+    )
+    try:
+        with pytest.raises(LocalPresenterProcessSurvivedError, match="confirm"):
+            _client(store, runtime, portrait_hash, runner).create_presenter(
+                {"id": "scene-1"}, narration_hash=narration_hash, seed=1
+            )
+        assert gpu_marker.read_text(encoding="utf-8") == "yes\n"
+    finally:
+        gpu_marker.write_text("no\n", encoding="utf-8")
         store.close()
 
 

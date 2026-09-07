@@ -27,6 +27,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
+from alystria.gpu_guard import GpuExecutionGuard
+
 from .errors import FailureCode, ProviderFailure
 from .types import (
     Capability,
@@ -577,15 +579,15 @@ class ComfyUiRuntime(AbstractContextManager[ComfyUiLocalAdapter]):
         self.gpu_lock = gpu_lock
         self.process: subprocess.Popen[bytes] | None = None
         self.log_handle: Any = None
+        self._gpu_guard: GpuExecutionGuard | None = None
 
     def __enter__(self) -> ComfyUiLocalAdapter:
         preflight = self.installer.preflight(SDXL_MODEL_ID)
         if not preflight["executable"]:
             raise RuntimeError("The verified SDXL local image bundle is not installed")
-        if self.gpu_lock is not None:
-            if self.gpu_lock.read_text(encoding="utf-8").strip().casefold() != "no":
-                raise RuntimeError("GPU is already claimed")
-            self.gpu_lock.write_text("yes\n", encoding="utf-8")
+        guard = GpuExecutionGuard(self.gpu_lock, owner="comfyui-local")
+        guard.__enter__()
+        self._gpu_guard = guard
         try:
             environment = os.environ.copy()
             cache = self.installer.runtime_root / "cache"
@@ -642,7 +644,6 @@ class ComfyUiRuntime(AbstractContextManager[ComfyUiLocalAdapter]):
             raise
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
-        del exc_type, exc, traceback
         try:
             if self.process is not None and self.process.poll() is None:
                 self.process.terminate()
@@ -652,11 +653,17 @@ class ComfyUiRuntime(AbstractContextManager[ComfyUiLocalAdapter]):
                     self.process.kill()
                     self.process.wait(timeout=20)
         finally:
-            if self.log_handle is not None:
-                self.log_handle.close()
-                self.log_handle = None
-            if self.gpu_lock is not None:
-                self.gpu_lock.write_text("no\n", encoding="utf-8")
+            try:
+                if self.log_handle is not None:
+                    self.log_handle.close()
+                    self.log_handle = None
+            finally:
+                guard = self._gpu_guard
+                self._gpu_guard = None
+                if guard is not None:
+                    if self.process is not None and self.process.poll() is None:
+                        guard.preserve_claim()
+                    guard.__exit__(exc_type, exc, traceback)
         return None
 
 
@@ -675,7 +682,7 @@ class ComfyGenerationMediaClient:
     ) -> None:
         self.fallback = fallback
         self.runtime_root = runtime_root.resolve()
-        self.gpu_lock = gpu_lock.resolve()
+        self.gpu_lock = gpu_lock
         self.port = port
         self.model_revision = (
             f"{SDXL_MODEL_ID}@{COMFYUI_RUNTIME_REVISION}+{fallback.model_revision}"

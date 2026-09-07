@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from alystria.generation.adapters import DeterministicMediaClient
+from alystria.gpu_guard import GpuExecutionGuard, GpuGuardBusyError
 from alystria.providers.comfyui_local import (
     COMFYUI_LOCAL_PROVIDER_ID,
     COMFYUI_RUNTIME_REVISION,
@@ -254,15 +255,71 @@ def test_runtime_releases_gpu_lock_when_hidden_process_cannot_start(
         "preflight",
         lambda *_args: {"executable": True},
     )
-    monkeypatch.setattr(
-        "alystria.providers.comfyui_local.subprocess.Popen",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("launch failed")),
-    )
+    def fail_start(*_args: object, **_kwargs: object) -> None:
+        assert gpu_lock.read_text(encoding="utf-8") == "yes\n"
+        raise OSError("launch failed")
+
+    monkeypatch.setattr("alystria.providers.comfyui_local.subprocess.Popen", fail_start)
 
     with pytest.raises(OSError, match="launch failed"):
         runtime.__enter__()
 
     assert gpu_lock.read_text(encoding="utf-8") == "no\n"
+
+
+def test_runtime_does_not_reset_busy_gpu_or_claim_before_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gpu_lock = tmp_path / "gpu use.txt"
+    gpu_lock.write_text("yes\n", encoding="utf-8")
+    runtime = ComfyUiRuntime(tmp_path / "runtime", gpu_lock=gpu_lock)
+
+    monkeypatch.setattr(
+        ComfyBundleInstaller,
+        "preflight",
+        lambda *_args: {"executable": False},
+    )
+    with pytest.raises(RuntimeError, match="not installed"):
+        runtime.__enter__()
+    assert gpu_lock.read_text(encoding="utf-8") == "yes\n"
+
+    monkeypatch.setattr(
+        ComfyBundleInstaller,
+        "preflight",
+        lambda *_args: {"executable": True},
+    )
+    monkeypatch.setattr(
+        "alystria.providers.comfyui_local.subprocess.Popen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("busy GPU must fail before process launch")
+        ),
+    )
+    with pytest.raises(GpuGuardBusyError, match="already claimed"):
+        runtime.__enter__()
+    assert gpu_lock.read_text(encoding="utf-8") == "yes\n"
+
+
+def test_runtime_preserves_gpu_claim_when_process_cannot_be_stopped(tmp_path: Path) -> None:
+    gpu_lock = tmp_path / "gpu use.txt"
+    gpu_lock.write_text("no\n", encoding="utf-8")
+    runtime = ComfyUiRuntime(tmp_path / "runtime", gpu_lock=gpu_lock)
+
+    class UnstoppableProcess:
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            raise OSError("terminate failed")
+
+    guard = GpuExecutionGuard(gpu_lock, owner="comfyui-local-test")
+    guard.__enter__()
+    runtime._gpu_guard = guard
+    runtime.process = UnstoppableProcess()  # type: ignore[assignment]
+
+    with pytest.raises(OSError, match="terminate failed"):
+        runtime.__exit__(None, None, None)
+
+    assert gpu_lock.read_text(encoding="utf-8") == "yes\n"
 
 
 def test_generation_media_client_executes_presenter_recipe_seed_and_lora(

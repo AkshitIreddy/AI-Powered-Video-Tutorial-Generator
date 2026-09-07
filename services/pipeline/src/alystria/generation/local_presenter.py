@@ -24,6 +24,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from alystria.gpu_guard import GpuExecutionGuard, GpuGuardError
 from alystria.project import ProjectStore
 from alystria.security.files import detect_mime
 
@@ -122,6 +123,10 @@ class LocalPresenterTimeoutError(LocalPresenterError):
     """The local presenter worker exceeded its wall-clock limit."""
 
 
+class LocalPresenterProcessSurvivedError(LocalPresenterRuntimeError):
+    """The presenter child could not be confirmed stopped; keep the GPU claimed."""
+
+
 class PresenterExecutionPolicy(StrEnum):
     MANAGED_VERIFIED = "managed-verified"
     UNSAFE_TEST_ONLY = "unsafe-test-only"
@@ -202,10 +207,18 @@ class SubprocessPresenterCommandRunner:
                 if cancelled():
                     _stop_process(process)
                     _drain_stopped_process(process)
+                    if process.poll() is None:
+                        raise LocalPresenterProcessSurvivedError(
+                            "Presenter cancellation could not confirm the GPU process stopped"
+                        )
                     raise LocalPresenterCancelledError("Presenter generation cancelled")
                 if elapsed >= timeout_seconds:
                     _stop_process(process)
                     _drain_stopped_process(process)
+                    if process.poll() is None:
+                        raise LocalPresenterProcessSurvivedError(
+                            "Presenter timeout could not confirm the GPU process stopped"
+                        )
                     raise LocalPresenterTimeoutError(
                         f"Presenter worker exceeded the {timeout_seconds:g}-second timeout"
                     )
@@ -220,10 +233,16 @@ class SubprocessPresenterCommandRunner:
                     )
                 except subprocess.TimeoutExpired:
                     continue
-        except BaseException:
+        except BaseException as error:
             if process.poll() is None:
                 _stop_process(process)
                 _drain_stopped_process(process)
+            if process.poll() is None:
+                if isinstance(error, LocalPresenterProcessSurvivedError):
+                    raise
+                raise LocalPresenterProcessSurvivedError(
+                    "Presenter failure could not confirm the GPU process stopped"
+                ) from error
             raise
 
 
@@ -667,13 +686,33 @@ class LocalPresenterMediaClient:
                 job_manifest=manifest_path,
                 seed=seed,
             )
-            result = self.runner.run(
-                argv,
-                cwd=runtime_root,
-                environment=self._safe_environment(),
-                timeout_seconds=self.runtime.timeout_seconds,
-                cancelled=self._is_cancelled,
+            gpu_lease = self.runtime.gpu_lease
+            owner_identity = (
+                hashlib.sha256(
+                    f"{gpu_lease.owner}\0{gpu_lease.lease_id}".encode()
+                ).hexdigest()[:32]
+                if gpu_lease is not None
+                else "unsafe-test-only"
             )
+            gpu_guard = GpuExecutionGuard(
+                mutex_name=(gpu_lease.mutex_name if gpu_lease is not None else None),
+                owner=f"local-presenter:{owner_identity}",
+            )
+            try:
+                with gpu_guard:
+                    try:
+                        result = self.runner.run(
+                            argv,
+                            cwd=runtime_root,
+                            environment=self._safe_environment(),
+                            timeout_seconds=self.runtime.timeout_seconds,
+                            cancelled=self._is_cancelled,
+                        )
+                    except LocalPresenterProcessSurvivedError:
+                        gpu_guard.preserve_claim()
+                        raise
+            except GpuGuardError as error:
+                raise LocalPresenterRuntimeError(str(error)) from error
             if result.exit_code != 0:
                 detail = result.stderr.strip() or result.stdout.strip() or "no process output"
                 raise LocalPresenterRuntimeError(
