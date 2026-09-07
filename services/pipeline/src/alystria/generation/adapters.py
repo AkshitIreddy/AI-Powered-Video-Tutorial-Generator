@@ -466,7 +466,19 @@ class RouterMediaClient:
                 candidate = value.metadata.get(key)
                 if candidate is not None:
                     metadata[key] = candidate
-        metadata.update(_measured_audio_metadata(content, media_type, asset.duration_seconds))
+        measured_metadata, measured_frame_count = _measured_audio_metadata(
+            content, media_type, asset.duration_seconds
+        )
+        if isinstance(value.metadata, dict):
+            metadata.update(
+                _validated_speech_provenance(
+                    value.metadata,
+                    media_type=media_type,
+                    measured_frame_count=measured_frame_count,
+                )
+            )
+        # Decoded media measurements always win over provider-declared values.
+        metadata.update(measured_metadata)
         return GeneratedMedia(
             content,
             media_type,
@@ -496,35 +508,115 @@ def _media_name(name: str, media_type: str | None) -> str:
 
 def _measured_audio_metadata(
     content: bytes, media_type: str, provider_duration_seconds: float | None
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], int | None]:
     """Measure provider audio bytes so timeline trims never use text estimates."""
 
     normalized = media_type.casefold()
     if normalized in {"audio/wav", "audio/x-wav"}:
         measurement = measure_wav(content)
-        return {
-            "durationMs": round(measurement.duration_ms),
-            "sampleRateHz": measurement.sample_rate_hz,
-            "channels": measurement.channels,
-            "durationSource": "decoded-audio-frames",
-        }
+        return (
+            {
+                "durationMs": round(measurement.duration_ms),
+                "sampleRateHz": measurement.sample_rate_hz,
+                "channels": measurement.channels,
+                "durationSource": "decoded-audio-frames",
+            },
+            measurement.frame_count,
+        )
     if normalized == "audio/mpeg":
         duration_ms, sample_rate_hz = _measure_mp3_frames(content)
-        return {
-            "durationMs": duration_ms,
-            "sampleRateHz": sample_rate_hz,
-            "durationSource": "mpeg-audio-frames",
-        }
+        return (
+            {
+                "durationMs": duration_ms,
+                "sampleRateHz": sample_rate_hz,
+                "durationSource": "mpeg-audio-frames",
+            },
+            None,
+        )
     if (
         provider_duration_seconds is not None
         and provider_duration_seconds > 0
         and provider_duration_seconds < 86_400
     ):
-        return {
-            "durationMs": round(provider_duration_seconds * 1_000),
-            "durationSource": "provider-metadata",
+        return (
+            {
+                "durationMs": round(provider_duration_seconds * 1_000),
+                "durationSource": "provider-metadata",
+            },
+            None,
+        )
+    return ({}, None)
+
+
+def _validated_speech_provenance(
+    provider_metadata: dict[str, Any],
+    *,
+    media_type: str,
+    measured_frame_count: Any,
+) -> dict[str, Any]:
+    """Keep inert speech provenance only when it agrees with decoded audio."""
+
+    preserved: dict[str, Any] = {}
+    voice_id = provider_metadata.get("voiceId")
+    if (
+        isinstance(voice_id, str)
+        and voice_id == voice_id.strip()
+        and 1 <= len(voice_id) <= 256
+        and voice_id.isprintable()
+    ):
+        preserved["voiceId"] = voice_id
+
+    if media_type.casefold() not in {"audio/wav", "audio/x-wav"}:
+        return preserved
+    chunk_count = provider_metadata.get("chunkCount")
+    chunk_frame_counts = provider_metadata.get("chunkFrameCounts")
+    if (
+        not isinstance(chunk_count, int)
+        or isinstance(chunk_count, bool)
+        or chunk_count < 2
+        or not isinstance(chunk_frame_counts, list)
+        or len(chunk_frame_counts) != chunk_count
+        or any(
+            not isinstance(frame_count, int)
+            or isinstance(frame_count, bool)
+            or frame_count <= 0
+            for frame_count in chunk_frame_counts
+        )
+        or not isinstance(measured_frame_count, int)
+        or sum(chunk_frame_counts) != measured_frame_count
+        or provider_metadata.get("pcmJoin") != "exact-no-gap-v1"
+        or provider_metadata.get("normalization") != "none"
+    ):
+        return preserved
+
+    preserved.update(
+        {
+            "chunkCount": chunk_count,
+            "chunkFrameCounts": list(chunk_frame_counts),
+            "pcmJoin": "exact-no-gap-v1",
+            "normalization": "none",
         }
-    return {}
+    )
+    request_ids = provider_metadata.get("requestIds")
+    if (
+        isinstance(request_ids, list)
+        and len(request_ids) <= chunk_count
+        and all(_is_safe_provider_request_id(request_id) for request_id in request_ids)
+    ):
+        preserved["requestIds"] = list(request_ids)
+    return preserved
+
+
+def _is_safe_provider_request_id(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and 1 <= len(value) <= 128
+        and all(
+            character.isascii()
+            and (character.isalnum() or character in {"-", "_", ".", ":"})
+            for character in value
+        )
+    )
 
 
 def _measure_mp3_frames(content: bytes) -> tuple[int, int]:

@@ -152,6 +152,50 @@ def test_router_media_preserves_only_provider_neutral_alignment_metadata() -> No
     assert "providerSecret" not in generated.metadata
 
 
+def test_router_media_preserves_validated_chunk_provenance_but_trusts_decoded_audio() -> None:
+    content = generate_sine_wav(WavFixtureSpec(duration_ms=200, sample_rate_hz=48_000))
+    generated = RouterMediaClient._media(
+        MediaOutput(
+            (
+                MediaAsset(
+                    data_base64=base64.b64encode(content).decode(),
+                    media_type="audio/wav",
+                    duration_seconds=99.0,
+                    license="LicenseRef-NVIDIA-AI-FOUNDATION-MODELS",
+                ),
+            ),
+            metadata={
+                "voiceId": "Magpie-Multilingual.EN-US.Aria",
+                "chunkCount": 2,
+                "chunkFrameCounts": [4_800, 4_800],
+                "requestIds": ["nvcf-safe-1", "nvcf-safe-2"],
+                "pcmJoin": "exact-no-gap-v1",
+                "normalization": "none",
+                "durationMs": 99_000,
+                "sampleRateHz": 8_000,
+                "channels": 2,
+                "rightsStatus": "unknown",
+            },
+        ),
+        "narration.wav",
+        "nvidia-nim",
+        "nvidia/magpie-tts-multilingual",
+        0,
+        {"characters": 700.0},
+    )
+
+    assert generated.metadata["voiceId"] == "Magpie-Multilingual.EN-US.Aria"
+    assert generated.metadata["chunkCount"] == 2
+    assert generated.metadata["chunkFrameCounts"] == [4_800, 4_800]
+    assert generated.metadata["requestIds"] == ["nvcf-safe-1", "nvcf-safe-2"]
+    assert generated.metadata["pcmJoin"] == "exact-no-gap-v1"
+    assert generated.metadata["normalization"] == "none"
+    assert generated.metadata["durationMs"] == 200
+    assert generated.metadata["sampleRateHz"] == 48_000
+    assert generated.metadata["channels"] == 1
+    assert generated.metadata["rightsStatus"] == "verified"
+
+
 def _hybrid_media_policy(*, speech_model: str = WINDOWS_SPEECH_MODEL) -> dict[str, object]:
     return {
         "version": 1,
