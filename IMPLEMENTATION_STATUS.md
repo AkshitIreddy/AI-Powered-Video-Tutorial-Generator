@@ -4,7 +4,7 @@ Current audit: **2026-09-07**, local `main`. The historical checklist below reco
 
 See [Product](docs/research/product-audit-2026-09-05.md), [Generation](docs/research/generation-audit-2026-09-05.md), [Editor](docs/research/editor-audit-2026-09-05.md), [Onboarding](docs/research/onboarding-audit-2026-09-05.md), [Catalog](docs/research/catalog-audit-2026-09-05.md), [Presenter and voice](docs/research/presenter-voice-audit-2026-09-05.md), and [Windows integration](docs/research/windows-integration-audit-2026-09-05.md) for current findings, fixes, measurements, and remaining gates.
 
-Current source evidence: the complete desktop suite passed **238 tests** after
+Earlier source evidence: the complete desktop suite passed **238 tests** after
 the catalog writing-profile integration. Production build, typecheck, lint,
 and the final staged-profile browser check passed under Node 24.20. The combined
 narration-cache, coordinator, education, and NVIDIA accounting selection passed
@@ -31,6 +31,23 @@ seconds of narration on the measured 180-second timeline. The first full
 render's teaching frames were rejected: undersized whiteboard content and a
 prose-like code scene require correction. Final master/editor acceptance
 remains open; see the generation audit for this distinction.
+
+The subsequent September 7 corrections make teaching steps readable at delivery
+resolution, compile supported arithmetic into verified executable assignments,
+and preserve measured scene windows through master and editor export. The
+caption compiler now uses one scene-aligned timeline for rendering, editor
+bindings, WebVTT, and SRT: the exact approved case has 49 cues, all within the
+configured 700 ms minimum, 20 characters/second, and two 42-character lines.
+Each master has an immutable export-provenance receipt so caption-only exports
+can safely share identical video bytes. The full generation coordinator suite
+passed 53 tests; the final native-control/editor selection passed 45.
+
+The desktop suite passed 240 tests before the strict snapshot-DTO regression
+was added; its subsequent focused native bridge suite passed 19. The Rust suite
+passed 68 tests after bounded worker shutdown was implemented. Actual packaged
+testing verified snapshot refresh to the measured timeline and normal app
+closure without surviving owned worker descendants. The final worker rebuild
+and full master/editor media qualification are still pending at this checkpoint.
 
 This ledger preserves the historical implementation checklist for the 2.0 worktree. A checked item means
 the implementation exists and its relevant local verification passed. It does
