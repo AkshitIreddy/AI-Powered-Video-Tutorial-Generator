@@ -60,11 +60,22 @@ def assert_no_reparse_path_segments(path: Path) -> None:
         candidate = parent
 
 
+def normalized_windows_path(path: Path, *, strict: bool) -> Path:
+    """Resolve equivalent Win32 and extended-length spellings identically."""
+    resolved = str(path.resolve(strict=strict))
+    if resolved.startswith("\\\\?\\UNC\\"):
+        resolved = "\\\\" + resolved[8:]
+    elif resolved.startswith("\\\\?\\"):
+        resolved = resolved[4:]
+    return Path(resolved)
+
+
 def assert_contained_path(root: Path, path: Path, *, must_exist: bool) -> Path:
     assert_no_reparse_path_segments(path)
-    resolved = path.resolve(strict=must_exist)
+    resolved = normalized_windows_path(path, strict=must_exist)
+    resolved_root = normalized_windows_path(root, strict=True)
     try:
-        resolved.relative_to(root)
+        resolved.relative_to(resolved_root)
     except ValueError as error:
         raise RuntimeError(
             f"Portable acceptance path escapes the selected root: {path} -> {resolved}"
@@ -171,7 +182,7 @@ def validate_native_ready(
         if not isinstance(value, str):
             raise TypeError(f"Native acceptance receipt is missing {field}")
         observed = assert_contained_path(portable, Path(value), must_exist=True)
-        if observed != expected.resolve(strict=True):
+        if observed != normalized_windows_path(expected, strict=True):
             raise RuntimeError(
                 f"Native acceptance receipt {field} does not match the portable layout"
             )
