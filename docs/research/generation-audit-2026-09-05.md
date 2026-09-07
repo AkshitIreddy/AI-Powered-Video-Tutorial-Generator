@@ -244,3 +244,45 @@ count, digest, and allowlisted headers were retained. This establishes one
 successful diagnostic, not success of the failed project image or a diagnosis
 of its failure. The current hosted-preview adapter reports zero-dollar cost;
 restricted TTS providers were not used.
+
+### Exact-prompt diagnostics and corrective source freeze
+
+A subsequent single diagnostic using the original scene prompt returned HTTP
+200 with an empty image and `finishReason: CONTENT_FILTERED`. The sanitized
+receipt is `E:\temp\avt-final-media-inspection-20260907\nim-image-exact-prompt-diagnostic.json`,
+request ID `ebeda63e-2a02-4941-9e28-82878de5c634`. This diagnoses that exact
+diagnostic response; the earlier native response was not retained. The adapter
+now classifies this response as a non-retryable policy block, retains only a
+sanitized request ID and status, and rejects mixed blocked/usable results.
+No further attempt to generate that image is planned.
+
+The audit also reproduced a separate product defect: the desktop default was
+Designed layout, but the worker selected image generation whenever an image
+route existed. Commit `ecdc0ae` makes the reviewed slide mode authoritative.
+Designed uses authored visuals; Illustrated requires an image route approved
+in the original request. A deliberate mode change can recover an inactive
+failed image branch while preserving scene prose and cached narration. Active
+work cannot be superseded. The full coordinator suite passed 53 tests and the
+desktop-worker generation acceptance passed one test; Ruff and strict mypy
+passed. These are controlled tests, not the pending native acceptance.
+
+Version 3's final narration failed in the hosted transport before returning a
+usable WAV. The exact public-text diagnostic returned HTTP 400 with
+`Received message larger than max (5229554 vs. 4194304)`, establishing an output
+message-size failure rather than an input-text rejection. The sanitized
+receipt is `E:\temp\avt-final-media-inspection-20260907\nim-tts-v3-error-diagnostic.json`,
+request ID `145fa9c6-d040-4129-9953-4479ad152dd8`.
+
+Commit `80b591a` splits longer Magpie narration at sentence or word boundaries
+using a conservative 350-character budget per response. This is an engineering
+budget, not an asserted API input limit or a guarantee for every utterance.
+The adapter preserves exact text and joins validated PCM samples without gaps,
+speed changes, or normalization. It records per-chunk frame counts for actual
+seam inspection, rejects truncated or inconsistent WAVs, and returns no partial
+media when any chunk fails. It does not retry automatically. The adapter suite
+passed 27 tests before the final truncated-WAV regression; the final focused
+Magpie selection passed eight tests. Ruff and strict mypy passed.
+
+The next packaged run must still prove four cached clips, one newly synthesized
+scene, acceptable measured timing and audio joins, the actual local presenter,
+and the full-length master/editor outputs. No native success is claimed here.
