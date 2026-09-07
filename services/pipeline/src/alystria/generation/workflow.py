@@ -2084,7 +2084,13 @@ class GenerationWorkflow:
             raise ExportQualityGateError(
                 f"Export blocked after {MAX_AUTOMATIC_REPAIRS} automatic repair attempts{suffix}"
             )
-        storyboard = approved["storyboard"]
+        storyboard = copy.deepcopy(approved["storyboard"])
+        rendered_scenes = render["renderRequest"]["scenes"]
+        if [scene["id"] for scene in storyboard["scenes"]] != [
+            scene["id"] for scene in rendered_scenes
+        ]:
+            raise ValueError("Export scene identity does not match the rendered tutorial")
+        storyboard["scenes"] = copy.deepcopy(rendered_scenes)
         running_ticks = 0
         chapters = []
         for scene in storyboard["scenes"]:
@@ -2165,6 +2171,7 @@ class GenerationWorkflow:
         )
         payload = {
             "exportManifest": manifest,
+            "storyboard": storyboard,
             "exportArtifactHash": export_artifact.hash,
             "videoArtifactHash": video_artifact_hash,
             "path": str(output_path),

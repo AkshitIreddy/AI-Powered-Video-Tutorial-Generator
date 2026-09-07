@@ -458,6 +458,12 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
         )
         planned_scenes = control._stage_payload(started.generation_id, "storyboard")["storyboard"]["scenes"]
         assert planned_scenes != approved_render_request["scenes"]
+        exported = control._stage_payload(started.generation_id, "export")
+        assert exported["storyboard"]["scenes"] == approved_render_request["scenes"]
+        assert [
+            {"sceneId": chapter["sceneIds"][0], "startTicks": chapter["startTicks"], "endTicks": chapter["endTicks"]}
+            for chapter in exported["exportManifest"]["chapters"]
+        ] == render_payload["candidate"]["renderSceneWindows"]
         job = control.submit_master_export(
             {
                 "baseRevisionId": head.revision_id,
