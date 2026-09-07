@@ -1191,7 +1191,7 @@ def _configured_local_image_runtime(
             "Local SDXL generation requires ALYSTRIA_COMFYUI_RUNTIME_ROOT and ALYSTRIA_GPU_LOCK_PATH"
         )
     runtime_root = Path(runtime_value).resolve(strict=True)
-    gpu_lock = Path(lock_value).resolve(strict=True)
+    gpu_lock = Path(lock_value)
     if not runtime_root.is_dir() or runtime_root.is_symlink():
         raise ValueError("Local SDXL runtime root is unsafe")
     if not gpu_lock.is_file() or gpu_lock.is_symlink():

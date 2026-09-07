@@ -848,6 +848,31 @@ def test_exact_local_sdxl_route_selects_supervised_comfy_runtime(
     assert _configured_local_image_runtime(fallback, procedural_policy) is fallback
 
 
+def test_local_image_route_does_not_resolve_away_an_indirect_gpu_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_root = tmp_path / "ComfyUI"
+    runtime_root.mkdir()
+    marker = tmp_path / "gpu-use.txt"
+    marker.write_text("no\n", encoding="utf-8")
+    indirect = tmp_path / "indirect-gpu-use.txt"
+    try:
+        indirect.symlink_to(marker)
+    except OSError:
+        pytest.skip("This host does not permit symlink creation")
+    monkeypatch.setenv("ALYSTRIA_COMFYUI_RUNTIME_ROOT", str(runtime_root))
+    monkeypatch.setenv("ALYSTRIA_GPU_LOCK_PATH", str(indirect))
+    policy_value = _all_local_generation_policy()
+    for route in policy_value["routes"]:
+        if route["capability"] == "image.generate":
+            route["model"] = SDXL_MODEL_ID
+    with pytest.raises(ValueError, match="GPU lock is unsafe"):
+        _configured_local_image_runtime(
+            DeterministicMediaClient(), parse_routing_policy(policy_value)
+        )
+    assert marker.read_text(encoding="utf-8") == "no\n"
+
+
 def test_missing_credential_grant_fails_before_generation_enqueue(tmp_path: Path) -> None:
     project_id = str(uuid.uuid4())
     project_path = tmp_path / "Blocked Cloud Project"
