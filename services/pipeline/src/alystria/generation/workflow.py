@@ -15,8 +15,9 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from alystria.audio import WordTiming, captions_from_words, to_srt, to_webvtt
+from alystria.audio import WordTiming
 from alystria.course import TICKS_PER_SECOND, VisualBible
+from alystria.generation.caption_bundle import CAPTION_COMPILER_VERSION, build_caption_bundle
 from alystria.jobs import ActionKey, DependencyGraph, JobContext, SQLiteWorkflowRuntime
 from alystria.jobs.runtime import TaskHandler
 from alystria.presenters import PresenterDirection, PresenterPlacement
@@ -598,7 +599,10 @@ class GenerationWorkflow:
         inputs = tuple(self.runtime.get_job(job_id).task_key for job_id in dependency_ids)
         action = ActionKey(
             kind=self.kind(stage),
-            implementation_version=IMPLEMENTATION_VERSION,
+            implementation_version=(
+                f"{IMPLEMENTATION_VERSION}:{CAPTION_COMPILER_VERSION}"
+                if stage is GenerationStage.CAPTIONS else IMPLEMENTATION_VERSION
+            ),
             parameters=parameters,
             input_hashes=inputs,
             provider=self.media_client.provider_id,
@@ -1586,89 +1590,30 @@ class GenerationWorkflow:
 
     def _captions(self, context: JobContext, parameters: dict[str, Any]) -> dict[str, Any]:
         narration_payload = self._input_payload(parameters, "narration")
-        narration = narration_payload["narration"]
         request = _request(parameters)
-        by_scene: dict[str, list[dict[str, Any]]] = {}
-        all_cues = []
-        narration_by_scene = {str(item["sceneId"]): item for item in narration}
-        offset_ticks = 0
-        for scene in narration_payload["storyboard"]["scenes"]:
-            scene_id = str(scene["id"])
-            item = narration_by_scene.get(scene_id)
-            if item is None:
-                raise ValueError(f"Narration is missing for storyboard scene: {scene_id}")
-            # Caption sidecars share the renderer's authored storyboard clock.
-            # Raw synthesis durations can be shorter than the scene and must
-            # not pull every later cue early.
-            offset = round(offset_ticks * 1_000 / TICKS_PER_SECOND)
-            scene_duration_ms = round(int(scene["durationTicks"]) * 1_000 / TICKS_PER_SECOND)
-            words = tuple(WordTiming(**word) for word in item["words"])
-            cues = tuple(
-                replace(cue, end_ms=min(cue.end_ms, scene_duration_ms))
-                for cue in captions_from_words(words, cue_prefix=scene_id)
-                if cue.start_ms < scene_duration_ms
-            )
-            serialized = [asdict(cue) for cue in cues]
-            by_scene[scene_id] = serialized
-            for cue in cues:
-                all_cues.append(
-                    WordTiming(
-                        cue.text,
-                        cue.start_ms + offset,
-                        cue.end_ms + offset,
-                    )
-                )
-            offset_ticks += int(scene["durationTicks"])
-        global_cues = captions_from_words(all_cues, cue_prefix="tutorial") if all_cues else ()
-        vtt = to_webvtt(global_cues) if request.captions_enabled else "WEBVTT\n"
-        srt = to_srt(global_cues) if request.captions_enabled else ""
-        vtt_artifact = self.store.add_artifact_bytes(
-            vtt.encode(),
-            media_type="text/vtt",
-            original_name="captions.vtt",
-            metadata={"locale": request.locale, "rightsStatus": "owned"},
-        )
-        srt_artifact = self.store.add_artifact_bytes(
-            srt.encode(),
-            media_type="application/x-subrip",
-            original_name="captions.srt",
-            metadata={"locale": request.locale, "rightsStatus": "owned"},
-        )
-        transcript = "\n\n".join(
-            str(scene["narration"]) for scene in narration_payload["storyboard"]["scenes"]
-        )
-        transcript_artifact = self.store.add_artifact_bytes(
-            transcript.encode(),
-            media_type="text/plain",
-            original_name="transcript.txt",
-            metadata={"locale": request.locale, "rightsStatus": "owned"},
+        bundle = build_caption_bundle(
+            self.store, narration_payload,
+            captions_enabled=request.captions_enabled, locale=request.locale,
         )
         context.set_progress(0.9, message="Caption and transcript sidecars built")
         return self._persist_stage(
             context,
             parameters,
-            {
-                "captionsEnabled": request.captions_enabled,
-                "byScene": by_scene,
-                "vttArtifactHash": vtt_artifact.hash,
-                "srtArtifactHash": srt_artifact.hash,
-                "transcriptArtifactHash": transcript_artifact.hash,
-                "cueCount": len(global_cues),
-            },
+            bundle,
             upstream_stages=[GenerationStage.NARRATION],
             linked_artifacts=[
                 {
-                    "artifactHash": vtt_artifact.hash,
+                    "artifactHash": bundle["vttArtifactHash"],
                     "role": "captions-vtt",
                     "stableId": request.locale,
                 },
                 {
-                    "artifactHash": srt_artifact.hash,
+                    "artifactHash": bundle["srtArtifactHash"],
                     "role": "captions-srt",
                     "stableId": request.locale,
                 },
                 {
-                    "artifactHash": transcript_artifact.hash,
+                    "artifactHash": bundle["transcriptArtifactHash"],
                     "role": "transcript",
                     "stableId": request.locale,
                 },
