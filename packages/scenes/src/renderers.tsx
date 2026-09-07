@@ -51,6 +51,7 @@ import type {
   UiDemoContent,
   VariableStateContent,
   WhiteboardContent,
+  WhiteboardLabel,
   WorkedExampleContent,
   QuizContent,
 } from "./types.js";
@@ -595,6 +596,135 @@ function whiteboardPathLength(points: readonly { readonly x: number; readonly y:
   return Math.max(1, total);
 }
 
+interface WhiteboardLineLayout {
+  readonly text: string;
+  readonly width: number;
+  readonly baseline: number;
+}
+
+interface WhiteboardLabelLayout {
+  readonly label: WhiteboardLabel;
+  readonly x: number;
+  readonly top: number;
+  readonly fontSize: number;
+  readonly lineHeight: number;
+  readonly lines: readonly WhiteboardLineLayout[];
+  readonly width: number;
+  readonly height: number;
+}
+
+function whiteboardTextWidth(text: string, fontSize: number): number {
+  return Math.max(fontSize * 0.7, text.length * fontSize * 0.61);
+}
+
+function wrapWhiteboardText(text: string, maximumCharacters: number): readonly string[] {
+  const lines = [...wrapText(text, maximumCharacters)];
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const operation = lines[index]!.match(/\s+([+−-]\s+\S+\s+[+−-])$/u);
+    if (operation) {
+      lines[index] = lines[index]!.slice(0, -operation[0].length).trimEnd();
+      lines[index + 1] = `${operation[1]} ${lines[index + 1]}`;
+      continue;
+    }
+    const danglingOperator = lines[index]!.match(/\s+([+=×÷−-])$/u);
+    if (danglingOperator) {
+      lines[index] = lines[index]!.slice(0, -danglingOperator[0].length).trimEnd();
+      lines[index + 1] = `${danglingOperator[1]} ${lines[index + 1]}`;
+    }
+  }
+  return lines.filter(Boolean);
+}
+
+function whiteboardRevealProgress(label: WhiteboardLabel, tick: number, reducedMotion: boolean): number {
+  if (reducedMotion) return tick >= label.startTick ? 1 : 0;
+  if (label.endTick === undefined) return tick >= label.startTick ? 1 : 0;
+  return clamp((tick - label.startTick) / Math.max(1, label.endTick - label.startTick), 0, 1);
+}
+
+function whiteboardLabelLayouts(
+  labels: readonly WhiteboardLabel[],
+  board: Rect,
+  metrics: SceneRendererProps["scene"]["metrics"],
+): readonly WhiteboardLabelLayout[] {
+  if (!labels.length) return [];
+  const landscape = metrics.profile === "landscape";
+  const minimum = landscape ? 40 : 32;
+  const maximum = landscape ? 60 : 52;
+  let baseSize = clamp(metrics.bodySize * (landscape ? 2.65 : 2.15), minimum, maximum);
+  const leftInset = Math.max(metrics.gutter * 0.9, baseSize * 0.85);
+  const numberRail = baseSize * 1.05;
+  const rightInset = Math.max(metrics.gutter * 1.1, baseSize * 0.8);
+  const x = board.x + leftInset + numberRail;
+  const availableWidth = Math.max(baseSize * 8, board.x + board.width - rightInset - x);
+  const verticalInset = Math.max(metrics.gutter * 0.7, baseSize * 0.62);
+  const availableHeight = Math.max(baseSize * 3, board.height - verticalInset * 2);
+
+  const longestToken = Math.max(1, ...labels.flatMap((label) => label.text.split(/\s+/u).map((token) => token.length)));
+  baseSize = Math.min(baseSize, availableWidth / (longestToken * 0.61));
+
+  const draft = (size: number) => labels.map((label) => {
+    const fontSize = size * clamp(label.fontScale ?? 1, 0.8, 1.12);
+    const maxCharacters = Math.max(8, Math.floor(availableWidth / (fontSize * 0.61)));
+    const textLines = wrapWhiteboardText(label.text, maxCharacters);
+    const lineHeight = fontSize * 1.28;
+    const lines = textLines.map((text) => ({ text, width: Math.min(availableWidth, whiteboardTextWidth(text, fontSize)) }));
+    return { label, fontSize, lineHeight, lines, height: lines.length * lineHeight };
+  });
+
+  let blocks = draft(baseSize);
+  const minimumGap = Math.max(metrics.unit * 0.8, minimum * 0.34);
+  while (baseSize > (landscape ? 40 : 28)
+    && blocks.reduce((sum, block) => sum + block.height, 0) + minimumGap * Math.max(0, blocks.length - 1) > availableHeight) {
+    baseSize -= 2;
+    blocks = draft(baseSize);
+  }
+
+  const textHeight = blocks.reduce((sum, block) => sum + block.height, 0);
+  const freeHeight = Math.max(0, availableHeight - textHeight);
+  const gap = blocks.length > 1
+    ? clamp(freeHeight / (blocks.length + 1), minimumGap, baseSize * 1.8)
+    : 0;
+  let cursor = board.y + verticalInset + (blocks.length === 1 ? freeHeight / 2 : gap);
+  return blocks.map((block) => {
+    const top = cursor;
+    const lines = block.lines.map((line, index) => ({
+      ...line,
+      baseline: top + block.fontSize + index * block.lineHeight,
+    }));
+    cursor += block.height + gap;
+    return { ...block, x, top, lines, width: availableWidth };
+  });
+}
+
+function whiteboardLineProgress(layout: WhiteboardLabelLayout, lineIndex: number, progress: number): number {
+  const weights = layout.lines.map((line) => Math.max(1, line.text.length));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const before = weights.slice(0, lineIndex).reduce((sum, weight) => sum + weight, 0);
+  return clamp((progress * total - before) / weights[lineIndex]!, 0, 1);
+}
+
+function whiteboardWritingPosition(layout: WhiteboardLabelLayout, progress: number): { readonly x: number; readonly y: number; readonly line: number } {
+  const weights = layout.lines.map((line) => Math.max(1, line.text.length));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const revealed = progress * total;
+  let before = 0;
+  for (let index = 0; index < layout.lines.length; index += 1) {
+    const line = layout.lines[index]!;
+    const weight = weights[index]!;
+    if (revealed <= before + weight || index === layout.lines.length - 1) {
+      const lineProgress = clamp((revealed - before) / weight, 0, 1);
+      return {
+        x: layout.x + line.width * lineProgress,
+        y: line.baseline - layout.fontSize * 0.3,
+        line: index + 1,
+      };
+    }
+    before += weight;
+  }
+  const last = layout.lines.at(-1)!;
+  return { x: layout.x + last.width, y: last.baseline - layout.fontSize * 0.3, line: layout.lines.length };
+}
+
 export function WhiteboardRenderer(props: SceneRendererProps<WhiteboardContent>) {
   const theme = props.theme ?? PRECISION_THEME;
   const body = insetRect(bodyRect(props), props.scene.metrics.gutter * 0.18);
@@ -606,6 +736,8 @@ export function WhiteboardRenderer(props: SceneRendererProps<WhiteboardContent>)
   const rail = Math.max(16, props.scene.metrics.unit * 1.3);
   const board = { x: body.x, y: body.y, width: body.width, height: body.height - rail };
   const labels = content.labels ?? [];
+  const generatedLayout = content.generatedLayout === "progressive-list";
+  const labelLayouts = generatedLayout ? whiteboardLabelLayouts(labels, board, props.scene.metrics) : [];
   const writingLabel = labels.find((label) => (
     label.endTick !== undefined
     && props.frame.tick >= label.startTick
@@ -615,18 +747,38 @@ export function WhiteboardRenderer(props: SceneRendererProps<WhiteboardContent>)
     <g id="body" data-semantic-role="visual" data-tutorial-mode="whiteboard" data-board-style={style}>
       <rect x={board.x} y={board.y} width={board.width} height={board.height} rx={Math.max(4, props.scene.metrics.unit * 0.45)} fill={boardFill} stroke={style === "chalkboard" ? "#0D2A25" : "#CDD2D4"} strokeWidth={Math.max(3, props.scene.metrics.unit * 0.26)} filter={`url(#shadow-${safeId(props.scene.spec.id)})`} />
       {style === "paper" ? Array.from({ length: 9 }, (_, index) => <line key={index} x1={board.x + props.scene.metrics.gutter * 0.5} x2={board.x + board.width - props.scene.metrics.gutter * 0.5} y1={board.y + board.height * ((index + 1) / 10)} y2={board.y + board.height * ((index + 1) / 10)} stroke="#D7DDE6" strokeWidth="2" opacity="0.62" />) : null}
-      {content.strokes.map((stroke) => {
+      {labelLayouts.length ? <line x1={labelLayouts[0]!.x - labelLayouts[0]!.fontSize * 0.58} x2={labelLayouts[0]!.x - labelLayouts[0]!.fontSize * 0.58} y1={board.y + props.scene.metrics.gutter} y2={board.y + board.height - props.scene.metrics.gutter} stroke={theme.primary} strokeWidth={Math.max(2, props.scene.metrics.unit * 0.22)} opacity="0.16" /> : null}
+      {content.strokes.map((stroke, index) => {
         const rawProgress = (props.frame.tick - stroke.startTick) / Math.max(1, stroke.endTick - stroke.startTick);
         const progress = props.frame.reducedMotion ? (props.frame.tick >= stroke.startTick ? 1 : 0) : clamp(rawProgress, 0, 1);
-        const length = whiteboardPathLength(stroke.points, board);
+        const layout = labelLayouts[index];
+        const underlineY = layout ? layout.top + layout.height + layout.fontSize * 0.13 : 0;
+        const underlineWidth = layout ? Math.max(layout.fontSize * 2.4, Math.max(...layout.lines.map((line) => line.width))) : 0;
+        const path = layout
+          ? `M ${layout.x} ${underlineY} L ${layout.x + Math.min(layout.width, underlineWidth)} ${underlineY}`
+          : whiteboardPath(stroke.points, board);
+        const length = layout ? Math.min(layout.width, underlineWidth) : whiteboardPathLength(stroke.points, board);
         const width = Math.max(3, props.scene.metrics.unit * (stroke.width ?? (stroke.tool === "pencil" ? 0.26 : 0.42)));
-        return <path key={stroke.id} id={stroke.id} data-whiteboard-stroke="true" data-draw-progress={progress.toFixed(4)} d={whiteboardPath(stroke.points, board)} fill="none" stroke={palette[stroke.color ?? "ink"]} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={length} strokeDashoffset={length * (1 - progress)} opacity={stroke.tool === "pencil" ? 0.84 : 0.96} />;
+        return <path key={stroke.id} id={stroke.id} data-whiteboard-stroke="true" data-draw-progress={progress.toFixed(4)} d={path} fill="none" stroke={palette[stroke.color ?? "ink"]} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={length} strokeDashoffset={length * (1 - progress)} opacity={stroke.tool === "pencil" ? 0.84 : 0.96} />;
       })}
-      {labels.map((label) => {
-        const rawProgress = label.endTick === undefined
-          ? (props.frame.tick >= label.startTick ? 1 : 0)
-          : (props.frame.tick - label.startTick) / Math.max(1, label.endTick - label.startTick);
-        const progress = props.frame.reducedMotion ? (props.frame.tick >= label.startTick ? 1 : 0) : clamp(rawProgress, 0, 1);
+      {labelLayouts.map((layout, labelIndex) => {
+        const { label } = layout;
+        const progress = whiteboardRevealProgress(label, props.frame.tick, props.frame.reducedMotion);
+        return <g key={label.id} id={label.id} data-whiteboard-label-group="true" data-whiteboard-lines={layout.lines.length} data-whiteboard-font-size={layout.fontSize.toFixed(2)}>
+          {label.emphasis === "result" ? <rect x={layout.x - layout.fontSize * 0.26} y={layout.top - layout.fontSize * 0.18} width={layout.width + layout.fontSize * 0.38} height={layout.height + layout.fontSize * 0.36} rx={layout.fontSize * 0.22} fill={theme.primary} opacity="0.075" /> : null}
+          <text x={layout.x - layout.fontSize * 0.72} y={layout.lines[0]!.baseline} textAnchor="end" fill={label.emphasis === "result" ? theme.primary : theme.mutedInk} fontFamily={theme.fontMono} fontSize={legible(layout.fontSize * 0.38)} fontWeight="850" opacity={progress > 0 ? 0.8 : 0}>{String(labelIndex + 1).padStart(2, "0")}</text>
+          {layout.lines.map((line, lineIndex) => {
+            const lineProgress = whiteboardLineProgress(layout, lineIndex, progress);
+            const clipId = `${safeId(props.scene.spec.id)}-${safeId(label.id)}-${lineIndex}-write`;
+            return <g key={clipId}>
+              <defs><clipPath id={clipId}><rect x={layout.x - 2} y={line.baseline - layout.fontSize * 1.05} width={line.width * lineProgress + 4} height={layout.lineHeight * 1.08} /></clipPath></defs>
+              <text data-whiteboard-label="true" data-whiteboard-line={lineIndex + 1} data-write-progress={lineProgress.toFixed(4)} x={layout.x} y={line.baseline} fill={palette[label.color ?? "ink"]} fontFamily={theme.fontMono} fontSize={legible(layout.fontSize)} fontWeight={label.emphasis === "result" ? "850" : "720"} opacity={lineProgress > 0 ? 1 : 0} clipPath={`url(#${clipId})`}>{line.text}</text>
+            </g>;
+          })}
+        </g>;
+      })}
+      {!generatedLayout ? labels.map((label) => {
+        const progress = whiteboardRevealProgress(label, props.frame.tick, props.frame.reducedMotion);
         const x = board.x + label.x * board.width;
         const y = board.y + label.y * board.height;
         const availableWidth = Math.max(1, board.width * (0.96 - label.x));
@@ -636,14 +788,24 @@ export function WhiteboardRenderer(props: SceneRendererProps<WhiteboardContent>)
           <defs><clipPath id={clipId}><rect x={x - 2} y={y - props.scene.metrics.bodySize * 1.3} width={availableWidth * progress + 4} height={props.scene.metrics.bodySize * 1.8} /></clipPath></defs>
           <text id={label.id} data-whiteboard-label="true" data-write-progress={progress.toFixed(4)} x={x} y={y} fill={palette[label.color ?? "ink"]} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * scale)} fontWeight={label.emphasis === "result" ? "850" : "720"} opacity={progress > 0 ? 1 : 0} clipPath={`url(#${clipId})`}>{label.text}</text>
         </g>;
-      })}
+      }) : null}
       {content.showWritingTool && writingLabel ? (() => {
-        const progress = clamp((props.frame.tick - writingLabel.startTick) / Math.max(1, writingLabel.endTick! - writingLabel.startTick), 0, 1);
-        const x = board.x + (writingLabel.x + (0.96 - writingLabel.x) * progress) * board.width;
-        const y = board.y + writingLabel.y * board.height - props.scene.metrics.unit * 0.4;
-        return <g data-whiteboard-writing-tool="true" transform={`translate(${x} ${y}) rotate(-38)`}>
-          <rect x={-props.scene.metrics.unit * 0.12} y={-props.scene.metrics.unit * 1.25} width={props.scene.metrics.unit * 0.24} height={props.scene.metrics.unit * 1.18} rx={props.scene.metrics.unit * 0.08} fill={theme.primary} />
-          <path d={`M ${-props.scene.metrics.unit * 0.12} 0 L 0 ${props.scene.metrics.unit * 0.32} L ${props.scene.metrics.unit * 0.12} 0 Z`} fill="#D8B27C" />
+        const layout = labelLayouts.find((candidate) => candidate.label.id === writingLabel.id);
+        if (!layout) {
+          const progress = whiteboardRevealProgress(writingLabel, props.frame.tick, false);
+          const x = board.x + (writingLabel.x + (0.96 - writingLabel.x) * progress) * board.width;
+          const y = board.y + writingLabel.y * board.height - props.scene.metrics.unit * 0.4;
+          return <g data-whiteboard-writing-tool="true" transform={`translate(${x} ${y}) rotate(-38)`}>
+            <rect x={-props.scene.metrics.unit * 0.12} y={-props.scene.metrics.unit * 1.25} width={props.scene.metrics.unit * 0.24} height={props.scene.metrics.unit * 1.18} rx={props.scene.metrics.unit * 0.08} fill={theme.primary} />
+            <path d={`M ${-props.scene.metrics.unit * 0.12} 0 L 0 ${props.scene.metrics.unit * 0.32} L ${props.scene.metrics.unit * 0.12} 0 Z`} fill="#D8B27C" />
+          </g>;
+        }
+        const progress = whiteboardRevealProgress(writingLabel, props.frame.tick, false);
+        const position = whiteboardWritingPosition(layout, progress);
+        const tool = Math.max(props.scene.metrics.unit * 1.15, layout.fontSize * 0.32);
+        return <g data-whiteboard-writing-tool="true" data-writing-label={writingLabel.id} data-writing-line={position.line} data-writing-x={position.x.toFixed(2)} transform={`translate(${position.x} ${position.y}) rotate(-38)`}>
+          <rect x={-tool * 0.12} y={-tool * 1.25} width={tool * 0.24} height={tool * 1.18} rx={tool * 0.08} fill={theme.primary} />
+          <path d={`M ${-tool * 0.12} 0 L 0 ${tool * 0.32} L ${tool * 0.12} 0 Z`} fill="#D8B27C" />
         </g>;
       })() : null}
       <rect x={body.x} y={board.y + board.height} width={body.width} height={rail} rx={rail * 0.22} fill={style === "chalkboard" ? "#A9794E" : "#D5D8D8"} />
@@ -662,7 +824,20 @@ export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
   const codeRect: Rect = isWide ? { x: body.x, y: body.y, width: body.width * 0.7, height: body.height } : body;
   const lensRect: Rect | undefined = isWide ? { x: body.x + body.width * 0.72, y: body.y, width: body.width * 0.28, height: body.height } : undefined;
   const headerHeight = Math.max(52, props.scene.metrics.bodySize * 2.5);
-  const lineHeight = Math.min(props.scene.metrics.bodySize * 1.72, (codeRect.height - headerHeight - props.scene.metrics.unit * 2) / Math.max(1, lines.length));
+  const compactMinimum = props.scene.metrics.profile === "portrait" ? 30 : 36;
+  const compactMaximum = props.scene.metrics.profile === "portrait" ? 38 : 44;
+  const longestCodeLine = Math.max(1, ...lines.map((line) => line.text.length));
+  const annotationReserve = lines.some((line) => line.annotation)
+    ? Math.max(props.scene.metrics.gutter * 3.2, props.scene.metrics.bodySize * 5)
+    : props.scene.metrics.gutter;
+  const availableCodeWidth = Math.max(1, codeRect.width - props.scene.metrics.bodySize * 1.85 - annotationReserve);
+  const compactProgram = lines.length <= 8
+    && lines.every((line) => line.text.length <= 56)
+    && longestCodeLine * compactMinimum * 0.61 <= availableCodeWidth;
+  const codeFontSize = compactProgram
+    ? clamp(Math.min(props.scene.metrics.bodySize * 1.8, availableCodeWidth / (longestCodeLine * 0.61)), compactMinimum, compactMaximum)
+    : legible(props.scene.metrics.bodySize * 0.92);
+  const lineHeight = Math.min(codeFontSize * 1.62, (codeRect.height - headerHeight - props.scene.metrics.unit * 2) / Math.max(1, lines.length));
   const activeActions = content.actions?.filter((action) => props.frame.tick >= action.startTick && props.frame.tick <= action.endTick) ?? [];
   const actionPriority = { run: 4, explain: 3, highlight: 2, type: 1 } as const;
   const activeAction = activeActions.toSorted((left, right) => actionPriority[right.type] - actionPriority[left.type])[0];
@@ -694,10 +869,14 @@ export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
           : 1;
         const normalizedText = line.text.replace(/\t/g, "  ");
         const visibleText = typeAction ? normalizedText.slice(0, Math.round(normalizedText.length * typeProgress)) : normalizedText;
+        const runAction = content.kind === "live-code" ? content.actions?.find((action) => action.type === "run" && action.lineId === line.id) : undefined;
+        const annotationVisible = Boolean(line.annotation)
+          && (!typeAction || props.frame.tick >= typeAction.endTick)
+          && (!runAction || props.frame.tick >= runAction.startTick);
         const actionHighlight = content.actions?.some((action) => action.type === "highlight" && action.lineId === line.id && props.frame.tick >= action.startTick && props.frame.tick <= action.endTick);
         const lineFocused = content.kind === "live-code" ? Boolean(activeAction) && index === activeIndex : Boolean(line.highlight || actionHighlight);
         const typingNow = Boolean(typeAction && typeProgress > 0 && typeProgress < 1 && !props.frame.reducedMotion);
-        return <g key={line.id} id={line.id} data-code-line={index + 1} data-code-line-focus={lineFocused ? "active" : "inactive"} data-typing-progress={typeAction ? typeProgress.toFixed(4) : undefined} style={animationStyle(props.scene.choreography, line.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>{lineFocused || diffTone ? <g><rect x={codeRect.x + props.scene.metrics.bodySize * 0.2} y={y - lineHeight * 0.72} width={codeRect.width - props.scene.metrics.bodySize * 0.4} height={lineHeight} fill={diffTone ?? theme.primary} opacity="0.22" /><rect x={codeRect.x} y={y - lineHeight * 0.72} width={Math.max(7, props.scene.metrics.unit * 0.7)} height={lineHeight} fill={diffTone ?? theme.accent} /></g> : null}<text x={codeRect.x + props.scene.metrics.bodySize * 0.95} y={y} textAnchor="end" fill="#949BB1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)}>{index + 1}</text><text x={codeRect.x + props.scene.metrics.bodySize * 1.85} y={y} fill={color} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.bodySize * 0.92)} xmlSpace="preserve">{truncate(visibleText, props.scene.metrics.profile === "portrait" ? 52 : isWide ? 62 : 92)}{typingNow ? <tspan fill={theme.accent}>▌</tspan> : null}</text>{line.annotation ? <text x={codeRect.x + codeRect.width - props.scene.metrics.gutter} y={y} textAnchor="end" fill="#F4C56A" fontFamily={theme.fontBody} fontSize={legible(props.scene.metrics.smallSize)}>{truncate(line.annotation, 28)}</text> : null}</g>;
+        return <g key={line.id} id={line.id} data-code-line={index + 1} data-code-line-focus={lineFocused ? "active" : "inactive"} data-code-font-size={codeFontSize.toFixed(2)} data-typing-progress={typeAction ? typeProgress.toFixed(4) : undefined} style={animationStyle(props.scene.choreography, line.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>{lineFocused || diffTone ? <g><rect x={codeRect.x + props.scene.metrics.bodySize * 0.2} y={y - lineHeight * 0.72} width={codeRect.width - props.scene.metrics.bodySize * 0.4} height={lineHeight} fill={diffTone ?? theme.primary} opacity="0.22" /><rect x={codeRect.x} y={y - lineHeight * 0.72} width={Math.max(7, props.scene.metrics.unit * 0.7)} height={lineHeight} fill={diffTone ?? theme.accent} /></g> : null}<text x={codeRect.x + props.scene.metrics.bodySize * 0.95} y={y} textAnchor="end" fill="#949BB1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)}>{index + 1}</text><text x={codeRect.x + props.scene.metrics.bodySize * 1.85} y={y} fill={color} fontFamily={theme.fontMono} fontSize={codeFontSize} xmlSpace="preserve">{truncate(visibleText, props.scene.metrics.profile === "portrait" ? 52 : isWide ? 62 : 92)}{typingNow ? <tspan fill={theme.accent}>▌</tspan> : null}</text>{line.annotation ? <text data-code-annotation={annotationVisible ? "revealed" : "pending"} x={codeRect.x + codeRect.width - props.scene.metrics.gutter} y={y} textAnchor="end" fill="#F4C56A" fontFamily={theme.fontBody} fontSize={legible(props.scene.metrics.smallSize)} opacity={annotationVisible ? 1 : 0}>{truncate(line.annotation, 28)}</text> : null}</g>;
       })}
       {lensRect ? <g data-code-lens="execution" data-live-code-action={content.kind === "live-code" ? activeAction?.type ?? "idle" : undefined}>
         <path d={`M ${lensRect.x} ${lensRect.y} H ${lensRect.x + lensRect.width} V ${lensRect.y + lensRect.height} H ${lensRect.x} L ${lensRect.x + props.scene.metrics.unit * 1.2} ${lensRect.y + lensRect.height * 0.5} Z`} fill={shade(theme.primary, 0.28)} />
@@ -1003,7 +1182,7 @@ function PresenterPortraitStage({ props, rect, mediaRect }: { readonly props: Sc
     </g>
     <path d={`M ${rect.x} ${rect.y + rect.height * 0.74} H ${rect.x + rect.width} V ${rect.y + rect.height} H ${rect.x + props.scene.metrics.unit * 1.2} L ${rect.x} ${rect.y + rect.height - props.scene.metrics.unit * 1.2} Z`} fill={theme.codeBackground} opacity="0.97" />
     <line x1={rect.x + props.scene.metrics.gutter * 0.7} x2={rect.x + rect.width * 0.42} y1={rect.y + rect.height * 0.79} y2={rect.y + rect.height * 0.79} stroke={theme.accent} strokeWidth={Math.max(4, props.scene.metrics.unit * 0.42)} />
-    <text x={rect.x + props.scene.metrics.gutter * 0.7} y={rect.y + rect.height * 0.845} fill="#AEB6CE" fontFamily={theme.fontMono} fontWeight="760" fontSize={legible(props.scene.metrics.smallSize * 0.76)} letterSpacing="1.6">PRESENTER IDENTITY</text>
+    <text x={rect.x + props.scene.metrics.gutter * 0.7} y={rect.y + rect.height * 0.845} fill="#AEB6CE" fontFamily={theme.fontMono} fontWeight="760" fontSize={legible(props.scene.metrics.smallSize * 0.76)} letterSpacing="1.6">YOUR INSTRUCTOR</text>
     <MultilineText x={rect.x + props.scene.metrics.gutter * 0.7} y={rect.y + rect.height * 0.955} lines={nameLines} lineHeight={nameLineHeight} fill={theme.surface} fontFamily={theme.fontDisplay} fontWeight="780" fontSize={nameFontSize} maxLines={3} />
   </g>;
 }

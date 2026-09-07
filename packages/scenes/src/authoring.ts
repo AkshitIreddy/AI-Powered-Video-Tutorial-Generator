@@ -5,6 +5,7 @@ import {
   type SceneSpec,
   type TextItem,
 } from "./types.js";
+import { compileArithmeticAssignmentProgram } from "./arithmetic-program.js";
 
 export interface AuthoredNarrationWordTiming {
   readonly token: string;
@@ -780,6 +781,68 @@ function sourceLines(scene: AuthoredResolvedScene, beat?: VisualBeat): readonly 
   return displayInformationUnits(scene);
 }
 
+function verifiedDistributiveWhiteboardSteps(equation: string): readonly string[] | undefined {
+  const compact = equation.replace(/[−–]/gu, "-").replace(/\s+/gu, "");
+  const match = compact.match(/^\(([A-Za-z])\+([A-Za-z])\)\(([A-Za-z])\+([A-Za-z])\)-([A-Za-z]{2})-([A-Za-z]{2})=([A-Za-z]{2})\+([A-Za-z]{2})$/u);
+  if (!match) return undefined;
+  const [, first, second, third, fourth, removedFirst, removedSecond, resultFirst, resultSecond] = match;
+  const expanded = [`${first}${third}`, `${first}${fourth}`, `${second}${third}`, `${second}${fourth}`];
+  const removed = new Set([removedFirst, removedSecond]);
+  const result = new Set([resultFirst, resultSecond]);
+  if (removed.size !== 2
+    || result.size !== 2
+    || !removed.has(expanded[0]!)
+    || !removed.has(expanded[3]!)
+    || !result.has(expanded[1]!)
+    || !result.has(expanded[2]!)) return undefined;
+  return Object.freeze([
+    `(${first} + ${second})(${third} + ${fourth}) − ${removedFirst} − ${removedSecond}`,
+    `= ${expanded.join(" + ")} − ${removedFirst} − ${removedSecond}`,
+    `= ${resultFirst} + ${resultSecond}`,
+  ]);
+}
+
+function whiteboardDisplayLines(
+  scene: AuthoredResolvedScene,
+  semantic: AuthoredSemanticScene | undefined,
+  fallback: readonly string[],
+): readonly string[] {
+  const normalizeMath = (value: string) => normalizedDisplayText(value).replace(/\s*\*\s*/gu, " × ");
+  const ordered = semantic
+    ? uniqueLabels([
+        ...semantic.units
+          .filter((unit) => !roleMatches(unit, ["result", "answer", "conclusion"]))
+          .map((unit) => targetAwareInformationLabel(unit, semantic)),
+        ...(scene.content.items?.length ? displayInformationUnits(scene) : []),
+        ...semantic.units
+          .filter((unit) => roleMatches(unit, ["result", "answer", "conclusion"]))
+          .map((unit) => targetAwareInformationLabel(unit, semantic)),
+      ].map(normalizeMath), 6)
+    : uniqueLabels(fallback.map(normalizeMath), 6);
+
+  // A single compact equation makes a poor animated board: it appears once
+  // and leaves the writing tool travelling across empty space. Preserve the
+  // exact authored expression while exposing a closed, verified identity as a
+  // short progressive derivation. Other equations are only split at equality.
+  if (ordered.length === 1) {
+    const equation = ordered[0]!;
+    const verifiedExpansion = verifiedDistributiveWhiteboardSteps(equation);
+    if (verifiedExpansion) return verifiedExpansion;
+    const equals = [...equation.matchAll(/=/gu)];
+    if (equals.length === 1) {
+      const splitAt = equals[0]!.index!;
+      const left = equation.slice(0, splitAt).trim();
+      const right = equation.slice(splitAt + 1).trim();
+      return Object.freeze([left, `= ${right}`].filter(Boolean));
+    }
+    const arrow = equation.split(/\s*→\s*/u);
+    if (arrow.length === 2 && arrow.every(Boolean)) {
+      return Object.freeze([arrow[0]!.trim(), `→ ${arrow[1]!.trim()}`]);
+    }
+  }
+  return ordered;
+}
+
 export interface AuthoredSemanticScene {
   readonly beat: AuthoredVisualBeat;
   readonly units: readonly AuthoredVisualInformationUnit[];
@@ -1203,21 +1266,25 @@ export function resolveBuiltinSceneSpec(scene: AuthoredResolvedScene, suppliedBe
       content = { kind, ...common, series: dataSeries, xLabel: "Step", yLabel: "Value" };
       break;
     case "whiteboard": {
-      const boardLines = lines.slice(0, 6);
+      const boardLines = whiteboardDisplayLines(scene, semantic, lines);
       const actionWindows = narrationActionWindows(scene, boardLines.length);
       const derivation = boardLines.some((line) => /[=+\-×÷√²³∑]|\^\d/.test(line));
-      const rowStep = boardLines.length > 4 ? 0.13 : 0.18;
-      const firstRow = boardLines.length > 4 ? 0.13 : 0.18;
+      const rowStep = boardLines.length > 4 ? 0.145 : boardLines.length > 2 ? 0.2 : 0.28;
+      const firstRow = boardLines.length > 4 ? 0.12 : boardLines.length > 2 ? 0.18 : 0.3;
       content = {
         kind,
         ...common,
         boardStyle: "whiteboard",
         layout: derivation ? "derivation" : "notes",
+        generatedLayout: "progressive-list",
         showWritingTool: true,
         finalBoardDescription: boardLines.join(". "),
-        strokes: boardLines.map((_, index) => ({
+        strokes: boardLines.map((text, index) => ({
           id: child(`stroke-${index + 1}`),
-          points: [{ x: 0.1, y: firstRow + 0.025 + index * rowStep }, { x: 0.32, y: firstRow + 0.03 + index * rowStep }, { x: index === boardLines.length - 1 ? 0.82 : 0.68, y: firstRow + 0.025 + index * rowStep }],
+          points: [
+            { x: 0.12, y: firstRow + 0.04 + index * rowStep },
+            { x: Math.min(0.9, 0.12 + Math.max(0.2, text.length * 0.014)), y: firstRow + 0.04 + index * rowStep },
+          ],
           startTick: Math.max(actionWindows[index]!.startTick + 1, Math.round(actionWindows[index]!.startTick + (actionWindows[index]!.endTick - actionWindows[index]!.startTick) * 0.76)),
           endTick: actionWindows[index]!.endTick,
           tool: "pencil" as const,
@@ -1230,7 +1297,7 @@ export function resolveBuiltinSceneSpec(scene: AuthoredResolvedScene, suppliedBe
           y: firstRow + index * rowStep,
           startTick: actionWindows[index]!.startTick,
           endTick: Math.max(actionWindows[index]!.startTick + 1, Math.round(actionWindows[index]!.startTick + (actionWindows[index]!.endTick - actionWindows[index]!.startTick) * 0.72)),
-          fontScale: boardLines.length > 4 ? 0.72 : 0.86,
+          fontScale: boardLines.length > 4 ? 0.9 : 1,
           ...(index === boardLines.length - 1 ? { color: "primary" as const, emphasis: "result" as const } : {}),
         })),
       };
@@ -1242,22 +1309,34 @@ export function resolveBuiltinSceneSpec(scene: AuthoredResolvedScene, suppliedBe
     case "diff":
     case "terminal":
       {
-      const resolvedLines = (semantic?.code.length ? semantic.code.map((unit) => unitText(unit) ?? authoredInformationLabel(unit)) : lines)
-        .map((text, index) => ({ id: child(`line-${index + 1}`), text, highlight: index === 0 }));
+      const declaredLanguage = optionalMetadataString(scene, "language");
+      const arithmeticProgram = !semantic?.code.length && !declaredLanguage && kind !== "terminal" && kind !== "diff"
+        ? compileArithmeticAssignmentProgram(scene.content.items ?? scene.content.onScreenText ?? [])
+        : undefined;
+      const resolvedLines: readonly { readonly id: string; readonly text: string; readonly annotation?: string; readonly highlight: boolean }[] = arithmeticProgram
+        ? arithmeticProgram.lines.map((line, index) => ({ id: child(`line-${index + 1}`), text: line.text, annotation: line.annotation, highlight: index === 0 }))
+        : (semantic?.code.length ? semantic.code.map((unit) => unitText(unit) ?? authoredInformationLabel(unit)) : lines)
+          .map((text, index) => ({ id: child(`line-${index + 1}`), text, highlight: index === 0 }));
       const actionWindows = narrationActionWindows(scene, resolvedLines.length);
       content = {
         kind,
         ...common,
-        language: kind === "terminal" ? "text" : optionalMetadataString(scene, "language") ?? "text",
-        filename: kind === "terminal" ? "Tutorial console" : "lesson.txt",
+        language: kind === "terminal" ? "text" : arithmeticProgram?.language ?? declaredLanguage ?? "text",
+        filename: kind === "terminal"
+          ? "Tutorial console"
+          : arithmeticProgram?.filename ?? optionalMetadataString(scene, "filename") ?? (declaredLanguage ? "Pseudocode" : "Worked steps"),
         lines: resolvedLines,
         ...(kind === "live-code" ? { actions: resolvedLines.flatMap((line, index) => {
           const window = actionWindows[index]!;
-          const typeEnd = Math.max(window.startTick + 1, Math.round(window.startTick + (window.endTick - window.startTick) * 0.68));
-          const explainStart = Math.min(typeEnd, Math.max(window.startTick, window.endTick - 1));
+          const span = window.endTick - window.startTick;
+          const typeEnd = Math.max(window.startTick + 1, Math.round(window.startTick + span * (arithmeticProgram ? 0.58 : 0.68)));
+          const runStart = Math.min(window.endTick - 1, Math.max(typeEnd, Math.round(window.startTick + span * 0.64)));
+          const runEnd = Math.min(window.endTick, Math.max(runStart + 1, Math.round(window.startTick + span * 0.82)));
+          const explainStart = arithmeticProgram ? runEnd : Math.min(typeEnd, Math.max(window.startTick, window.endTick - 1));
           const narrationAnchor = window.anchor || undefined;
           return [
             { id: child(`type-${index + 1}`), type: "type" as const, lineId: line.id, startTick: window.startTick, endTick: typeEnd, ...(narrationAnchor ? { narrationAnchor } : {}) },
+            ...(arithmeticProgram ? [{ id: child(`run-${index + 1}`), type: "run" as const, lineId: line.id, startTick: runStart, endTick: runEnd, output: line.annotation! }] : []),
             { id: child(`explain-${index + 1}`), type: "explain" as const, lineId: line.id, startTick: explainStart, endTick: window.endTick, ...(narrationAnchor ? { narrationAnchor } : {}) },
           ];
         }) } : {}),
@@ -1361,9 +1440,15 @@ export function resolveBuiltinSceneSpec(scene: AuthoredResolvedScene, suppliedBe
           : requestedPlacement === "right" || requestedPlacement === "split-right"
             ? "split-right"
             : "picture-in-picture";
-      const presenterItems = semantic
+      const comparableHeading = (value: string) => normalizedDisplayText(value)
+        .toLocaleLowerCase("en-US")
+        .replace(/^\d+[.):\s-]+/u, "")
+        .replace(/[.!?:]+$/u, "")
+        .trim();
+      const titleHeading = comparableHeading(scene.content.title);
+      const presenterItems = (semantic
         ? semantic.units.slice(0, 4).map((unit, index) => semanticTextItem(scene, `presenter-unit-${index + 1}`, targetAwareInformationLabel(unit, semantic), index === 0 ? "primary" : undefined))
-        : items;
+        : items).filter((item) => comparableHeading(item.text) !== titleHeading);
       const authoredQuestion = normalizedDisplayText(scene.content.title);
       const questionLead = scene.content.title.trim().endsWith("?")
         ? semanticTextItem(

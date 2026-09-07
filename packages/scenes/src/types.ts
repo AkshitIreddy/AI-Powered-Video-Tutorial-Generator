@@ -296,6 +296,8 @@ export interface WhiteboardContent extends TitledContent {
   readonly kind: "whiteboard";
   readonly boardStyle?: "whiteboard" | "paper" | "chalkboard";
   readonly layout?: "notes" | "derivation";
+  /** Authoring-generated rows may be responsively reflowed; omitted preserves freeform coordinates and strokes. */
+  readonly generatedLayout?: "progressive-list";
   readonly showWritingTool?: boolean;
   readonly strokes: readonly WhiteboardStroke[];
   readonly labels?: readonly WhiteboardLabel[];

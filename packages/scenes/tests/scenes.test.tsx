@@ -8,6 +8,7 @@ import {
   compileScene,
   createSceneRegistry,
   preflightScene,
+  resolveBuiltinSceneSpec,
   SPECIMEN_SCENES,
   specimenFor,
   sceneSpecFromStoryboard,
@@ -66,6 +67,187 @@ describe("built-in scene catalog", () => {
     expect(JSON.stringify(spec)).toContain("target found");
     expect(JSON.stringify(spec)).not.toContain("karatsuba");
     expect(preflightScene(spec!, landscape).ok).toBe(true);
+  });
+
+  it("lays out approved whiteboard math as readable progressive writing", () => {
+    const spec = sceneSpecFromStoryboard({
+      id: "cross-term-board",
+      type: "whiteboard",
+      title: "Deriving the cross-term formula",
+      durationTicks: TIMEBASE_TICKS_PER_SECOND * 20,
+      narration: "Expand the grouped product, remove the two products already computed, and retain the cross term.",
+      onScreenText: ["(a+b)(c+d) – ac – bd = ad + bc"],
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "demonstrate",
+        compositionFamily: "worked_example",
+        focalAnchor: "cross-term",
+        continuityKey: "symbolic-derivation",
+        informationUnits: [{ id: "formula", role: "formula", text: "(a+b)(c+d) – ac – bd = ad + bc" }],
+        attentionCue: "trace-relationship",
+        motionIntent: ["trace-relationship"],
+        textRoles: { focus: "(a+b)(c+d) – ac – bd = ad + bc" },
+        avoidRegions: [],
+      },
+    });
+    if (spec?.content.kind !== "whiteboard") throw new Error("Expected a whiteboard scene");
+    expect(spec.content.labels?.map((label) => label.text)).toEqual([
+      "(a + b)(c + d) − ac − bd",
+      "= ac + ad + bc + bd − ac − bd",
+      "= ad + bc",
+    ]);
+    expect(preflightScene(spec, landscape).ok).toBe(true);
+
+    const first = spec.content.labels![0]!;
+    const renderAt = (tick: number) => renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(spec, landscape),
+      frame: { tick, reducedMotion: false },
+    }));
+    const early = renderAt(first.startTick + Math.round((first.endTick! - first.startTick) * 0.35));
+    const late = renderAt(first.startTick + Math.round((first.endTick! - first.startTick) * 0.75));
+    const writingX = (markup: string) => Number(markup.match(/data-writing-x="([\d.]+)"/u)?.[1]);
+    expect(writingX(late)).toBeGreaterThan(writingX(early));
+    expect(writingX(late)).toBeLessThan(1_200);
+    const fontSizes = [...late.matchAll(/data-whiteboard-font-size="([\d.]+)"/gu)].map((match) => Number(match[1]));
+    expect(Math.min(...fontSizes)).toBeGreaterThanOrEqual(40);
+    const portraitFinal = renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(spec, portrait),
+      frame: { tick: spec.durationTicks, reducedMotion: true },
+    }));
+    expect(portraitFinal).toContain(">− ac − bd<");
+  });
+
+  it("wraps long approved whiteboard steps inside a portrait board", () => {
+    const spec = sceneSpecFromStoryboard({
+      id: "recursive-products-board",
+      type: "whiteboard",
+      title: "Recursive product breakdown",
+      durationTicks: TIMEBASE_TICKS_PER_SECOND * 20,
+      onScreenText: ["ac*100 + cross*10 + bd"],
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "demonstrate",
+        compositionFamily: "worked_example",
+        focalAnchor: "three-products",
+        continuityKey: "symbolic-derivation",
+        informationUnits: [
+          { id: "products", role: "step", text: "Compute ac, bd, and (a+b)(c+d) recursively" },
+          { id: "assembly", role: "result", text: "Reassemble with shifts" },
+        ],
+        attentionCue: "trace-relationship",
+        motionIntent: ["trace-relationship"],
+        textRoles: { focus: "Compute three recursive products" },
+        avoidRegions: [],
+      },
+    });
+    if (spec?.content.kind !== "whiteboard") throw new Error("Expected a whiteboard scene");
+    expect(spec.content.labels?.map((label) => label.text)).toEqual([
+      "Compute ac, bd, and (a+b)(c+d) recursively",
+      "ac × 100 + cross × 10 + bd",
+      "Reassemble with shifts",
+    ]);
+    const markup = renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(spec, portrait),
+      frame: { tick: spec.durationTicks, reducedMotion: true },
+    }));
+    expect(markup).toContain('data-whiteboard-lines="2"');
+    expect(markup).not.toContain("NaN");
+    expect(markup).not.toContain("undefined");
+  });
+
+  it("compiles approved worked arithmetic into executable Python with measured output", () => {
+    const spec = sceneSpecFromStoryboard({
+      id: "worked-arithmetic-code",
+      type: "live_code",
+      title: "Compute the three products",
+      durationTicks: TIMEBASE_TICKS_PER_SECOND * 20,
+      narration: "Compute the two outer products, derive the cross term, then assemble the result.",
+      onScreenText: [
+        "ac = 1*3 = 3",
+        "bd = 2*4 = 8",
+        "cross = (1+2)*(3+4) - 3 - 8 = 10",
+        "result = 3*100 + 10*10 + 8 = 408",
+      ],
+    });
+    if (spec?.content.kind !== "live-code") throw new Error("Expected a live-code scene");
+    expect(spec.content.language).toBe("python");
+    expect(spec.content.filename).toBe("lesson.py");
+    expect(spec.content.lines).toEqual([
+      expect.objectContaining({ text: "ac = 1*3", annotation: "ac = 3" }),
+      expect.objectContaining({ text: "bd = 2*4", annotation: "bd = 8" }),
+      expect.objectContaining({ text: "cross = (1+2)*(3+4) - 3 - 8", annotation: "cross = 10" }),
+      expect.objectContaining({ text: "result = 3*100 + 10*10 + 8", annotation: "result = 408" }),
+    ]);
+    expect(spec.content.lines.map((line) => line.text).join("\n")).not.toMatch(/=\s*\d+\s*=\s*\d+/u);
+    const runActions = spec.content.actions?.filter((action) => action.type === "run") ?? [];
+    expect(runActions).toHaveLength(4);
+    expect(runActions.map((action) => action.output)).toEqual(["ac = 3", "bd = 8", "cross = 10", "result = 408"]);
+
+    const firstType = spec.content.actions!.find((action) => action.type === "type" && action.lineId === spec.content.lines[0]!.id)!;
+    const firstRun = runActions[0]!;
+    const renderAt = (tick: number) => renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(spec, landscape),
+      frame: { tick, reducedMotion: false },
+    }));
+    const typing = renderAt(Math.round((firstType.startTick + firstType.endTick) / 2));
+    expect(typing).toMatch(/data-code-annotation="pending"[^>]*opacity="0"/u);
+    const running = renderAt(Math.round((firstRun.startTick + firstRun.endTick) / 2));
+    expect(running).toContain('data-live-code-action="run"');
+    expect(running).toMatch(/data-code-annotation="revealed"[^>]*opacity="1"/u);
+    const fontSizes = [...running.matchAll(/data-code-font-size="([\d.]+)"/gu)].map((match) => Number(match[1]));
+    expect(Math.min(...fontSizes)).toBeGreaterThanOrEqual(36);
+  });
+
+  it("labels non-executable live-code prose honestly and preserves declared source", () => {
+    const prose = sceneSpecFromStoryboard({
+      id: "worked-prose",
+      type: "live_code",
+      title: "Reason through the split",
+      durationTicks: TIMEBASE_TICKS_PER_SECOND * 8,
+      onScreenText: ["Split the input into balanced halves"],
+    });
+    if (prose?.content.kind !== "live-code") throw new Error("Expected live-code prose");
+    expect(prose.content.filename).toBe("Worked steps");
+    expect(prose.content.actions?.some((action) => action.type === "run")).toBe(false);
+
+    const authored = resolveBuiltinSceneSpec({
+      id: "authored-source",
+      kind: "live-code",
+      durationTicks: TIMEBASE_TICKS_PER_SECOND * 8,
+      seed: "authored-source",
+      content: { title: "Use the approved implementation", items: ["total = left + right"] },
+      metadata: { language: "javascript", filename: "sum.js" },
+    });
+    if (authored?.content.kind !== "live-code") throw new Error("Expected authored live code");
+    expect(authored.content.language).toBe("javascript");
+    expect(authored.content.filename).toBe("sum.js");
+    expect(authored.content.lines[0]?.text).toBe("total = left + right");
+  });
+
+  it("removes a punctuated copy of the title from presenter teaching points", () => {
+    const spec = sceneSpecFromStoryboard({
+      id: "presenter-title-deduplication",
+      type: "presenter_slide",
+      title: "1. Karatsuba Primer: Why Split Numbers",
+      durationTicks: TIMEBASE_TICKS_PER_SECOND * 8,
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "establish",
+        compositionFamily: "presenter",
+        focalAnchor: "lesson-introduction",
+        continuityKey: "karatsuba",
+        informationUnits: [
+          { id: "duplicate", role: "heading", text: "1. Karatsuba Primer: Why Split Numbers?" },
+          { id: "purpose", role: "principle", text: "Split each input into high and low halves" },
+        ],
+        attentionCue: "presenter",
+        motionIntent: ["evidence-focus"],
+        textRoles: { focus: "Split each input into high and low halves" },
+        avoidRegions: [],
+      },
+    });
+    if (spec?.content.kind !== "presenter-slide") throw new Error("Expected presenter slide");
+    expect(spec.content.slideItems?.map((item) => item.text)).toEqual(["Split each input into high and low halves"]);
   });
 
   it("preserves an accepted visual binding through the shared storyboard resolver", () => {
@@ -194,6 +376,9 @@ describe("built-in scene catalog", () => {
     expect(boardEarly).toContain('data-draw-progress="0.5000"');
     expect(boardLate).toContain('data-draw-progress="1.0000"');
     expect(boardLate).toContain('data-whiteboard-label="true"');
+    expect(boardLate).toContain('id="label.input"');
+    expect(boardLate).not.toContain('data-whiteboard-lines=');
+    expect(boardLate).toMatch(/id="stroke\.number"[^>]*d="M [^"]+ L [^"]+ L [^"]+"/u);
 
     const codeEarly = renderAt("live-code", TIMEBASE_TICKS_PER_SECOND * 1.5);
     const codeLate = renderAt("live-code", TIMEBASE_TICKS_PER_SECOND * 7);
