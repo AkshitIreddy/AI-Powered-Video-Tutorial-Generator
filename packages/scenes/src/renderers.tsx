@@ -596,6 +596,16 @@ function whiteboardPathLength(points: readonly { readonly x: number; readonly y:
   return Math.max(1, total);
 }
 
+function comparablePresenterHeading(value: string): string {
+  return value
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase("en-US")
+    .replace(/^\d+[.):\s-]+/u, "")
+    .replace(/[.!?:]+$/u, "")
+    .trim();
+}
+
 interface WhiteboardLineLayout {
   readonly text: string;
   readonly width: number;
@@ -1086,7 +1096,10 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
   const layout = presenterLayoutFromBody(body, props.scene.metrics, placement, withSlide);
   const portraitRect = layout.stage;
   const slideRect = layout.insight;
-  const points = (content.slideItems ?? []).slice(0, 4);
+  const titleHeading = comparablePresenterHeading(content.title);
+  const points = (content.slideItems ?? [])
+    .filter((point) => comparablePresenterHeading(point.text) !== titleHeading)
+    .slice(0, 4);
   const pointRows = slideRect ? stackRows({ x: slideRect.x + props.scene.metrics.gutter * 0.6, y: slideRect.y + slideRect.height * 0.16, width: slideRect.width - props.scene.metrics.gutter * 1.2, height: slideRect.height * 0.71 }, Math.max(1, points.length), props.scene.metrics.unit * 0.4) : [];
   return withFrame(props, (
     <g id="body" data-semantic-role="presenter" data-presenter-placement={placement}>

@@ -530,6 +530,33 @@ describe("built-in scene catalog", () => {
     expect(Number(insight?.[1]) + Number(insight?.[2])).toBeLessThanOrEqual(Number(stage?.[1]));
   });
 
+  it("removes an exact normalized title duplicated in pre-authored presenter slide items", () => {
+    const specimen = specimenFor("presenter-slide");
+    if (specimen.content.kind !== "presenter-slide") throw new Error("Expected presenter-slide specimen");
+    const title = "1. Karatsuba Primer: Why Split Numbers?";
+    const scene = compileScene({
+      ...specimen,
+      content: {
+        ...specimen.content,
+        title,
+        slideItems: [
+          { id: "duplicate-title", text: "  1.  Karatsuba Primer: Why Split Numbers  " },
+          { id: "concept", text: "Split numbers into high and low halves" },
+          { id: "example", text: "12 → a=1, b=2; 34 → c=3, d=4" },
+        ],
+      },
+    }, landscape);
+    const markup = renderToStaticMarkup(createElement(SceneView, {
+      scene,
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 3, reducedMotion: true },
+    }));
+
+    expect(markup).not.toContain('id="duplicate-title"');
+    expect(markup).toContain('id="concept"');
+    expect(markup).toContain('id="example"');
+    expect(markup.match(/data-sequence-number-right=/gu)).toHaveLength(2);
+  });
+
   it("publishes deterministic presenter breathing and blink cues while keeping a closed rest mouth", () => {
     const spec = specimenFor("presenter-slide");
     if (spec.content.kind !== "presenter-slide") throw new Error("Expected presenter-slide specimen");
