@@ -315,3 +315,33 @@ The five actual clips total 173.778229 seconds. The accepted timeline is
 bounded-tail policy. Its compact durable narration, cache, and timing receipt
 is `E:\temp\avt-final-media-inspection-20260907\narration-v3-branch-summary.json`.
 The presenter and full video/editor results remain pending at this milestone.
+
+### Presenter integration and rejected teaching frames — September 7
+
+The same native branch completed the opening presenter at 07:33:04 UTC. The
+actual output is SHA-256
+`bd70f501730cc139b437a2c59aa1639e498b599d5d5ae5784dd5d7f7905fd4e7`,
+an 8.2-second, 205-frame, 640-square H.264 clip. Inspection of 15 frames found
+stable Elena identity and restrained speech mouth movement, including closed
+mouth pauses. Head and shoulder movement is limited; this is not a claim of
+expressive performance. The recorded runtime used LivePortrait followed by
+MuseTalk, and the shared GPU marker returned to `no`. The historical
+`E:\temp\Alystria Studio` path stayed absent throughout this actual model run.
+Measurements and inspected frames are under
+`E:\temp\avt-final-media-inspection-20260907\presenter-elena-v3`.
+
+The first full render captured all 5,400 frames, but visual inspection rejected
+its teaching output before master/editor acceptance. Whiteboard text was about
+20 pixels high in 1080p output, leaving most of the board empty. The code scene
+mixed repeated math and prose in `lesson.txt` instead of a valid program.
+Passing clipping or timing metrics cannot qualify these frames. The original
+render is retained as rejection evidence while scene authoring and layout are
+corrected against the actual approved tutorial.
+
+The review also found two integrated export defects. Commit `4bfdddf` preserves
+the verified render request, including measured narration timing and approved
+media, when rendering a master. Commit `f39595e` makes editor bindings select
+the newest verified master belonging to the same generation, approval, and
+source render stage, with CAS and scene-window validation. The combined native
+control tests passed 30 cases. Corrected native master/editor verification
+remains pending; these source tests are not substituted for that run.

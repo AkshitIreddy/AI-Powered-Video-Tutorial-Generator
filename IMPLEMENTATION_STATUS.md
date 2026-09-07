@@ -25,7 +25,12 @@ mode now controls image generation, and long narration uses complete validated
 PCM chunks. The revised coordinator suite passed **53 tests**, with one
 desktop-worker generation acceptance test; the NVIDIA adapter and focused
 Magpie tests passed as recorded in the generation audit. The rebuilt native
-run and actual chunk-seam inspection remain pending.
+run has since completed narration and the opening presenter. Independent PCM
+inspection confirms four reused clips, one new four-chunk clip, and 173.778
+seconds of narration on the measured 180-second timeline. The first full
+render's teaching frames were rejected: undersized whiteboard content and a
+prose-like code scene require correction. Final master/editor acceptance
+remains open; see the generation audit for this distinction.
 
 This ledger preserves the historical implementation checklist for the 2.0 worktree. A checked item means
 the implementation exists and its relevant local verification passed. It does
