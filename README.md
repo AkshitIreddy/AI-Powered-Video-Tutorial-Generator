@@ -122,6 +122,11 @@ The [free and trial provider guide](docs/providers/free-and-trial.md) preserves 
 
 > AI Video Tutorial Generator is BYOK and includes no hosted AI allowance. NVIDIA NIM can reduce signup friction because one Developer API key covers several currently available prototype model families; Cohere, Gemini, speech, research, media, and local options are also documented. A free quota is not permission to upload private sources, free output may lack commercial rights, and every asset still needs provenance and export-clear rights.
 
+NVIDIA's hosted trial and its generated content are limited to internal testing
+and evaluation. The app allows those trial assets in private evaluation exports
+and blocks public distribution; the model license alone does not override the
+[API trial restrictions](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf).
+
 Keys belong in the operating-system credential flow, never project files, `.env`, logs, screenshots, issues, or command-line arguments.
 
 ## Installation and system requirements

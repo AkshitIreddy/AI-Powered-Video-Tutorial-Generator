@@ -193,7 +193,9 @@ native generation result is recorded by the Windows integration lane.
 
 Use a quality ladder instead of presenting every engine as equivalent:
 
-1. **NVIDIA Magpie TTS Multilingual** is the preferred hosted narration route.
+1. **NVIDIA Magpie TTS Multilingual** is the preferred hosted narration route
+   for this internal evaluation. Its hosted trial output is not cleared for
+   publication or production use under the [API Trial Terms](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf).
    NVIDIA's current NIM exposes HTTP and gRPC synthesis, twelve languages
    including Hindi, built-in voices and selected emotional styles. Query the
    live voice catalog and persist the exact returned voice ID. For the selected
