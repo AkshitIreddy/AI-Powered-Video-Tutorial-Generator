@@ -167,7 +167,7 @@ The remaining `E:\temp\Alystria Studio` tree is 5,909,712,222 bytes and has no r
 | Root smoke/build helper files | 56,730 | Candidate with the historical tree. |
 | `models` | 0 | Empty candidate. |
 
-No current process references `E:\temp\Alystria Studio`. Repository references are limited to a legacy resume helper and synthetic Windows-path tests. The current Test Sandbox contains one stale `jp.py` shebang pointing at the already-empty historical `Alystria Studio\models` path; it does not establish a live dependency. Current presenter/runtime assets remain in the separate Test Sandbox and trusted Studio 2.0 Final runtime. The whole 5.91 GB historical Studio tree should move to `E:\uesless` only after the Windows owner confirms final native proof no longer needs rollback sources.
+No current process references `E:\temp\Alystria Studio`. Repository references are limited to a legacy resume helper, documentation, and synthetic Windows-path tests. The current Test Sandbox contains five text activation or shebang references to the old virtual-environment location (`activate`, `activate.bat`, `jp.py`, `numba`, and `pygrun`), plus 69 distlib console-launcher executables and three `Scripts` bytecode files with embedded historical interpreter or source strings. This corrects the earlier one-file summary. None is on the pinned presenter path: the current profile directly launches the Test Sandbox `venv\Scripts\python.exe`, and that interpreter, the current worker and adapters, presenter profile, source manifest, and forced-aligner configuration contain no old-root string. Current presenter/runtime assets remain in the separate Test Sandbox and trusted Studio 2.0 Final runtime. The whole 5.91 GB historical Studio tree should move to `E:\uesless` only after the Windows owner confirms final native proof no longer needs rollback sources.
 
 The current aligner must remain installed. Its `model\part-0.bin` through `model\part-3.bin` files total about 155.36 MB and are not referenced by `alignment-runtime.json`; they are a separate post-proof cleanup candidate after alignment evidence is recorded.
 
@@ -192,3 +192,71 @@ The only project-owned cleanup folder still present under `E:\uesless` was `AI V
 After current native harnesses replaced the route scratch and committed documentation superseded the pause handoff, `.ui-routes.mjs` and `PAUSE_HANDOFF_2026-09-05.md` were released for reversible cleanup. Both ordinary untracked files were moved to `E:\uesless\AI Video Tutorial Generator Final Repo Scratch 2026-09-05`. Their adjacent manifest records exact source paths, destinations, byte counts, SHA-256 hashes, and reasons. The combined moved payload is 19,530 bytes; both repository sources are absent and both destination hashes were verified. `see me` remains untouched as user-owned material.
 
 Only the 5.91 GB historical Alystria Studio tree remains pending final native-proof release. The aligner chunks were subsequently released and moved as recorded above.
+
+## Package and proof-history candidates during final rebuild
+
+This is a read-only inventory. Nothing in this section was moved because the Windows lane is rebuilding and validating the native package. At the snapshot, `E:` had 323,890,835,456 bytes free.
+
+| Exact path | Bytes | Later-cleanup rationale |
+| --- | ---: | --- |
+| `E:\temp\AI Video Tutorial Generator\build\cargo-current` | 10,667,826,966 | Re-creatable Rust build cache after the final executable and proof are accepted. |
+| `E:\temp\AI Video Tutorial Generator\build\sidecar` | 299,995,308 | Seven PyInstaller work roots; active PowerShell build processes currently reference this area. Move only after the rebuild exits. |
+| `E:\temp\AI Video Tutorial Generator\build\pipeline-31f72f3-20260905` | 39,216,458 | Superseded versioned pipeline build. |
+| `E:\temp\AI Video Tutorial Generator\build\pipeline-617b433-20260905-132016657` | 39,230,876 | Superseded versioned pipeline build. |
+| `E:\temp\AI Video Tutorial Generator\build\pipeline-9e18851-20260905-131856774` | 39,232,149 | Superseded versioned pipeline build. |
+| `E:\temp\AI Video Tutorial Generator\build\pipeline-bdd4115-20260905-130318463` | 39,232,670 | Superseded versioned pipeline build. |
+| `E:\temp\AI Video Tutorial Generator\build\pipeline-f81bb2b-20260905-133414935` | 39,235,020 | Its executable hash matches the currently packaged runtime copy, so the build-directory copy can move only after final proof. |
+| `E:\temp\AI Video Tutorial Generator\build\pipeline-current` | 39,213,110 | Current builder output; becomes a candidate only after the final package is accepted. |
+| `E:\temp\AI Video Tutorial Generator Test Sandbox\Temp` | 2,349,500,235 | Seventy PyInstaller `_MEI*` extraction trees. Move the parent only after every native process exits. |
+| `E:\temp\AI Video Tutorial Generator Test Sandbox\Evidence\native-clean-first-launch.previous-*` | 164,239,681 | Fourteen prior proof snapshots. Preserve the current `native-clean-first-launch` tree and all other evidence/media/reports. |
+
+The 14 exact prior-proof directories are:
+
+| Directory suffix after `Evidence\` | Bytes |
+| --- | ---: |
+| `native-clean-first-launch.previous-20260905103212761-34284-1` | 301,886 |
+| `native-clean-first-launch.previous-20260905103337680-11516-1` | 301,886 |
+| `native-clean-first-launch.previous-20260905103509533-46632-1` | 301,886 |
+| `native-clean-first-launch.previous-20260905103654336-41096-1` | 573,564 |
+| `native-clean-first-launch.previous-20260905110200229-5216-1` | 1,010,947 |
+| `native-clean-first-launch.previous-20260905112840387-45800-1` | 1,012,344 |
+| `native-clean-first-launch.previous-20260905131500031-24016-1` | 1,153,086 |
+| `native-clean-first-launch.previous-20260905132436950-11244-1` | 115 |
+| `native-clean-first-launch.previous-20260905133854384-33612-1` | 30,139,651 |
+| `native-clean-first-launch.previous-20260905134256293-23960-1` | 30,168,553 |
+| `native-clean-first-launch.previous-20260905134806810-47148-1` | 10,067,007 |
+| `native-clean-first-launch.previous-20260905135018020-26004-1` | 29,013,119 |
+| `native-clean-first-launch.previous-20260905135850728-32156-1` | 30,097,152 |
+| `native-clean-first-launch.previous-20260905141254657-37468-1` | 30,098,485 |
+
+The listed non-empty candidates total 13,716,922,473 bytes (12.77 GiB) when the still-current `pipeline-current` copy is included. Also present as zero-byte future candidates are `build\sidecar-current`, Test Sandbox `Models\download-quarantine`, and Test Sandbox `Runtime\work`. Test Sandbox `Models` (15.94 GB), `Runtime` (754 MB), current `Evidence` (11.28 MB), remaining evidence/media/reports, `App`, `App Data`, and `Projects` remain protected.
+
+## Reversible historical-Studio absence test — 2026-09-07
+
+The dependency audit supported a controlled absence test before starting the final native Elena run. At `2026-09-07T06:12:26.4530540Z`, the exact ordinary directory `E:\temp\Alystria Studio` was moved with native `.NET Directory.Move` on the same `E:` volume to `E:\uesless\AI Video Tutorial Generator Historical Alystria Studio 2026-09-07`. This was a reversible rename, not a deletion.
+
+Immediately before the move, `E:\`, `E:\temp`, `E:\uesless`, and the source were verified as ordinary non-reparse directories; the destination did not exist; the complete source contained zero reparse-point descendants; and no other running process executable, command line, or loaded module referenced the source. The inventory matched the previous audit exactly. Immediately after the move, the original was absent and the destination retained the same 5,909,712,222 bytes, 6,823 files, 1,384 descendant directories, and zero reparse points. The separate manifest is `E:\uesless\AI Video Tutorial Generator Historical Alystria Studio 2026-09-07 MOVE-MANIFEST.md`, SHA-256 `c83c3642bdf312f82afcd395a6bb180ff5b233eb1cc5eb71a2c93e28965f93e6` at the verification snapshot.
+
+The native run began only after the old root was absent. Its result is pending. If it exposes a historical dependency, the rollback is the exact reverse same-volume move after stopping only the task-owned app, worker, presenter Python, and FFmpeg children and revalidating both paths. If it passes, the quarantined tree can remain in `E:\uesless` for owner deletion.
+
+## Read-only post-proof candidate refresh — 2026-09-07
+
+No candidate in this section was moved because the final native app and pipeline worker were active. The stable build candidates below contained 11,403,990,776 bytes and zero reparse points at the snapshot:
+
+| Exact path | Bytes | Files | Condition |
+| --- | ---: | ---: | --- |
+| `E:\temp\AI Video Tutorial Generator\build\cargo-current` | 10,667,826,966 | 6,148 | Re-creatable only after the final package and native proof are accepted. |
+| `E:\temp\AI Video Tutorial Generator\build\sidecar` | 299,995,308 | 112 | Seven older PyInstaller work roots; preserve until final acceptance. |
+| `E:\temp\AI Video Tutorial Generator\build\desktop-source-0345387-current` | 56,927,744 | 1 | Packaged desktop staging source; preserve until final acceptance. |
+| `E:\temp\AI Video Tutorial Generator\build\sidecar-work-d539109` | 42,931,913 | 16 | First final-sidecar build work root. |
+| `E:\temp\AI Video Tutorial Generator\build\sidecar-work-d539109-retry1` | 42,931,980 | 16 | Successful final-sidecar retry work root. |
+| `E:\temp\AI Video Tutorial Generator\build\sidecar-output-d539109` | 18,767,799 | 1 | First final-sidecar output. |
+| `E:\temp\AI Video Tutorial Generator\build\sidecar-output-d539109-retry1` | 39,248,783 | 51 | Successful final-sidecar retry output; preserve until the packaged worker is accepted. |
+| Five superseded `pipeline-*` versioned roots | 196,147,173 | 255 | Superseded copies, but retain through final acceptance. |
+| `E:\temp\AI Video Tutorial Generator\build\pipeline-current` | 39,213,110 | 51 | Current builder output; retain through final acceptance. |
+
+The Test Sandbox `Temp` tree is dynamic while the packaged PyInstaller worker runs. It measured 2,418,602,879 bytes before the worker child appeared and 2,453,154,201 bytes after a new 34,551,322-byte extraction tree appeared. The later snapshot contained no reparse points. Move it only after the app, both PyInstaller worker processes, presenter processes, and FFmpeg children exit.
+
+The fourteen prior `native-clean-first-launch.previous-*` evidence trees still contain 164,239,681 ordinary-file bytes. Six of those trees each contain one `Content.IE5` junction targeting the current Test Sandbox `App Data\User Profile\AppData\Local\Microsoft\Windows\INetCache\IE`. Do not recursively delete or treat those junction targets as evidence content. Any later removal must unlink each junction without recursion first, preserve the current `native-clean-first-launch` proof, and then act only on the fourteen exact historical roots.
+
+At this snapshot, `Models\download-quarantine` remained an ordinary empty directory. `Runtime\work` contained one empty descendant directory and zero files. The stable build candidates, dynamic Test Sandbox `Temp` snapshot, and prior evidence account for 14,021,384,658 bytes (13.06 GiB), excluding small build logs and status files. They remain read-only candidates until the final native acceptance completes.
