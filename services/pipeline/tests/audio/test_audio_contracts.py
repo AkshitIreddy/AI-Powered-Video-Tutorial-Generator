@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import unittest
+from itertools import pairwise
 
 from alystria.audio import (
     AccessibilityEvent,
@@ -103,10 +104,13 @@ class AudioContractTests(unittest.TestCase):
             (global_rule, project_rule, occurrence_rule),
             project_id="project-1",
         )
-        self.assertEqual([item.scope for item in resolved], [
-            PronunciationScope.OCCURRENCE,
-            PronunciationScope.PROJECT,
-        ])
+        self.assertEqual(
+            [item.scope for item in resolved],
+            [
+                PronunciationScope.OCCURRENCE,
+                PronunciationScope.PROJECT,
+            ],
+        )
         self.assertEqual(resolved[1].spoken_alias, "ess cue ell")
 
         changed_global = PronunciationRule(
@@ -150,8 +154,7 @@ class AudioContractTests(unittest.TestCase):
     def test_caption_timing_serialization_and_accessibility_track(self) -> None:
         tokens = ("Alystria", "makes", "clear", "tutorials.")
         words = tuple(
-            WordTiming(token, index * 400, index * 400 + 350)
-            for index, token in enumerate(tokens)
+            WordTiming(token, index * 400, index * 400 + 350) for index, token in enumerate(tokens)
         )
         cues = captions_from_words(words, speaker="Narrator", policy=CaptionPolicy())
         self.assertEqual(len(cues), 1)
@@ -198,14 +201,87 @@ class AudioContractTests(unittest.TestCase):
             "[00:00:01.000] A highlighted node connects to two children.\n",
         )
 
-    def test_short_caption_cues_do_not_overlap_after_minimum_hold(self) -> None:
+    def test_short_adjacent_caption_cues_merge_before_minimum_hold(self) -> None:
         words = (
             WordTiming("First.", 0, 100),
             WordTiming("Second.", 300, 400),
         )
         cues = captions_from_words(words)
+        self.assertEqual(len(cues), 1)
+        self.assertEqual(cues[0].text, "First. Second.")
+        self.assertEqual(cues[0].start_ms, 0)
+        self.assertEqual(cues[0].end_ms, 700)
+
+    def test_caption_rebalance_does_not_cross_a_long_speech_gap(self) -> None:
+        words = (
+            WordTiming("First.", 0, 100),
+            WordTiming("Second.", 1_001, 1_101),
+        )
+        cues = captions_from_words(words)
         self.assertEqual(len(cues), 2)
-        self.assertEqual(cues[0].end_ms, cues[1].start_ms)
+        self.assertEqual(cues[0].end_ms, 700)
+        self.assertEqual(cues[1].start_ms, 1_001)
+
+    def test_caption_hold_cap_never_truncates_observed_speech(self) -> None:
+        cues = captions_from_words((WordTiming("Exceptionally-long-word", 0, 8_000),))
+
+        self.assertEqual(len(cues), 1)
+        self.assertEqual(cues[0].start_ms, 0)
+        self.assertEqual(cues[0].end_ms, 8_000)
+
+    def test_caption_rebalance_repairs_short_realistic_math_fragments(self) -> None:
+        words = tuple(
+            WordTiming(token, start, end)
+            for token, start, end in (
+                ("Following", 23_428, 23_808),
+                ("that", 23_848, 23_988),
+                ("branching", 24_028, 24_408),
+                ("until", 24_468, 24_648),
+                ("single", 24_728, 24_988),
+                ("digits", 25_048, 25_408),
+                ("explains", 25_488, 25_948),
+                ("the", 25_988, 26_089),
+                ("exponent:", 26_169, 26_669),
+                ("log", 27_189, 27_409),
+                ("base", 27_509, 27_789),
+                ("two", 27_929, 28_169),
+                ("of", 28_429, 28_509),
+                ("three", 28_609, 28_849),
+                ("measures", 28_909, 29_310),
+                ("the", 29_650, 29_730),
+                ("tree's", 29_770, 30_050),
+                ("growth.", 30_130, 30_410),
+            )
+        )
+
+        cues = captions_from_words(words)
+
+        self.assertEqual(
+            " ".join(cue.text.replace("\n", " ") for cue in cues),
+            "Following that branching until single digits explains the exponent: "
+            "log base two of three measures the tree's growth.",
+        )
+        self.assertTrue(
+            all(cue.end_ms - cue.start_ms >= CaptionPolicy().min_duration_ms for cue in cues)
+        )
+        self.assertTrue(
+            all(
+                len(cue.text.replace("\n", " ")) / ((cue.end_ms - cue.start_ms) / 1_000)
+                <= CaptionPolicy().max_chars_per_second
+                for cue in cues
+            )
+        )
+        self.assertTrue(
+            all(
+                len(cue.text.splitlines()) <= CaptionPolicy().max_lines
+                and all(
+                    len(line) <= CaptionPolicy().max_chars_per_line
+                    for line in cue.text.splitlines()
+                )
+                for cue in cues
+            )
+        )
+        self.assertTrue(all(left.end_ms <= right.start_ms for left, right in pairwise(cues)))
 
     def test_deterministic_wav_is_measured_without_ffmpeg(self) -> None:
         spec = WavFixtureSpec(
