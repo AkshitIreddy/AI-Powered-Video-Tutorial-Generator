@@ -28,6 +28,7 @@ const stderrPath = path.join(portableRoot, "Logs", "native-ui.stderr.log");
 const reportPath = path.join(evidenceRoot, "report.json");
 const planReportPath = path.join(evidenceRoot, "plan-report.json");
 const policyRetryReportPath = path.join(evidenceRoot, "policy-retry-report.json");
+const shutdownReceiptPath = path.join(evidenceRoot, "shutdown-receipt.json");
 const failurePath = path.join(evidenceRoot, "failure.json");
 const ffprobePath = path.join(portableRoot, "Runtime", "ffmpeg", "ffprobe.exe");
 const projectTitle = titleFromTopic(parsed.topic);
@@ -47,6 +48,7 @@ let gpuObserverTask = null;
 let gpuObserverAbort = null;
 let gpuCoordinationEvidence = null;
 let rotationSequence = 0;
+let shutdownReceipt = null;
 
 await rotateExistingPath(evidenceRoot);
 await mkdir(evidenceRoot, { recursive: true });
@@ -54,6 +56,7 @@ await rotateExistingPath(readyPath);
 await rotateExistingPath(stdoutPath);
 await rotateExistingPath(stderrPath);
 await rotateExistingPath(policyRetryReportPath);
+await rotateExistingPath(shutdownReceiptPath);
 const port = await reservePort();
 const stdout = await open(stdoutPath, "w");
 const stderr = await open(stderrPath, "w");
@@ -841,16 +844,63 @@ try {
     }
   }
   try {
+    const shutdownStartedAt = new Date();
+    const shutdownProblems = [];
+    let workerProcessTree = [];
+    try {
+      workerProcessTree = child && workerPid
+        ? await snapshotOwnedWorkerProcessTree(workerExecutable, child.pid, workerPid)
+        : [];
+      if (workerPid && !workerProcessTree.some((identity) => identity.pid === workerPid)) {
+        shutdownProblems.push(`Native readiness worker ${workerPid} was absent from the identity-bound worker process tree before WM_CLOSE`);
+      }
+    } catch (error) {
+      shutdownProblems.push(`Worker process-tree snapshot failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    let wmClosePostedAt = null;
+    let desktopExitedAt = null;
     if (child && child.exitCode === null) {
-      await postWmClose(child.pid);
-      await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(15_000)]);
+      try {
+        await postWmClose(child.pid);
+        wmClosePostedAt = new Date();
+        await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(15_000)]);
+      } catch (error) {
+        shutdownProblems.push(`WM_CLOSE failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
     if (child && child.exitCode === null) {
       child.kill();
-      throw new Error("Native app did not exit within 15 seconds of WM_CLOSE");
+      shutdownProblems.push("Native app did not exit within 15 seconds of WM_CLOSE and required an exact desktop-process kill");
+      await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(5_000)]);
     }
-    if (child && child.exitCode !== 0) throw new Error(`Native app exited with code ${child.exitCode}`);
-    if (workerPid && !await waitForProcessExit(workerPid, 10_000)) throw new Error(`Native worker ${workerPid} remained alive after WM_CLOSE`);
+    desktopExitedAt = new Date();
+    if (child && child.exitCode !== 0) shutdownProblems.push(`Native app exited with code ${child.exitCode}`);
+    let workerExit = { checkedAtUtc: new Date().toISOString(), remaining: workerProcessTree };
+    try {
+      workerExit = await waitForOwnedWorkerProcessTreeExit(workerProcessTree, 10_000);
+    } catch (error) {
+      shutdownProblems.push(`Worker process-tree exit check failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (workerExit.remaining.length > 0) {
+      shutdownProblems.push(`Identity-bound native worker process tree remained alive after WM_CLOSE: ${JSON.stringify(workerExit.remaining)}`);
+    }
+    shutdownReceipt = {
+      schemaVersion: 1,
+      state: shutdownProblems.length === 0 ? "passed" : "failed",
+      shutdownStartedAtUtc: shutdownStartedAt.toISOString(),
+      wmClosePostedAtUtc: wmClosePostedAt?.toISOString() ?? null,
+      desktopExitedAtUtc: desktopExitedAt.toISOString(),
+      desktopExitCode: child?.exitCode ?? null,
+      desktopPid: child?.pid ?? null,
+      readyWorkerPid: workerPid ?? null,
+      workerExecutable,
+      workerProcessTree,
+      workerExitCheckedAtUtc: workerExit.checkedAtUtc,
+      remainingWorkerProcesses: workerExit.remaining,
+      problems: shutdownProblems,
+    };
+    await writeFile(shutdownReceiptPath, `${JSON.stringify(shutdownReceipt, null, 2)}\n`, "utf8");
+    if (shutdownProblems.length > 0) throw new Error(shutdownProblems.join("; "));
   } catch (error) {
     closeError ??= error;
   }
@@ -863,6 +913,7 @@ try {
   if (completed && !closeError && finalReport) {
     finalReport.gracefulShutdown = true;
     finalReport.workerExitedWithApp = true;
+    finalReport.shutdownReceipt = shutdownReceipt;
     finalReport.finishedAtUtc = new Date().toISOString();
     await writeFile(reportPath, `${JSON.stringify(finalReport, null, 2)}\n`, "utf8");
     process.stdout.write(`${JSON.stringify(finalReport, null, 2)}\n`);
@@ -1292,6 +1343,7 @@ async function relinkNativeProject(page, projectDirectory) {
 }
 
 function normalizedWindowsPath(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
   return path.resolve(value).replace(/^\\\\\?\\/u, "").replace(/[\\/]+$/u, "").toLowerCase();
 }
 
@@ -1906,13 +1958,84 @@ async function verifyVideoPlayback(video, timeoutMs) {
   return frame;
 }
 
-async function waitForProcessExit(pid, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try { process.kill(pid, 0); } catch { return true; }
-    await delay(100);
+async function windowsProcessSnapshot() {
+  const observerVariable = "ALYSTRIA_ACCEPTANCE_PROCESS_OBSERVER";
+  const command = [
+    "$ErrorActionPreference = 'Stop'",
+    "$rows = @(Get-CimInstance Win32_Process | ForEach-Object {",
+    "  [pscustomobject]@{ pid = [int]$_.ProcessId; parentPid = [int]$_.ParentProcessId; creationDate = if ($_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString('o') } else { $null }; executablePath = [string]$_.ExecutablePath }",
+    "})",
+    "$rows | ConvertTo-Json -Compress",
+  ].join("; ");
+  const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], {
+    encoding: "utf8",
+    timeout: 15_000,
+    windowsHide: true,
+    env: { ...process.env, [observerVariable]: "1" },
+  });
+  const parsed = JSON.parse(stdout.trim() || "[]");
+  return Array.isArray(parsed) ? parsed : [parsed];
+}
+
+async function snapshotOwnedWorkerProcessTree(workerPath, desktopPid, readyPid) {
+  const processes = await windowsProcessSnapshot();
+  const byPid = new Map(processes.map((entry) => [entry.pid, entry]));
+  const expectedPath = normalizedWindowsPath(workerPath);
+  const workerProcesses = processes.filter((entry) => normalizedWindowsPath(entry.executablePath) === expectedPath);
+  const hasAncestor = (entry, ancestorPids) => {
+    const seen = new Set();
+    let current = entry;
+    while (current && !seen.has(current.pid)) {
+      if (ancestorPids.has(current.pid) || ancestorPids.has(current.parentPid)) return true;
+      seen.add(current.pid);
+      current = byPid.get(current.parentPid);
+    }
+    return false;
+  };
+  const ready = byPid.get(readyPid);
+  if (!ready || normalizedWindowsPath(ready.executablePath) !== expectedPath
+    || typeof ready.creationDate !== "string" || !ready.creationDate) {
+    throw new Error(`Ready worker ${readyPid} has no strong executable-path and creation-time identity`);
   }
-  return false;
+  const desktopDescendants = workerProcesses.filter((entry) => hasAncestor(entry, new Set([desktopPid])));
+  const workerPids = new Set(desktopDescendants.map((entry) => entry.pid));
+  const roots = desktopDescendants.filter((entry) => !workerPids.has(entry.parentPid));
+  if (roots.length === 0 || roots.some((entry) => typeof entry.creationDate !== "string" || !entry.creationDate || !entry.executablePath)) {
+    throw new Error("The desktop worker roots have no strong executable-path and creation-time identity");
+  }
+  const rootPids = new Set(roots.map((entry) => entry.pid));
+  const owned = processes.filter((entry) => hasAncestor(entry, rootPids));
+  if (!owned.some((entry) => entry.pid === readyPid)) {
+    throw new Error(`Ready worker ${readyPid} is not a descendant of an identity-bound desktop worker root`);
+  }
+  if (owned.some((entry) => typeof entry.creationDate !== "string" || !entry.creationDate || !entry.executablePath)) {
+    throw new Error("An owned worker descendant has no strong executable-path and creation-time identity");
+  }
+  return owned
+    .map((entry) => ({
+      pid: entry.pid,
+      parentPid: entry.parentPid,
+      creationDate: entry.creationDate,
+      executablePath: entry.executablePath,
+    }))
+    .sort((left, right) => left.pid - right.pid);
+}
+
+function sameProcessIdentity(actual, expected) {
+  return actual.pid === expected.pid
+    && actual.creationDate === expected.creationDate
+    && normalizedWindowsPath(actual.executablePath) === normalizedWindowsPath(expected.executablePath);
+}
+
+async function waitForOwnedWorkerProcessTreeExit(expected, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let remaining = expected;
+  while (remaining.length > 0 && Date.now() < deadline) {
+    const current = await windowsProcessSnapshot();
+    remaining = expected.filter((identity) => current.some((candidate) => sameProcessIdentity(candidate, identity)));
+    if (remaining.length > 0) await delay(100);
+  }
+  return { checkedAtUtc: new Date().toISOString(), remaining };
 }
 
 function delay(milliseconds) {
