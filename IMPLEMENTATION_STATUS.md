@@ -1,6 +1,6 @@
 # AI Video Tutorial Generator implementation ledger
 
-Current audit: **2026-09-05**, local `main`. The historical checklist below records the August 28 baseline; it is not a substitute for current integrated acceptance.
+Current audit: **2026-09-07**, local `main`. The historical checklist below records the August 28 baseline; it is not a substitute for current integrated acceptance.
 
 See [Product](docs/research/product-audit-2026-09-05.md), [Generation](docs/research/generation-audit-2026-09-05.md), [Editor](docs/research/editor-audit-2026-09-05.md), [Onboarding](docs/research/onboarding-audit-2026-09-05.md), [Catalog](docs/research/catalog-audit-2026-09-05.md), [Presenter and voice](docs/research/presenter-voice-audit-2026-09-05.md), and [Windows integration](docs/research/windows-integration-audit-2026-09-05.md) for current findings, fixes, measurements, and remaining gates.
 
@@ -17,6 +17,15 @@ playback, waveform, and close-save evidence is recorded in the Windows report.
 The final provider-generated three-minute media and final-package recovery
 checks remain separate requirements; source checks and short media do not
 substitute for them.
+
+September 7 native testing exposed and corrected two additional issues:
+Designed layout was incorrectly invoking the configured image provider, and
+long NVIDIA narration exceeded the hosted response-size limit. Reviewed slide
+mode now controls image generation, and long narration uses complete validated
+PCM chunks. The revised coordinator suite passed **53 tests**, with one
+desktop-worker generation acceptance test; the NVIDIA adapter and focused
+Magpie tests passed as recorded in the generation audit. The rebuilt native
+run and actual chunk-seam inspection remain pending.
 
 This ledger preserves the historical implementation checklist for the 2.0 worktree. A checked item means
 the implementation exists and its relevant local verification passed. It does

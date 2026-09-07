@@ -22,6 +22,7 @@ This is still a **local RC candidate**, not a published installer. Clean-machine
 - Runtime manifests describe required signed packs, but no signed production FFmpeg/pipeline pack is shipped.
 - Local model weights are **not bundled**. Optional pinned ComfyUI packages have managed download, verification, reuse and preflight paths. Local SDXL 1.0 with its official offset LoRA completed a real image-candidate generate/review/accept/reload workflow on the 12 GB GPU. FLUX.2 Klein and Z-Image remain optional offload candidates, without a claimed laptop quality/performance pass. See the [local image audit](docs/research/local-image-model-audit-2026-09-05.md).
 - The included library provides four slide backgrounds and eight elements without an API key. Image generation is optional for creating more scene artwork or fictional teachers; generated candidates require explicit review and selection.
+- **Designed layout** is the default and uses authored slide content without an image-generation request. Choose **Illustrated** explicitly with an approved image route to generate artwork. After an image failure, switching to Designed and approving again preserves unchanged narration clips once active work has stopped.
 
 ## Guided and Studio workflows
 
