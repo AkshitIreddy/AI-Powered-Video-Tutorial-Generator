@@ -2256,7 +2256,10 @@ class GenerationWorkflow:
             ("transcriptArtifactHash", "transcript"),
         ):
             if isinstance(captions.get(field), str):
-                subjects.append((str(captions[field]), role, "alystria", "caption-compiler-v1"))
+                subjects.append((
+                    str(captions[field]), role, "alystria",
+                    str(captions.get("compilerVersion") or "caption-compiler-v1"),
+                ))
         subjects.extend(
             (
                 str(item["artifactHash"]),

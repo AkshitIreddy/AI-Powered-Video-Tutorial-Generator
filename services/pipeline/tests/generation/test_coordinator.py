@@ -28,6 +28,7 @@ from alystria.generation import (
     request_from_desktop,
     request_from_fixture,
 )
+from alystria.generation.caption_bundle import CAPTION_COMPILER_VERSION
 from alystria.generation.coordinator import _prepare_failed_media_reapproval
 from alystria.generation.education_provider import StructuredWritingEducationalProvider
 from alystria.generation.forced_alignment import AlignmentInput
@@ -672,6 +673,16 @@ def test_staged_workflow_pauses_for_approval_then_exports(tmp_path: Path) -> Non
         assert completed.output_media_type == "application/vnd.alystria.render+json"
         assert completed.video_artifact_hash is not None
         assert store.cas.verify(completed.video_artifact_hash)
+
+        render_stage = next(item for item in completed.stages if item.stage is GenerationStage.RENDER)
+        render_result = coordinator.runtime.get_job(render_stage.job_id).result
+        assert render_result is not None
+        caption_provenance = [
+            item for item in render_result["payload"]["candidate"]["provenanceRecords"]
+            if item["role"] in {"captions-vtt", "captions-srt", "transcript"}
+        ]
+        assert len(caption_provenance) == 3
+        assert {item["modelRevision"] for item in caption_provenance} == {CAPTION_COMPILER_VERSION}
 
         export = next(item for item in completed.stages if item.stage is GenerationStage.EXPORT)
         export_job = coordinator.runtime.get_job(export.job_id)
