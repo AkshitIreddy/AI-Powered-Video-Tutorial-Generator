@@ -20,6 +20,7 @@ from typing import Any
 from alystria.editor_export import render_editor_timeline
 from alystria.generation import GenerationCoordinator, GenerationState
 from alystria.generation.adapters import GenerationMediaClient, RendererClient
+from alystria.generation.caption_bundle import build_caption_bundle
 from alystria.jobs import ActionKey, DependencyGraph, Job, JobContext, JobState
 from alystria.jobs.runtime import SQLiteWorkflowRuntime
 from alystria.licensed_media_workflow import (
@@ -38,7 +39,7 @@ from alystria.visual_candidates import (
 )
 
 TICKS_PER_SECOND = 240_000
-CONTROL_IMPLEMENTATION_VERSION = "native-controls-v2-caption-delivery"
+CONTROL_IMPLEMENTATION_VERSION = "native-controls-v3-caption-bundle"
 SCENE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 ALLOWED_LOCKS = frozenset(
@@ -351,6 +352,58 @@ class NativeControlCoordinator:
                     or artifact_metadata.get("rightsStatus") != "owned"
                 ):
                     raise ValueError("Latest promoted master artifact provenance is invalid")
+                bundle_hash = promoted.get("captionBundleArtifactHash")
+                source_narration_hash = promoted.get(
+                    "sourceNarrationStageArtifactHash"
+                )
+                artifact_bundle_hash = artifact_metadata.get(
+                    "captionBundleArtifactHash"
+                )
+                artifact_source_narration_hash = artifact_metadata.get(
+                    "sourceNarrationStageArtifactHash"
+                )
+                compiler_version = promoted.get("captionCompilerVersion")
+                artifact_compiler_version = artifact_metadata.get(
+                    "captionCompilerVersion"
+                )
+                has_caption_bundle_provenance = any(
+                    value is not None
+                    for value in (
+                        bundle_hash,
+                        source_narration_hash,
+                        artifact_bundle_hash,
+                        artifact_source_narration_hash,
+                        compiler_version,
+                        artifact_compiler_version,
+                    )
+                )
+                if has_caption_bundle_provenance:
+                    if (
+                        not isinstance(bundle_hash, str)
+                        or not SHA256_PATTERN.fullmatch(bundle_hash)
+                        or source_narration_hash != narration_stage_hash
+                        or artifact_bundle_hash != bundle_hash
+                        or artifact_source_narration_hash != narration_stage_hash
+                        or not isinstance(compiler_version, str)
+                        or not compiler_version
+                        or artifact_compiler_version != compiler_version
+                    ):
+                        raise ValueError(
+                            "Latest promoted master caption bundle provenance is invalid"
+                        )
+                    captions = self._verified_promoted_caption_bundle(
+                        bundle_hash,
+                        generation_id=validated_generation_id,
+                        approval_revision_id=approval_revision_id,
+                        narration_stage_hash=narration_stage_hash,
+                        locale=str(
+                            narration.get("storyboard", {}).get("locale", "en-US")
+                        ),
+                    )
+                    if captions.get("compilerVersion") != compiler_version:
+                        raise ValueError(
+                            "Latest promoted master caption compiler provenance is invalid"
+                        )
                 captions_burned = artifact_metadata.get("captionsBurnedIntoPixels")
                 if not isinstance(captions_burned, bool):
                     raise ValueError("Latest promoted master caption provenance is invalid")
@@ -639,7 +692,10 @@ class NativeControlCoordinator:
             distribution_scope="publicCommercial",
         )
         render_payload, render_stage_hash = self._verified_stage_payload(generation_id, "render")
-        narration_payload = self._stage_payload(generation_id, "narration")
+        narration_payload, narration_stage_hash = self._verified_stage_payload(
+            generation_id, "narration"
+        )
+        approved_captions, _ = self._verified_stage_payload(generation_id, "captions")
         storyboard = narration_payload["storyboard"]
         approved_render_request = render_payload.get("renderRequest")
         if not isinstance(approved_render_request, dict):
@@ -656,19 +712,57 @@ class NativeControlCoordinator:
             raise ValueError("Master export is blocked because the final QA gate does not permit export")
         context.set_progress(0.08, message="Rendering approved storyboard with selected master target")
         caption_delivery_mode = _caption_delivery_mode(params)
+        locale = str(storyboard.get("locale", "en-US"))
+        caption_bundle = build_caption_bundle(
+            self.store,
+            narration_payload,
+            captions_enabled=bool(approved_captions.get("captionsEnabled", True)),
+            locale=locale,
+        )
+        caption_compiler_version = caption_bundle.get("compilerVersion")
+        if not isinstance(caption_compiler_version, str) or not caption_compiler_version:
+            raise ValueError("Master export caption bundle has no compiler provenance")
+        caption_bundle_document = {
+            "schemaVersion": 1,
+            "generationId": generation_id,
+            "approvalRevisionId": generation_status.approval_revision_id,
+            "sourceNarrationStageArtifactHash": narration_stage_hash,
+            "locale": locale,
+            "captions": caption_bundle,
+        }
+        caption_bundle_artifact = self.store.add_artifact_bytes(
+            json.dumps(
+                caption_bundle_document,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8"),
+            media_type="application/vnd.alystria.caption-bundle+json",
+            original_name="master-caption-bundle.json",
+            metadata={
+                "generationId": generation_id,
+                "approvalRevisionId": generation_status.approval_revision_id,
+                "sourceNarrationStageArtifactHash": narration_stage_hash,
+                "locale": locale,
+                "compilerVersion": caption_compiler_version,
+                "rightsStatus": "owned",
+            },
+        )
         # Reuse the verified request that produced the approved media. Rebuilding
         # from the original plan loses measured pacing, reviewed prose, selected
         # assets, presenter timing, fonts, and audio/visual customization.
-        rendered = self.renderer.render(
+        master_render_request = copy.deepcopy(approved_render_request)
+        master_render_request.update(
             {
-                **copy.deepcopy(approved_render_request),
                 "generationId": context.job_id,
                 "targets": [params["target"]],
                 "captionDeliveryMode": caption_delivery_mode,
                 "codec": params["rendererCodec"],
-                "locale": storyboard.get("locale", "en-US"),
+                "locale": locale,
+                "captions": copy.deepcopy(caption_bundle),
             }
         )
+        rendered = self.renderer.render(master_render_request)
         artifact = self.store.add_artifact_bytes(
             rendered.content,
             media_type=rendered.media_type,
@@ -679,6 +773,9 @@ class NativeControlCoordinator:
                 "generationId": generation_id,
                 "approvalRevisionId": generation_status.approval_revision_id,
                 "sourceRenderStageArtifactHash": render_stage_hash,
+                "sourceNarrationStageArtifactHash": narration_stage_hash,
+                "captionBundleArtifactHash": caption_bundle_artifact.hash,
+                "captionCompilerVersion": caption_compiler_version,
                 "renderSceneWindows": copy.deepcopy(scene_windows),
                 "qualityGate": gate,
                 "rightsStatus": "owned",
@@ -702,6 +799,7 @@ class NativeControlCoordinator:
             params,
             destination.stem,
             str(storyboard.get("locale", "und")),
+            captions_override=caption_bundle,
         )
         context.set_progress(1, message="Master and requested sidecars promoted to exports")
         return {
@@ -709,6 +807,9 @@ class NativeControlCoordinator:
             "generationId": generation_id,
             "approvalRevisionId": generation_status.approval_revision_id,
             "sourceRenderStageArtifactHash": render_stage_hash,
+            "sourceNarrationStageArtifactHash": narration_stage_hash,
+            "captionBundleArtifactHash": caption_bundle_artifact.hash,
+            "captionCompilerVersion": caption_compiler_version,
             "renderSceneWindows": copy.deepcopy(scene_windows),
             "artifactHash": artifact.hash,
             "path": str(destination),
@@ -871,6 +972,91 @@ class NativeControlCoordinator:
             raise ValueError(f"Generation stage {stage} result does not match its immutable artifact")
         return persisted, artifact_hash
 
+    def _verified_promoted_caption_bundle(
+        self,
+        artifact_hash: str,
+        *,
+        generation_id: str,
+        approval_revision_id: str,
+        narration_stage_hash: str,
+        locale: str,
+    ) -> dict[str, Any]:
+        """Load captions only when the promoted master's immutable bundle is coherent."""
+
+        row = self.store.connection.execute(
+            "SELECT media_type,metadata_json FROM artifacts WHERE hash=?",
+            (artifact_hash,),
+        ).fetchone()
+        if (
+            row is None
+            or row["media_type"] != "application/vnd.alystria.caption-bundle+json"
+            or not self.store.cas.verify(artifact_hash)
+        ):
+            raise ValueError("Latest promoted master caption bundle is missing or corrupt")
+        try:
+            metadata = json.loads(str(row["metadata_json"]))
+            document = json.loads(self.store.cas.object_path(artifact_hash).read_bytes())
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("Latest promoted master caption bundle is invalid") from error
+        if (
+            not isinstance(metadata, dict)
+            or metadata.get("generationId") != generation_id
+            or metadata.get("approvalRevisionId") != approval_revision_id
+            or metadata.get("sourceNarrationStageArtifactHash") != narration_stage_hash
+            or metadata.get("locale") != locale
+            or metadata.get("rightsStatus") != "owned"
+            or not isinstance(document, dict)
+            or document.get("schemaVersion") != 1
+            or document.get("generationId") != generation_id
+            or document.get("approvalRevisionId") != approval_revision_id
+            or document.get("sourceNarrationStageArtifactHash") != narration_stage_hash
+            or document.get("locale") != locale
+        ):
+            raise ValueError("Latest promoted master caption bundle provenance is invalid")
+        captions = document.get("captions")
+        compiler_version = metadata.get("compilerVersion")
+        if (
+            not isinstance(captions, dict)
+            or not isinstance(compiler_version, str)
+            or not compiler_version
+            or captions.get("compilerVersion") != compiler_version
+            or not isinstance(captions.get("captionsEnabled"), bool)
+            or not isinstance(captions.get("byScene"), dict)
+            or not isinstance(captions.get("cueCount"), int)
+            or isinstance(captions.get("cueCount"), bool)
+            or captions["cueCount"] < 0
+        ):
+            raise ValueError("Latest promoted master caption bundle payload is invalid")
+        sidecars = (
+            ("vttArtifactHash", "text/vtt"),
+            ("srtArtifactHash", "application/x-subrip"),
+            ("transcriptArtifactHash", "text/plain"),
+        )
+        for field, media_type in sidecars:
+            digest = captions.get(field)
+            if not isinstance(digest, str) or not SHA256_PATTERN.fullmatch(digest):
+                raise ValueError("Latest promoted master caption bundle payload is invalid")
+            sidecar_row = self.store.connection.execute(
+                "SELECT media_type,metadata_json FROM artifacts WHERE hash=?", (digest,)
+            ).fetchone()
+            if (
+                sidecar_row is None
+                or sidecar_row["media_type"] != media_type
+                or not self.store.cas.verify(digest)
+            ):
+                raise ValueError("Latest promoted master caption sidecar is missing or corrupt")
+            try:
+                sidecar_metadata = json.loads(str(sidecar_row["metadata_json"]))
+            except (TypeError, json.JSONDecodeError) as error:
+                raise ValueError("Latest promoted master caption sidecar is invalid") from error
+            if (
+                not isinstance(sidecar_metadata, dict)
+                or sidecar_metadata.get("locale") != locale
+                or sidecar_metadata.get("rightsStatus") != "owned"
+            ):
+                raise ValueError("Latest promoted master caption sidecar provenance is invalid")
+        return captions
+
     def _verified_generated_bindings(
         self,
         values: Any,
@@ -963,6 +1149,8 @@ class NativeControlCoordinator:
                 "'editor-timeline-export')) LIMIT 1",
                 (self.store.manifest.project_id, digest),
             ).fetchone()
+            if generated is None and self._is_current_verified_promoted_master(digest):
+                continue
             if generated is None:
                 imported_binding = imported.get(digest)
                 linked = None
@@ -983,6 +1171,33 @@ class NativeControlCoordinator:
                     raise ValueError(
                         "Editor render manifest asset is not cleared for export by durable provenance"
                     )
+
+    def _is_current_verified_promoted_master(self, artifact_hash: str) -> bool:
+        """Accept an unlinked video only through the current verified master job."""
+
+        rows = self.store.connection.execute(
+            "SELECT DISTINCT json_extract(result_json,'$.generationId') AS generation_id "
+            "FROM jobs WHERE project_id=? AND kind='native.export_master' "
+            "AND state='SUCCEEDED' AND json_valid(result_json)=1 "
+            "AND json_extract(result_json,'$.artifactHash')=?",
+            (self.store.manifest.project_id, artifact_hash),
+        ).fetchall()
+        for row in rows:
+            generation_id = row["generation_id"]
+            if not isinstance(generation_id, str):
+                continue
+            try:
+                bindings = self.editor_bindings(generation_id)
+            except (RuntimeError, ValueError):
+                continue
+            renders = bindings.get("renders")
+            if isinstance(renders, list) and any(
+                isinstance(binding, dict)
+                and binding.get("artifactHash") == artifact_hash
+                for binding in renders
+            ):
+                return True
+        return False
 
     def _verified_render_bindings(
         self,
@@ -1129,8 +1344,14 @@ class NativeControlCoordinator:
         params: dict[str, Any],
         stem: str,
         locale: str,
+        *,
+        captions_override: dict[str, Any] | None = None,
     ) -> list[str]:
-        captions = self._stage_payload(generation_id, "captions")
+        captions = (
+            captions_override
+            if captions_override is not None
+            else self._stage_payload(generation_id, "captions")
+        )
         safe_locale = (
             locale
             if re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", locale)

@@ -13,7 +13,7 @@ from alystria.generation import (
     GenerationState,
     RenderedTutorial,
 )
-from alystria.native_controls import NativeControlCoordinator
+from alystria.native_controls import NativeControlCoordinator, _editor_caption_bindings
 from alystria.project import ProjectStore
 
 
@@ -155,6 +155,12 @@ def test_editor_prefers_latest_verified_master_and_uses_its_scene_windows(
         latest = _export_master(control, generation_id, fps=30)
 
         bindings = control.editor_bindings(generation_id)
+        bundle_document = json.loads(
+            store.cas.object_path(latest["captionBundleArtifactHash"]).read_bytes()
+        )
+        narration, narration_stage_hash = control._verified_stage_payload(
+            generation_id, "narration"
+        )
 
         assert bindings["renders"]
         assert {
@@ -170,6 +176,36 @@ def test_editor_prefers_latest_verified_master_and_uses_its_scene_windows(
             for item in bindings["renders"]
         ] == latest["renderSceneWindows"]
         assert all(item["captionsBurnedIntoPixels"] is True for item in bindings["renders"])
+        assert latest["sourceNarrationStageArtifactHash"] == narration_stage_hash
+        assert bundle_document["captions"] == control.renderer.requests[-1]["captions"]
+        assert bindings["captions"] == _editor_caption_bindings(
+            bundle_document["captions"], narration
+        )
+        head = store.head_revision()
+        assert head is not None
+        control._require_exportable_editor_assets(
+            head.snapshot,
+            {
+                "assets": [
+                    {
+                        "artifactHash": latest["artifactHash"],
+                        "mediaType": latest["mediaType"],
+                    }
+                ]
+            },
+        )
+        with pytest.raises(ValueError, match="durable provenance"):
+            control._require_exportable_editor_assets(
+                head.snapshot,
+                {
+                    "assets": [
+                        {
+                            "artifactHash": first["artifactHash"],
+                            "mediaType": first["mediaType"],
+                        }
+                    ]
+                },
+            )
     finally:
         store.close()
 
@@ -231,6 +267,104 @@ def test_editor_fails_closed_when_latest_eligible_master_is_corrupt(tmp_path: Pa
         store.cas.object_path(str(promoted["artifactHash"])).write_bytes(b"corrupt")
 
         with pytest.raises(ValueError, match="promoted master artifact is missing or corrupt"):
+            control.editor_bindings(generation_id)
+    finally:
+        store.close()
+
+
+def test_editor_fails_closed_when_promoted_caption_bundle_is_corrupt(tmp_path: Path) -> None:
+    store, control, generation_id, _ = _completed_generation(tmp_path)
+    try:
+        promoted = _export_master(control, generation_id, fps=24)
+        store.cas.object_path(str(promoted["captionBundleArtifactHash"])).write_bytes(
+            b"corrupt"
+        )
+
+        with pytest.raises(ValueError, match="caption bundle is missing or corrupt"):
+            control.editor_bindings(generation_id)
+    finally:
+        store.close()
+
+
+def test_editor_accepts_caption_sidecar_deduplicated_from_legacy_metadata(
+    tmp_path: Path,
+) -> None:
+    store, control, generation_id, _ = _completed_generation(tmp_path)
+    try:
+        generation_captions, _ = control._verified_stage_payload(generation_id, "captions")
+        transcript_hash = generation_captions["transcriptArtifactHash"]
+        transcript_row = store.connection.execute(
+            "SELECT metadata_json FROM artifacts WHERE hash=?", (transcript_hash,)
+        ).fetchone()
+        assert transcript_row is not None
+        legacy_metadata = json.loads(str(transcript_row["metadata_json"]))
+        legacy_metadata.pop("compilerVersion", None)
+        with store.connection:
+            store.connection.execute(
+                "UPDATE artifacts SET metadata_json=? WHERE hash=?",
+                (json.dumps(legacy_metadata), transcript_hash),
+            )
+
+        promoted = _export_master(control, generation_id, fps=24)
+        bundle = json.loads(
+            store.cas.object_path(promoted["captionBundleArtifactHash"]).read_bytes()
+        )
+        assert bundle["captions"]["transcriptArtifactHash"] == transcript_hash
+        assert control.editor_bindings(generation_id)["captions"]
+    finally:
+        store.close()
+
+
+def test_editor_rejects_foreign_caption_bundle_even_when_master_claims_it(
+    tmp_path: Path,
+) -> None:
+    store, control, generation_id, approval_revision_id = _completed_generation(tmp_path)
+    try:
+        promoted = _export_master(control, generation_id, fps=24)
+        bundle_path = store.cas.object_path(str(promoted["captionBundleArtifactHash"]))
+        foreign_document = json.loads(bundle_path.read_bytes())
+        foreign_generation_id = str(uuid.uuid4())
+        foreign_document["generationId"] = foreign_generation_id
+        foreign_bundle = store.add_artifact_bytes(
+            json.dumps(
+                foreign_document, sort_keys=True, separators=(",", ":")
+            ).encode(),
+            media_type="application/vnd.alystria.caption-bundle+json",
+            original_name="foreign-caption-bundle.json",
+            metadata={
+                "generationId": foreign_generation_id,
+                "approvalRevisionId": approval_revision_id,
+                "sourceNarrationStageArtifactHash": promoted[
+                    "sourceNarrationStageArtifactHash"
+                ],
+                "locale": foreign_document["locale"],
+                "compilerVersion": foreign_document["captions"]["compilerVersion"],
+                "rightsStatus": "owned",
+            },
+        )
+        master_row = store.connection.execute(
+            "SELECT metadata_json FROM artifacts WHERE hash=?",
+            (promoted["artifactHash"],),
+        ).fetchone()
+        job_row = store.connection.execute(
+            "SELECT result_json FROM jobs WHERE job_id=?", (promoted["jobId"],)
+        ).fetchone()
+        assert master_row is not None and job_row is not None
+        master_metadata = json.loads(str(master_row["metadata_json"]))
+        master_metadata["captionBundleArtifactHash"] = foreign_bundle.hash
+        job_result = json.loads(str(job_row["result_json"]))
+        job_result["captionBundleArtifactHash"] = foreign_bundle.hash
+        with store.connection:
+            store.connection.execute(
+                "UPDATE artifacts SET metadata_json=? WHERE hash=?",
+                (json.dumps(master_metadata), promoted["artifactHash"]),
+            )
+            store.connection.execute(
+                "UPDATE jobs SET result_json=? WHERE job_id=?",
+                (json.dumps(job_result), promoted["jobId"]),
+            )
+
+        with pytest.raises(ValueError, match="caption bundle provenance is invalid"):
             control.editor_bindings(generation_id)
     finally:
         store.close()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import binascii
 import copy
+import json
 import struct
 import uuid
 import zlib
@@ -122,6 +123,51 @@ def _project(tmp_path: Path) -> ProjectStore:
             "sources": [],
         },
     )
+
+
+def _replace_verified_stage_payload(
+    store: ProjectStore,
+    generation_id: str,
+    stage: str,
+    payload: dict[str, object],
+) -> str:
+    row = store.connection.execute(
+        "SELECT job_id,result_json FROM jobs WHERE project_id=? AND kind=? "
+        "AND state='SUCCEEDED' AND json_extract(parameters_json,'$.generationId')=? "
+        "ORDER BY completed_at DESC LIMIT 1",
+        (store.manifest.project_id, f"generation.{stage}", generation_id),
+    ).fetchone()
+    assert row is not None
+    result = json.loads(str(row["result_json"]))
+    previous_hash = str(result["artifactHash"])
+    previous_artifact = store.connection.execute(
+        "SELECT media_type,original_name,metadata_json FROM artifacts WHERE hash=?",
+        (previous_hash,),
+    ).fetchone()
+    assert previous_artifact is not None
+    replacement = store.add_artifact_bytes(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(),
+        media_type=str(previous_artifact["media_type"]),
+        original_name=previous_artifact["original_name"],
+        metadata=json.loads(str(previous_artifact["metadata_json"])),
+    )
+    result.update({"artifactHash": replacement.hash, "payload": payload})
+    with store.connection:
+        store.connection.execute(
+            "UPDATE revision_artifacts SET artifact_hash=? WHERE artifact_hash=? "
+            "AND role=? AND stable_id=?",
+            (
+                replacement.hash,
+                previous_hash,
+                f"generation-stage:{stage}",
+                generation_id,
+            ),
+        )
+        store.connection.execute(
+            "UPDATE jobs SET result_json=? WHERE job_id=?",
+            (json.dumps(result, sort_keys=True, separators=(",", ":")), row["job_id"]),
+        )
+    return replacement.hash
 
 
 def test_revision_navigation_is_append_only_and_redo_survives_reopen(tmp_path: Path) -> None:
@@ -456,6 +502,17 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
         render_payload, render_stage_hash = control._verified_stage_payload(
             started.generation_id, "render"
         )
+        narration_payload, previous_narration_stage_hash = control._verified_stage_payload(
+            started.generation_id, "narration"
+        )
+        corrected_narration = copy.deepcopy(narration_payload)
+        first_word = corrected_narration["narration"][0]["words"][0]
+        assert first_word["start_ms"] + 1 < first_word["end_ms"]
+        first_word["start_ms"] += 1
+        narration_stage_hash = _replace_verified_stage_payload(
+            store, started.generation_id, "narration", corrected_narration
+        )
+        assert narration_stage_hash != previous_narration_stage_hash
         planned_scenes = control._stage_payload(started.generation_id, "storyboard")["storyboard"]["scenes"]
         assert planned_scenes != approved_render_request["scenes"]
         exported = control._stage_payload(started.generation_id, "export")
@@ -484,27 +541,53 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
         assert completed.state.value == "SUCCEEDED"
         assert len(renderer.requests) == calls_before + 1
         for key in (
-            "scenes", "seed", "visualBible", "assets", "narration", "captions",
+            "scenes", "seed", "visualBible", "assets", "narration",
             "presenters", "audioCustomization", "visualCustomization", "fontCustomization",
             "customization",
         ):
             assert renderer.requests[-1][key] == approved_render_request[key]
+        assert renderer.requests[-1]["captions"] != approved_render_request["captions"]
         assert renderer.requests[-1]["seed"] == 73
         assert render_payload["renderRequest"] == approved_render_request
         assert completed.result["generationId"] == started.generation_id
         assert completed.result["approvalRevisionId"] == generation.status(started.generation_id).approval_revision_id
         assert completed.result["sourceRenderStageArtifactHash"] == render_stage_hash
+        assert completed.result["sourceNarrationStageArtifactHash"] == narration_stage_hash
         assert completed.result["renderSceneWindows"] == render_payload["candidate"]["renderSceneWindows"]
         assert "presenters" in renderer.requests[-1]
         assert renderer.requests[-1]["captionDeliveryMode"] == "sidecar"
         assert renderer.requests[-1]["codec"] == "av1"
         assert renderer.requests[-1]["captions"]["captionsEnabled"] is True
+        caption_bundle_hash = completed.result["captionBundleArtifactHash"]
+        caption_bundle = json.loads(store.cas.object_path(caption_bundle_hash).read_bytes())
+        assert caption_bundle["sourceNarrationStageArtifactHash"] == narration_stage_hash
+        assert caption_bundle["captions"] == renderer.requests[-1]["captions"]
+        assert caption_bundle["captions"]["compilerVersion"] == completed.result["captionCompilerVersion"]
+        video_metadata_row = store.connection.execute(
+            "SELECT metadata_json FROM artifacts WHERE hash=?",
+            (completed.result["artifactHash"],),
+        ).fetchone()
+        assert video_metadata_row is not None
+        video_metadata = json.loads(str(video_metadata_row["metadata_json"]))
+        assert video_metadata["captionBundleArtifactHash"] == caption_bundle_hash
+        assert video_metadata["sourceNarrationStageArtifactHash"] == narration_stage_hash
         assert Path(completed.result["path"]).is_file()
         assert len(completed.result["sidecarPaths"]) == 4
         assert all(Path(path).is_file() for path in completed.result["sidecarPaths"])
         sidecar_names = {Path(path).name for path in completed.result["sidecarPaths"]}
         assert any(name.endswith(".en-US.srt") for name in sidecar_names)
         assert any(name.endswith(".en-US.vtt") for name in sidecar_names)
+        for field, suffix in (
+            ("vttArtifactHash", ".en-US.vtt"),
+            ("srtArtifactHash", ".en-US.srt"),
+            ("transcriptArtifactHash", ".en-US.transcript.txt"),
+        ):
+            copied = next(
+                Path(path) for path in completed.result["sidecarPaths"] if path.endswith(suffix)
+            )
+            assert copied.read_bytes() == store.cas.object_path(
+                caption_bundle["captions"][field]
+            ).read_bytes()
         assert completed.result["captionDelivery"] == {
             "mode": "sidecar",
             "sidecars": ["vtt", "srt"],
