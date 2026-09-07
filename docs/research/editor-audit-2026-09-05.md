@@ -268,6 +268,16 @@ All sources were reviewed on 2026-09-05. The ledger records how each source affe
 
 ## Verification evidence
 
+September 7 full-length preparation found that the native project record still
+held planned durations while narration had produced different scene windows.
+New editor documents now derive contiguous frame intervals from the verified
+master boundaries. Reopening a trimmed composite preserves its local trim
+instead of adding the master offset again. Promoting different media clears
+the old URI and preview references before resolution by the new CAS hash.
+The focused adapter suite passed 16 tests and desktop TypeScript passed after
+these corrections. Native full-length verification remains pending at this
+source checkpoint.
+
 The subsequent preview audit corrected text that always appeared at the bottom
 despite a top placement in the export. Preview now scales authored pixel offsets
 and text sizes to the visible canvas, follows native top/center/bottom and

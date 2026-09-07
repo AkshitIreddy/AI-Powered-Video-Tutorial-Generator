@@ -345,3 +345,12 @@ the newest verified master belonging to the same generation, approval, and
 source render stage, with CAS and scene-window validation. The combined native
 control tests passed 30 cases. Corrected native master/editor verification
 remains pending; these source tests are not substituted for that run.
+
+Read-only native inspection additionally confirmed that the persisted UI scene
+durations were still planned values (33.4648, 29.4085, 29.9155, 44.1127, and
+43.0986 seconds), while the rendered windows were 9.4644, 39.1854, 37.9784,
+37.0494, and 56.3224 seconds. Commit `55cff6a` makes new editor documents use
+the verified master boundaries. Commit `22643e7` corrects future generation
+chapter metadata and final snapshots to carry the immutable rendered
+storyboard. The already-running older worker is not retroactively qualified
+by either source change; its original export remains rejection evidence.
