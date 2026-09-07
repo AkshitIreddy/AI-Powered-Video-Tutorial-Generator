@@ -274,6 +274,120 @@ class NativeControlCoordinator:
         render, render_stage_hash = self._verified_stage_payload(
             validated_generation_id, "render"
         )
+        renders = self._verified_render_bindings(
+            render,
+            narration,
+            generation_id=validated_generation_id,
+            stage_hash=render_stage_hash,
+        )
+        generation_status = GenerationCoordinator(self.store).status(
+            validated_generation_id
+        )
+        approval_revision_id = generation_status.approval_revision_id
+        if approval_revision_id is not None:
+            master_rows = self.store.connection.execute(
+                "SELECT result_json FROM jobs WHERE project_id=? "
+                "AND kind='native.export_master' AND state='SUCCEEDED' "
+                "AND json_valid(parameters_json)=1 "
+                "AND json_extract(parameters_json,'$.baseGenerationId')=? "
+                "ORDER BY completed_at DESC, rowid DESC",
+                (self.store.manifest.project_id, validated_generation_id),
+            ).fetchall()
+            promoted: dict[str, Any] | None = None
+            for master_row in master_rows:
+                try:
+                    candidate = json.loads(str(master_row["result_json"]))
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if not isinstance(candidate, dict):
+                    continue
+                if (
+                    candidate.get("generationId") == validated_generation_id
+                    and candidate.get("approvalRevisionId") == approval_revision_id
+                    and candidate.get("sourceRenderStageArtifactHash") == render_stage_hash
+                ):
+                    promoted = candidate
+                    break
+
+            if promoted is not None:
+                digest = promoted.get("artifactHash")
+                declared_media_type = promoted.get("mediaType")
+                expected_candidate = render.get("candidate")
+                expected_windows = (
+                    expected_candidate.get("renderSceneWindows")
+                    if isinstance(expected_candidate, dict)
+                    else None
+                )
+                windows = promoted.get("renderSceneWindows")
+                if (
+                    not isinstance(digest, str)
+                    or not SHA256_PATTERN.fullmatch(digest)
+                    or not isinstance(declared_media_type, str)
+                    or not declared_media_type.startswith("video/")
+                    or not isinstance(windows, list)
+                    or not windows
+                    or windows != expected_windows
+                ):
+                    raise ValueError("Latest promoted master has invalid durable provenance")
+                artifact_row = self.store.connection.execute(
+                    "SELECT media_type,metadata_json FROM artifacts WHERE hash=?",
+                    (digest,),
+                ).fetchone()
+                if artifact_row is None or not self.store.cas.verify(digest):
+                    raise ValueError("Latest promoted master artifact is missing or corrupt")
+                if artifact_row["media_type"] != declared_media_type:
+                    raise ValueError("Latest promoted master media type does not match its artifact")
+                try:
+                    artifact_metadata = json.loads(str(artifact_row["metadata_json"]))
+                except (TypeError, json.JSONDecodeError) as error:
+                    raise ValueError("Latest promoted master artifact metadata is invalid") from error
+                if (
+                    not isinstance(artifact_metadata, dict)
+                    or artifact_metadata.get("generationId") != validated_generation_id
+                    or artifact_metadata.get("approvalRevisionId") != approval_revision_id
+                    or artifact_metadata.get("sourceRenderStageArtifactHash")
+                    != render_stage_hash
+                    or artifact_metadata.get("renderSceneWindows") != windows
+                    or artifact_metadata.get("rightsStatus") != "owned"
+                ):
+                    raise ValueError("Latest promoted master artifact provenance is invalid")
+                captions_burned = artifact_metadata.get("captionsBurnedIntoPixels")
+                if not isinstance(captions_burned, bool):
+                    raise ValueError("Latest promoted master caption provenance is invalid")
+                promoted_bindings: list[dict[str, Any]] = []
+                previous_end = 0
+                scene_ids: set[str] = set()
+                for window in windows:
+                    if not isinstance(window, dict):
+                        raise ValueError("Latest promoted master has an invalid scene window")
+                    scene_id = window.get("sceneId")
+                    start_ticks = window.get("startTicks")
+                    end_ticks = window.get("endTicks")
+                    if (
+                        not isinstance(scene_id, str)
+                        or not SCENE_ID_PATTERN.fullmatch(scene_id)
+                        or scene_id in scene_ids
+                        or not isinstance(start_ticks, int)
+                        or isinstance(start_ticks, bool)
+                        or start_ticks != previous_end
+                        or not isinstance(end_ticks, int)
+                        or isinstance(end_ticks, bool)
+                        or not start_ticks < end_ticks <= 2**53 - 1
+                    ):
+                        raise ValueError("Latest promoted master has an invalid scene window")
+                    promoted_bindings.append(
+                        {
+                            "sceneId": scene_id,
+                            "artifactHash": digest,
+                            "mediaType": declared_media_type,
+                            "sourceStartTicks": start_ticks,
+                            "durationTicks": end_ticks - start_ticks,
+                            "captionsBurnedIntoPixels": captions_burned,
+                        }
+                    )
+                    scene_ids.add(scene_id)
+                    previous_end = end_ticks
+                renders = promoted_bindings
         return {
             "projectId": self.store.manifest.project_id,
             "generationId": validated_generation_id,
@@ -301,12 +415,7 @@ class NativeControlCoordinator:
                 role="scene-presenter",
                 duration_key="activeDurationTicks",
             ),
-            "renders": self._verified_render_bindings(
-                render,
-                narration,
-                generation_id=validated_generation_id,
-                stage_hash=render_stage_hash,
-            ),
+            "renders": renders,
         }
 
     def status(self, job_id: str) -> Job:
