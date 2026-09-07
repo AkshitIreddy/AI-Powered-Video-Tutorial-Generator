@@ -259,6 +259,7 @@ try {
   let reviewedProject;
   let generationJob;
   let approvedMediaBranch;
+  let persistedSceneDurations = null;
   if (parsed.resumeCompletedGeneration || parsed.retryPolicyExport) {
     reviewedProject = planProject;
     generationJob = planningJob;
@@ -301,7 +302,7 @@ try {
       );
       await expect(generationJob).toHaveClass(/complete/, { timeout: parsed.actionTimeoutMs });
       await expect(generationJob).toContainText("succeeded");
-      const persistedSceneDurations = await assertPersistedSceneDurationsMatchRenderWindows(
+      persistedSceneDurations = await assertPersistedSceneDurationsMatchRenderWindows(
         page,
         activeProjectIdentity,
         reviewedProject.project.nativeProjectDirectory,
@@ -369,6 +370,13 @@ try {
     if (finalBranchStage?.state !== "SUCCEEDED") {
       throw new Error(`Recovered approval branch export finished in ${finalBranchStage?.state ?? "an unknown state"}: ${finalBranchStage?.message ?? "no durable error"}`);
     }
+    persistedSceneDurations = await assertPersistedSceneDurationsMatchRenderWindows(
+      page,
+      activeProjectIdentity,
+      reviewedProject.project.nativeProjectDirectory,
+      approvedMediaBranch,
+      parsed.actionTimeoutMs,
+    );
   } else {
     await jobs.locator("header .icon-button").click();
     await page.locator(".plan-progress button").filter({ hasText: "Script" }).click();
@@ -777,6 +785,7 @@ try {
     generationState,
     generationResumeMode: parsed.resumeCompletedGeneration ? "completed-generation" : "approval",
     approvedMediaBranch,
+    persistedSceneDurations,
     generationStageJobIdsPreserved: generationJobIdsBeforeMaster,
     exportState,
     editorExportState,
@@ -1563,18 +1572,20 @@ async function assertPersistedSceneDurationsMatchRenderWindows(page, identity, p
     durationSeconds: (window.endTicks - window.startTicks) / 240_000,
   }));
   let actual = [];
-  await expect.poll(async () => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     actual = (await persistedProject(page, identity)).project.scenes?.map((scene) => ({
       sceneId: scene.id,
       durationSeconds: scene.durationSeconds ?? scene.duration,
     })) ?? [];
-    return expected.every((item) => {
+    if (actual.length === expected.length && expected.every((item) => {
       const scene = actual.find((candidate) => candidate.sceneId === item.sceneId);
       return Number.isFinite(scene?.durationSeconds)
         && Math.abs(scene.durationSeconds - item.durationSeconds) <= (1 / 30);
-    });
-  }, { timeout: timeoutMs }).toBe(true);
-  return { expected, actual };
+    })) return { expected, actual };
+    await delay(250);
+  }
+  throw new Error(`Persisted UI scene durations did not match authoritative render windows: ${JSON.stringify({ expected, actual })}`);
 }
 
 function latestApprovedMediaBranch(projectDirectory, expectedGenerationId) {
