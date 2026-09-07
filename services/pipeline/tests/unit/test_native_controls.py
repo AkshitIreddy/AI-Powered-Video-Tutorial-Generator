@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import binascii
+import copy
 import struct
 import uuid
 import zlib
@@ -440,6 +441,7 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
                 topic="Durable export",
                 audience="Test learners",
                 duration_seconds=30,
+                deterministic_seed=73,
             )
         )
         generation.run_pending()
@@ -450,6 +452,12 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
         assert head is not None
 
         control = NativeControlCoordinator(store, renderer=renderer)
+        approved_render_request = copy.deepcopy(renderer.requests[-1])
+        render_payload, render_stage_hash = control._verified_stage_payload(
+            started.generation_id, "render"
+        )
+        planned_scenes = control._stage_payload(started.generation_id, "storyboard")["storyboard"]["scenes"]
+        assert planned_scenes != approved_render_request["scenes"]
         job = control.submit_master_export(
             {
                 "baseRevisionId": head.revision_id,
@@ -469,6 +477,18 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
         completed = control.status(job.job_id)
         assert completed.state.value == "SUCCEEDED"
         assert len(renderer.requests) == calls_before + 1
+        for key in (
+            "scenes", "seed", "visualBible", "assets", "narration", "captions",
+            "presenters", "audioCustomization", "visualCustomization", "fontCustomization",
+            "customization",
+        ):
+            assert renderer.requests[-1][key] == approved_render_request[key]
+        assert renderer.requests[-1]["seed"] == 73
+        assert render_payload["renderRequest"] == approved_render_request
+        assert completed.result["generationId"] == started.generation_id
+        assert completed.result["approvalRevisionId"] == generation.status(started.generation_id).approval_revision_id
+        assert completed.result["sourceRenderStageArtifactHash"] == render_stage_hash
+        assert completed.result["renderSceneWindows"] == render_payload["candidate"]["renderSceneWindows"]
         assert "presenters" in renderer.requests[-1]
         assert renderer.requests[-1]["captionDeliveryMode"] == "sidecar"
         assert renderer.requests[-1]["codec"] == "av1"

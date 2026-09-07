@@ -529,29 +529,34 @@ class NativeControlCoordinator:
             generation_status.approval_revision_id,
             distribution_scope="publicCommercial",
         )
-        storyboard = self._stage_payload(generation_id, "storyboard")["storyboard"]
+        render_payload, render_stage_hash = self._verified_stage_payload(generation_id, "render")
         narration_payload = self._stage_payload(generation_id, "narration")
-        captions_payload = self._stage_payload(generation_id, "captions")
-        presenter_payload = self._stage_payload(generation_id, "presenter")
+        storyboard = narration_payload["storyboard"]
+        approved_render_request = render_payload.get("renderRequest")
+        if not isinstance(approved_render_request, dict):
+            raise ValueError("Master export requires the immutable approved render request")
+        if approved_render_request.get("scenes") != storyboard.get("scenes"):
+            raise ValueError("Master export render request disagrees with measured narration timing")
+        candidate = render_payload.get("candidate")
+        scene_windows = candidate.get("renderSceneWindows") if isinstance(candidate, dict) else None
+        if not isinstance(scene_windows, list) or not scene_windows:
+            raise ValueError("Master export requires measured scene windows")
         qa_payload = self._stage_payload(generation_id, "qa_final")
         gate = qa_payload.get("qualityGate")
         if not isinstance(gate, dict) or gate.get("status") not in {"PASS", "WARNING"}:
             raise ValueError("Master export is blocked because the final QA gate does not permit export")
         context.set_progress(0.08, message="Rendering approved storyboard with selected master target")
         caption_delivery_mode = _caption_delivery_mode(params)
+        # Reuse the verified request that produced the approved media. Rebuilding
+        # from the original plan loses measured pacing, reviewed prose, selected
+        # assets, presenter timing, fonts, and audio/visual customization.
         rendered = self.renderer.render(
             {
-                "schemaVersion": 1,
+                **copy.deepcopy(approved_render_request),
                 "generationId": context.job_id,
-                "timebase": TICKS_PER_SECOND,
-                "seed": 0,
                 "targets": [params["target"]],
-                "scenes": storyboard["scenes"],
-                "narration": narration_payload["narration"],
-                "captions": captions_payload,
                 "captionDeliveryMode": caption_delivery_mode,
                 "codec": params["rendererCodec"],
-                "presenters": presenter_payload.get("presenters", []),
                 "locale": storyboard.get("locale", "en-US"),
             }
         )
@@ -563,6 +568,9 @@ class NativeControlCoordinator:
                 "renderer": self.renderer.renderer_id,
                 "rendererVersion": self.renderer.renderer_version,
                 "generationId": generation_id,
+                "approvalRevisionId": generation_status.approval_revision_id,
+                "sourceRenderStageArtifactHash": render_stage_hash,
+                "renderSceneWindows": copy.deepcopy(scene_windows),
                 "qualityGate": gate,
                 "rightsStatus": "owned",
                 "captionDeliveryMode": caption_delivery_mode,
@@ -589,6 +597,10 @@ class NativeControlCoordinator:
         context.set_progress(1, message="Master and requested sidecars promoted to exports")
         return {
             "operation": "export_master",
+            "generationId": generation_id,
+            "approvalRevisionId": generation_status.approval_revision_id,
+            "sourceRenderStageArtifactHash": render_stage_hash,
+            "renderSceneWindows": copy.deepcopy(scene_windows),
             "artifactHash": artifact.hash,
             "path": str(destination),
             "mediaType": rendered.media_type,
