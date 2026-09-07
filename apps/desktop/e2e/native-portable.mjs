@@ -135,7 +135,8 @@ try {
       await page.screenshot({ path: path.join(evidenceRoot, "02-designed-visual-mode.png"), fullPage: true });
       await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^plan$/i }).click();
     }
-    if (parsed.resumeFailedMedia && !(await page.getByRole("heading", { name: /shape the learning journey/i }).isVisible())) {
+    if ((parsed.resumeFailedMedia || parsed.resumeCompletedGeneration)
+      && !(await page.getByRole("heading", { name: /shape the learning journey/i }).isVisible())) {
       await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^plan$/i }).click();
     }
     await expect(page.getByRole("heading", { name: /shape the learning journey/i })).toBeVisible({ timeout: parsed.actionTimeoutMs });
@@ -162,10 +163,10 @@ try {
         }
       }
     }
-    planningApproval = parsed.resumeFailedMedia
+    planningApproval = parsed.resumeFailedMedia || parsed.resumeCompletedGeneration
       ? { generationId: recoveredGenerationId }
       : await waitForPlanningApproval(recovered.project.nativeProjectDirectory, recovered.generationJob.id, parsed.jobTimeoutMs);
-    if (parsed.resumeFailedMedia) {
+    if (parsed.resumeFailedMedia || parsed.resumeCompletedGeneration) {
       priorApprovedMediaBranch = latestApprovedMediaBranch(recovered.project.nativeProjectDirectory, recoveredGenerationId);
     }
   } else {
@@ -208,9 +209,17 @@ try {
   if (!activeProjectIdentity) throw new Error("The native project identity was not established");
   const planProject = await persistedProject(page, activeProjectIdentity);
   const planningJob = await jobCardById(page, jobs, planProject.generationJob.id);
-  await expect(planningJob).toContainText(parsed.resumeFailedMedia ? "failed" : "blocked", { timeout: parsed.actionTimeoutMs });
+  await expect(planningJob).toContainText(
+    parsed.resumeCompletedGeneration ? "succeeded" : parsed.resumeFailedMedia ? "failed" : "blocked",
+    { timeout: parsed.actionTimeoutMs },
+  );
   await page.screenshot({
-    path: path.join(evidenceRoot, parsed.resumeFailedMedia ? "03-native-media-revision.png" : "03-native-plan-blocked.png"),
+    path: path.join(
+      evidenceRoot,
+      parsed.resumeCompletedGeneration
+        ? "03-native-generation-recovered.png"
+        : parsed.resumeFailedMedia ? "03-native-media-revision.png" : "03-native-plan-blocked.png",
+    ),
     fullPage: true,
   });
   if (!planningApproval?.generationId) throw new Error("The durable planning gate returned no generation identity");
@@ -240,70 +249,94 @@ try {
     process.stdout.write(`${JSON.stringify(planReport, null, 2)}\n`);
     throw new PlanOnlyCompletion();
   }
-  await jobs.locator("header .icon-button").click();
-  await page.locator(".plan-progress button").filter({ hasText: "Script" }).click();
-  const reviewedProject = await persistedProject(page, activeProjectIdentity);
-  if (parsed.reviewFile) {
-    rootReviewedNarrationEdits = await applyReviewedNarrationFile(page, reviewedProject.project, parsed.reviewFile);
-  }
-  const reviewedScene = reviewedProject.project.scenes?.[0];
-  if (!reviewedScene?.id) throw new Error("The reviewed plan has no first scene to edit");
-  const narrationEditor = page.locator(".script-block").filter({ hasText: reviewedScene.title }).locator("p[contenteditable]").first();
-  const beforeNarration = (await narrationEditor.innerText()).trim();
-  const afterNarration = equivalentNarrationEdit(beforeNarration);
-  await narrationEditor.fill(afterNarration);
-  if (parsed.requirePresenter) {
-    gpuObserverAbort = new AbortController();
-    gpuObserverTask = observeGpuCoordination(parsed.gpuCoordinationPath, gpuObserverAbort.signal);
-  }
-  await page.getByRole("button", { name: /approve learning plan/i }).click();
-  reviewedNarrationEdit = { sceneId: reviewedScene.id, before: beforeNarration, after: afterNarration };
-
-  await expect(jobs).toHaveClass(/open/, { timeout: parsed.actionTimeoutMs });
-  const generationJob = await jobCardById(page, jobs, reviewedProject.generationJob.id);
-  const approvedMediaBranch = await waitForNewApprovedMediaBranch(
-    reviewedProject.project.nativeProjectDirectory,
-    planningApproval.generationId,
-    priorApprovedMediaBranch,
-    parsed.actionTimeoutMs,
-  );
-  const mediaStageStates = await waitForGenerationStagesTerminal(
-    reviewedProject.project.nativeProjectDirectory,
-    approvedMediaBranch,
-    ["generation.assets", "generation.narration"],
-    parsed.jobTimeoutMs,
-  );
-  const failedMediaStage = mediaStageStates.find((stage) => stage.state !== "SUCCEEDED");
-  if (failedMediaStage) {
-    throw new Error(`${failedMediaStage.kind} finished in ${failedMediaStage.state}: ${failedMediaStage.message ?? "no durable error"}`);
-  }
-  const finalBranchStage = await waitForApprovedBranchCompletion(
-    reviewedProject.project.nativeProjectDirectory,
-    approvedMediaBranch,
-    parsed.jobTimeoutMs,
-  );
-  if (finalBranchStage?.state !== "SUCCEEDED") {
-    throw new Error(`Current approval branch export finished in ${finalBranchStage?.state ?? "an unknown state"}: ${finalBranchStage?.message ?? "no durable error"}`);
-  }
-  await waitForProjectGenerationState(
-    page,
-    activeProjectIdentity.projectId,
-    ["SUCCEEDED"],
-    parsed.jobTimeoutMs,
-  );
-  await expect(generationJob).toHaveClass(/complete/, { timeout: parsed.actionTimeoutMs });
-  await expect(generationJob).toContainText("succeeded");
-  if (gpuObserverTask) {
-    gpuObserverAbort.abort();
-    gpuCoordinationEvidence = await gpuObserverTask;
-    if (!gpuCoordinationEvidence.transitions.some((event) => event.state === "yes")) {
-      throw new Error("The backend presenter stage never recorded ownership in the shared GPU marker");
+  let reviewedProject;
+  let generationJob;
+  let approvedMediaBranch;
+  if (parsed.resumeCompletedGeneration) {
+    reviewedProject = planProject;
+    generationJob = planningJob;
+    approvedMediaBranch = priorApprovedMediaBranch;
+    if (!approvedMediaBranch) throw new Error("The completed generation has no durable approved-media branch");
+    if (receiptState(reviewedProject.generationJob) !== "SUCCEEDED") {
+      throw new Error(`--resume-completed-generation requires a SUCCEEDED native generation, found ${receiptState(reviewedProject.generationJob) ?? "an unknown state"}`);
     }
-    if (gpuCoordinationEvidence.finalState !== "no") {
-      throw new Error(`The shared GPU marker finished in ${gpuCoordinationEvidence.finalState}, expected no`);
+    const finalBranchStage = await waitForApprovedBranchCompletion(
+      reviewedProject.project.nativeProjectDirectory,
+      approvedMediaBranch,
+      parsed.actionTimeoutMs,
+    );
+    if (finalBranchStage?.state !== "SUCCEEDED") {
+      throw new Error(`Recovered approval branch export finished in ${finalBranchStage?.state ?? "an unknown state"}: ${finalBranchStage?.message ?? "no durable error"}`);
+    }
+  } else {
+    await jobs.locator("header .icon-button").click();
+    await page.locator(".plan-progress button").filter({ hasText: "Script" }).click();
+    reviewedProject = await persistedProject(page, activeProjectIdentity);
+    if (parsed.reviewFile) {
+      rootReviewedNarrationEdits = await applyReviewedNarrationFile(page, reviewedProject.project, parsed.reviewFile);
+    }
+    const reviewedScene = reviewedProject.project.scenes?.[0];
+    if (!reviewedScene?.id) throw new Error("The reviewed plan has no first scene to edit");
+    const narrationEditor = page.locator(".script-block").filter({ hasText: reviewedScene.title }).locator("p[contenteditable]").first();
+    const beforeNarration = (await narrationEditor.innerText()).trim();
+    const afterNarration = equivalentNarrationEdit(beforeNarration);
+    await narrationEditor.fill(afterNarration);
+    if (parsed.requirePresenter) {
+      gpuObserverAbort = new AbortController();
+      gpuObserverTask = observeGpuCoordination(parsed.gpuCoordinationPath, gpuObserverAbort.signal);
+    }
+    await page.getByRole("button", { name: /approve learning plan/i }).click();
+    reviewedNarrationEdit = { sceneId: reviewedScene.id, before: beforeNarration, after: afterNarration };
+
+    await expect(jobs).toHaveClass(/open/, { timeout: parsed.actionTimeoutMs });
+    generationJob = await jobCardById(page, jobs, reviewedProject.generationJob.id);
+    approvedMediaBranch = await waitForNewApprovedMediaBranch(
+      reviewedProject.project.nativeProjectDirectory,
+      planningApproval.generationId,
+      priorApprovedMediaBranch,
+      parsed.actionTimeoutMs,
+    );
+    const mediaStageStates = await waitForGenerationStagesTerminal(
+      reviewedProject.project.nativeProjectDirectory,
+      approvedMediaBranch,
+      ["generation.assets", "generation.narration"],
+      parsed.jobTimeoutMs,
+    );
+    const failedMediaStage = mediaStageStates.find((stage) => stage.state !== "SUCCEEDED");
+    if (failedMediaStage) {
+      throw new Error(`${failedMediaStage.kind} finished in ${failedMediaStage.state}: ${failedMediaStage.message ?? "no durable error"}`);
+    }
+    const finalBranchStage = await waitForApprovedBranchCompletion(
+      reviewedProject.project.nativeProjectDirectory,
+      approvedMediaBranch,
+      parsed.jobTimeoutMs,
+    );
+    if (finalBranchStage?.state !== "SUCCEEDED") {
+      throw new Error(`Current approval branch export finished in ${finalBranchStage?.state ?? "an unknown state"}: ${finalBranchStage?.message ?? "no durable error"}`);
+    }
+    await waitForProjectGenerationState(
+      page,
+      activeProjectIdentity.projectId,
+      ["SUCCEEDED"],
+      parsed.jobTimeoutMs,
+    );
+    await expect(generationJob).toHaveClass(/complete/, { timeout: parsed.actionTimeoutMs });
+    await expect(generationJob).toContainText("succeeded");
+    if (gpuObserverTask) {
+      gpuObserverAbort.abort();
+      gpuCoordinationEvidence = await gpuObserverTask;
+      if (!gpuCoordinationEvidence.transitions.some((event) => event.state === "yes")) {
+        throw new Error("The backend presenter stage never recorded ownership in the shared GPU marker");
+      }
+      if (gpuCoordinationEvidence.finalState !== "no") {
+        throw new Error(`The shared GPU marker finished in ${gpuCoordinationEvidence.finalState}, expected no`);
+      }
     }
   }
   await page.screenshot({ path: path.join(evidenceRoot, "04-native-generation-complete.png"), fullPage: true });
+  const generationJobIdsBeforeMaster = parsed.resumeCompletedGeneration
+    ? readGenerationJobIds(reviewedProject.project.nativeProjectDirectory, reviewedProject.project.nativeGenerationId)
+    : null;
 
   if (!(await page.getByRole("heading", { name: /review the whole argument/i }).isVisible())) {
     await jobs.locator("header .icon-button").click();
@@ -311,10 +344,13 @@ try {
   }
   await expect(page.getByRole("heading", { name: /review the whole argument/i })).toBeVisible();
   let reviewVideo = page.getByLabel("Authoritative generated tutorial media");
-  await expect(reviewVideo).toBeVisible();
-  await expect.poll(async () => reviewVideo.evaluate((video) => Number.isFinite(video.duration) && video.duration >= 178 && video.duration <= 182), { timeout: parsed.actionTimeoutMs }).toBe(true);
-  const generatedReviewPlayback = await verifyVideoPlayback(reviewVideo, parsed.actionTimeoutMs);
-  await page.screenshot({ path: path.join(evidenceRoot, "05-native-review.png"), fullPage: true });
+  let generatedReviewPlayback = null;
+  if (!parsed.resumeCompletedGeneration) {
+    await expect(reviewVideo).toBeVisible();
+    await expect.poll(async () => reviewVideo.evaluate((video) => Number.isFinite(video.duration) && video.duration >= 178 && video.duration <= 182), { timeout: parsed.actionTimeoutMs }).toBe(true);
+    generatedReviewPlayback = await verifyVideoPlayback(reviewVideo, parsed.actionTimeoutMs);
+    await page.screenshot({ path: path.join(evidenceRoot, "05-native-review.png"), fullPage: true });
+  }
 
   await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^export$/i }).click();
   await expect(page.getByRole("heading", { name: /package the finished lesson/i })).toBeVisible();
@@ -340,6 +376,15 @@ try {
   }
   await page.screenshot({ path: path.join(evidenceRoot, "06-native-export.png"), fullPage: true });
 
+  await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^review$/i }).click();
+  await expect(page.getByRole("heading", { name: /review the whole argument/i })).toBeVisible();
+  await expect(page.locator(".review-controls")).toContainText("Promoted master export", { timeout: parsed.actionTimeoutMs });
+  reviewVideo = page.getByLabel("Authoritative generated tutorial media");
+  await expect(reviewVideo).toBeVisible();
+  await expect.poll(async () => reviewVideo.evaluate((video) => Number.isFinite(video.duration) && video.duration >= 178 && video.duration <= 182), { timeout: parsed.actionTimeoutMs }).toBe(true);
+  const promotedMasterReviewPlayback = await verifyVideoPlayback(reviewVideo, parsed.actionTimeoutMs);
+  await page.screenshot({ path: path.join(evidenceRoot, "06-promoted-master-review.png"), fullPage: true });
+
   const mediaBindings = await invokeNative(page, "editor_bindings_get", {
     projectId: reviewedProject.project.nativeProjectId,
     projectDirectory: reviewedProject.project.nativeProjectDirectory,
@@ -356,6 +401,18 @@ try {
   const expectedSceneIds = reviewedScenes.map((scene) => scene.id);
   assertBindingCoverage(mediaBindings.narration, expectedSceneIds, "narration");
   assertBindingCoverage(mediaBindings.renders, expectedSceneIds, "composite render");
+  const promotedMasterResult = completedNativeExport.result ?? null;
+  if (typeof promotedMasterResult?.path !== "string" || !promotedMasterResult.path.trim()) {
+    throw new Error("Successful promoted master returned no media path before editor binding");
+  }
+  await assertRegularFile(promotedMasterResult.path, "promoted master before editor binding");
+  if (!/^[0-9a-f]{64}$/u.test(promotedMasterResult.artifactHash ?? "")
+    || await sha256(promotedMasterResult.path) !== promotedMasterResult.artifactHash) {
+    throw new Error("Promoted master did not match its content-addressed artifact hash before editor binding");
+  }
+  if (mediaBindings.renders.some((binding) => binding.artifactHash !== promotedMasterResult.artifactHash)) {
+    throw new Error("Advanced Editor bindings did not select the newly promoted master");
+  }
 
   const importedImageName = "included-chapter-frame.png";
   const importedImagePath = path.join(repoRoot, "apps", "desktop", "src", "assets", "teaching", "slide-chapter-v1.png");
@@ -467,6 +524,13 @@ try {
   const editorResult = completedNativeEditorExport.result ?? null;
   const nativeGeneration = (await persistedProject(page, activeProjectIdentity)).generationJob;
   const generationState = receiptState(nativeGeneration);
+  const generationJobIdsAfterEditor = parsed.resumeCompletedGeneration
+    ? readGenerationJobIds(project.nativeProjectDirectory, project.nativeGenerationId)
+    : null;
+  if (generationJobIdsBeforeMaster
+    && JSON.stringify(generationJobIdsAfterEditor) !== JSON.stringify(generationJobIdsBeforeMaster)) {
+    throw new Error("Completed-generation resume submitted or discovered new generation stages; provider-free master recovery was not preserved");
+  }
   const exportState = receiptState(completedNativeExport);
   const editorExportState = receiptState(completedNativeEditorExport);
   if (generationState !== "SUCCEEDED") {
@@ -509,7 +573,9 @@ try {
   if (parsed.requirePresenter) {
     assertRepresentativeProjectContract(project, planEvidence.storyboard.payload, parsed.profileId);
   }
-  if (!reviewedNarrationEdit) throw new Error("The native journey did not record its pre-approval narration edit");
+  if (!parsed.resumeCompletedGeneration && !reviewedNarrationEdit) {
+    throw new Error("The native journey did not record its pre-approval narration edit");
+  }
   const narrationStage = readGenerationStage(
     project.nativeProjectDirectory,
     project.nativeGenerationId,
@@ -530,9 +596,11 @@ try {
     && (narrationReuse.total !== 5 || narrationReuse.providerInvoked !== narrationReuse.total - parsed.expectedNarrationCacheHits)) {
     throw new Error(`Narration cache recovery produced ${JSON.stringify(narrationReuse)}, expected five clips with only cache misses invoking the provider`);
   }
-  const approvedNarration = narrationStage.payload?.narration?.find((item) => item.sceneId === reviewedNarrationEdit.sceneId);
-  if (approvedNarration?.authoredText !== reviewedNarrationEdit.after) {
-    throw new Error("Generated narration did not use the exact scene text reviewed immediately before approval");
+  if (reviewedNarrationEdit) {
+    const approvedNarration = narrationStage.payload?.narration?.find((item) => item.sceneId === reviewedNarrationEdit.sceneId);
+    if (approvedNarration?.authoredText !== reviewedNarrationEdit.after) {
+      throw new Error("Generated narration did not use the exact scene text reviewed immediately before approval");
+    }
   }
   await assertRegularFile(result.path, "exported master");
   if (!/^[0-9a-f]{64}$/u.test(result.artifactHash ?? "") || await sha256(result.path) !== result.artifactHash) {
@@ -606,6 +674,9 @@ try {
       gpuCoordination: gpuCoordinationEvidence,
     },
     generationState,
+    generationResumeMode: parsed.resumeCompletedGeneration ? "completed-generation" : "approval",
+    approvedMediaBranch,
+    generationStageJobIdsPreserved: generationJobIdsBeforeMaster,
     exportState,
     editorExportState,
     exportResult: result,
@@ -623,11 +694,12 @@ try {
       editedReviewPlayback,
     },
     generatedReviewPlayback,
-    reviewedNarrationEdit: {
+    promotedMasterReviewPlayback,
+    reviewedNarrationEdit: reviewedNarrationEdit ? {
       ...reviewedNarrationEdit,
       narrationStageArtifactHash: narrationStage.artifactHash,
       verifiedInGeneratedMedia: true,
-    },
+    } : null,
     rootReviewedNarrationEdits,
     narrationReuse,
     codecPreference: parsed.codecPreference,
@@ -737,6 +809,7 @@ function parseArguments(arguments_) {
     resumeProjectDirectory: null,
     retryFailedPlan: false,
     resumeFailedMedia: false,
+    resumeCompletedGeneration: false,
     designedVisuals: false,
     expectedNarrationCacheHits: null,
     reviewFile: null,
@@ -764,6 +837,11 @@ function parseArguments(arguments_) {
     if (name === "--resume-failed-media") {
       result.resumeProject = true;
       result.resumeFailedMedia = true;
+      continue;
+    }
+    if (name === "--resume-completed-generation") {
+      result.resumeProject = true;
+      result.resumeCompletedGeneration = true;
       continue;
     }
     if (name === "--designed-visuals") {
@@ -796,6 +874,10 @@ function parseArguments(arguments_) {
   if (!result.portableRoot) throw new Error("--portable-root is required");
   if (result.resumeProject && !result.resumeProjectDirectory) {
     throw new Error("--resume-project-directory is required when resuming a native project");
+  }
+  if (result.resumeCompletedGeneration
+    && (result.resumeFailedMedia || result.retryFailedPlan || result.designedVisuals || result.planOnly || result.reviewFile)) {
+    throw new Error("--resume-completed-generation cannot be combined with plan, approval, review-file, or failed-generation recovery options");
   }
   if (/(?:groq|mistral)-nvidia|nvidia-writing/iu.test(result.profileId) && !result.credentialFile) {
     throw new Error("--credential-file is required for representative provider acceptance");
@@ -1154,6 +1236,17 @@ function readGenerationStage(projectDirectory, generationId, kind, approvalRevis
     database.close();
   }
   throw new Error(`No successful ${kind} stage exists for generation ${generationId}`);
+}
+
+function readGenerationJobIds(projectDirectory, generationId) {
+  const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
+  try {
+    return database.prepare("SELECT job_id, parameters_json FROM jobs WHERE kind LIKE 'generation.%' ORDER BY job_id").all()
+      .filter((row) => JSON.parse(row.parameters_json).generationId === generationId)
+      .map((row) => row.job_id);
+  } finally {
+    database.close();
+  }
 }
 
 function latestApprovedMediaBranch(projectDirectory, expectedGenerationId) {
