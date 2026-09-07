@@ -16,7 +16,7 @@ import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Protocol, cast
 
 from alystria.project import ProjectStore
@@ -339,6 +339,7 @@ class RendererRuntimePins:
     node: PinnedExecutable
     renderer_cli_path: Path
     renderer_cli_sha256: str
+    renderer_build_sha256: str
     chromium: PinnedExecutable
     ffmpeg: PinnedExecutable
     ffprobe: PinnedExecutable
@@ -347,6 +348,8 @@ class RendererRuntimePins:
     def __post_init__(self) -> None:
         if not SHA256_PATTERN.fullmatch(self.renderer_cli_sha256):
             raise ValueError("Renderer CLI SHA-256 must be 64 lowercase hex characters")
+        if not SHA256_PATTERN.fullmatch(self.renderer_build_sha256):
+            raise ValueError("Renderer build SHA-256 must be 64 lowercase hex characters")
         if not self.renderer_version.strip():
             raise ValueError("Renderer version cannot be blank")
 
@@ -738,6 +741,10 @@ class SubprocessRendererClient:
             "metadata": {
                 "generationId": generation_id,
                 "locale": str(storyboard_value.get("locale", request.get("locale", "en-US"))),
+                # Bind resumable frame caches to the exact installed renderer
+                # program. rendererVersion is intentionally release-facing and
+                # may remain unchanged across a rebuilt recovery runtime.
+                "rendererBuildSha256": self.runtime.renderer_build_sha256,
                 "sourceTimebase": str(request.get("timebase", TICKS_PER_SECOND)),
             },
         }
@@ -1512,6 +1519,7 @@ def create_production_renderer_client(
         chromium = selected_path("Chromium", chromium_path, installed_chromium)
         ffmpeg = selected_path("FFmpeg", ffmpeg_path, installed_ffmpeg)
         ffprobe = selected_path("ffprobe", ffprobe_path, installed_ffprobe)
+        renderer_build_sha256 = _installed_renderer_build_sha256(root, components)
     else:
         # Explicit repository mode remains useful for opt-in renderer smoke tests,
         # but is never inferred by the packaged worker.
@@ -1545,6 +1553,7 @@ def create_production_renderer_client(
         ffprobe_sha256 = _sha256_file(ffprobe)
         renderer_version = _required_string(package, "version")
         cli_sha256 = _sha256_file(cli)
+        renderer_build_sha256 = _repository_renderer_build_sha256(root, cli)
 
     pins = RendererRuntimePins(
         node=PinnedExecutable(
@@ -1555,6 +1564,7 @@ def create_production_renderer_client(
         ),
         renderer_cli_path=cli,
         renderer_cli_sha256=cli_sha256,
+        renderer_build_sha256=renderer_build_sha256,
         chromium=PinnedExecutable(
             chromium,
             chromium_version,
@@ -1614,6 +1624,115 @@ def _sha256_file(path: Path) -> str:
         while chunk := stream.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _safe_runtime_relative_path(value: str, label: str) -> PurePosixPath:
+    relative = PurePosixPath(value.replace("\\", "/"))
+    if (
+        relative.is_absolute()
+        or not relative.parts
+        or any(part in {"", ".", ".."} for part in relative.parts)
+        or ":" in relative.parts[0]
+    ):
+        raise RendererRuntimeError(f"{label} has an unsafe installed path")
+    return relative
+
+
+def _installed_renderer_build_sha256(
+    root: Path,
+    components: Mapping[str, Mapping[str, Any]],
+) -> str:
+    """Hash the verified renderer package ledger, not only its CLI entrypoint."""
+
+    cli = components["renderer-cli"]
+    cli_relative = _safe_runtime_relative_path(
+        _required_string(cli, "relativePath"), "Runtime component 'renderer-cli'"
+    )
+    renderer_prefix = (
+        cli_relative.parts[:-3]
+        if cli_relative.parts[-3:] == ("dist", "src", "cli.js")
+        else ()
+    )
+    prefix_text = "/".join(renderer_prefix) + "/" if renderer_prefix else ""
+    selected: list[tuple[str, str]] = []
+    seen_paths: set[str] = set()
+    for component_id, component in components.items():
+        raw_relative = _required_string(component, "relativePath")
+        normalized = raw_relative.replace("\\", "/")
+        if renderer_prefix:
+            if not normalized.startswith(prefix_text):
+                continue
+        elif component_id != "renderer-cli":
+            continue
+        relative = _safe_runtime_relative_path(
+            raw_relative, f"Runtime component {component_id!r}"
+        )
+        if renderer_prefix and relative.parts[: len(renderer_prefix)] != renderer_prefix:
+            raise RendererRuntimeError(
+                f"Runtime component {component_id!r} escapes the renderer package"
+            )
+        relative_text = relative.as_posix()
+        if relative_text in seen_paths:
+            raise RendererRuntimeError(
+                f"Runtime renderer components share installed path {relative_text!r}"
+            )
+        seen_paths.add(relative_text)
+        expected_sha256 = _required_string(component, "sha256")
+        if not SHA256_PATTERN.fullmatch(expected_sha256):
+            raise RendererRuntimeError(
+                f"Runtime component {component_id!r} has an invalid SHA-256"
+            )
+        candidate = root.joinpath(*relative.parts)
+        try:
+            resolved = candidate.resolve(strict=True)
+            resolved.relative_to(root)
+        except (OSError, ValueError) as error:
+            raise RendererRuntimeError(
+                f"Runtime component {component_id!r} escapes its verified pack"
+            ) from error
+        label = (
+            "renderer CLI"
+            if component_id == "renderer-cli"
+            else f"renderer component {component_id!r}"
+        )
+        _verify_regular_file(candidate, label, expected_sha256)
+        selected.append((relative_text, expected_sha256))
+    if cli_relative.as_posix() not in seen_paths:
+        raise RendererRuntimeError("Renderer build ledger does not include its CLI entrypoint")
+    return hashlib.sha256(_canonical_json(sorted(selected)).encode("utf-8")).hexdigest()
+
+
+def _repository_renderer_build_sha256(root: Path, cli: Path) -> str:
+    """Fingerprint first-party JavaScript loaded by the repository renderer."""
+
+    renderer_root = root / "services" / "renderer"
+    scenes_root = root / "packages" / "scenes"
+    candidates = [renderer_root / "package.json", scenes_root / "package.json"]
+    candidates.extend((renderer_root / "dist" / "src").rglob("*.js"))
+    candidates.extend((scenes_root / "dist").rglob("*.js"))
+    selected: list[tuple[str, str]] = []
+    seen: set[Path] = set()
+    for candidate in sorted(candidates, key=lambda path: path.as_posix()):
+        try:
+            info = candidate.lstat()
+            resolved = candidate.resolve(strict=True)
+            resolved.relative_to(root)
+        except (OSError, ValueError) as error:
+            raise RendererRuntimeError(
+                f"Repository renderer build input is unavailable or escapes its root: {candidate}"
+            ) from error
+        if candidate.is_symlink() or not candidate.is_file() or info.st_size <= 0:
+            raise RendererRuntimeError(
+                f"Repository renderer build input must be a non-empty regular file: {candidate}"
+            )
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        selected.append((resolved.relative_to(root).as_posix(), _sha256_file(resolved)))
+    resolved_cli = cli.resolve(strict=True)
+    if resolved_cli not in seen:
+        raise RendererRuntimeError("Repository renderer CLI is outside the built renderer program")
+    return hashlib.sha256(_canonical_json(selected).encode("utf-8")).hexdigest()
 
 
 def _verify_regular_file(path: Path, label: str, expected_sha256: str) -> None:

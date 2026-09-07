@@ -61,6 +61,7 @@ def runtime_pins(root: Path) -> RendererRuntimePins:
         node=PinnedExecutable(node, "24.20.0", digest(node), ("--version",)),
         renderer_cli_path=cli,
         renderer_cli_sha256=digest(cli),
+        renderer_build_sha256=digest(cli),
         chromium=PinnedExecutable(
             chromium,
             "151.0.7922.34",
@@ -492,6 +493,7 @@ def test_subprocess_renderer_retry_reuses_interrupted_attempt_cache(tmp_path: Pa
         def __init__(self, runtime: RendererRuntimePins) -> None:
             super().__init__(runtime)
             self.render_attempts: list[Path] = []
+            self.renderer_builds: list[str] = []
 
         def run(
             self,
@@ -503,6 +505,8 @@ def test_subprocess_renderer_retry_reuses_interrupted_attempt_cache(tmp_path: Pa
         ) -> CommandResult:
             if len(argv) > 2 and argv[2] == "render":
                 self.render_attempts.append(cwd)
+                manifest = json.loads(Path(argv[3]).read_text(encoding="utf-8"))
+                self.renderer_builds.append(manifest["metadata"]["rendererBuildSha256"])
                 marker = cwd / "output" / ".render-cache" / "fixture" / "captured-frame.png"
                 if len(self.render_attempts) == 1:
                     marker.parent.mkdir(parents=True, exist_ok=True)
@@ -538,6 +542,7 @@ def test_subprocess_renderer_retry_reuses_interrupted_attempt_cache(tmp_path: Pa
         assert rendered.content == b"deterministic-delivery"
         assert len(runner.render_attempts) == 2
         assert runner.render_attempts[0] == runner.render_attempts[1]
+        assert runner.renderer_builds == [pins.renderer_build_sha256] * 2
         assert not runner.render_attempts[1].exists(), "successful retry must clean staging"
     finally:
         store.close()
@@ -1230,7 +1235,11 @@ def installed_pack(root: Path) -> tuple[Path, dict[str, Path]]:
         "ffprobe": "9.0.1",
     }
     for component_id, version in versions.items():
-        path = root / "components" / component_id
+        path = (
+            root / "renderer" / "dist" / "src" / "cli.js"
+            if component_id == "renderer-cli"
+            else root / "components" / component_id
+        )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(f"installed-{component_id}".encode())
         paths[component_id] = path.resolve()
@@ -1247,6 +1256,23 @@ def installed_pack(root: Path) -> tuple[Path, dict[str, Path]]:
                 "optional": False,
             }
         )
+    scene_renderer = root / "renderer" / "node_modules" / "@alystria" / "scenes" / "dist" / "renderers.js"
+    scene_renderer.parent.mkdir(parents=True, exist_ok=True)
+    scene_renderer.write_bytes(b"installed-scene-renderers-v1")
+    paths["scene-renderers"] = scene_renderer.resolve()
+    components.append(
+        {
+            "id": "payload-scene-renderers",
+            "version": "2.0.0-rc.0",
+            "target": "any",
+            "relativePath": scene_renderer.relative_to(root).as_posix(),
+            "url": "https://runtime.invalid/payload-scene-renderers",
+            "sha256": digest(scene_renderer),
+            "sizeBytes": scene_renderer.stat().st_size,
+            "license": "MIT",
+            "optional": False,
+        }
+    )
     manifest = {
         "schemaVersion": 1,
         "channel": "test",
@@ -1277,9 +1303,59 @@ def test_installed_pack_factory_needs_no_repository_or_package_json(tmp_path: Pa
         )
         assert client.runtime.node.path == paths["node"]
         assert client.runtime.renderer_cli_path == paths["renderer-cli"]
+        assert client.runtime.renderer_build_sha256 != client.runtime.renderer_cli_sha256
         assert client.runtime.chromium.version == "151.0.7922.34"
         assert client.runtime.renderer_version == "2.0.0-rc.0"
         assert not (pack_root / "package.json").exists()
+    finally:
+        store.close()
+
+
+def test_installed_renderer_build_fingerprint_tracks_scene_bundle_not_only_cli(
+    tmp_path: Path,
+) -> None:
+    pack_root = tmp_path / "pack"
+    pack_root.mkdir()
+    manifest_path, paths = installed_pack(pack_root)
+    store = ProjectStore.create(tmp_path / "project", name="Renderer build cache")
+    try:
+        initial = create_production_renderer_client(
+            store,
+            runtime_pack_root=pack_root,
+            runtime_manifest_path=manifest_path,
+        )
+        initial_cli_sha256 = initial.runtime.renderer_cli_sha256
+        initial_build_sha256 = initial.runtime.renderer_build_sha256
+
+        scene_renderer = paths["scene-renderers"]
+        scene_renderer.write_bytes(b"installed-scene-renderers-v2")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        scene_component = next(
+            item for item in manifest["components"] if item["id"] == "payload-scene-renderers"
+        )
+        scene_component["sha256"] = digest(scene_renderer)
+        scene_component["sizeBytes"] = scene_renderer.stat().st_size
+        manifest_path.write_text(canonical(manifest), encoding="utf-8")
+
+        rebuilt = create_production_renderer_client(
+            store,
+            runtime_pack_root=pack_root,
+            runtime_manifest_path=manifest_path,
+        )
+        assert rebuilt.runtime.renderer_cli_sha256 == initial_cli_sha256
+        assert rebuilt.runtime.renderer_build_sha256 != initial_build_sha256
+
+        first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
+        second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")
+        runner = FakeRendererRunner(rebuilt.runtime)
+        SubprocessRendererClient(store, rebuilt.runtime, runner=runner).render(
+            render_request(first.hash, second.hash)
+        )
+        assert runner.render_manifest is not None
+        assert (
+            runner.render_manifest["metadata"]["rendererBuildSha256"]
+            == rebuilt.runtime.renderer_build_sha256
+        )
     finally:
         store.close()
 
