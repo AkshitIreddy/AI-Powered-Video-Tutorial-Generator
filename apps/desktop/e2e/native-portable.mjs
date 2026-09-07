@@ -14,6 +14,7 @@ const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 class PlanOnlyCompletion extends Error {}
+class PolicyRetryOnlyCompletion extends Error {}
 
 const parsed = parseArguments(process.argv.slice(2));
 const portableRoot = path.resolve(parsed.portableRoot);
@@ -26,6 +27,7 @@ const stdoutPath = path.join(portableRoot, "Logs", "native-ui.stdout.log");
 const stderrPath = path.join(portableRoot, "Logs", "native-ui.stderr.log");
 const reportPath = path.join(evidenceRoot, "report.json");
 const planReportPath = path.join(evidenceRoot, "plan-report.json");
+const policyRetryReportPath = path.join(evidenceRoot, "policy-retry-report.json");
 const failurePath = path.join(evidenceRoot, "failure.json");
 const ffprobePath = path.join(portableRoot, "Runtime", "ffmpeg", "ffprobe.exe");
 const projectTitle = titleFromTopic(parsed.topic);
@@ -51,6 +53,7 @@ await mkdir(evidenceRoot, { recursive: true });
 await rotateExistingPath(readyPath);
 await rotateExistingPath(stdoutPath);
 await rotateExistingPath(stderrPath);
+await rotateExistingPath(policyRetryReportPath);
 const port = await reservePort();
 const stdout = await open(stdoutPath, "w");
 const stderr = await open(stderrPath, "w");
@@ -135,7 +138,7 @@ try {
       await page.screenshot({ path: path.join(evidenceRoot, "02-designed-visual-mode.png"), fullPage: true });
       await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^plan$/i }).click();
     }
-    if ((parsed.resumeFailedMedia || parsed.resumeCompletedGeneration)
+    if ((parsed.resumeFailedMedia || parsed.resumeCompletedGeneration || parsed.retryPolicyExport)
       && !(await page.getByRole("heading", { name: /shape the learning journey/i }).isVisible())) {
       await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^plan$/i }).click();
     }
@@ -163,10 +166,10 @@ try {
         }
       }
     }
-    planningApproval = parsed.resumeFailedMedia || parsed.resumeCompletedGeneration
+    planningApproval = parsed.resumeFailedMedia || parsed.resumeCompletedGeneration || parsed.retryPolicyExport
       ? { generationId: recoveredGenerationId }
       : await waitForPlanningApproval(recovered.project.nativeProjectDirectory, recovered.generationJob.id, parsed.jobTimeoutMs);
-    if (parsed.resumeFailedMedia || parsed.resumeCompletedGeneration) {
+    if (parsed.resumeFailedMedia || parsed.resumeCompletedGeneration || parsed.retryPolicyExport) {
       priorApprovedMediaBranch = latestApprovedMediaBranch(recovered.project.nativeProjectDirectory, recoveredGenerationId);
     }
   } else {
@@ -210,7 +213,7 @@ try {
   const planProject = await persistedProject(page, activeProjectIdentity);
   const planningJob = await jobCardById(page, jobs, planProject.generationJob.id);
   await expect(planningJob).toContainText(
-    parsed.resumeCompletedGeneration ? "succeeded" : parsed.resumeFailedMedia ? "failed" : "blocked",
+    parsed.resumeCompletedGeneration ? "succeeded" : parsed.resumeFailedMedia || parsed.retryPolicyExport ? "failed" : "blocked",
     { timeout: parsed.actionTimeoutMs },
   );
   await page.screenshot({
@@ -218,7 +221,8 @@ try {
       evidenceRoot,
       parsed.resumeCompletedGeneration
         ? "03-native-generation-recovered.png"
-        : parsed.resumeFailedMedia ? "03-native-media-revision.png" : "03-native-plan-blocked.png",
+        : parsed.retryPolicyExport ? "03-native-policy-retry.png"
+          : parsed.resumeFailedMedia ? "03-native-media-revision.png" : "03-native-plan-blocked.png",
     ),
     fullPage: true,
   });
@@ -252,11 +256,105 @@ try {
   let reviewedProject;
   let generationJob;
   let approvedMediaBranch;
-  if (parsed.resumeCompletedGeneration) {
+  if (parsed.resumeCompletedGeneration || parsed.retryPolicyExport) {
     reviewedProject = planProject;
     generationJob = planningJob;
     approvedMediaBranch = priorApprovedMediaBranch;
     if (!approvedMediaBranch) throw new Error("The completed generation has no durable approved-media branch");
+    if (parsed.retryPolicyExport) {
+      const retryPreflight = assertPrivateLicenseOnlyExportFailure(
+        reviewedProject.project.nativeProjectDirectory,
+        approvedMediaBranch,
+      );
+      const generationJobIdsBeforeRetry = readGenerationJobIds(
+        reviewedProject.project.nativeProjectDirectory,
+        reviewedProject.project.nativeGenerationId,
+      );
+      const mediaFingerprintBeforeRetry = readGenerationMediaFingerprint(
+        reviewedProject.project.nativeProjectDirectory,
+        approvedMediaBranch,
+      );
+      const usageRecordIdsBeforeRetry = readUsageRecordIds(reviewedProject.project.nativeProjectDirectory);
+      await planningJob.getByRole("button", { name: /retry creating learning plan/i }).click();
+      await waitForExactJobRetryStart(
+        reviewedProject.project.nativeProjectDirectory,
+        retryPreflight.exportJobId,
+        retryPreflight.exportAttemptCount,
+        parsed.actionTimeoutMs,
+      );
+      const finalBranchStage = await waitForApprovedBranchCompletion(
+        reviewedProject.project.nativeProjectDirectory,
+        approvedMediaBranch,
+        parsed.jobTimeoutMs,
+      );
+      if (finalBranchStage?.state !== "SUCCEEDED") {
+        throw new Error(`Policy-only retry export finished in ${finalBranchStage?.state ?? "an unknown state"}: ${finalBranchStage?.message ?? "no durable error"}`);
+      }
+      await waitForProjectGenerationState(
+        page,
+        activeProjectIdentity.projectId,
+        ["SUCCEEDED"],
+        parsed.actionTimeoutMs,
+      );
+      await expect(generationJob).toHaveClass(/complete/, { timeout: parsed.actionTimeoutMs });
+      await expect(generationJob).toContainText("succeeded");
+      const persistedSceneDurations = await assertPersistedSceneDurationsMatchRenderWindows(
+        page,
+        activeProjectIdentity,
+        reviewedProject.project.nativeProjectDirectory,
+        approvedMediaBranch,
+        parsed.actionTimeoutMs,
+      );
+      const generationJobIdsAfterRetry = readGenerationJobIds(
+        reviewedProject.project.nativeProjectDirectory,
+        reviewedProject.project.nativeGenerationId,
+      );
+      const mediaFingerprintAfterRetry = readGenerationMediaFingerprint(
+        reviewedProject.project.nativeProjectDirectory,
+        approvedMediaBranch,
+      );
+      const usageRecordIdsAfterRetry = readUsageRecordIds(reviewedProject.project.nativeProjectDirectory);
+      if (JSON.stringify(mediaFingerprintAfterRetry) !== JSON.stringify(mediaFingerprintBeforeRetry)) {
+        throw new Error("Policy-only retry changed or reran an existing media-generation stage");
+      }
+      if (JSON.stringify(usageRecordIdsAfterRetry) !== JSON.stringify(usageRecordIdsBeforeRetry)) {
+        throw new Error("Policy-only retry incurred new provider or local-model usage");
+      }
+      const addedGenerationJobIds = generationJobIdsAfterRetry.filter((jobId) => !generationJobIdsBeforeRetry.includes(jobId));
+      const addedGenerationKinds = readGenerationJobKinds(
+        reviewedProject.project.nativeProjectDirectory,
+        addedGenerationJobIds,
+      );
+      if (addedGenerationKinds.some((kind) => !["generation.qa_final", "generation.export"].includes(kind))) {
+        throw new Error(`Policy-only retry submitted unexpected generation stages: ${JSON.stringify(addedGenerationKinds)}`);
+      }
+      const policyRetryReport = {
+        schemaVersion: 1,
+        state: "passed",
+        actualNativeWebView: true,
+        hiddenLaunch: true,
+        projectId: reviewedProject.project.nativeProjectId,
+        projectDirectory: reviewedProject.project.nativeProjectDirectory,
+        generationId: reviewedProject.project.nativeGenerationId,
+        approvalRevisionId: approvedMediaBranch.approvalRevisionId,
+        retryPreflight,
+        generationJobIdsBeforeRetry,
+        generationJobIdsAfterRetry,
+        addedGenerationJobIds,
+        addedGenerationKinds,
+        mediaFingerprintBeforeRetry,
+        mediaFingerprintAfterRetry,
+        usageRecordIdsBeforeRetry,
+        usageRecordIdsAfterRetry,
+        persistedSceneDurations,
+        completedAtUtc: new Date().toISOString(),
+      };
+      await page.screenshot({ path: path.join(evidenceRoot, "04-native-policy-retry-complete.png"), fullPage: true });
+      await writeFile(policyRetryReportPath, `${JSON.stringify(policyRetryReport, null, 2)}\n`, "utf8");
+      completed = true;
+      process.stdout.write(`${JSON.stringify(policyRetryReport, null, 2)}\n`);
+      throw new PolicyRetryOnlyCompletion();
+    }
     if (receiptState(reviewedProject.generationJob) !== "SUCCEEDED") {
       throw new Error(`--resume-completed-generation requires a SUCCEEDED native generation, found ${receiptState(reviewedProject.generationJob) ?? "an unknown state"}`);
     }
@@ -712,7 +810,7 @@ try {
   if (pageErrors.length || consoleErrors.length) throw new Error(`Native WebView emitted errors: ${JSON.stringify({ pageErrors, consoleErrors })}`);
   completed = true;
 } catch (error) {
-  if (error instanceof PlanOnlyCompletion) {
+  if (error instanceof PlanOnlyCompletion || error instanceof PolicyRetryOnlyCompletion) {
     // The plan-only mode intentionally stops at the durable approval gate.
   } else {
   workError = error;
@@ -772,6 +870,7 @@ try {
   if (!completed || closeError) {
     await rotateExistingPath(reportPath, "rejected");
     await rotateExistingPath(planReportPath, "rejected");
+    await rotateExistingPath(policyRetryReportPath, "rejected");
   }
   if (closeError && !workError) throw closeError;
 }
@@ -810,6 +909,7 @@ function parseArguments(arguments_) {
     retryFailedPlan: false,
     resumeFailedMedia: false,
     resumeCompletedGeneration: false,
+    retryPolicyExport: false,
     designedVisuals: false,
     expectedNarrationCacheHits: null,
     reviewFile: null,
@@ -842,6 +942,11 @@ function parseArguments(arguments_) {
     if (name === "--resume-completed-generation") {
       result.resumeProject = true;
       result.resumeCompletedGeneration = true;
+      continue;
+    }
+    if (name === "--retry-policy-export") {
+      result.resumeProject = true;
+      result.retryPolicyExport = true;
       continue;
     }
     if (name === "--designed-visuals") {
@@ -878,6 +983,10 @@ function parseArguments(arguments_) {
   if (result.resumeCompletedGeneration
     && (result.resumeFailedMedia || result.retryFailedPlan || result.designedVisuals || result.planOnly || result.reviewFile)) {
     throw new Error("--resume-completed-generation cannot be combined with plan, approval, review-file, or failed-generation recovery options");
+  }
+  if (result.retryPolicyExport
+    && (result.resumeCompletedGeneration || result.resumeFailedMedia || result.retryFailedPlan || result.designedVisuals || result.planOnly || result.reviewFile)) {
+    throw new Error("--retry-policy-export cannot be combined with generation, plan, approval, review-file, or failed-generation recovery options");
   }
   if (/(?:groq|mistral)-nvidia|nvidia-writing/iu.test(result.profileId) && !result.credentialFile) {
     throw new Error("--credential-file is required for representative provider acceptance");
@@ -1247,6 +1356,173 @@ function readGenerationJobIds(projectDirectory, generationId) {
   } finally {
     database.close();
   }
+}
+
+function readGenerationJobKinds(projectDirectory, jobIds) {
+  if (jobIds.length === 0) return [];
+  const wanted = new Set(jobIds);
+  const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
+  try {
+    return database.prepare("SELECT job_id, kind FROM jobs WHERE kind LIKE 'generation.%' ORDER BY job_id").all()
+      .filter((row) => wanted.has(row.job_id))
+      .map((row) => row.kind);
+  } finally {
+    database.close();
+  }
+}
+
+function readUsageRecordIds(projectDirectory) {
+  const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
+  try {
+    return database.prepare("SELECT usage_id FROM usage_records ORDER BY usage_id").all().map((row) => row.usage_id);
+  } finally {
+    database.close();
+  }
+}
+
+function branchGenerationRows(database, approvedBranch) {
+  return database.prepare("SELECT job_id, kind, state, attempt_count, parameters_json, result_json, error_json FROM jobs WHERE kind LIKE 'generation.%' ORDER BY created_at DESC").all()
+    .filter((row) => {
+      const parameters = JSON.parse(row.parameters_json);
+      return parameters.generationId === approvedBranch.generationId
+        && parameters.approvalRevisionId === approvedBranch.approvalRevisionId;
+    });
+}
+
+function assertPrivateLicenseOnlyExportFailure(projectDirectory, approvedBranch) {
+  const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
+  try {
+    const rows = branchGenerationRows(database, approvedBranch);
+    const exportJob = rows.find((row) => row.kind === "generation.export");
+    const qaJob = rows.find((row) => row.kind === "generation.qa_final");
+    if (exportJob?.state !== "FAILED" || !exportJob.error_json) {
+      throw new Error("Policy-only retry requires an exact failed generation.export stage");
+    }
+    const exportError = JSON.parse(exportJob.error_json);
+    if (exportError.code !== "TASK_FAILED"
+      || exportError.exceptionType !== "ExportQualityGateError"
+      || exportError.message !== "Export blocked after 2 automatic repair attempts: export.license") {
+      throw new Error(`Policy-only retry rejected an unexpected export failure: ${JSON.stringify(exportError)}`);
+    }
+    if (qaJob?.state !== "SUCCEEDED" || !qaJob.result_json) {
+      throw new Error("Policy-only retry requires the exact successful final QA evidence stage");
+    }
+    const qaResult = JSON.parse(qaJob.result_json);
+    const qualityGate = qaResult.payload?.qualityGate;
+    const findings = qualityGate?.findings;
+    if (qualityGate?.status !== "BLOCKED" || !Array.isArray(findings) || findings.length === 0
+      || findings.some((finding) => finding.code !== "export.license" || finding.severity !== "CRITICAL")) {
+      throw new Error("Policy-only retry requires only critical export.license findings");
+    }
+    const parameters = JSON.parse(exportJob.parameters_json);
+    const requestMetadata = parameters.request?.metadata ?? {};
+    const distributionPurpose = requestMetadata.distributionPurpose ?? "private";
+    const projectMeta = database.prepare("SELECT settings_json FROM project_meta WHERE singleton = 1").get();
+    const projectSettings = JSON.parse(projectMeta?.settings_json ?? "{}");
+    if (distributionPurpose !== "private" || projectSettings.privacyClassification !== "private") {
+      throw new Error(`Policy-only retry requires a private project, found ${JSON.stringify({ distributionPurpose, privacyClassification: projectSettings.privacyClassification ?? null })}`);
+    }
+    const mediaKinds = ["generation.assets", "generation.narration", "generation.captions", "generation.presenter", "generation.render"];
+    const mediaRows = mediaKinds.map((kind) => rows.find((row) => row.kind === kind));
+    if (mediaRows.some((row) => row?.state !== "SUCCEEDED" || !row.result_json)) {
+      throw new Error("Policy-only retry requires every existing media stage to be durably SUCCEEDED");
+    }
+    const provenanceRecords = qaResult.payload?.candidate?.provenanceRecords ?? [];
+    const offendingProvenance = provenanceRecords.filter((record) => record.licenseId === "LicenseRef-NVIDIA-AI-FOUNDATION-MODELS");
+    const findingPrefixes = new Set(findings.map((finding) => finding.location?.replace(/^scene-narration:/u, "")));
+    if (offendingProvenance.length !== findings.length
+      || offendingProvenance.some((record) => record.providerId !== "nvidia-nim"
+        || record.modelRevision !== "nvidia/magpie-tts-multilingual"
+        || !findingPrefixes.has(record.sha256?.slice(0, 16))
+        || record.assetId !== `scene-narration:${record.sha256?.slice(0, 16)}`)) {
+      throw new Error("Policy-only retry license findings did not map exactly to NVIDIA NIM narration provenance");
+    }
+    return {
+      exportJobId: exportJob.job_id,
+      exportAttemptCount: exportJob.attempt_count,
+      exportError: { code: exportError.code, exceptionType: exportError.exceptionType, message: exportError.message },
+      qaJobId: qaJob.job_id,
+      qualityGateStatus: qualityGate.status,
+      findingCodes: findings.map((finding) => finding.code),
+      distributionPurpose,
+      distributionPurposeExplicit: Object.hasOwn(requestMetadata, "distributionPurpose"),
+      privacyClassification: projectSettings.privacyClassification,
+      offendingProvenance: offendingProvenance.map((record) => ({
+        assetId: record.assetId,
+        sha256: record.sha256,
+        licenseId: record.licenseId,
+        providerId: record.providerId,
+        modelRevision: record.modelRevision,
+      })),
+    };
+  } finally {
+    database.close();
+  }
+}
+
+function readGenerationMediaFingerprint(projectDirectory, approvedBranch) {
+  const mediaKinds = new Set(["generation.assets", "generation.narration", "generation.captions", "generation.presenter", "generation.render"]);
+  const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
+  try {
+    return branchGenerationRows(database, approvedBranch)
+      .filter((row) => mediaKinds.has(row.kind))
+      .map((row) => {
+        const result = JSON.parse(row.result_json);
+        return {
+          jobId: row.job_id,
+          kind: row.kind,
+          state: row.state,
+          attemptCount: row.attempt_count,
+          stageArtifactHash: result.artifactHash,
+          renderArtifactHash: result.payload?.candidate?.renderArtifactHash ?? null,
+        };
+      })
+      .sort((left, right) => left.kind.localeCompare(right.kind));
+  } finally {
+    database.close();
+  }
+}
+
+async function waitForExactJobRetryStart(projectDirectory, jobId, previousAttemptCount, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
+    try {
+      const row = database.prepare("SELECT state, attempt_count FROM jobs WHERE job_id = ?").get(jobId);
+      if (row && (row.state !== "FAILED" || row.attempt_count > previousAttemptCount)) return;
+    } catch (error) {
+      if (!/database is locked/iu.test(error instanceof Error ? error.message : String(error))) throw error;
+    } finally {
+      database.close();
+    }
+    await delay(250);
+  }
+  throw new Error(`Timed out waiting for exact policy-only retry job ${jobId} to leave its prior failed receipt`);
+}
+
+async function assertPersistedSceneDurationsMatchRenderWindows(page, identity, projectDirectory, approvedBranch, timeoutMs) {
+  const render = readGenerationStage(projectDirectory, approvedBranch.generationId, "generation.render", approvedBranch.approvalRevisionId);
+  const windows = render.payload?.candidate?.renderSceneWindows;
+  if (!Array.isArray(windows) || windows.length === 0) {
+    throw new Error("The successful render stage has no authoritative scene windows");
+  }
+  const expected = windows.map((window) => ({
+    sceneId: window.sceneId,
+    durationSeconds: (window.endTicks - window.startTicks) / 240_000,
+  }));
+  let actual = [];
+  await expect.poll(async () => {
+    actual = (await persistedProject(page, identity)).project.scenes?.map((scene) => ({
+      sceneId: scene.id,
+      durationSeconds: scene.durationSeconds ?? scene.duration,
+    })) ?? [];
+    return expected.every((item) => {
+      const scene = actual.find((candidate) => candidate.sceneId === item.sceneId);
+      return Number.isFinite(scene?.durationSeconds)
+        && Math.abs(scene.durationSeconds - item.durationSeconds) <= (1 / 30);
+    });
+  }, { timeout: timeoutMs }).toBe(true);
+  return { expected, actual };
 }
 
 function latestApprovedMediaBranch(projectDirectory, expectedGenerationId) {
