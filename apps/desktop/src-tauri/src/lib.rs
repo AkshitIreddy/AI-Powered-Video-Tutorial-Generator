@@ -128,7 +128,7 @@ fn desktop_shutdown(app: tauri::AppHandle, state: tauri::State<'_, AppState>) {
     // The webview invokes this only after its pending durable saves finish.
     // Stop the supervised child before ending the process so a normal window
     // close cannot strand the worker or discard a final checkpoint.
-    state.worker.stop();
+    state.worker.close();
     app.exit(0);
 }
 
@@ -216,7 +216,7 @@ pub fn run() {
         .expect("AI Video Tutorial Generator desktop runtime failed");
     app.run(|app_handle, event| {
         if matches!(&event, tauri::RunEvent::ExitRequested { .. }) {
-            app_handle.state::<AppState>().worker.stop();
+            app_handle.state::<AppState>().worker.close();
         }
     });
 }

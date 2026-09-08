@@ -95,6 +95,7 @@ pub struct WorkerSupervisor {
     credentials: Option<Arc<CredentialManager>>,
     lifecycle: Mutex<WorkerLifecycle>,
     shutdown: Mutex<()>,
+    closed: AtomicBool,
 }
 
 impl std::fmt::Debug for WorkerSupervisor {
@@ -149,6 +150,7 @@ impl WorkerSupervisor {
             credentials: None,
             lifecycle: Mutex::new(lifecycle),
             shutdown: Mutex::new(()),
+            closed: AtomicBool::new(false),
         }
     }
 
@@ -181,6 +183,9 @@ impl WorkerSupervisor {
     pub fn start(&self) -> Result<WorkerStatus, CommandError> {
         {
             let mut lifecycle = self.lifecycle.lock();
+            if self.closed.load(Ordering::Acquire) {
+                return Err(CommandError::worker("The desktop is shutting down.", false));
+            }
             match &*lifecycle {
                 WorkerLifecycle::Unavailable(reason) => {
                     return Err(CommandError::worker(reason.clone(), true));
@@ -217,6 +222,9 @@ impl WorkerSupervisor {
             });
 
         let mut lifecycle = self.lifecycle.lock();
+        if self.closed.load(Ordering::Acquire) {
+            return Err(CommandError::worker("The desktop is shutting down.", false));
+        }
         if !matches!(*lifecycle, WorkerLifecycle::Starting) {
             return Ok(lifecycle.status());
         }
@@ -266,6 +274,14 @@ impl WorkerSupervisor {
             }
             _ => *self.lifecycle.lock() = WorkerLifecycle::Stopped,
         }
+    }
+
+    /// Permanently close this supervisor before desktop exit. Ordinary stop
+    /// remains restartable, but late WebView polling must not revive a child
+    /// after the application's final teardown has completed.
+    pub fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.stop();
     }
 
     pub fn call(&self, method: &str, payload: Value) -> Result<Value, CommandError> {
@@ -1359,6 +1375,7 @@ mod tests {
                 _credential_broker: None,
             })),
             shutdown: Mutex::new(()),
+            closed: AtomicBool::new(false),
         });
         let calling_supervisor = supervisor.clone();
         let call = std::thread::spawn(move || calling_supervisor.call("system.ping", Value::Null));
@@ -1369,7 +1386,7 @@ mod tests {
         let stopping_supervisor = supervisor.clone();
         let first_stop = std::thread::spawn(move || {
             let started = Instant::now();
-            stopping_supervisor.stop();
+            stopping_supervisor.close();
             started.elapsed()
         });
         let state_deadline = Instant::now() + Duration::from_secs(1);
@@ -1394,5 +1411,16 @@ mod tests {
         assert!(call.join().unwrap().is_ok());
         server.join().unwrap();
         assert!(matches!(supervisor.status(), WorkerStatus::Stopped));
+        for result in [
+            supervisor.start(),
+            supervisor.restart(),
+            supervisor
+                .call("system.ping", Value::Null)
+                .map(|_| supervisor.status()),
+        ] {
+            let error = result.expect_err("Late polling must not restart a closed desktop worker");
+            assert_eq!(error.message, "The desktop is shutting down.");
+            assert!(!error.retryable);
+        }
     }
 }
