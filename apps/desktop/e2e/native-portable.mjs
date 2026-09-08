@@ -600,6 +600,21 @@ try {
   await page.getByRole("button", { name: /^edit tracks & timing/i }).click();
   let editor = page.getByRole("dialog", { name: "Integrated advanced video editor" });
   await expect(editor).toBeVisible({ timeout: parsed.actionTimeoutMs });
+  const mediaBin = editor.locator(".aly-editor-media-bin");
+  const libraryToggle = mediaBin.getByRole("checkbox", { name: /Show unlinked library references/u });
+  await expect(libraryToggle).not.toBeChecked();
+  const visibleProjectMedia = await mediaBin.getByRole("listitem").count();
+  await expect(mediaBin.getByRole("listitem").first()).toContainText("ready");
+  await libraryToggle.check();
+  const expandedProjectMedia = await mediaBin.getByRole("listitem").count();
+  if (expandedProjectMedia <= visibleProjectMedia) throw new Error("Unlinked catalog references were not preserved");
+  await libraryToggle.uncheck();
+  if (parsed.requirePresenter) {
+    const portrait = mediaBin.getByRole("listitem").filter({ hasText: "Elena · news anchor" }).first();
+    await expect(portrait).toContainText("image · Still image");
+    await expect.poll(() => portrait.locator("img").evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+  }
+  await mediaBin.screenshot({ path: path.join(evidenceRoot, "07a-usable-project-media.png") });
   await editor.getByLabel("Rights for new editor media").selectOption("owned");
   let importedCard = editor.getByRole("listitem").filter({ hasText: importedImageName }).first();
   const importedImageReused = await importedCard.count() > 0;
@@ -908,6 +923,9 @@ try {
       documentExports,
       importedImageName,
       importedImageReused,
+      visibleProjectMedia,
+      unlinkedCatalogReferences: expandedProjectMedia - visibleProjectMedia,
+      verifiedPortraitThumbnail: parsed.requirePresenter,
       importedImageAssetProtocolUrl: reloadedAssetUrl,
       importedImagePlacement: "media-bin-only",
       editedTitle,
