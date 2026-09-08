@@ -398,3 +398,48 @@ frame-accurate seeking or pixel-identical font metrics in the packaged app.
 The later imported-video audit corrected a preview/export mismatch: slide and presenter source audio now follows the same track mute/solo and clip-mute policy in both paths. The inspector exposes source gain and mute, and audible gain automation is retained. Native export probes each verified source before referencing its audio stream, so a silent video remains a valid visual input and produces an explicit warning instead of an invalid FFmpeg graph. Both media inspection and export use hidden Windows subprocesses. The updated editor suite passes 50 tests; the subsequent focused source-audio/manifest run passes 15, and nine Python export/service tests include actual audio-bearing and silent-video renders plus a Windows process-flag regression. The accepted short packaged journey now confirms real import, reload, programme-audio playback, waveform analysis, and VP9/Opus export for an audio-bearing WebM.
 
 Focused reducer, adapter, browser bridge, manifest, native bridge, waveform, and React interaction tests cover trim limits, cross-role moves, source-preserving extract, linked reorder, transcript edits, speed, undo/redo, binding precedence/source intervals, saved-document binding merges, programme audio preservation, reviewed generated-asset provenance, durable import, downloads, document validation, OTIO references, job-result validation, waveform source cropping, and callback delivery. Before the source-audio additions above, the editor suite passed 47 tests; desktop TypeScript and editor ESLint also passed. Focused pipeline tests covering render dispatch, bindings, imports, asset resolution, and waveform derivation pass, with Ruff and strict Mypy clean. The waveform proof uses a known two-second PCM source with silence followed by a 220 Hz tone, verifies that the signal half has over eight times the plotted peak pixels, proves the audio-stream duration wins over a longer container duration, rejects silent video, and proves the source-hash/profile cache is reused unchanged. A checked-in real pinned-FFmpeg test produces a VP9/Opus delivery from CAS-bound video, decodes ten output frames, verifies animated x/scale/rotation/opacity at the first, middle, and last frames, detects rendered title and caption pixels, confirms preserved source audio, and validates the matching WebVTT/SRT caption cues. The accepted short packaged Windows/WebView evidence is recorded above; only the edited three-minute tutorial remains outside this editor acceptance scope.
+
+
+## September 8 decoded-delivery rejection and correction
+
+The full ac3594c native run completed the editor workflow with peak FFmpeg RSS
+1.169 GiB and normal worker shutdown. Independent decoded-media inspection then
+rejected its output: 180 seconds of video contained only 56.3547 seconds of
+clipping, overlapping narration. The opening test title also collided with
+captions. A successful job/container-duration assertion was insufficient.
+
+Commit ce0a6c0 rebases the audio sample clock after each delay, uses 48 kHz sample
+placement, avoids unnecessary unit-speed time stretching, and preserves timeline
+gaps. Four real FFmpeg regressions reproduce the failure and pass with the fix.
+The actual five-scene lesson audio is now exactly 180 seconds, peak 0.798424,
+zero clipped samples, -16.24 LUFS / -1.96 dBTP, matching the approved master.
+Evidence: `E:\temp\avt-final-media-inspection-20260907\editor-audio-clock-proof-20260908`.
+
+Commit 0f1f684 adds a cancellable decoded-delivery gate before CAS promotion:
+both streams must decode, frame count and audio sample duration must match the
+timeline within the documented codec tolerance, and audio must contain no
+nonfinite samples or full-scale clipping. It preserves measured verification in
+the delivery receipt. Real short-audio/clipping regressions fail closed, silent
+video remains valid, and failed verification cannot promote artifacts. The gate
+rejects the actual bad export and accepts the approved master; it does not
+replace visual review or claim speech/lip-sync correctness.
+
+Commit c35e657 corrects another native defect: Windows CRLF translation made
+FFmpeg treat one caption line break as two. Drawtext files now normalize explicit
+line breaks without host translation, preserve literal percent signs, and honor
+multiline alignment. A decoded three-second opening shows compact centered
+captions. Moving the test title through the existing Y control to -180 pixels
+separates it from captions without obscuring the teaching content or presenter.
+Default title placement remains center; the collision was a bottom-placed test
+edit. Arbitrary user-authored overlaps are not automatically rearranged.
+Evidence: `E:\temp\avt-final-media-inspection-20260907\editor-caption-spacing-proof-20260908\opening-centered.png`.
+
+The focused suite passes 22 tests, including real FFmpeg, with Ruff and mypy.
+The c35e657 worker is packaged with desktop 88f8c5f; all 762 runtime components
+verified at 11:07:24 UTC. Full native replacement acceptance is running; this
+section does not yet accept the replacement video. The earlier folder named
+`accepted-editor-media-ac3594c-20260908` is explicitly marked REJECTED.
+
+Reference: [FFmpeg drawtext alignment and text-file options](https://ffmpeg.org/ffmpeg-filters.html#drawtext-1).
+The implementation was checked against decoded output on the pinned Windows
+FFmpeg, including the additive alignment flag syntax.
