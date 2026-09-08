@@ -24,6 +24,7 @@ class VersionedVideoRenderer:
 
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
+        self.renderer_build_sha256 = "1" * 64
 
     def render(self, request: dict[str, Any]) -> RenderedTutorial:
         self.requests.append(request)
@@ -101,25 +102,35 @@ def _export_master(
     fps: int,
     caption_mode: str = "burned",
 ) -> dict[str, Any]:
-    head = control.store.head_revision()
-    assert head is not None
     queued = control.submit_master_export(
-        {
-            "baseRevisionId": head.revision_id,
-            "baseJobId": generation_id,
-            "aspect": "16:9",
-            "resolution": "1080p",
-            "fps": fps,
-            "captionDeliveryMode": caption_mode,
-            "transcript": False,
-            "bibliography": False,
-        }
+        _master_params(control, generation_id, fps=fps, caption_mode=caption_mode)
     )
     control.runtime.run_once(control.handlers)
     completed = control.status(queued.job_id)
     assert completed.state.value == "SUCCEEDED"
     assert completed.result is not None
     return {"jobId": completed.job_id, **completed.result}
+
+
+def _master_params(
+    control: NativeControlCoordinator,
+    generation_id: str,
+    *,
+    fps: int,
+    caption_mode: str = "burned",
+) -> dict[str, Any]:
+    head = control.store.head_revision()
+    assert head is not None
+    return {
+        "baseRevisionId": head.revision_id,
+        "baseJobId": generation_id,
+        "aspect": "16:9",
+        "resolution": "1080p",
+        "fps": fps,
+        "captionDeliveryMode": caption_mode,
+        "transcript": False,
+        "bibliography": False,
+    }
 
 
 def _clone_succeeded_job(
@@ -227,6 +238,7 @@ def _replace_master_receipt(
     document: dict[str, Any],
     *,
     result_updates: dict[str, Any] | None = None,
+    result_removals: tuple[str, ...] = (),
 ) -> str:
     replacement = store.add_artifact_bytes(
         json.dumps(document, sort_keys=True, separators=(",", ":")).encode(),
@@ -241,6 +253,8 @@ def _replace_master_receipt(
     result = json.loads(str(row["result_json"]))
     result["masterProvenanceArtifactHash"] = replacement.hash
     result.update(result_updates or {})
+    for field in result_removals:
+        result.pop(field, None)
     with store.connection:
         store.connection.execute(
             "UPDATE jobs SET result_json=? WHERE job_id=?",
@@ -327,6 +341,71 @@ def test_editor_uses_verified_generation_render_when_no_promoted_master_exists(
         assert {
             item["artifactHash"] for item in bindings["renders"]
         } == {expected_hash}
+    finally:
+        store.close()
+
+
+def test_master_action_deduplicates_same_build_and_refreshes_changed_build_only(
+    tmp_path: Path,
+) -> None:
+    store, control, generation_id, _ = _completed_generation(tmp_path)
+    try:
+        first = _export_master(control, generation_id, fps=24)
+        upstream_before = store.connection.execute(
+            "SELECT job_id,kind,attempt_count,result_json FROM jobs "
+            "WHERE kind LIKE 'generation.%' ORDER BY rowid"
+        ).fetchall()
+        usage_before = store.connection.execute(
+            "SELECT usage_id,job_id,quantity,metadata_json FROM usage_records ORDER BY rowid"
+        ).fetchall()
+        narration_before = control._verified_stage_payload(generation_id, "narration")[1]
+        request = _master_params(control, generation_id, fps=24)
+        renderer = control.renderer
+        assert isinstance(renderer, VersionedVideoRenderer)
+
+        duplicate = control.submit_master_export(request)
+        assert duplicate.job_id == first["jobId"]
+        calls_before = len(renderer.requests)
+
+        renderer.renderer_build_sha256 = "2" * 64
+        refreshed = control.submit_master_export(request)
+        assert refreshed.job_id != first["jobId"]
+        control.runtime.run_once(control.handlers)
+        assert control.status(refreshed.job_id).state.value == "SUCCEEDED"
+        assert len(renderer.requests) == calls_before + 1
+        refreshed_result = control.status(refreshed.job_id).result
+        assert refreshed_result is not None
+        assert refreshed_result["rendererRuntimeIdentitySha256"] == "2" * 64
+        assert control._verified_stage_payload(generation_id, "narration")[1] == narration_before
+        assert store.connection.execute(
+            "SELECT job_id,kind,attempt_count,result_json FROM jobs "
+            "WHERE kind LIKE 'generation.%' ORDER BY rowid"
+        ).fetchall() == upstream_before
+        assert store.connection.execute(
+            "SELECT usage_id,job_id,quantity,metadata_json FROM usage_records ORDER BY rowid"
+        ).fetchall() == usage_before
+    finally:
+        store.close()
+
+
+def test_master_fails_before_render_when_build_changes_after_queue(tmp_path: Path) -> None:
+    store, control, generation_id, _ = _completed_generation(tmp_path)
+    try:
+        queued = control.submit_master_export(
+            _master_params(control, generation_id, fps=24)
+        )
+        renderer = control.renderer
+        assert isinstance(renderer, VersionedVideoRenderer)
+        calls_before = len(renderer.requests)
+        renderer.renderer_build_sha256 = "3" * 64
+
+        control.runtime.run_once(control.handlers)
+
+        failed = control.status(queued.job_id)
+        assert failed.state.value == "FAILED"
+        assert failed.error is not None
+        assert "renderer runtime changed" in str(failed.error["message"])
+        assert len(renderer.requests) == calls_before
     finally:
         store.close()
 
@@ -453,6 +532,32 @@ def test_editor_rejects_receipt_forged_for_another_export_job(tmp_path: Path) ->
 
         with pytest.raises(ValueError, match="provenance receipt is incoherent"):
             control.editor_bindings(generation_id)
+    finally:
+        store.close()
+
+
+def test_editor_accepts_valid_receipt_v1_without_renderer_identity(tmp_path: Path) -> None:
+    store, control, generation_id, _ = _completed_generation(tmp_path)
+    try:
+        promoted = _export_master(control, generation_id, fps=24)
+        receipt = json.loads(
+            store.cas.object_path(promoted["masterProvenanceArtifactHash"]).read_bytes()
+        )
+        receipt["schemaVersion"] = 1
+        receipt.pop("rendererRuntimeIdentitySha256")
+        _replace_master_receipt(
+            store,
+            promoted,
+            receipt,
+            result_removals=("rendererRuntimeIdentitySha256",),
+        )
+
+        bindings = control.editor_bindings(generation_id)
+
+        assert bindings["renders"]
+        assert {item["artifactHash"] for item in bindings["renders"]} == {
+            promoted["artifactHash"]
+        }
     finally:
         store.close()
 

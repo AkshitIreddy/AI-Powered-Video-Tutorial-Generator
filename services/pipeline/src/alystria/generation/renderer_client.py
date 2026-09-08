@@ -403,6 +403,12 @@ class SubprocessRendererClient:
         self.renderer_version = runtime.renderer_version
         self._cancelled = threading.Event()
 
+    @property
+    def renderer_build_sha256(self) -> str:
+        """Expose the verified renderer program identity for durable job keys."""
+
+        return self.runtime.renderer_build_sha256
+
     def cancel(self) -> None:
         """Request cancellation; the runner terminates the Node process group."""
 

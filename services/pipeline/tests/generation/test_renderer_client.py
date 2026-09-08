@@ -1304,6 +1304,7 @@ def test_installed_pack_factory_needs_no_repository_or_package_json(tmp_path: Pa
         assert client.runtime.node.path == paths["node"]
         assert client.runtime.renderer_cli_path == paths["renderer-cli"]
         assert client.runtime.renderer_build_sha256 != client.runtime.renderer_cli_sha256
+        assert client.renderer_build_sha256 == client.runtime.renderer_build_sha256
         assert client.runtime.chromium.version == "151.0.7922.34"
         assert client.runtime.renderer_version == "2.0.0-rc.0"
         assert not (pack_root / "package.json").exists()
@@ -1326,6 +1327,7 @@ def test_installed_renderer_build_fingerprint_tracks_scene_bundle_not_only_cli(
         )
         initial_cli_sha256 = initial.runtime.renderer_cli_sha256
         initial_build_sha256 = initial.runtime.renderer_build_sha256
+        assert initial.renderer_build_sha256 == initial_build_sha256
 
         scene_renderer = paths["scene-renderers"]
         scene_renderer.write_bytes(b"installed-scene-renderers-v2")
@@ -1344,6 +1346,7 @@ def test_installed_renderer_build_fingerprint_tracks_scene_bundle_not_only_cli(
         )
         assert rebuilt.runtime.renderer_cli_sha256 == initial_cli_sha256
         assert rebuilt.runtime.renderer_build_sha256 != initial_build_sha256
+        assert rebuilt.renderer_build_sha256 == rebuilt.runtime.renderer_build_sha256
 
         first = store.add_artifact_bytes(b"RIFF-first", media_type="audio/wav")
         second = store.add_artifact_bytes(b"RIFF-second", media_type="audio/wav")

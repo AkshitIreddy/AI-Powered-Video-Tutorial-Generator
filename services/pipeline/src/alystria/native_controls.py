@@ -225,6 +225,7 @@ class NativeControlCoordinator:
         target = _target(params)
         caption_delivery_mode = _caption_delivery_mode(params)
         codec_preference, renderer_codec = _codec_preference(params)
+        renderer_runtime_identity = _renderer_runtime_identity(self.renderer)
         parameters = {
             "expectedHeadRevisionId": head.revision_id,
             "baseRevisionId": _required_text(params, "baseRevisionId"),
@@ -233,6 +234,7 @@ class NativeControlCoordinator:
             "captionDeliveryMode": caption_delivery_mode,
             "codecPreference": codec_preference,
             "rendererCodec": renderer_codec,
+            "rendererRuntimeIdentitySha256": renderer_runtime_identity,
             "transcript": bool(params.get("transcript", True)),
             "bibliography": bool(params.get("bibliography", True)),
         }
@@ -731,6 +733,11 @@ class NativeControlCoordinator:
             raise RuntimeError(
                 "Pinned renderer runtime is unavailable; master export is disabled until runtime diagnostics pass"
             )
+        renderer_runtime_identity = _renderer_runtime_identity(self.renderer)
+        if params.get("rendererRuntimeIdentitySha256") != renderer_runtime_identity:
+            raise RuntimeError(
+                "Verified renderer runtime changed after this master export was queued; submit a fresh export"
+            )
         generation_id = str(params["baseGenerationId"])
         generation_status = GenerationCoordinator(self.store).status(generation_id)
         if generation_status.approval_revision_id is None:
@@ -825,6 +832,7 @@ class NativeControlCoordinator:
             metadata={
                 "renderer": self.renderer.renderer_id,
                 "rendererVersion": self.renderer.renderer_version,
+                "rendererRuntimeIdentitySha256": renderer_runtime_identity,
                 "generationId": generation_id,
                 "approvalRevisionId": generation_status.approval_revision_id,
                 "sourceRenderStageArtifactHash": render_stage_hash,
@@ -843,7 +851,7 @@ class NativeControlCoordinator:
             },
         )
         master_provenance = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "exportJobId": context.job_id,
             "generationId": generation_id,
             "approvalRevisionId": generation_status.approval_revision_id,
@@ -855,6 +863,7 @@ class NativeControlCoordinator:
             "videoMediaType": rendered.media_type,
             "renderSceneWindows": copy.deepcopy(scene_windows),
             "captionDelivery": caption_delivery,
+            "rendererRuntimeIdentitySha256": renderer_runtime_identity,
             "rightsStatus": "owned",
         }
         master_provenance_artifact = self.store.add_artifact_bytes(
@@ -892,6 +901,7 @@ class NativeControlCoordinator:
             "captionBundleArtifactHash": caption_bundle_artifact.hash,
             "captionCompilerVersion": caption_compiler_version,
             "masterProvenanceArtifactHash": master_provenance_artifact.hash,
+            "rendererRuntimeIdentitySha256": renderer_runtime_identity,
             "renderSceneWindows": copy.deepcopy(scene_windows),
             "artifactHash": artifact.hash,
             "path": str(destination),
@@ -1084,6 +1094,11 @@ class NativeControlCoordinator:
             raise ValueError("Latest promoted master provenance receipt metadata is invalid")
         bundle_hash = document.get("captionBundleArtifactHash")
         compiler_version = document.get("captionCompilerVersion")
+        renderer_runtime_identity = document.get("rendererRuntimeIdentitySha256")
+        promoted_renderer_runtime_identity = promoted.get(
+            "rendererRuntimeIdentitySha256"
+        )
+        schema_version = document.get("schemaVersion")
         delivery = document.get("captionDelivery")
         mode = delivery.get("mode") if isinstance(delivery, dict) else None
         expected_delivery = (
@@ -1097,7 +1112,7 @@ class NativeControlCoordinator:
             else None
         )
         if (
-            document.get("schemaVersion") != 1
+            schema_version not in {1, 2}
             or document.get("exportJobId") != export_job_id
             or document.get("generationId") != generation_id
             or document.get("approvalRevisionId") != approval_revision_id
@@ -1107,6 +1122,22 @@ class NativeControlCoordinator:
             or not SHA256_PATTERN.fullmatch(bundle_hash)
             or not isinstance(compiler_version, str)
             or not compiler_version
+            or (
+                schema_version == 2
+                and (
+                    not isinstance(renderer_runtime_identity, str)
+                    or not SHA256_PATTERN.fullmatch(renderer_runtime_identity)
+                    or promoted_renderer_runtime_identity
+                    != renderer_runtime_identity
+                )
+            )
+            or (
+                schema_version == 1
+                and (
+                    renderer_runtime_identity is not None
+                    or promoted_renderer_runtime_identity is not None
+                )
+            )
             or document.get("videoArtifactHash") != video_artifact_hash
             or document.get("videoMediaType") != video_media_type
             or document.get("renderSceneWindows") != render_scene_windows
@@ -1681,6 +1712,26 @@ def _caption_delivery_mode(params: dict[str, Any]) -> str:
             "captionDeliveryMode must be sidecar, embedded, burned, or both"
         )
     return value
+
+
+def _renderer_runtime_identity(renderer: RendererClient | None) -> str:
+    """Return a stable cache identity, preferring the verified build digest."""
+
+    if renderer is None:
+        declared = {"rendererId": "unavailable", "rendererVersion": "unavailable"}
+    else:
+        build_hash = getattr(renderer, "renderer_build_sha256", None)
+        if build_hash is not None:
+            if not isinstance(build_hash, str) or not SHA256_PATTERN.fullmatch(build_hash):
+                raise ValueError("Renderer build identity must be a SHA-256 digest")
+            return build_hash
+        declared = {
+            "rendererId": str(renderer.renderer_id),
+            "rendererVersion": str(renderer.renderer_version),
+        }
+    return hashlib.sha256(
+        json.dumps(declared, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def _codec_preference(params: dict[str, Any]) -> tuple[str, str]:
