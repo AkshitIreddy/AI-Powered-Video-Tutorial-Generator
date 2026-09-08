@@ -129,7 +129,9 @@ function projectAsset(asset: AlystriaStudioAssetLike, now: string): EditorMediaA
   return {
     id: asset.id,
     name: asset.label,
-    kind: mediaKind(asset.kind),
+    kind: asset.mediaType?.startsWith("image/") ? "image"
+      : asset.mediaType?.startsWith("video/") ? "video"
+        : asset.mediaType?.startsWith("audio/") ? "audio" : mediaKind(asset.kind),
     // ProjectRecord carries identity and rights, not a verified playable URI.
     status: "pending",
     durationFrames: null,

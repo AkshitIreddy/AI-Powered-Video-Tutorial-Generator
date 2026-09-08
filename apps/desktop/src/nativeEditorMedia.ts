@@ -89,7 +89,13 @@ export async function resolveNativeEditorMedia(project: EditorProject, identity:
     try {
       const stored = await resolve({ ...identity, artifactHash: asset.hash });
       const url = convertFileSrc(stored.path);
-      return { ...asset, status: "ready" as const, uri: url, previewUrl: url, ...(asset.kind === "image" ? { thumbnailUrl: url } : {}), mimeType: stored.mediaType };
+      // Older project records classified every presenter as video, including
+      // still portraits. The verified CAS media type is authoritative.
+      const kind = stored.mediaType.startsWith("image/") ? "image" as const
+        : stored.mediaType.startsWith("video/") ? "video" as const
+          : stored.mediaType.startsWith("audio/") ? "audio" as const : asset.kind;
+      return { ...asset, kind, status: "ready" as const, uri: url, previewUrl: url,
+        ...(kind === "image" ? { thumbnailUrl: url, durationFrames: null } : {}), mimeType: stored.mediaType };
     } catch {
       const pending = { ...asset, status: "pending" as const, metadata: { ...asset.metadata, requiresRelink: true } };
       delete pending.uri;
