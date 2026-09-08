@@ -88,6 +88,13 @@ describe("desktop curated cloud routes", () => {
       operationIds: item.execution.endpoint?.operationIds,
     }))).toEqual([
       {
+        providerId: "gemini",
+        sourceId: "gemini-3.7-flash",
+        revision: "gemini-api-2026-09-08",
+        capabilities: ["vlm.chat"],
+        operationIds: ["POST /v1beta/models/gemini-3.7-flash:generateContent"],
+      },
+      {
         providerId: "openverse",
         sourceId: "licensed-media",
         revision: "openverse-api-v1-cc0",
@@ -116,11 +123,12 @@ describe("desktop curated cloud routes", () => {
         operationIds: ["POST /v1/chat/completions"],
       },
     ]);
-    expect(stockAndReviewCloudCatalogItems[0]?.availability).toBe("available");
-    expect(stockAndReviewCloudCatalogItems[1]?.availability).toBe("gated");
+    expect(stockAndReviewCloudCatalogItems[0]?.availability).toBe("gated");
+    expect(stockAndReviewCloudCatalogItems[1]?.availability).toBe("available");
     expect(stockAndReviewCloudCatalogItems[2]?.availability).toBe("gated");
-    expect(stockAndReviewCloudCatalogItems[3]?.availability).toBe("unavailable");
-    expect(stockAndReviewCloudCatalogItems[3]?.classification.tags).toContain("deprecated");
+    expect(stockAndReviewCloudCatalogItems[3]?.availability).toBe("gated");
+    expect(stockAndReviewCloudCatalogItems[4]?.availability).toBe("unavailable");
+    expect(stockAndReviewCloudCatalogItems[4]?.classification.tags).toContain("deprecated");
   });
 });
 

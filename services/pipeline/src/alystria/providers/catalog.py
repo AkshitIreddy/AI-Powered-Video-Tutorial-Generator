@@ -22,7 +22,7 @@ from .types import (
     RetentionMode,
 )
 
-CATALOG_VERSION = "2026.09.05.2"
+CATALOG_VERSION = "2026.09.08.1"
 VERIFIED_AT = "2026-09-05"
 CANONICAL_PROVIDER_ALIASES = {
     "azure": "azure-speech",
@@ -166,6 +166,7 @@ def _entry(
     models: tuple[str, ...] = (),
     idempotency: bool = False,
     cancellation: bool = False,
+    verified_at: str = VERIFIED_AT,
 ) -> ProviderDescriptor:
     return ProviderDescriptor(
         provider_id=provider_id,
@@ -173,7 +174,7 @@ def _entry(
         capabilities=frozenset(capabilities),
         data_policy=policy or _cloud(),
         catalog_version=CATALOG_VERSION,
-        last_verified_at=VERIFIED_AT,
+        last_verified_at=verified_at,
         docs_url=docs_url,
         models=models,
         supports_idempotency=idempotency,
@@ -244,6 +245,7 @@ def default_catalog() -> ProviderCatalog:
             "gemini",
             "Google Gemini",
             {
+                Capability.VISION_LANGUAGE,
                 Capability.LLM_TEXT,
                 Capability.LLM_STRUCTURED,
                 Capability.RESEARCH,
@@ -255,8 +257,9 @@ def default_catalog() -> ProviderCatalog:
             },
             "https://ai.google.dev/api/generate-content",
             policy=_cloud(RetentionMode.CONFIGURABLE),
-            models=("gemini-2.5-flash",),
+            models=("gemini-2.5-flash", "gemini-3.7-flash"),
             cancellation=True,
+            verified_at="2026-09-08",
         ),
         _entry(
             "groq",

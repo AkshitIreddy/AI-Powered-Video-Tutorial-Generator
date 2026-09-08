@@ -21,6 +21,7 @@ from alystria.audio.wav import WavFixtureSpec, generate_sine_wav
 from .base import ProviderAdapter
 from .cloudflare_workers_ai import CloudflareWorkersAIAdapter
 from .errors import FailureCode, ProviderFailure
+from .gemini_vision import GeminiVisionAdapter
 from .llm import (
     AnthropicMessagesAdapter,
     GeminiGenerateContentAdapter,
@@ -575,12 +576,15 @@ class ProviderRuntimeFactory:
                     Capability.RESEARCH,
                 }
             )
-            adapters.append(
-                GeminiGenerateContentAdapter(
-                    transport,
-                    prices=reviewed_gemini_prices(route_models),
+            if route_models:
+                adapters.append(
+                    GeminiGenerateContentAdapter(
+                        transport,
+                        prices=reviewed_gemini_prices(route_models),
+                    )
                 )
-            )
+            if any(provider_id in route.provider_ids and route.capability is Capability.VISION_LANGUAGE for route in policy.routes):
+                adapters.append(GeminiVisionAdapter(transport))
         elif provider_id in {"groq", "mistral", "openrouter"}:
             route_models = tuple(
                 dict.fromkeys(

@@ -237,6 +237,21 @@ describe("provider routing review", () => {
     ]));
   });
 
+  it("supports Gemini review with Openverse without an NVIDIA key", () => {
+    const review = buildProviderRoutingReview({
+      profile: { ...profile, routes: { ...profile.routes,
+        stock: { providerId: "openverse", modelId: "licensed-media" },
+        visualReview: { providerId: "gemini", modelId: "gemini-3.7-flash" },
+      } },
+      secretRefs: { ...secrets, gemini: secret("gemini") },
+      dataClassification: "public", hardLimitMinorUnits: 250,
+      approvalChecked: true, hasPrivateSources: false, groundingMode: "grounded",
+    });
+    expect(review.errors).toEqual([]);
+    expect(review.policy?.routes).toContainEqual(expect.objectContaining({ capability: "vlm.chat", providerIds: ["gemini"], model: "gemini-3.7-flash" }));
+    expect(review.approvedProviderIds).not.toContain("nvidia-nim");
+  });
+
   it("requires a Pexels API key when the optional keyed stock route is selected", () => {
     const review = buildProviderRoutingReview({
       profile: {

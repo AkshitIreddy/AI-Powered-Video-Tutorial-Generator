@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "schemaVersion": 1,
-  "catalogVersion": "2026.09.05.2",
-  "lastVerifiedAt": "2026-09-05",
+  "catalogVersion": "2026.09.08.1",
+  "lastVerifiedAt": "2026-09-08",
   "aliases": {
     "azure": "azure-speech",
     "google": "gemini"
@@ -64,8 +64,8 @@
       "execution": "cloud",
       "credentialKind": "secret-reference",
       "approvedByDefault": false,
-      "capabilities": ["llm", "image", "video", "tts", "asr"],
-      "models": ["gemini-2.5-flash"],
+      "capabilities": ["llm", "vlm", "image", "video", "tts", "asr"],
+      "models": ["gemini-2.5-flash", "gemini-3.7-flash"],
       "dataBoundary": "provider-cloud",
       "pricing": { "status": "reviewed-model-snapshot", "hardBudgetEligible": true }
     },

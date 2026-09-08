@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import base64
+import io
 import json
 from typing import Any
+
+from PIL import Image
 
 from alystria.providers import (
     EphemeralCredentialBroker,
@@ -12,6 +16,8 @@ from alystria.providers import (
     TextRequest,
     parse_routing_policy,
 )
+from alystria.providers.gemini_vision import GEMINI_VISION_MODEL
+from alystria.providers.types import AssetInput, VisionLanguageRequest
 
 
 class GeminiFixtureTransport:
@@ -116,3 +122,39 @@ def test_runtime_factory_applies_reviewed_gemini_pricing_under_one_dollar_cap() 
     assert result.usage.units["output_tokens"] == 4
     assert result.usage.units["thought_tokens"] == 3
     assert result.usage.actual_cost_micros == 20
+
+
+def test_runtime_factory_supports_vision_without_a_gemini_writing_route() -> None:
+    document = _policy()
+    document["approvals"][0]["capabilities"] = ["vlm.chat"]
+    document["routes"][0].update(capability="vlm.chat", model=GEMINI_VISION_MODEL)
+    observed = []
+
+    class VisionTransport:
+        def send(self, request):
+            observed.append(request)
+            return HttpResponse(
+                200, {}, b'{"candidates":[{"content":{"parts":[{"text":"{\\"ok\\":true}"}]}}]}'
+            )
+
+    broker = EphemeralCredentialBroker()
+    reference = "keyring://alystria/gemini/api_key"
+    grant = broker.issue("gemini", reference, "fixture-credential")
+    runtime = ProviderRuntimeFactory(
+        transport_factory=lambda _: VisionTransport(),
+        credential_resolver=broker,
+        credential_grants={"gemini": grant},
+    ).build(parse_routing_policy(document))
+    data = io.BytesIO()
+    Image.new("RGB", (16, 16)).save(data, format="PNG")
+    result = runtime.invoke(
+        VisionLanguageRequest(
+            "Review",
+            GEMINI_VISION_MODEL,
+            (AssetInput("image/png", data_base64=base64.b64encode(data.getvalue()).decode()),),
+        ),
+        idempotency_key="vision-only",
+    )
+    assert result.provider_id == "gemini"
+    assert len(observed) == 1
+    assert observed[0].url.endswith(f"/{GEMINI_VISION_MODEL}:generateContent")

@@ -86,7 +86,7 @@ const providerPolicies: Record<string, ProviderPolicyDescriptor> = {
   openrouter: cloud("provider_default", ["llm.text", "llm.structured"]),
   openverse: cloud("provider_default", ["media.licensed.search"], false),
   pexels: cloud("provider_default", ["media.licensed.search"]),
-  gemini: cloud("configurable", ["llm.text", "llm.structured", "research.web", "image.generate", "image.edit", "motion.generate", "audio.tts", "audio.transcribe"]),
+  gemini: cloud("configurable", ["llm.text", "llm.structured", "vlm.chat", "research.web", "image.generate", "image.edit", "motion.generate", "audio.tts", "audio.transcribe"]),
   "nvidia-nim": cloud("provider_default", ["llm.text", "llm.structured", "vlm.chat", "retrieval.embed", "image.generate", "audio.tts"]),
   "cloudflare-workers-ai": cloud("configurable", ["image.generate"]),
   "black-forest-labs": cloud("provider_default", ["image.generate", "image.edit"]),
@@ -108,6 +108,7 @@ const reviewedStructuredCloudModels: Readonly<Record<string, readonly string[]>>
 const reviewedOptionalRouteModels: Readonly<Record<string, Readonly<Partial<Record<ProviderCapability, string>>>>> = {
   openverse: { "media.licensed.search": "licensed-media" },
   pexels: { "media.licensed.search": "licensed-media" },
+  gemini: { "vlm.chat": "gemini-3.7-flash" },
   "nvidia-nim": { "vlm.chat": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" },
 };
 
