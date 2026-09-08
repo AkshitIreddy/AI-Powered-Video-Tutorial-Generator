@@ -353,7 +353,6 @@ const localModelOptions = [
   { id: "local/bge-m3", name: "BGE-M3", medium: "Multilingual retrieval", detail: "Dense / sparse candidate" },
   { id: "local/bge-reranker-v2-m3", name: "BGE reranker v2-m3", medium: "Research ranking", detail: "Small local reranker candidate" },
   { id: "local/qwen3-reranker-0.6b", name: "Qwen3 Reranker 0.6B", medium: "Research ranking", detail: "Alternative local reranker" },
-  { id: "local/flux.2-klein-4b-fp8", name: "FLUX.2 Klein 4B", medium: "Illustration", detail: "Optional 12 GB benchmark" },
   { id: "local/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice", name: "Qwen3 TTS 0.6B", medium: "Narration", detail: "English / Spanish candidate" },
   { id: "local/kokoro", name: "Kokoro", medium: "Draft narration", detail: "Small CPU-first draft voice" },
   { id: "local/piper-voice-pack", name: "Piper voice pack", medium: "Legacy draft voice", detail: "Optional only · per-voice rights review" },
@@ -365,6 +364,31 @@ const localModelOptions = [
   { id: "local/wav2lip-baseline", name: "Wav2Lip baseline", medium: "Lip-sync fallback", detail: "Legacy baseline · rights review required" },
 ] as const;
 
+const localImageModelOptions = [
+  {
+    id: "local/sdxl-base-1.0",
+    name: "Stable Diffusion XL 1.0",
+    detail: "Reviewed SDXL recipe · tested on a 12 GB Windows configuration · managed ComfyUI install with optional LoRA",
+    tag: "Ready recipe",
+    executionReady: true,
+  },
+  {
+    id: "local/flux.2-klein-4b-fp8",
+    name: "FLUX.2 Klein 4B FP8",
+    detail: "Pinned FP8 bundle · CPU offload required · exact 12 GB workflow still needs a successful benchmark",
+    tag: "Download only",
+    executionReady: false,
+  },
+  {
+    id: "local/z-image-turbo-int8",
+    name: "Z-Image Turbo INT8",
+    detail: "Pinned INT8/FP4 bundle · CPU offload required · exact 12 GB workflow still needs a successful benchmark",
+    tag: "Download only",
+    executionReady: false,
+  },
+] as const;
+
+const localImageModelIds: ReadonlySet<string> = new Set(localImageModelOptions.map((model) => model.id));
 const lipSyncModelOptions = [
   { id: "local/musetalk-1.5", name: "MuseTalk 1.5", detail: "Narration-accurate mouth pass · measured below 8 GB VRAM", tag: "Measured local choice" },
   { id: "local/latentsync-1.5", name: "LatentSync 1.5", detail: "Slower diffusion comparison · version 1.5 only", tag: "Quality comparison" },
@@ -2240,6 +2264,8 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   const [downloadStatuses, setDownloadStatuses] = useState<ModelDownloadStatus[]>([]);
   const [licenseAccepted, setLicenseAccepted] = useState(false);
   const [downloadStarting, setDownloadStarting] = useState(false);
+  const [selectedImageModelId, setSelectedImageModelId] = useState<string | null>(null);
+  const [downloadSelectionId, setDownloadSelectionId] = useState<string | null>(null);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>(() => [...alystriaCatalogItems]);
   const [catalogCursors, setCatalogCursors] = useState<Partial<Record<SyncableCatalogSource, string | null>>>({});
   const [catalogSyncing, setCatalogSyncing] = useState<SyncableCatalogSource | null>(null);
@@ -2277,6 +2303,12 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
 
   const mutateSetup = (update: (current: LocalModelSetup) => LocalModelSetup) => setSetup((current) => current ? update(current) : current);
   const activeProfile = setup?.profiles.find((profile) => profile.id === setup.activeProfileId) ?? setup?.profiles[0] ?? null;
+  const configuredImageModelId = activeProfile?.routes.images?.providerId === "local-runtime" && localImageModelIds.has(activeProfile.routes.images.modelId)
+    ? activeProfile.routes.images.modelId
+    : null;
+  const savedImageModelId = setup?.selectedModelIds.find((modelId) => localImageModelIds.has(modelId)) ?? null;
+  const inspectedImageModelId = selectedImageModelId ?? configuredImageModelId ?? savedImageModelId ?? localImageModelOptions[0].id;
+  const selectedDownloadModelId = downloadSelectionId ?? inspectedImageModelId;
   const catalogHardwareWithConnections = useMemo(() => ({
     ...catalogHardware,
     providerConnectionIds: [...new Set([
@@ -2309,17 +2341,51 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   });
   const selectLipSync = (modelId: string) => mutateSetup((current) => ({ ...current, lipSyncModelId: modelId, selectedModelIds: [...new Set([...current.selectedModelIds, modelId])] }));
   const selectPortraitAnimation = (modelId: string) => mutateSetup((current) => ({ ...current, portraitAnimationModelId: modelId, selectedModelIds: [...new Set([...current.selectedModelIds, modelId])] }));
-  const selectedDownload = downloadCatalog.find((entry) => entry.modelId === setup?.lipSyncModelId) ?? null;
+  const selectedDownload = downloadCatalog.find((entry) => entry.modelId === selectedDownloadModelId) ?? null;
   const selectedDownloadStatus = downloadStatuses.find((status) => status.modelId === selectedDownload?.modelId) ?? null;
+  const selectedImageOption = localImageModelOptions.find((model) => model.id === selectedDownloadModelId) ?? null;
+  const downloadComplete = selectedDownloadStatus?.phase === "ready" || selectedDownloadStatus?.phase === "inUse" || selectedDownloadStatus?.phase === "downloadedQuarantined";
+  const sdxlInstallReceiptReady = selectedDownloadStatus?.modelId === "local/sdxl-base-1.0"
+    && selectedDownloadStatus.phase === "ready"
+    && selectedDownloadStatus.activationBlocked === false
+    && Boolean(selectedDownloadStatus.runtimeRevision?.trim())
+    && /^[a-f0-9]{64}$/.test(selectedDownloadStatus.installFingerprint ?? "");
+  useEffect(() => setLicenseAccepted(false), [selectedDownloadModelId]);
   const beginModelDownload = async () => {
     if (!selectedDownload || !licenseAccepted) return;
     setDownloadStarting(true);
     try {
       const status = await localModelDownloadStart({ modelId: selectedDownload.modelId, licenseSha256: selectedDownload.licenseSha256, licenseAccepted: true });
       setDownloadStatuses((current) => [...current.filter((item) => item.modelId !== status.modelId), status]);
-      onNotify(status.downloadedBytes > 0 ? "Model download resumed" : "Model download started", "Artifacts are entering the hash-verified quarantine. This does not activate a model or use the GPU.", "success");
+      const managedSdxl = selectedDownload.modelId === "local/sdxl-base-1.0";
+      onNotify(
+        status.downloadedBytes > 0 ? "Model download resumed" : managedSdxl ? "Local image installation started" : "Model download started",
+        managedSdxl
+          ? "The pinned ComfyUI runtime, SDXL checkpoint, and optional LoRA are being verified under managed model storage. Installation does not generate an image or use the GPU."
+          : "Artifacts are entering hash-verified local storage. Experimental image bundles remain unavailable for generation until their exact workflow passes on this PC.",
+        "success",
+      );
     } catch (error) { onNotify("Model download did not start", errorMessage(error), "warning"); }
     finally { setDownloadStarting(false); }
+  };
+  const useVerifiedSdxlForImages = () => {
+    if (!activeProfile || !sdxlInstallReceiptReady || !selectedDownloadStatus?.runtimeRevision || !selectedDownloadStatus.installFingerprint) return;
+    const modelRevision = selectedDownloadStatus.runtimeRevision;
+    const installFingerprint = selectedDownloadStatus.installFingerprint;
+    updateProfile(activeProfile.id, (profile) => ({
+      ...profile,
+      routes: {
+        ...profile.routes,
+        images: {
+          providerId: "local-runtime",
+          modelId: "local/sdxl-base-1.0",
+          modelRevision,
+          installFingerprint,
+        },
+      },
+    }));
+    toggleLocalModel("local/sdxl-base-1.0", true);
+    onNotify("Local image route staged", `SDXL is staged in ${activeProfile.name}. Save setup below to keep this profile choice.`, "success");
   };
   const saveSetup = async () => {
     if (!setup) return;
@@ -2407,18 +2473,19 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     {editingProvider && <section className="credential-panel" aria-labelledby="credential-title"><div><span className="section-kicker">Credential broker</span><h3 id="credential-title">Connect {providers.find((provider) => provider.id === editingProvider)?.name}</h3><p>{environment === "native" ? "The value goes directly to the operating-system vault. Project files receive only an opaque reference." : "Browser demo mode exercises the flow but immediately discards the value."}</p></div><label>API key<input autoFocus type="password" autoComplete="off" value={secret} onChange={(event) => setSecret(event.target.value)} /></label><div className="credential-actions">{secretRefs[editingProvider]?.availability === "present" && <button className="secondary-button danger-text" onClick={() => { void deleteSecret(editingProvider); setEditingProvider(null); }}><X size={15} /> Remove</button>}<button className="secondary-button" onClick={() => { setEditingProvider(null); setSecret(""); }}>Cancel</button><button className="primary-button" disabled={!secret.trim() || saving} onClick={() => { void saveSecret(); }}><KeyRound size={15} /> {saving ? "Saving…" : "Store securely"}</button></div></section>}
     <section className="model-setup-panel" aria-labelledby="local-model-setup-title">
       <div className="model-setup-heading"><div><span className="section-kicker">First-run setup</span><h2 id="local-model-setup-title">Local models, without surprise downloads.</h2><p>Pick a small local profile, bring a pre-existing model folder, or stay API-first. Model weights are never bundled or activated until a signed immutable manifest, license acceptance, hash check, and hardware preflight all pass.</p></div><span className="setup-state"><HardDrive size={15} /> {setupLoading ? "Loading setup" : `${setup?.selectedModelIds.length ?? 0} choices saved`}</span></div>
+      <div className="lipsync-chooser" aria-labelledby="local-image-model-title"><div><span className="section-kicker">Local image studio</span><h3 id="local-image-model-title">Choose an image model to inspect or install</h3><p>SDXL is the current working route for creating slide artwork and fictional presenter portraits. The two newer bundles are available for deliberate download, but stay blocked from generation until their exact offload recipes pass on this PC.</p></div><div className="lipsync-options">{localImageModelOptions.map((model) => { const status = downloadStatuses.find((entry) => entry.modelId === model.id); const stateLabel = status?.phase === "ready" || status?.phase === "inUse" ? "Installed · ready" : status?.phase === "downloadedQuarantined" ? "Downloaded · recipe blocked" : model.tag; return <label className={inspectedImageModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="local-image-model" checked={inspectedImageModelId === model.id} disabled={!setup} onClick={() => setDownloadSelectionId(model.id)} onChange={() => { setSelectedImageModelId(model.id); toggleLocalModel(model.id, true); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{stateLabel}</em></label>; })}</div><p className="inspector-note">Selecting a card keeps the model in your saved choices and opens its exact download declaration below. It does not silently change an existing project or send a prompt.</p></div>
       <div className="local-model-grid" aria-busy={setupLoading}>{localModelOptions.map((model) => { const selected = setup?.selectedModelIds.includes(model.id) ?? false; return <label className={`local-model-choice ${selected ? "selected" : ""}`} key={model.id}><input type="checkbox" checked={selected} disabled={!setup} onChange={(event) => toggleLocalModel(model.id, event.target.checked)} /><span><b>{model.name}</b><small>{model.medium} · {model.detail}</small></span><em>Manifest required</em></label>; })}</div>
       <div className="existing-model-row"><div><b>Use an existing model folder</b><small>The native app proves the folder exists when you save. It records the location but never executes or activates its contents; a later manifest inspection still has to identify every revision, license, file, and hash.</small>{setup?.existingModelDirectory && <span className="folder-record-state"><FolderClock size={13} /> Folder path entered · save to verify it exists</span>}</div><label><span>Existing folder path</span><input value={setup?.existingModelDirectory ?? ""} disabled={!setup} placeholder={environment === "native" ? "E:\\temp\\AI Video Tutorial Generator Models" : "/your/local/model-folder"} onChange={(event) => mutateSetup((current) => ({ ...current, existingModelDirectory: event.target.value || null }))} /></label></div>
       <div className="lipsync-chooser"><div><span className="section-kicker">Presenter motion stage</span><h3>Choose how portraits come alive</h3><p>Motion and lip-sync are separate stages. The measured local default animates pose, gaze, expression, and genuine blinks with LivePortrait, then uses the selected lip-sync model only for narration-accurate mouth motion.</p></div><div className="lipsync-options">{portraitAnimationModelOptions.map((model) => <label className={setup?.portraitAnimationModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="portrait-animation-model" checked={setup?.portraitAnimationModelId === model.id} disabled={!setup || model.id === "local/echomimicv3-flash" || model.id === "local/hunyuan-video-avatar"} onChange={() => selectPortraitAnimation(model.id)} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{model.tag}</em></label>)}</div></div>
-      <div className="lipsync-chooser"><div><span className="section-kicker">Narration mouth stage</span><h3>Choose your local lip-sync model</h3><p>This stage follows portrait animation and may be disabled for presenter-free scenes. Choosing a pack saves a preference; downloading remains a separate explicit step and inference stays blocked until activation review.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onChange={() => { selectLipSync(model.id); setLicenseAccepted(false); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{downloadCatalog.some((entry) => entry.modelId === model.id) ? "Download declaration ready" : model.tag}</em></label>)}</div></div>
+      <div className="lipsync-chooser"><div><span className="section-kicker">Narration mouth stage</span><h3>Choose your local lip-sync model</h3><p>This stage follows portrait animation and may be disabled for presenter-free scenes. Choosing a pack saves a preference; downloading remains a separate explicit step and inference stays blocked until activation review.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onClick={() => setDownloadSelectionId(model.id)} onChange={() => selectLipSync(model.id)} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{downloadCatalog.some((entry) => entry.modelId === model.id) ? "Download declaration ready" : model.tag}</em></label>)}</div></div>
       <div className="model-download-panel" aria-live="polite">
         {selectedDownload ? <>
-          <div className="download-record"><span className="download-record-mark"><PackageCheck size={19} /></span><div><b>{selectedDownload.displayName} · download-only pack</b><small>{formatBytes(selectedDownload.totalBytes)} across {selectedDownload.artifactCount} artifacts · revision <code>{selectedDownload.immutableRevision}</code></small><p>{selectedDownload.downloadOnlyReason}</p></div><span className={`download-phase ${selectedDownloadStatus?.phase ?? "manifestRequired"}`}>{downloadPhaseLabel(selectedDownloadStatus?.phase)}</span></div>
+          <div className="download-record"><span className="download-record-mark"><PackageCheck size={19} /></span><div><b>{selectedDownload.displayName} · {selectedImageOption?.executionReady ? "managed image runtime" : "download-only pack"}</b><small>{formatBytes(selectedDownload.totalBytes)} across {selectedDownload.artifactCount} artifacts · revision <code>{selectedDownload.immutableRevision}</code></small><p>{selectedDownload.downloadOnlyReason}</p></div><span className={`download-phase ${selectedDownloadStatus?.phase ?? "manifestRequired"}`}>{downloadPhaseLabel(selectedDownloadStatus?.phase)}</span></div>
           <div className="download-progress" aria-label={`${selectedDownload.displayName} download progress`}><i style={{ width: `${selectedDownloadStatus?.totalBytes ? Math.min(100, (selectedDownloadStatus.downloadedBytes / selectedDownloadStatus.totalBytes) * 100) : 0}%` }} /></div>
           <div className="download-detail"><span>{selectedDownloadStatus?.detail ?? "Pinned declaration ready for review."}</span><span>{formatBytes(selectedDownloadStatus?.downloadedBytes ?? 0)} / {formatBytes(selectedDownload.totalBytes)} · {selectedDownloadStatus?.verifiedArtifacts ?? 0}/{selectedDownload.artifactCount} hashes verified</span></div>
-          <label className="license-accept"><input type="checkbox" checked={licenseAccepted} disabled={selectedDownloadStatus?.phase === "downloadedQuarantined"} onChange={(event) => setLicenseAccepted(event.target.checked)} /><span>I accept <a href={selectedDownload.licenseUrl} target="_blank" rel="noreferrer">{selectedDownload.licenseId}</a> for this exact license hash <code>{selectedDownload.licenseSha256.slice(0, 12)}…</code>.</span></label>
-          <div className="model-setup-actions"><button className="secondary-button" disabled={!licenseAccepted || downloadStarting || environment !== "native" || selectedDownloadStatus?.phase === "downloadedQuarantined" || selectedDownloadStatus?.phase === "downloading" || selectedDownloadStatus?.phase === "verifying"} onClick={() => { void beginModelDownload(); }}><Download size={16} /> {downloadStarting ? "Starting…" : selectedDownloadStatus?.downloadedBytes ? "Resume verified download" : "Start verified download"}</button><small>{environment === "native" ? "Download uses no GPU. Completion means hash-verified and quarantined—not installed, active, or ready for inference." : "Open the native app to download; browser preview never fetches model bytes. A completed native download is still quarantined—not installed, active, or ready for inference."}</small></div>
-        </> : <div className="download-empty"><ShieldCheck size={18} /><div><b>No immutable download declaration for this choice</b><small>Keep the preference or choose an existing folder. The app will not fetch a mutable repository snapshot or guess a license.</small></div></div>}
+          <label className="license-accept"><input type="checkbox" checked={licenseAccepted} disabled={downloadComplete} onChange={(event) => setLicenseAccepted(event.target.checked)} /><span>I accept <a href={selectedDownload.licenseUrl} target="_blank" rel="noreferrer">{selectedDownload.licenseId}</a> for this exact license hash <code>{selectedDownload.licenseSha256.slice(0, 12)}…</code>.</span></label>
+          <div className="model-setup-actions"><button className="secondary-button" disabled={!selectedDownload.available || !licenseAccepted || downloadStarting || environment !== "native" || downloadComplete || selectedDownloadStatus?.phase === "downloading" || selectedDownloadStatus?.phase === "installing" || selectedDownloadStatus?.phase === "verifying"} onClick={() => { void beginModelDownload(); }}><Download size={16} /> {downloadStarting ? "Starting…" : selectedImageOption?.executionReady ? selectedDownloadStatus?.downloadedBytes ? "Resume SDXL installation" : "Install verified SDXL" : selectedDownloadStatus?.downloadedBytes ? "Resume verified download" : "Start verified download"}</button>{selectedImageOption?.executionReady && selectedDownloadStatus?.phase === "ready" && <button type="button" className="secondary-button" disabled={!activeProfile || !sdxlInstallReceiptReady} onClick={useVerifiedSdxlForImages}><Image size={16} /> Use SDXL in active profile</button>}<small>{environment !== "native" ? "Open the native app to download; browser preview never fetches model bytes. This browser declaration is not installed, active, or ready for inference." : selectedImageOption?.executionReady ? sdxlInstallReceiptReady ? "The completed preflight returned an immutable runtime revision and install fingerprint. Stage SDXL in the active profile, then save below." : selectedDownloadStatus?.phase === "ready" ? "The install reports ready, but its verified identity receipt is missing or activation remains blocked. Profile activation stays unavailable until repair completes verification." : "The managed installer verifies and preflights the pinned runtime without generating an image. Readiness is determined on this machine." : "Download and hash verification use no GPU. Experimental image files stay inactive until a reviewed workflow passes on this machine."}</small></div>
+        </> : <div className="download-empty"><ShieldCheck size={18} /><div><b>{selectedImageOption ? `${selectedImageOption.name} has a pinned native declaration` : "No immutable download declaration for this choice"}</b><small>{selectedImageOption ? "Open the packaged Windows app to inspect its exact files, size, license, and current installation state. Browser preview never downloads model bytes." : "Keep the preference or choose an existing folder. The app will not fetch a mutable repository snapshot or guess a license."}</small></div></div>}
       </div>
     </section>
     <section className="profile-panel" aria-labelledby="profile-title">

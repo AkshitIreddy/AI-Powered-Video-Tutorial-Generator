@@ -323,8 +323,12 @@ test("narrow desktop does not overflow horizontally", async ({ page }, testInfo)
 test("local model and provider profiles remain explicit and saveable", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: /models & providers/i }).click();
   await expect(page.getByRole("heading", { name: /local models, without surprise downloads/i })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /stable diffusion xl 1.0/i })).toBeChecked();
+  await expect(page.getByRole("radio", { name: /flux.2 klein 4b fp8/i })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /z-image turbo int8/i })).toBeVisible();
+  await page.locator(".lipsync-chooser").first().screenshot({ path: testInfo.outputPath("local-image-model-setup.png") });
   await expect(page.getByRole("radio", { name: /liveportrait/i })).toBeChecked();
-  await page.getByRole("radio", { name: /musetalk 1.5/i }).check();
+  await page.getByRole("radio", { name: /musetalk 1.5/i }).click();
   await expect(page.getByRole("radio", { name: /musetalk 1.5/i })).toBeChecked();
   await expect(page.getByText(/download-only pack/i)).toBeVisible();
   await expect(page.getByText(/browser preview never fetches model bytes/i)).toBeVisible();
@@ -339,6 +343,10 @@ test("local model and provider profiles remain explicit and saveable", async ({ 
   await page.locator(".model-setup-panel").screenshot({ path: testInfo.outputPath("local-model-setup.png") });
   await page.locator(".model-download-panel").screenshot({ path: testInfo.outputPath("local-model-download-detail.png") });
   await page.locator(".profile-panel").screenshot({ path: testInfo.outputPath("provider-profiles.png") });
+  expect(await page.evaluate(() => ({
+    viewportWidth: document.documentElement.clientWidth,
+    contentWidth: document.documentElement.scrollWidth,
+  }))).toEqual({ viewportWidth: testInfo.project.use.viewport?.width, contentWidth: testInfo.project.use.viewport?.width });
 });
 
 test("visual bible customizes typography, captions, backgrounds, presenter, and licensed uploads", async ({ page }, testInfo) => {

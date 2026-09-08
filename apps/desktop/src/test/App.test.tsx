@@ -5,7 +5,7 @@ import App from "../App";
 import { canonicalFixtureIdFromTopic, hydrateDurableProject, isDurableNativeJob, normalizeAppSnapshot, projectTitleFromTopic } from "../project-utils";
 import { defaultSnapshot, exampleSnapshot } from "../data";
 import { createOnboardingState } from "../onboarding";
-import { localModelSetupSave, providerSecretSet, type TutorialRoutingPolicy } from "../native";
+import { localModelSetupGet, localModelSetupSave, providerSecretSet, type TutorialRoutingPolicy } from "../native";
 import type { AppSnapshot } from "../types";
 
 describe("Alystria desktop shell", () => {
@@ -420,9 +420,23 @@ describe("Alystria desktop shell", () => {
 
   it("keeps local lip-sync choices and switchable provider profiles explicit", async () => {
     const user = userEvent.setup();
+    const initialSetup = await localModelSetupGet();
+    await localModelSetupSave({
+      ...initialSetup,
+      selectedModelIds: [...new Set([...initialSetup.selectedModelIds, "local/qwen3.5-9b-gguf"])],
+    });
     render(<App />);
     await user.click(screen.getByRole("button", { name: /models & providers/i }));
     expect(await screen.findByRole("heading", { name: /local models, without surprise downloads/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /choose an image model to inspect or install/i })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /stable diffusion xl 1.0/i })).toBeChecked();
+    expect(screen.getByText(/stable diffusion xl 1.0 has a pinned native declaration/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^download only$/i)).toHaveLength(2);
+    expect(screen.getAllByText(/exact 12 gb workflow still needs a successful benchmark/i)).toHaveLength(2);
+    await user.click(screen.getByRole("radio", { name: /z-image turbo int8/i }));
+    expect(screen.getByRole("radio", { name: /z-image turbo int8/i })).toBeChecked();
+    expect(screen.getByText(/z-image turbo int8 has a pinned native declaration/i)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /qwen3.5 9b/i })).toBeChecked();
     await user.click(screen.getByRole("radio", { name: /musetalk 1.5/i }));
     expect(screen.getByRole("radio", { name: /musetalk 1.5/i })).toBeChecked();
     expect(await screen.findByText(/download-only pack/i)).toBeInTheDocument();
