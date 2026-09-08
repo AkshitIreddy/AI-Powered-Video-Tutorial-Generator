@@ -101,6 +101,19 @@ input, textarea, select, .search-field, .toolbar input { background-color: #fff;
 .wizard-modal, .regen-sheet, .command-palette, .jobs-drawer { background: #fff; color: var(--ink); border-color: var(--line); }
 .wizard-modal header, .wizard-modal footer, .regen-sheet header, .regen-sheet footer, .jobs-drawer header, .jobs-drawer footer { background: #faf8fc; border-color: var(--line); }
 .choice-cards button, .quality-choice button, .source-drop, .learner-card, .privacy-selection, .brief-preview, .routing-review, .cost-approval, .job-card, .command-results button { background: #f7f5fa; color: var(--ink); border-color: var(--line); }
+.jobs-drawer { width: min(440px, calc(100vw - 16px)); }
+.jobs-summary strong { font-size: 12px; }
+.jobs-summary small, .local-job-badge { font-size: 11px; }
+.job-copy > div { align-items: flex-start; }
+.job-copy strong { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow-wrap: anywhere; font-size: 12px; line-height: 1.45; }
+.job-copy > div span { flex-shrink: 0; padding-top: 2px; font-size: 10px; }
+.job-copy p { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.job-copy > small { font-size: 10px; }
+.jobs-drawer > footer { font-size: 12px; }
+.job-diagnostics { margin: 8px 0; color: var(--muted); }
+.job-diagnostics summary { width: fit-content; padding: 4px 0; color: var(--indigo); cursor: pointer; font-size: 12px; }
+.job-diagnostics summary:focus-visible { outline: 2px solid var(--indigo); outline-offset: 3px; border-radius: 3px; }
+.job-diagnostics pre { max-height: 180px; margin: 6px 0; overflow: auto; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); white-space: pre-wrap; overflow-wrap: anywhere; font: 10.5px/1.55 var(--mono); }
 .choice-cards button.active, .quality-choice button.active { background: var(--indigo-soft); border-color: var(--indigo); }
 .diagnostic-rows > div { background: var(--surface); }.diagnostic-rows strong { color: var(--ink); }.diagnostic-rows small { color: var(--muted); }.diagnostic-icon { background: var(--surface-soft); }
 .settings-form-grid input, .settings-form-grid select, .settings-toggle { background: #faf8fc; color: var(--ink); border-color: var(--line); }.settings-toggle strong { color: var(--ink); }.settings-toggle small { color: var(--muted); }
