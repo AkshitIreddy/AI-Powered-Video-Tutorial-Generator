@@ -1,5 +1,35 @@
 # Windows + NVIDIA runtime audit
 
+## September 8 compatibility correction
+
+The packaged 9.0.1 build was independently reproduced failing both one-frame
+1080p H.264 and HEVC NVENC probes on driver 581.29: required API 13.1,
+available API 13.0. The integrated native HEVC export also failed at its probe,
+before promotion. Earlier H.264 success can use the renderer's QSV fallback;
+it does not establish NVENC compatibility.
+
+The replacement candidate is BtbN's dated LGPL shared FFmpeg 8.1.2 build
+`n8.1.2-51-g7ba069f4f1-20260907`. Both one-frame NVENC probes passed on this
+machine under the shared GPU guard. Full integrated export qualification
+remains pending. No driver was changed. The older system GPL build was used
+only as a diagnostic comparator and is not packaged.
+
+The repository runtime manifest pins the 70,835,200-byte archive, all ten
+binary/DLL files, and its LGPL-3.0 license. Packaging verifies these inputs
+and copies only the pinned files. Export identity now includes the installed
+Node, Chromium, and FFmpeg payloads, including shared libraries, so a
+toolchain change invalidates old native export jobs and render cache entries.
+
+Primary sources: [dated build archive](https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-07-15-39),
+[BtbN NVIDIA header selection](https://github.com/BtbN/FFmpeg-Builds/blob/master/scripts.d/50-ffnvcodec.sh),
+[NVIDIA API 13.0 requirements](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/read-me/index.html),
+[API 13.1 requirements](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/read-me/index.html).
+Local receipts are in
+`E:\temp\AI Video Tutorial Generator\build\ffmpeg-candidate-20260908`
+(`candidate-verification.json` and `one-frame-nvenc-probes.json`).
+
+## Earlier snapshot
+
 Research and machine-verification snapshot: **2026-08-30**.
 
 This audit asks which inference and media runtimes Alystria should prefer on

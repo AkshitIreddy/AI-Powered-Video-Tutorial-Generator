@@ -20,7 +20,10 @@
     "rust": {
       "version": "1.96.1",
       "profile": "minimal",
-      "components": ["clippy", "rustfmt"]
+      "components": [
+        "clippy",
+        "rustfmt"
+      ]
     }
   },
   "renderer": {
@@ -36,10 +39,59 @@
   },
   "media": {
     "ffmpeg": {
-      "version": "9.0.1",
-      "coreRuntimeLicense": "LGPL-2.1-or-later",
+      "version": "8.1.2",
+      "coreRuntimeLicense": "LGPL-3.0-or-later",
       "distribution": "signed-runtime-pack",
-      "bundled": false
+      "bundled": false,
+      "windowsLgplShared": {
+        "archiveUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-07-15-39/ffmpeg-n8.1.2-51-g7ba069f4f1-win64-lgpl-shared-8.1.zip",
+        "archiveSizeBytes": 70835200,
+        "archiveSha256": "afb1c55ecdef6b80f6243984954dbfe350d44c7da2b64f30575c283b68214825",
+        "extractedDirectory": "ffmpeg-n8.1.2-51-g7ba069f4f1-win64-lgpl-shared-8.1",
+        "licenseSha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768",
+        "files": [
+          {
+            "name": "avcodec-62.dll",
+            "sha256": "87f17571aafaf4af460d4f35f99674ae6a94a7531ce79050a416b7d54182a1a9"
+          },
+          {
+            "name": "avdevice-62.dll",
+            "sha256": "0d9ef5990a9bac5a9d385e46850e05a3c54173495cd160f27898889299e282b1"
+          },
+          {
+            "name": "avfilter-11.dll",
+            "sha256": "da7d380d738534eae0e1deccf9825777f98e2046ca2612a3a73a4aee302064eb"
+          },
+          {
+            "name": "avformat-62.dll",
+            "sha256": "7f8b5dfd7eb945522c0e089cbdff230d6c4f108d2229f669176da87aa1d2ebb2"
+          },
+          {
+            "name": "avutil-60.dll",
+            "sha256": "13f412ff746ec2f2813b0a3d184a34361bdb425635e26d3974325148fdd6bce8"
+          },
+          {
+            "name": "ffmpeg.exe",
+            "sha256": "0d600a70c6b62c45c8078638d1ecd4ed05545f3fb6ac2d19b406e3ae8d70c961"
+          },
+          {
+            "name": "ffplay.exe",
+            "sha256": "3d799e3ecf55730724cd53d35acba1eda7f9e1d0c7bdab48fa973269b1745ba9"
+          },
+          {
+            "name": "ffprobe.exe",
+            "sha256": "a413e4866082dd7eb29a4a4e4b2fa13c76b546950ad0071cbff62e10b414119e"
+          },
+          {
+            "name": "swresample-6.dll",
+            "sha256": "2d96741de9b7cd36ea6246d3d1c688f4ff0b4586af0e5814f74062b0c2138e0e"
+          },
+          {
+            "name": "swscale-9.dll",
+            "sha256": "3aed98acf700fb6211403dc2d22bbd794652121f59c1f8ab147ffb9d4379c865"
+          }
+        ]
+      }
     },
     "gplCodecPack": {
       "version": "9.0.1",

@@ -316,7 +316,7 @@ else {
         "Chromium revision $ChromiumRevision"
     $ChromiumSource = Join-Path $ChromiumSourceRoot "chrome.exe"
     $FfmpegSourceRoot = Assert-TrustedRuntimeSource `
-        (Join-Path $TrustedRuntimeSourceRoot "ffmpeg-n9.0.1-6-g9d4ca21220-win64-lgpl-shared-9.0\extracted\ffmpeg-n9.0.1-6-g9d4ca21220-win64-lgpl-shared-9.0") `
+        (Join-Path $TrustedRuntimeSourceRoot "$($RepositoryRuntimeManifest.media.ffmpeg.windowsLgplShared.extractedDirectory)\extracted\$($RepositoryRuntimeManifest.media.ffmpeg.windowsLgplShared.extractedDirectory)") `
         "FFmpeg $FfmpegVersion LGPL"
     $FfmpegSourceBin = Join-Path $FfmpegSourceRoot "bin"
     $FfmpegLicenseSource = Join-Path $FfmpegSourceRoot "LICENSE.txt"
@@ -326,8 +326,15 @@ $FfprobeSource = Join-Path $FfmpegSourceBin "ffprobe.exe"
 
 Assert-FileSha256 $NodeSource "5c976096e04e5c2c1f091938926234cc9fbebfe9787ddd149351b3b0ecc707b5" "Node $NodeVersion"
 Assert-FileSha256 $ChromiumSource $ChromiumSha256 "Chromium $ChromiumVersion"
-Assert-FileSha256 $FfmpegSource "b5885fe673a8cc93188f4fc1b5d59dac12507b5a0bf0b76d875874498ce76af4" "FFmpeg $FfmpegVersion"
-Assert-FileSha256 $FfprobeSource "fa77f24b8fef79a10a102d3ba0e6c4b497de9c754261157acd6aeb9aa8c0d897" "ffprobe $FfmpegVersion"
+$FfmpegPins = $RepositoryRuntimeManifest.media.ffmpeg.windowsLgplShared
+if ($FfmpegPins.files.Count -lt 2) { throw "FFmpeg binary pins are missing." }
+foreach ($Pin in $FfmpegPins.files) {
+    if ($Pin.name -notmatch '^[a-zA-Z0-9_-]+\.(exe|dll)$') {
+        throw "Unsafe FFmpeg pinned filename."
+    }
+    Assert-FileSha256 (Join-Path $FfmpegSourceBin $Pin.name) $Pin.sha256 "FFmpeg $FfmpegVersion $($Pin.name)"
+}
+Assert-FileSha256 $FfmpegLicenseSource $FfmpegPins.licenseSha256 "FFmpeg license"
 if ((Get-Item -LiteralPath $NodeSource).VersionInfo.ProductVersion -ne $NodeVersion) {
     throw "The trusted Node executable did not report v$NodeVersion."
 }
@@ -599,7 +606,10 @@ $ChromiumDestination = Join-Path $RuntimeDirectory "chromium"
 Copy-Item -LiteralPath $ChromiumSourceRoot -Destination $ChromiumDestination -Recurse -Force
 
 $FfmpegDestination = Join-Path $RuntimeDirectory "ffmpeg"
-Copy-DirectoryContents $FfmpegSourceBin $FfmpegDestination
+New-Item -ItemType Directory -Path $FfmpegDestination -Force | Out-Null
+foreach ($Pin in $FfmpegPins.files) {
+    Copy-Item -LiteralPath (Join-Path $FfmpegSourceBin $Pin.name) -Destination (Join-Path $FfmpegDestination $Pin.name)
+}
 Copy-Item -LiteralPath $FfmpegLicenseSource -Destination (Join-Path $FfmpegDestination "LICENSE.txt") -Force
 
 # Create a flat, link-free production dependency tree. pnpm's workspace links
@@ -642,8 +652,8 @@ $RelativeVersionAndLicense = @{
     "node/node.exe" = @($NodeVersion, "MIT")
     "renderer/dist/src/cli.js" = @($RendererVersion, "MIT")
     "chromium/chrome.exe" = @($ChromiumVersion, "BSD-3-Clause")
-    "ffmpeg/ffmpeg.exe" = @($FfmpegVersion, "LGPL-2.1-or-later")
-    "ffmpeg/ffprobe.exe" = @($FfmpegVersion, "LGPL-2.1-or-later")
+    "ffmpeg/ffmpeg.exe" = @($FfmpegVersion, $RepositoryRuntimeManifest.media.ffmpeg.coreRuntimeLicense)
+    "ffmpeg/ffprobe.exe" = @($FfmpegVersion, $RepositoryRuntimeManifest.media.ffmpeg.coreRuntimeLicense)
     "assets/starter/audio/catalog.json" = @($RendererVersion, "MIT")
     "assets/starter/visuals/packages/themes/starter-kits/core.v1.json" = @($RendererVersion, "MIT")
 }
