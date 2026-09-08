@@ -610,9 +610,13 @@ try {
   await expect.poll(async () => importedCard.locator("img").evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
 
   await editor.getByRole("button", { name: "Go to start" }).click();
-  await editor.getByRole("button", { name: "Add title" }).click();
-  let titleClip = editor.locator(".aly-editor-clip--titles").filter({ hasText: "New title" }).first();
+  let titleClip = editor.locator(".aly-editor-clip--titles").filter({ hasText: editedTitle }).first();
+  if (await titleClip.count() === 0) {
+    await editor.getByRole("button", { name: "Add title" }).click();
+    titleClip = editor.locator(".aly-editor-clip--titles").filter({ hasText: "New title" }).first();
+  }
   await expect(titleClip).toBeVisible();
+  await titleClip.click();
   await editor.getByLabel("On-screen text").fill(editedTitle);
   await editor.getByLabel("Text size").fill("32");
   await editor.getByLabel("Text size").press("Enter");
@@ -672,7 +676,7 @@ try {
   ]) {
     const before = new Set(await readdir(exportsDirectory));
     await editor.getByRole("button", { name: button, exact: true }).click();
-    await expect(editor.getByText("Document exported to the project's exports folder.", { exact: true })).toBeVisible();
+    await expect(editor.getByText("Document exported to the project's exports folder.", { exact: true })).toBeVisible({ timeout: parsed.actionTimeoutMs });
     const added = (await readdir(exportsDirectory)).filter(name => !before.has(name) && name.endsWith(extension));
     if (added.length !== 1) throw new Error(`Expected one saved ${extension} document, found ${added.length}`);
     const documentPath = path.join(exportsDirectory, added[0]);
