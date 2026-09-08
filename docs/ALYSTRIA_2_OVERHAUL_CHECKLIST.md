@@ -114,33 +114,41 @@ Primary evidence:
   export, editor, and restart/recovery journeys and fail closed when receipts or
   output files do not satisfy the contract.
 
-## Remaining local-overhaul acceptance
+## Integrated local acceptance
 
 These are required before the local overhaul can be called complete. Browser
 tests or the older portable binary cannot substitute for them.
 
-- [ ] Rebuild the desktop, renderer, and packaged worker from the frozen current
+- [x] Rebuild the desktop, renderer, and packaged worker from the frozen current
   source, then repeat hidden launch, worker handshake, normal close, no-console,
-  and no-orphan checks against that exact package.
-- [ ] Prove a fresh packaged profile starts with no invented projects/jobs,
+  and no-orphan checks against that exact package. September 8 desktop
+  a4e4e8a / worker 69f8c59 passed all 762 component hashes and the full native
+  journey, with normal close and no surviving descendants at 12:05:35 UTC.
+- [x] Prove a fresh packaged profile starts with no invented projects/jobs,
   replays setup, reuses the configured E:-resident runtimes, and confines writes
-  to the disposable sandbox apart from the documented credential-store path.
-- [ ] Complete the representative 178-182 second native tutorial through the
+  to the observed portable profile paths apart from the documented credential
+  store. Passed at 12:07:20 UTC; owner state restored. This is not a whole-disk
+  write audit. First empty WebView initialization was an uninstrumented healthy
+  bootstrap; the subsequent instrumented launch/replay/relaunch passed.
+- [x] Complete the representative 178-182 second native tutorial through the
   selected provider route, Magpie narration, forced alignment, sparse Elena
   opening, authored teaching scenes, current Review, archive, and master export.
   Inspect frames throughout the duration, audio, captions, pacing, presenter
-  identity, mouth-at-rest behavior, and exact output receipts.
-- [ ] Complete the packaged editor journey: CAS import, reload, playback,
+  identity, mouth-at-rest behavior, and exact output receipts. The accepted
+  master is 180 seconds, with 16 inspected decoded checkpoints and measured
+  -16.24 LUFS / -1.96 dBTP audio. No auditory listening/every-frame claim.
+- [x] Complete the packaged editor journey: CAS import, reload, playback,
   waveform, title and trim edit, durable revision, edited timeline render,
-  preserved audio, and approximately three-minute output.
-- [ ] Repeat cancellation and restart recovery through the final Tauri package
-  and verify the durable terminal receipt after restart. An earlier package
+  preserved audio, and approximately three-minute output. Final v6 delivery
+  passes all 5,400 frames, exactly 180 seconds of decoded audio, no clipping,
+  -16.24 LUFS / -1.79 dBTP, and 18 samples matching the reviewed candidate.
+- [x] Repeat cancellation and restart recovery through the final Tauri package
+  and verify the durable terminal receipt after restart. The final package
   retained BLOCKED across restart and persisted CANCELLED afterward; both
-  desktops and workers exited. Evidence:
+  desktops and workers exited and owner state was restored. Evidence:
   `E:\temp\AI Video Tutorial Generator Test Sandbox\Evidence\native-recovery\report.json`
-  (2026-09-05 10:04:03 UTC). This receipt predates the final provider and editor
-  changes. One WebView2 shutdown diagnostic was logged; this is not a
-  zero-stderr claim.
+  (2026-09-08 12:09:09 UTC), bound to desktop b0030358... and worker 67082407....
+  This is a normal-close/no-orphan result, not a zero-stderr claim.
 - [x] Produce and inspect the current complex live-code proof: the 84.008-second
   binary-search lesson uses independently checked Python/JavaScript traces,
   timed code writing, found/missing cases, eight narration clips, and ten
@@ -151,7 +159,7 @@ tests or the older portable binary cannot substitute for them.
   8 ms audio/video endpoint drift. WebM reports BT.709 matrix metadata, while
   transfer and primaries are unknown; this is not full color-tag qualification.
   This is distinct from the required native three-minute provider tutorial.
-- [ ] Reconcile final documentation and Git status after the coordinated native
+- [x] Reconcile final documentation and Git status after the coordinated native
   run. Preserve the owner-owned `see me`, release our GPU lease only when owned, and record
   exact current artifact paths and hashes.
 

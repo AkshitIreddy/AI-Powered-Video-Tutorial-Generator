@@ -454,7 +454,17 @@ Independent loudness measurement exposed another delivery limitation: default
 192 kbps delivery audio and changes the export implementation identity to v6.
 The decoded gate checks clipping and duration, not authored loudness targets;
 independent loudness/true-peak qualification remains necessary. The final
-native v6 export is pending at this checkpoint.
+native v6 export subsequently passed at 12:05:35 UTC: independent measurements
+confirm 180 seconds of audio, zero clipping, -16.24 LUFS / -1.79 dBTP and all
+5,400 video frames. Each of the 18 decoded PNG hashes exactly matches its
+previously inspected c35 candidate frame. Final video SHA-256:
+`4499bbe38b8b7a4ba861a590245d623dab044bcc68bca1dde0568edf34350ea9`.
+File: `exports/editor/editor-a80074430d15432faa2628a71bc57b1b.webm` in the
+Karatsuba project. Independent acceptance and visual-review receipts are in
+`E:\temp\avt-final-media-inspection-20260907\final-editor-media-69f8c59-20260908`.
+The native run also verified real JSON/OTIO files, waveform, CAS reload, title
+edit, edited Review playback and normal close with no surviving workers.
+Peak FFmpeg RSS was 1.158 GiB; the observed journey lasted 1,182 seconds.
 
 Desktop c993c18 moves ready media ahead of unlinked starter references, with
 an explicit toggle preserving all 38 references. a4e4e8a resolves legacy

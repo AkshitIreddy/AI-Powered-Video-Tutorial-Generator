@@ -137,14 +137,47 @@ an exhaustive lip-sync benchmark. Evidence is preserved under
 
 The final package reuses this approved master and generation without making
 new provider requests or acquiring an AI GPU lease. The full editor journey
-is running; its media is not accepted merely because the earlier package
-passed automation. The earlier malformed edited audio remains rejected and
+completed at `2026-09-08T12:05:35.728Z`, with real import/reload, waveform,
+title editing, JSON/OTIO output, full editor render, Review playback and archive.
+Normal close returned exit 0 with no surviving worker descendants, no fallback
+and no shutdown problems. Independent inspection accepts the final editor
+video: 5,400 frames, exactly 180 seconds of decoded audio, no clipped samples,
+-16.24 LUFS / -1.79 dBTP, and all 18 sampled PNG hashes identical to the
+visually reviewed candidate. Final video SHA-256 is
+`4499bbe38b8b7a4ba861a590245d623dab044bcc68bca1dde0568edf34350ea9`.
+Evidence: `E:\temp\avt-final-media-inspection-20260907\final-editor-media-69f8c59-20260908`.
+The earlier malformed edited audio remains rejected and
 the corrected-but-low-bitrate replacement remains short of the true-peak
 target, as detailed in the editor audit. A fresh native screenshot confirms
 the final portrait type/thumbnail correction and collapsed unlinked catalog
 references. Official OTIO 0.18.1 also parsed the current run's actual export,
 SHA-256 `8034d7bcb17272d4a4cef4a28fdaa6b726755225e591ee143d2df0026bc6f696`,
 with 55 clips and five resolving file references across 180 seconds.
+
+Current-package clean profile passed at `2026-09-08T12:07:20.601Z`, with
+zero seeded projects/jobs, six existing provider connections and five model
+selections detected, onboarding/replay/normal relaunch successful, and owner
+state restored. The first empty-WebView bootstrap was healthy but not CDP
+inspected; subsequent native launches were instrumented. Root inspection of
+the fresh onboarding and normal empty-home screenshots confirms the visible
+states and intact book/play identity.
+
+Current-package recovery passed at `2026-09-08T12:09:09.004Z`. Generation
+`d76dd9e1-7581-41b5-a295-aea625a292a8` stayed BLOCKED across restart and then
+reached CANCELLED through the UI. Desktop/worker pairs 10680/38732 and
+33696/39840 exited normally. The profile isolation receipt at 12:09:25 confirms
+owner restoration and no remaining processes. Reports:
+`Evidence/native-clean-first-launch/report.json`,
+`Evidence/native-recovery/report.json`, and
+`Evidence/recovery-isolation-20260908T120801385916Z/isolation-report.json` under
+the portable test root. All are bound to the exact package hashes above.
+
+The qualification is local, unsigned debug-package evidence. HTML editor
+preview accuracy, proxy workflows, advanced NLE tools, and named-NLE effect
+compatibility remain product-depth gaps. Signing, installation on a clean VM,
+updater/uninstall behavior and public distribution remain separate release
+work. No new provider generation, AI GPU lease, push or release occurred during
+this final cached-master qualification.
 
 ## Historical September 5–7 gate snapshot
 

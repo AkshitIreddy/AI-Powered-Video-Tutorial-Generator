@@ -24,8 +24,10 @@ exactly 180 seconds of audio, zero clipping, and all 18 visual checkpoints
 inspected. Peak renderer RSS was 1.157 GiB. Its default Opus bitrate still
 missed the -1.5 dBTP delivery target. Worker 69f8c59 therefore sets 192 kbps:
 an actual full-duration audio comparison measured -16.24 LUFS / -1.79 dBTP.
-The final integrated export with this setting is still running; the audio-only
-comparison is not presented as its acceptance.
+The final integrated export completed at 12:05:35 UTC. Independent full audio
+decode measures exactly 180 seconds, zero clipping, -16.24 LUFS / -1.79 dBTP.
+All 18 decoded frame hashes match the previously inspected candidate. The
+final edited video is accepted within the documented sampled-review limits.
 
 Desktop a4e4e8a presents usable media first, keeps 38 unlinked library references
 behind an explicit toggle, and resolves saved portrait type/thumbnail from
@@ -33,8 +35,13 @@ verified CAS media. The current native close-up confirms the portrait image
 and readable still-image label. The final full desktop suite passed 255 cases in 35 files (209.69 seconds).
 Typecheck, lint,
 desktop build, and 22 focused pipeline tests pass. Package verification on
-65ae46f matched all 762 components at 11:45 UTC. Current-package final export,
-clean profile and recovery results will be recorded separately.
+65ae46f matched all 762 components at 11:45 UTC. The full native journey passed
+with normal close and no surviving workers; peak FFmpeg RSS was 1.158 GiB.
+Current-package clean profile passed at 12:07:20 UTC, including setup reuse,
+replay, zero seeded work and normal relaunch. Recovery passed at 12:09:09 UTC:
+BLOCKED survived restart and cancellation persisted CANCELLED. Both checks
+restored owner state and left no workers. The initial empty-WebView bootstrap
+was uninstrumented; subsequent launches were driven through native WebView.
 
 Official OpenTimelineIO 0.18.1 parsed and round-tripped an actual native export
 with 55 clips, five resolving CAS file references, and 180-second duration.
