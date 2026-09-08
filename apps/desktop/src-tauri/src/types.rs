@@ -777,6 +777,8 @@ pub struct EditorBindingsGetReceipt {
     pub narration: Vec<Value>,
     pub presenters: Vec<Value>,
     #[serde(default)]
+    pub captions: Vec<Value>,
+    #[serde(default)]
     pub renders: Vec<Value>,
 }
 
@@ -1191,6 +1193,7 @@ mod caption_delivery_tests {
             "assets": [],
             "narration": [],
             "presenters": [],
+            "captions": [{ "sceneId": "scene-1", "id": "cue-1", "startTicks": 240, "endTicks": 240000, "text": "Three products." }],
             "renders": [{
                 "sceneId": "scene-1",
                 "artifactHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -1200,6 +1203,7 @@ mod caption_delivery_tests {
         .unwrap();
 
         assert_eq!(receipt.renders.len(), 1);
+        assert_eq!(receipt.captions[0]["text"], "Three products.");
     }
 
     #[test]
