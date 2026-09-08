@@ -77,6 +77,11 @@ def test_http_transport_value_reprs_hide_project_content_and_credentials() -> No
     assert "private generated content" not in repr(provider_response)
 
 
+def test_google_authentication_header_is_redacted_case_insensitively() -> None:
+    request = HttpRequest("POST", "https://example.test", {"X-Goog-Api-Key": "fixture-secret"})
+    assert request.redacted_headers() == {"X-Goog-Api-Key": "[REDACTED]"}
+
+
 class FakeTransport:
     def __init__(self, *responses: HttpResponse) -> None:
         self.responses = list(responses)

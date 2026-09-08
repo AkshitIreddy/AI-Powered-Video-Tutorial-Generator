@@ -29,7 +29,7 @@ from ..security.privacy import (
 )
 from .errors import FailureCode, ProviderFailure
 
-_SENSITIVE_HEADERS = {"authorization", "x-api-key", "api-key", "ocp-apim-subscription-key"}
+_SENSITIVE_HEADERS = {"authorization", "x-api-key", "x-goog-api-key", "api-key", "ocp-apim-subscription-key"}
 
 
 @dataclass(frozen=True, slots=True)
