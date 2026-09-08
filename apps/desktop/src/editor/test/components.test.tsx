@@ -212,6 +212,17 @@ describe("AdvancedVideoEditor", () => {
     expect(onExportOtio).toHaveBeenCalledWith(expect.objectContaining({ OTIO_SCHEMA: "Timeline.1" }), expect.objectContaining({ id: "sample-project" }));
   });
 
+  it("shows a failed document save and allows a retry", async () => {
+    const user = userEvent.setup();
+    const onExportOtio = vi.fn().mockRejectedValueOnce(new Error("Exports folder unavailable")).mockResolvedValueOnce(undefined);
+    render(<AdvancedVideoEditor project={makeSampleProject()} onExportOtio={onExportOtio} />);
+    await user.click(screen.getByRole("button", { name: "Export OTIO" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Exports folder unavailable");
+    await user.click(screen.getByRole("button", { name: "Export OTIO" }));
+    expect(await screen.findByText("Document exported to the project's exports folder.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("renders the edited timeline only through an injected native callback", async () => {
     const user = userEvent.setup();
     const onRenderTimeline = vi.fn().mockResolvedValue({ outputPath: "project/exports/editor/final.webm", warnings: ["Fallback font used."] });

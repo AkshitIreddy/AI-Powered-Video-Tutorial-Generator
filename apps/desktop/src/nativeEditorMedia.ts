@@ -1,6 +1,21 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { BrowserMediaImportController, type EditorImportBatch, type EditorProject } from "./editor";
-import { projectAssetImport, projectSnapshotGet, type AssetRightsStatus, type ProjectIdentityRequest } from "./native";
+import { BrowserMediaImportController, exportOtioLike, prepareEditorProjectForPersistence, serializeEditorProject, type EditorImportBatch, type EditorProject } from "./editor";
+import { editorDocumentExport, projectAssetImport, projectSnapshotGet, type AssetRightsStatus, type ProjectIdentityRequest } from "./native";
+
+export async function exportNativeEditorDocument(document: EditorProject, format: "editorJson" | "otio", identity: ProjectIdentityRequest, resolve: NativeMediaResolver) {
+  const portable = prepareEditorProjectForPersistence(document);
+  for (const asset of portable.assets) {
+    if (!asset.hash || asset.metadata.browserSessionOnly === true) continue;
+    const stored = await resolve({ ...identity, artifactHash: asset.hash });
+    let path = stored.path.replace(/^\\\\\?\\UNC\\/u, "//").replace(/^\\\\\?\\/u, "").replace(/\\/gu, "/");
+    if (/^[a-z]:\//iu.test(path)) path = `/${path}`;
+    if (path.startsWith("//")) path = path.slice(2);
+    asset.uri = `file://${path.split("/").map((part, index) => index === 1 && /^[a-z]:$/iu.test(part) ? part : encodeURIComponent(part)).join("/")}`;
+    delete asset.previewUrl;
+    delete asset.thumbnailUrl;
+  }
+  return editorDocumentExport({ ...identity, format, contents: format === "otio" ? JSON.stringify(exportOtioLike(portable), null, 2) : serializeEditorProject(portable) });
+}
 
 export type NativeMediaResolver = (input: ProjectIdentityRequest & { artifactHash: string }) => Promise<{ path: string; mediaType: string; byteSize: number }>;
 export type NativeHeadUpdate = { nativeHeadRevisionId: string; nativeRevisionNumber: number };

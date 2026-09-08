@@ -1092,6 +1092,10 @@ export function projectExportArchive(input: ExportProjectArchiveRequest): Promis
   }));
 }
 
+export function editorDocumentExport(input: ProjectIdentityRequest & { format: "editorJson" | "otio"; contents: string }): Promise<{ path: string; sha256: string; byteSize: number }> {
+  return command("editor_document_export", input, () => { throw new Error("Document saves require the desktop app."); });
+}
+
 export function generationStart(input: GenerationRequest): Promise<JobReceipt> {
   return command("generation_start", input, () => {
     const receipt: JobReceipt = {

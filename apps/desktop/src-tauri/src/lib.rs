@@ -1,6 +1,7 @@
 mod catalog_discovery;
 mod commands;
 mod diagnostics;
+mod editor_document;
 mod error;
 pub mod generated;
 mod model_download;
@@ -180,6 +181,7 @@ pub fn run() {
             project_asset_resolve,
             presenter_profile_select,
             project_export_archive,
+            editor_document::editor_document_export,
             generation_start,
             generation_approve,
             scene_regenerate,

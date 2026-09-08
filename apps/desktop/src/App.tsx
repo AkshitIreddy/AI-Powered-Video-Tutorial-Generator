@@ -213,7 +213,7 @@ import {
 } from "./catalog";
 import { alystriaCatalogItems, catalogHardwareFromDiagnostics } from "./appCatalog";
 import { AdvancedVideoEditor, BrowserMediaImportController, createEditorProjectFromAlystriaProject, editorTimelineExportResult, exportEditorTimelineNative, mergeAlystriaMediaBindings, prepareEditorProjectForPersistence, type EditorProject } from "./editor";
-import { importNativeEditorMedia, resolveNativeEditorMedia } from "./nativeEditorMedia";
+import { exportNativeEditorDocument, importNativeEditorMedia, resolveNativeEditorMedia } from "./nativeEditorMedia";
 import { resolveEditorWaveformNative, type EditorMediaAsset } from "./editor";
 import { VisualCandidateReview } from "./VisualCandidateReview";
 import { RenderedFrameReviewPanel } from "./RenderedFrameReviewPanel";
@@ -2763,6 +2763,12 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
     onNotify("Edited video exported", result.outputPath, "success");
     return result;
   };
+  const exportEditorDocument = async (document: EditorProject, format: "editorJson" | "otio") => {
+    const identity = nativeProjectLink(projectRef.current);
+    if (!identity) throw new Error("Open a saved desktop project before exporting a document.");
+    const receipt = await exportNativeEditorDocument(document, format, identity, projectAssetResolve);
+    onNotify("Editor document exported", receipt.path, "success");
+  };
   const returnToScene = async () => {
     if (returningFromEditor) return;
     setReturningFromEditor(true);
@@ -2897,7 +2903,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
       </aside>
     </div>
     <div className="scene-sequence-panel"><div className="scene-sequence-heading"><strong><Layers3 size={15} /> Teaching sequence</strong><button className="text-button" onClick={() => { void openAdvancedEditor(); }}>Edit tracks & timing <ArrowRight size={14} /></button><small>v{version}</small></div><div className="scene-sequence-clips">{project.scenes.map((scene) => <button className={scene.id === activeScene.id ? "active" : ""} style={{ flexGrow: scene.duration }} key={scene.id} onClick={() => onSelectScene(scene.id)}><span>{String(scene.index).padStart(2, "0")} · {formatTime(scene.duration)}</span><strong>{scene.title}</strong></button>)}</div></div>
-    {editorOpen && <div className="integrated-editor-layer" role="dialog" aria-modal="true" aria-label="Integrated advanced video editor"><div className="integrated-editor-layer__bar"><div><span className="section-kicker">Non-destructive finishing room</span><strong>{project.title}</strong>{editorSaveStatus && <span className={`editor-save-status is-${editorSaveStatus.phase}`} role="status" aria-live="polite" style={{ color: editorSaveStatus.phase === "error" ? "#ffb4a8" : "#8495ae", fontSize: 11 }}>{editorSaveStatus.phase === "error" ? `Save failed · ${editorSaveStatus.detail}` : editorSaveStatus.detail}</span>}</div><label className="editor-import-rights">New media rights<select aria-label="Rights for new editor media" value={editorImportRights} onChange={(event) => setEditorImportRights(event.target.value as typeof editorImportRights)}><option value="unknown">Not reviewed · preview only</option><option value="owned">I own the media</option><option value="licensed">Licensed for distribution</option><option value="publicDomain">Public domain</option></select></label><button className="secondary-button small" disabled={returningFromEditor} aria-busy={returningFromEditor} onClick={() => { void returnToScene(); }}><X size={15} /> {returningFromEditor ? "Saving…" : "Return to scene"}</button></div><AdvancedVideoEditor project={editorProject} {...(environment === "native" ? { onImportMedia: importEditorMedia, onRenderTimeline: renderEditorTimeline, onResolveWaveform: resolveEditorWaveform } : {})} onProjectChange={(next) => { setEditorProject(next); onEditorDocumentChange(next); }} onCreateProjectCopy={(copy) => { setEditorProject(copy); onEditorDocumentChange(copy); onNotify("Version copy created", `${copy.name} is saved with this tutorial.`, "success"); }} /></div>}
+    {editorOpen && <div className="integrated-editor-layer" role="dialog" aria-modal="true" aria-label="Integrated advanced video editor"><div className="integrated-editor-layer__bar"><div><span className="section-kicker">Non-destructive finishing room</span><strong>{project.title}</strong>{editorSaveStatus && <span className={`editor-save-status is-${editorSaveStatus.phase}`} role="status" aria-live="polite" style={{ color: editorSaveStatus.phase === "error" ? "#ffb4a8" : "#8495ae", fontSize: 11 }}>{editorSaveStatus.phase === "error" ? `Save failed · ${editorSaveStatus.detail}` : editorSaveStatus.detail}</span>}</div><label className="editor-import-rights">New media rights<select aria-label="Rights for new editor media" value={editorImportRights} onChange={(event) => setEditorImportRights(event.target.value as typeof editorImportRights)}><option value="unknown">Not reviewed · preview only</option><option value="owned">I own the media</option><option value="licensed">Licensed for distribution</option><option value="publicDomain">Public domain</option></select></label><button className="secondary-button small" disabled={returningFromEditor} aria-busy={returningFromEditor} onClick={() => { void returnToScene(); }}><X size={15} /> {returningFromEditor ? "Saving…" : "Return to scene"}</button></div><AdvancedVideoEditor project={editorProject} {...(environment === "native" ? { onImportMedia: importEditorMedia, onExportProject: (document: EditorProject) => exportEditorDocument(document, "editorJson"), onExportOtio: (_timeline, document: EditorProject) => exportEditorDocument(document, "otio"), onRenderTimeline: renderEditorTimeline, onResolveWaveform: resolveEditorWaveform } : {})} onProjectChange={(next) => { setEditorProject(next); onEditorDocumentChange(next); }} onCreateProjectCopy={(copy) => { setEditorProject(copy); onEditorDocumentChange(copy); onNotify("Version copy created", `${copy.name} is saved with this tutorial.`, "success"); }} /></div>}
   </div>;
 }
 

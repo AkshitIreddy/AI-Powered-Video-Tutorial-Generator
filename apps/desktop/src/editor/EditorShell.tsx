@@ -69,6 +69,24 @@ export function AdvancedVideoEditor({
   const [projectImportError, setProjectImportError] = useState("");
   const [renderStatus, setRenderStatus] = useState("");
   const [rendering, setRendering] = useState(false);
+  const [exportingDocument, setExportingDocument] = useState(false);
+  const [documentExportStatus, setDocumentExportStatus] = useState<{ message: string; failed: boolean } | null>(null);
+  const exportDocument = async (format: "editorJson" | "otio") => {
+    if (exportingDocument) return;
+    setExportingDocument(true);
+    setDocumentExportStatus(null);
+    try {
+      const nativeExport = format === "editorJson" ? Boolean(onExportProject) : Boolean(onExportOtio);
+      if (format === "editorJson") await (onExportProject ? onExportProject(state.project) : downloadEditorProject(state.project));
+      else {
+        const timeline = exportOtioLike(state.project);
+        await (onExportOtio ? onExportOtio(timeline, state.project) : downloadOtioTimeline(timeline, state.project));
+      }
+      setDocumentExportStatus({ message: nativeExport ? "Document exported to the project's exports folder." : "Document download requested.", failed: false });
+    } catch (error) {
+      setDocumentExportStatus({ message: `Document export failed: ${error instanceof Error ? error.message : "The document could not be saved. Try again."}`, failed: true });
+    } finally { setExportingDocument(false); }
+  };
   const [waveforms, setWaveforms] = useState<Record<string, EditorWaveformPreview>>({});
   const projectInputRef = useRef<HTMLInputElement>(null);
   const onProjectChangeRef = useRef(onProjectChange);
@@ -227,12 +245,13 @@ export function AdvancedVideoEditor({
         </div>
         <div className="aly-editor-shell__project-actions" role="group" aria-label="Project import and export">
           {allowProjectFileImport ? <><input ref={projectInputRef} className="aly-editor-shell__project-input" type="file" accept="application/json,.json,.otio" aria-label="Import editor project file" onChange={(event) => void importProjectFile(event.target.files?.[0])} /><button type="button" onClick={() => projectInputRef.current?.click()}>Import project</button></> : null}
-          <button type="button" onClick={() => void (onExportProject ? onExportProject(state.project) : downloadEditorProject(state.project))}>Export project JSON</button>
-          <button type="button" onClick={() => { const timeline = exportOtioLike(state.project); void (onExportOtio ? onExportOtio(timeline, state.project) : downloadOtioTimeline(timeline, state.project)); }}>Export OTIO</button>
+          <button type="button" disabled={exportingDocument} onClick={() => void exportDocument("editorJson")}>Export project JSON</button>
+          <button type="button" disabled={exportingDocument} onClick={() => void exportDocument("otio")}>Export OTIO</button>
           {onRenderTimeline ? <button type="button" disabled={rendering} onClick={() => void renderTimeline()}>{rendering ? "Rendering…" : "Render timeline"}</button> : null}
         </div>
       </header>
       {projectImportError ? <div className="aly-editor-shell__import-error" role="alert">{projectImportError}</div> : null}
+      {documentExportStatus ? <div className="aly-editor-shell__import-error" role={documentExportStatus.failed ? "alert" : "status"}>{documentExportStatus.message}</div> : null}
 
       <div className="aly-editor-shell__workspace">
         <aside className="aly-editor-shell__left-panel">
