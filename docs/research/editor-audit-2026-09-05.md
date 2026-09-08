@@ -304,8 +304,33 @@ The same real probe now retains all four color fields. Before/after reports:
 and `editor-color-after-fix-20260908\report.json` beneath the same parent.
 All 12 editor export tests pass, including actual decoded motion/text/caption/
 audio inspection and the new ffprobe metadata assertions. Ruff passes.
-This needs a refreshed packaged worker and full-length editor retake; the
-currently running package still contains the earlier editor encoder.
+The refreshed packaged worker SHA-256 is
+`f3cd12263c0276afe79d3dd2de521bec7bff9e8931418d6283803df40460453b`.
+The full-length editor retake remains required.
+
+## September 8 native interchange and caption broker corrections
+
+Actual hidden WebView export attempts cancelled browser downloads, including a
+minimal 28-byte JSON Blob after all bytes arrived. Longer URL lifetime, short
+paths and explicit automation download acceptance did not correct it. Native
+document export now uses a project-scoped Rust command with schema/size checks,
+ordinary exports-directory validation, generated short names, create-new writes,
+sync and byte read-back. It reports errors and supports retry. Browser previews
+retain browser downloads. Native CAS references are resolved to escaped local
+file URLs rather than WebView-only asset URLs for interchange.
+
+The saved document is standalone timeline metadata referring to local media;
+it is not a bundled media archive, and moving the media still requires relinking.
+Unit evidence covers drive/UNC URLs, unmodified live editor state, native bytes,
+wrong project identity/schema, size limits and failed-save retry. The full native
+harness now asserts actual JSON and OTIO files and rejects app-only URLs.
+
+The same native continuation exposed a separate strict broker mismatch:
+Python returned `captions`, but Rust `EditorBindingsGetReceipt` rejected that
+field. A Rust regression first failed with `unknown field captions`, then passed
+after adding the field with a legacy empty default. This preserves verified
+aligned cues for the editor rather than silently dropping them. Package retake
+is required before calling the combined document/editor journey accepted.
 
 ## Verification evidence
 
