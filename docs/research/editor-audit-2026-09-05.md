@@ -291,6 +291,22 @@ URI all survive. Evidence is under
 This qualifies core schema/timing/media-reference interchange, not a named NLE,
 retiming/effects parity, or independent rendering of generated text layers.
 
+## September 8 editor delivery color correction
+
+A three-frame source-planned editor render reproduced color-tag loss independently
+of the master: an H264 input with BT.709 matrix/primaries and sRGB transfer
+produced VP9 with only the matrix retained. The editor now explicitly converts
+the final composited frame to limited-range BT.709 YUV and sets its primaries
+and transfer before encoding, retaining matching stream flags.
+
+The same real probe now retains all four color fields. Before/after reports:
+`E:\temp\avt-final-media-inspection-20260907\editor-color-before-fix-20260908\report.json`
+and `editor-color-after-fix-20260908\report.json` beneath the same parent.
+All 12 editor export tests pass, including actual decoded motion/text/caption/
+audio inspection and the new ffprobe metadata assertions. Ruff passes.
+This needs a refreshed packaged worker and full-length editor retake; the
+currently running package still contains the earlier editor encoder.
+
 ## Verification evidence
 
 September 7 full-length preparation found that the native project record still

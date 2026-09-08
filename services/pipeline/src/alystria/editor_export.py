@@ -601,10 +601,18 @@ def build_editor_export_plan(
         chains.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={duration_seconds}[programme]")
     video_args, audio_codec, media_type, warnings = _codec_args(codec, quality, bitrate)
     warnings = [*plan_warnings, *warnings]
+    # Compositing onto the authored RGBA canvas can discard input color tags.
+    # Convert the delivery matrix/range explicitly and carry the frame metadata
+    # into the encoder; stream flags alone do not preserve it on every codec.
+    chains.append(
+        f"[{visual_label}]scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,"
+        "setparams=range=limited:color_primaries=bt709:color_trc=iec61966-2-1:colorspace=bt709[delivery]"
+    )
     argv = (
         str(ffmpeg_path), "-hide_banner", "-nostdin", "-y", *input_args,
-        "-filter_complex", ";".join(chains), "-map", f"[{visual_label}]", "-map", "[programme]",
+        "-filter_complex", ";".join(chains), "-map", "[delivery]", "-map", "[programme]",
         "-r", f"{fps:.9f}", *video_args, "-pix_fmt", "yuv420p", "-c:a", audio_codec,
+        "-color_primaries", "bt709", "-color_trc", "iec61966-2-1", "-colorspace", "bt709", "-color_range", "tv",
         "-ar", "48000", "-t", duration_seconds, str(output_path),
     )
     return EditorExportPlan(argv, output_path, manifest_hash, duration_ticks, codec, media_type, tuple(warnings))

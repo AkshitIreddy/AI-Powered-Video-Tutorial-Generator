@@ -350,7 +350,7 @@ def test_actual_ffmpeg_renders_motion_text_captions_and_source_audio(tmp_path: P
         output_path = Path(str(receipt["outputPath"]))
         ffprobe = ffmpeg.with_name("ffprobe.exe" if ffmpeg.suffix.lower() == ".exe" else "ffprobe")
         probe = subprocess.run(
-            [str(ffprobe), "-v", "error", "-show_entries", "stream=codec_type,codec_name", "-of", "json", str(output_path)],
+            [str(ffprobe), "-v", "error", "-show_entries", "stream=codec_type,codec_name,color_space,color_transfer,color_primaries,color_range", "-of", "json", str(output_path)],
             check=True,
             capture_output=True,
             text=True,
@@ -358,6 +358,11 @@ def test_actual_ffmpeg_renders_motion_text_captions_and_source_audio(tmp_path: P
         streams = json.loads(probe.stdout)["streams"]
         assert {stream["codec_type"] for stream in streams} == {"video", "audio"}
         assert next(stream["codec_name"] for stream in streams if stream["codec_type"] == "audio") == "opus"
+        video_stream = next(stream for stream in streams if stream["codec_type"] == "video")
+        assert video_stream["color_space"] == "bt709"
+        assert video_stream["color_transfer"] == "iec61966-2-1"
+        assert video_stream["color_primaries"] == "bt709"
+        assert video_stream["color_range"] == "tv"
 
         raw = subprocess.run(
             [str(ffmpeg), "-v", "error", "-i", str(output_path), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
