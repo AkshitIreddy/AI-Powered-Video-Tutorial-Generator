@@ -260,3 +260,19 @@ The Test Sandbox `Temp` tree is dynamic while the packaged PyInstaller worker ru
 The fourteen prior `native-clean-first-launch.previous-*` evidence trees still contain 164,239,681 ordinary-file bytes. Six of those trees each contain one `Content.IE5` junction targeting the current Test Sandbox `App Data\User Profile\AppData\Local\Microsoft\Windows\INetCache\IE`. Do not recursively delete or treat those junction targets as evidence content. Any later removal must unlink each junction without recursion first, preserve the current `native-clean-first-launch` proof, and then act only on the fourteen exact historical roots.
 
 At this snapshot, `Models\download-quarantine` remained an ordinary empty directory. `Runtime\work` contained one empty descendant directory and zero files. The stable build candidates, dynamic Test Sandbox `Temp` snapshot, and prior evidence account for 14,021,384,658 bytes (13.06 GiB), excluding small build logs and status files. They remain read-only candidates until the final native acceptance completes.
+
+## Obsolete Rust cache released — 2026-09-08
+
+At 09:32:29 UTC, `E:\temp\AI Video Tutorial Generator\build\cargo-current`
+was moved by same-volume .NET directory rename to
+`E:\uesless\AI Video Tutorial Generator Obsolete Rust Cache 2026-09-08`.
+Current successful desktop builds use the separate
+`build\acceptance-7c79d5d\desktop-target` root, so this reproducible old cache
+is no longer a rollback dependency. No process executable or command line
+referenced it. All ancestors and descendants were checked without traversing
+reparse points; none were present. Before and after inventories agree exactly:
+10,667,826,966 bytes, 6,148 files, and 664 descendant directories. The original
+source is absent. The adjacent `MOVE-MANIFEST.json` records both paths and
+verification. This was a reversible move for owner deletion, not reclaimed
+space. The active app, current build, models, projects, and media evidence were
+not moved.
