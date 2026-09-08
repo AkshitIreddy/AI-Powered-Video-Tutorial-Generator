@@ -28,8 +28,13 @@ use std::os::windows::process::CommandExt;
 const STATUS_FILE: &str = "download-status.json";
 const MAX_ARTIFACT_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const MAX_INSTALLER_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
+const MAX_MANAGED_MANIFEST_BYTES: u64 = 128 * 1024;
 const COMFYUI_RUNTIME_BYTES: u64 = 1_803_412_624;
 const COMFYUI_RUNTIME_REVISION: &str = "8f40b43e0204d5b9780f3e9618e140e929e80594";
+const COMFYUI_RUNTIME_ARCHIVE: &str = "ComfyUI-v0.9.2-nvidia.7z";
+const COMFYUI_RUNTIME_SHA256: &str =
+    "3a0707fbf1cf5dc8b5f1ab3abe8af104deffcb1acc27b8d27c484715dd41f4c5";
+const SDXL_RECIPE_ID: &str = "comfy-sdxl-1.0-portrait-v1";
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -68,6 +73,26 @@ struct PackageSpec {
     artifacts: &'static [ArtifactSpec],
     strategy: InstallStrategy,
 }
+
+#[derive(Debug, Clone, Copy)]
+struct ManagedManifestFile {
+    relative_path: &'static str,
+    size_bytes: u64,
+    sha256: &'static str,
+}
+
+const SDXL_MANIFEST_FILES: &[ManagedManifestFile] = &[
+    ManagedManifestFile {
+        relative_path: "models/checkpoints/sd_xl_base_1.0.safetensors",
+        size_bytes: 6_938_078_334,
+        sha256: "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+    },
+    ManagedManifestFile {
+        relative_path: "models/loras/sd_xl_offset_example-lora_1.0.safetensors",
+        size_bytes: 49_553_604,
+        sha256: "4852686128f953d0277d0793e2f0335352f96a919c9c16a09787d77f55cbdf6f",
+    },
+];
 
 // This exact artifact set was hash-verified during the RC MuseTalk spike. Some
 // upstream `.pth` files may contain pickle payloads, so this pack remains in a
@@ -267,6 +292,7 @@ impl ModelDownloadManager {
             statuses: Arc::new(RwLock::new(BTreeMap::new())),
         };
         manager.load_statuses();
+        manager.revalidate_loaded_ready_installs();
         Ok(manager)
     }
 
@@ -334,6 +360,8 @@ impl ModelDownloadManager {
         let status = ModelDownloadStatus {
             model_id: spec.model_id.into(),
             immutable_revision: Some(spec.immutable_revision.into()),
+            install_fingerprint: None,
+            runtime_revision: None,
             phase: ModelDownloadPhase::Downloading,
             downloaded_bytes,
             total_bytes: total_bytes(spec),
@@ -379,6 +407,9 @@ impl ModelDownloadManager {
         if let Err(error) = result {
             let mut status = self.current(spec);
             status.phase = ModelDownloadPhase::Failed;
+            status.install_fingerprint = None;
+            status.runtime_revision = None;
+            status.activation_blocked = true;
             status.detail = error.message;
             status.updated_at = Utc::now();
             self.update(status);
@@ -434,6 +465,9 @@ impl ModelDownloadManager {
         let InstallStrategy::ManagedComfy { executable, .. } = spec.strategy else {
             unreachable!("managed install strategy was checked above")
         };
+        let validated_identity = executable
+            .then(|| validated_managed_identity(spec, &self.comfy_root, false))
+            .transpose()?;
         let mut ready = self.current(spec);
         ready.phase = if executable {
             ModelDownloadPhase::Ready
@@ -443,8 +477,10 @@ impl ModelDownloadManager {
         ready.downloaded_bytes = ready.total_bytes;
         ready.verified_artifacts = ready.artifact_count;
         ready.activation_blocked = !executable;
+        ready.runtime_revision = validated_identity.as_ref().map(|value| value.0.clone());
+        ready.install_fingerprint = validated_identity.map(|value| value.1);
         ready.detail = if executable {
-            "Runtime and model hashes passed the managed preflight. The reviewed SDXL recipe is ready for local generation.".into()
+            "The pinned ComfyUI archive and SDXL model files passed their exact hash checks, and the extracted runtime entry points are present. The reviewed recipe is ready for local generation.".into()
         } else {
             "Every pinned runtime and model file passed verification. This candidate remains unavailable for generation because no hardware-reviewed recipe is installed.".into()
         };
@@ -571,6 +607,11 @@ impl ModelDownloadManager {
             let _ = atomic_write(&path, &bytes);
         }
     }
+    fn update_memory(&self, status: ModelDownloadStatus) {
+        self.statuses
+            .write()
+            .insert(status.model_id.clone(), status);
+    }
     fn load_statuses(&self) {
         for spec in PACKAGES {
             let path = self.package_root(spec).join(STATUS_FILE);
@@ -615,6 +656,94 @@ impl ModelDownloadManager {
             }
             self.statuses.write().insert(spec.model_id.into(), status);
         }
+    }
+
+    fn revalidate_loaded_ready_installs(&self) {
+        for spec in PACKAGES {
+            let InstallStrategy::ManagedComfy {
+                executable: true, ..
+            } = spec.strategy
+            else {
+                continue;
+            };
+            let Some(saved) = self.statuses.read().get(spec.model_id).cloned() else {
+                continue;
+            };
+            if saved.phase != ModelDownloadPhase::Ready {
+                continue;
+            }
+            let expected_identity = self.prepare_ready_revalidation(saved);
+
+            let manager = self.clone();
+            let started = std::thread::Builder::new()
+                .name(format!(
+                    "model-revalidate-{}",
+                    safe_model_key(spec.model_id)
+                ))
+                .spawn(move || manager.finish_loaded_ready_revalidation(spec, expected_identity));
+            if started.is_err() {
+                let mut failed = self.current(spec);
+                failed.phase = ModelDownloadPhase::Failed;
+                failed.detail = "The installed local image bundle could not be rechecked. Start the verified installation again.".into();
+                failed.updated_at = Utc::now();
+                self.update(failed);
+            }
+        }
+    }
+
+    fn prepare_ready_revalidation(
+        &self,
+        mut saved: ModelDownloadStatus,
+    ) -> (Option<String>, Option<String>) {
+        let expected_identity = (
+            saved.runtime_revision.take(),
+            saved.install_fingerprint.take(),
+        );
+        saved.phase = ModelDownloadPhase::Verifying;
+        saved.activation_blocked = true;
+        saved.detail = "Rechecking the pinned archive and model-file hashes, plus extracted runtime entrypoint presence.".into();
+        saved.updated_at = Utc::now();
+        // Leave Ready on disk so an exit during this read-only check is resumable.
+        self.update_memory(saved);
+        expected_identity
+    }
+
+    fn finish_loaded_ready_revalidation(
+        &self,
+        spec: &'static PackageSpec,
+        expected_identity: (Option<String>, Option<String>),
+    ) {
+        let result = validated_managed_identity(spec, &self.comfy_root, true);
+        let mut status = self.current(spec);
+        match result {
+            Ok((runtime_revision, install_fingerprint))
+                if expected_identity
+                    .0
+                    .as_deref()
+                    .is_none_or(|value| value == runtime_revision)
+                    && expected_identity
+                        .1
+                        .as_deref()
+                        .is_none_or(|value| value == install_fingerprint) =>
+            {
+                status.phase = ModelDownloadPhase::Ready;
+                status.runtime_revision = Some(runtime_revision);
+                status.install_fingerprint = Some(install_fingerprint);
+                status.activation_blocked = false;
+                status.downloaded_bytes = status.total_bytes;
+                status.verified_artifacts = status.artifact_count;
+                status.detail = "The pinned ComfyUI archive and SDXL model files passed their exact hash checks, and the extracted runtime entry points are present. The reviewed recipe is ready for local generation.".into();
+            }
+            _ => {
+                status.phase = ModelDownloadPhase::Failed;
+                status.runtime_revision = None;
+                status.install_fingerprint = None;
+                status.activation_blocked = true;
+                status.detail = "The installed local image bundle no longer matches its verified archive and model-file receipt. Start the verified installation again.".into();
+            }
+        }
+        status.updated_at = Utc::now();
+        self.update(status);
     }
 }
 
@@ -828,7 +957,7 @@ fn catalog_entry(spec: &PackageSpec, installer_available: bool) -> ModelDownload
     }
 }
 fn manifest_status(spec: &PackageSpec) -> ModelDownloadStatus {
-    ModelDownloadStatus { model_id: spec.model_id.into(), immutable_revision: Some(spec.immutable_revision.into()), phase: ModelDownloadPhase::ManifestRequired, downloaded_bytes: existing_bytes_placeholder(), total_bytes: total_bytes(spec), verified_artifacts: 0, artifact_count: artifact_count(spec), license_id: Some(spec.license_id.into()), license_url: Some(spec.license_url.into()), license_sha256: Some(spec.license_sha256.into()), license_accepted_at: None, detail: "A pinned immutable declaration is available. Review and accept its exact license record to begin.".into(), activation_blocked: true, updated_at: Utc::now() }
+    ModelDownloadStatus { model_id: spec.model_id.into(), immutable_revision: Some(spec.immutable_revision.into()), install_fingerprint: None, runtime_revision: None, phase: ModelDownloadPhase::ManifestRequired, downloaded_bytes: existing_bytes_placeholder(), total_bytes: total_bytes(spec), verified_artifacts: 0, artifact_count: artifact_count(spec), license_id: Some(spec.license_id.into()), license_url: Some(spec.license_url.into()), license_sha256: Some(spec.license_sha256.into()), license_accepted_at: None, detail: "A pinned immutable declaration is available. Review and accept its exact license record to begin.".into(), activation_blocked: true, updated_at: Utc::now() }
 }
 const fn existing_bytes_placeholder() -> u64 {
     0
@@ -1003,6 +1132,181 @@ fn validate_comfy_result(
     Ok(())
 }
 
+fn validated_managed_identity(
+    spec: &PackageSpec,
+    runtime_root: &Path,
+    verify_installed_bytes: bool,
+) -> Result<(String, String), CommandError> {
+    if spec.model_id != SDXL.model_id {
+        return Err(download_error(
+            "Only the hardware-reviewed SDXL bundle can produce an executable install receipt.",
+        ));
+    }
+    let manifest_path = runtime_root
+        .join("manifests")
+        .join("local-sdxl-base-1.0.json");
+    let metadata = fs::metadata(&manifest_path)
+        .map_err(|_| download_error("The verified SDXL install manifest is missing."))?;
+    if metadata.len() == 0 || metadata.len() > MAX_MANAGED_MANIFEST_BYTES {
+        return Err(download_error(
+            "The verified SDXL install manifest has an invalid size.",
+        ));
+    }
+    let bytes = fs::read(&manifest_path)
+        .map_err(|_| download_error("The verified SDXL install manifest could not be read."))?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|_| download_error("The verified SDXL install manifest is invalid."))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| download_error("The verified SDXL install manifest is not an object."))?;
+    let expected_keys = [
+        "files",
+        "license",
+        "modelId",
+        "recipeId",
+        "runtimeRevision",
+        "status",
+    ];
+    if object.len() != expected_keys.len()
+        || expected_keys.iter().any(|key| !object.contains_key(*key))
+        || object.get("modelId").and_then(serde_json::Value::as_str) != Some(spec.model_id)
+        || object.get("recipeId").and_then(serde_json::Value::as_str) != Some(SDXL_RECIPE_ID)
+        || object
+            .get("runtimeRevision")
+            .and_then(serde_json::Value::as_str)
+            != Some(COMFYUI_RUNTIME_REVISION)
+        || object.get("status").and_then(serde_json::Value::as_str)
+            != Some("hardware-verified-12gb-windows")
+        || object.get("license").and_then(serde_json::Value::as_str)
+            != Some("CreativeML Open RAIL++-M")
+    {
+        return Err(download_error(
+            "The verified SDXL install manifest differs from the pinned declaration.",
+        ));
+    }
+    let files = object
+        .get("files")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| download_error("The verified SDXL install manifest has no file list."))?;
+    if files.len() != SDXL_MANIFEST_FILES.len() {
+        return Err(download_error(
+            "The verified SDXL install manifest has an unexpected file count.",
+        ));
+    }
+    for expected in SDXL_MANIFEST_FILES {
+        let matching = files.iter().filter(|file| {
+            let Some(row) = file.as_object() else {
+                return false;
+            };
+            row.len() == 3
+                && row.get("path").and_then(serde_json::Value::as_str)
+                    == Some(expected.relative_path)
+                && row.get("size").and_then(serde_json::Value::as_u64) == Some(expected.size_bytes)
+                && row.get("sha256").and_then(serde_json::Value::as_str) == Some(expected.sha256)
+        });
+        if matching.count() != 1 {
+            return Err(download_error(
+                "The verified SDXL install manifest has an unexpected file identity.",
+            ));
+        }
+    }
+
+    if verify_installed_bytes {
+        let manual_comfy = runtime_root.join("ComfyUI");
+        let portable_comfy = runtime_root
+            .join("ComfyUI_windows_portable")
+            .join("ComfyUI");
+        let comfy_root = if manual_comfy.join("main.py").is_file() {
+            manual_comfy
+        } else {
+            portable_comfy
+        };
+        let manual_python = runtime_root.join("venv").join("Scripts").join("python.exe");
+        let portable_python = runtime_root
+            .join("ComfyUI_windows_portable")
+            .join("python_embeded")
+            .join("python.exe");
+        if !comfy_root.join("main.py").is_file()
+            || !(manual_python.is_file() || portable_python.is_file())
+            || !verify_exact_file(
+                &runtime_root.join(COMFYUI_RUNTIME_ARCHIVE),
+                COMFYUI_RUNTIME_BYTES,
+                COMFYUI_RUNTIME_SHA256,
+            )
+        {
+            return Err(download_error(
+                "The pinned ComfyUI archive no longer matches its verified hash, or the extracted runtime entry points are missing.",
+            ));
+        }
+        for expected in SDXL_MANIFEST_FILES {
+            let relative = safe_relative(expected.relative_path)?;
+            if !verify_exact_file(
+                &comfy_root.join(relative),
+                expected.size_bytes,
+                expected.sha256,
+            ) {
+                return Err(download_error(
+                    "An installed SDXL file no longer matches its verified receipt.",
+                ));
+            }
+        }
+    }
+
+    let mut fingerprint = Sha256::new();
+    for value in [
+        "alystria-managed-local-image-install-v1",
+        spec.model_id,
+        spec.immutable_revision,
+        spec.code_revision,
+        spec.weight_revision,
+        SDXL_RECIPE_ID,
+        COMFYUI_RUNTIME_ARCHIVE,
+        &COMFYUI_RUNTIME_BYTES.to_string(),
+        COMFYUI_RUNTIME_SHA256,
+    ] {
+        fingerprint.update(value.as_bytes());
+        fingerprint.update([0]);
+    }
+    for file in SDXL_MANIFEST_FILES {
+        for value in [
+            file.relative_path,
+            &file.size_bytes.to_string(),
+            file.sha256,
+        ] {
+            fingerprint.update(value.as_bytes());
+            fingerprint.update([0]);
+        }
+    }
+    Ok((
+        spec.immutable_revision.into(),
+        format!("{:x}", fingerprint.finalize()),
+    ))
+}
+
+fn verify_exact_file(path: &Path, expected_size: u64, expected_sha256: &str) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if metadata.len() != expected_size {
+        return false;
+    }
+    let Ok(mut file) = File::open(path) else {
+        return false;
+    };
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 8 * 1024 * 1024];
+    loop {
+        let Ok(count) = file.read(&mut buffer) else {
+            return false;
+        };
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    format!("{:x}", hasher.finalize()) == expected_sha256
+}
+
 fn human_bytes(value: u64) -> String {
     if value >= 1024 * 1024 * 1024 {
         format!("{:.2} GiB", value as f64 / (1024.0 * 1024.0 * 1024.0))
@@ -1138,5 +1442,108 @@ mod tests {
                 .code,
             "MODEL_DOWNLOAD_FAILED"
         );
+    }
+
+    #[test]
+    fn executable_install_identity_comes_from_the_exact_validated_manifest() {
+        let directory = tempdir().expect("tempdir");
+        let manifest_root = directory.path().join("manifests");
+        fs::create_dir_all(&manifest_root).expect("manifest directory");
+        let manifest_path = manifest_root.join("local-sdxl-base-1.0.json");
+        let manifest = serde_json::json!({
+            "modelId": SDXL.model_id,
+            "recipeId": SDXL_RECIPE_ID,
+            "status": "hardware-verified-12gb-windows",
+            "license": "CreativeML Open RAIL++-M",
+            "runtimeRevision": COMFYUI_RUNTIME_REVISION,
+            "files": SDXL_MANIFEST_FILES.iter().map(|file| serde_json::json!({
+                "path": file.relative_path,
+                "size": file.size_bytes,
+                "sha256": file.sha256,
+            })).collect::<Vec<_>>(),
+        });
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .expect("manifest");
+
+        let first =
+            validated_managed_identity(&SDXL, directory.path(), false).expect("validated identity");
+        let second =
+            validated_managed_identity(&SDXL, directory.path(), false).expect("stable identity");
+        assert_eq!(first, second);
+        assert_eq!(first.0, SDXL.immutable_revision);
+        assert!(is_sha256(&first.1));
+
+        let mut changed = manifest;
+        changed["files"][0]["sha256"] = serde_json::json!("0".repeat(64));
+        fs::write(&manifest_path, serde_json::to_vec_pretty(&changed).unwrap())
+            .expect("changed manifest");
+        assert_eq!(
+            validated_managed_identity(&SDXL, directory.path(), false)
+                .expect_err("changed identity")
+                .code,
+            "MODEL_DOWNLOAD_FAILED"
+        );
+    }
+
+    #[test]
+    fn persisted_ready_identity_requires_installed_runtime_and_model_bytes() {
+        let directory = tempdir().expect("tempdir");
+        let manifest_root = directory.path().join("manifests");
+        fs::create_dir_all(&manifest_root).expect("manifest directory");
+        let manifest = serde_json::json!({
+            "modelId": SDXL.model_id,
+            "recipeId": SDXL_RECIPE_ID,
+            "status": "hardware-verified-12gb-windows",
+            "license": "CreativeML Open RAIL++-M",
+            "runtimeRevision": COMFYUI_RUNTIME_REVISION,
+            "files": SDXL_MANIFEST_FILES.iter().map(|file| serde_json::json!({
+                "path": file.relative_path,
+                "size": file.size_bytes,
+                "sha256": file.sha256,
+            })).collect::<Vec<_>>(),
+        });
+        fs::write(
+            manifest_root.join("local-sdxl-base-1.0.json"),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .expect("manifest");
+        let failure = validated_managed_identity(&SDXL, directory.path(), true)
+            .expect_err("missing installed bytes");
+        assert_eq!(failure.code, "MODEL_DOWNLOAD_FAILED");
+    }
+
+    #[test]
+    fn transient_revalidation_state_does_not_replace_the_durable_ready_receipt() {
+        let directory = tempdir().expect("tempdir");
+        let manager = ModelDownloadManager::at(directory.path().to_path_buf()).expect("manager");
+        let mut ready = manifest_status(&SDXL);
+        ready.phase = ModelDownloadPhase::Ready;
+        ready.activation_blocked = false;
+        ready.runtime_revision = Some(SDXL.immutable_revision.into());
+        ready.install_fingerprint = Some("a".repeat(64));
+        manager.update(ready.clone());
+        let expected = manager.prepare_ready_revalidation(ready);
+        let checking = manager.current(&SDXL);
+        assert_eq!(checking.phase, ModelDownloadPhase::Verifying);
+        assert!(checking.activation_blocked);
+        assert!(checking.install_fingerprint.is_none());
+        assert!(checking.runtime_revision.is_none());
+        let restarted = ModelDownloadManager {
+            statuses: Arc::new(RwLock::new(BTreeMap::new())),
+            ..manager.clone()
+        };
+        restarted.load_statuses();
+        assert_eq!(restarted.current(&SDXL).phase, ModelDownloadPhase::Ready);
+        assert_eq!(restarted.current(&SDXL).install_fingerprint, expected.1);
+        // The absent real files fail the subsequent recheck and clear identity.
+        restarted.finish_loaded_ready_revalidation(&SDXL, expected);
+        let failed = restarted.current(&SDXL);
+        assert_eq!(failed.phase, ModelDownloadPhase::Failed);
+        assert!(failed.activation_blocked);
+        assert!(failed.install_fingerprint.is_none());
+        assert!(failed.runtime_revision.is_none());
     }
 }

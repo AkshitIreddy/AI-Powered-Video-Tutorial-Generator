@@ -966,6 +966,8 @@ pub enum ModelDownloadPhase {
 pub struct ModelDownloadStatus {
     pub model_id: String,
     pub immutable_revision: Option<String>,
+    pub install_fingerprint: Option<String>,
+    pub runtime_revision: Option<String>,
     pub phase: ModelDownloadPhase,
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
