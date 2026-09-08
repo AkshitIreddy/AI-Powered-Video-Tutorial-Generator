@@ -386,25 +386,29 @@ class SQLiteWorkflowRuntime:
                 context.check_cancelled()
                 if not isinstance(result, dict):
                     raise TypeError("Task handlers must return a JSON object")
-        except CancellationRequested as error:
-            self._finish_cancelled(job, attempt_id, str(error))
-        except RetryableTaskError as error:
-            self._finish_retryable(job, attempt_id, error)
-        except BudgetExceededError as error:
-            self._finish_failed(
-                job, attempt_id, {"code": "BUDGET_EXCEEDED", "message": str(error)}
-            )
         except BaseException as error:
-            self._finish_failed(
-                job,
-                attempt_id,
-                {
-                    "code": "TASK_FAILED",
-                    "message": str(error),
-                    "exceptionType": type(error).__name__,
-                    "traceback": traceback.format_exc(limit=20),
-                },
-            )
+            # A cooperative subprocess/transport may raise its own exception
+            # after observing the durable stop request. Do not retry cancelled
+            # work or mislabel the resulting process exit as an ordinary failure.
+            if isinstance(error, CancellationRequested) or context.is_cancelled():
+                self._finish_cancelled(job, attempt_id, str(error))
+            elif isinstance(error, RetryableTaskError):
+                self._finish_retryable(job, attempt_id, error)
+            elif isinstance(error, BudgetExceededError):
+                self._finish_failed(
+                    job, attempt_id, {"code": "BUDGET_EXCEEDED", "message": str(error)}
+                )
+            else:
+                self._finish_failed(
+                    job,
+                    attempt_id,
+                    {
+                        "code": "TASK_FAILED",
+                        "message": str(error),
+                        "exceptionType": type(error).__name__,
+                        "traceback": traceback.format_exc(limit=20),
+                    },
+                )
         else:
             self._finish_succeeded(job, attempt_id, result)
         return self.get_job(job.job_id)

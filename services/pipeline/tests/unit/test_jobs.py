@@ -92,6 +92,44 @@ def test_queued_cancellation_never_invokes_handler(tmp_path: Path) -> None:
         assert runtime.run_once({"task": lambda *_: pytest.fail("handler ran")}) is None
 
 
+@pytest.mark.parametrize(
+    "error",
+    [RuntimeError("renderer stopped"), RetryableTaskError("transport stopped"), BudgetExceededError("budget stopped")],
+)
+def test_running_cancellation_takes_precedence_over_handler_error(
+    tmp_path: Path, error: Exception
+) -> None:
+    with ProjectStore.create(tmp_path / "project", name="Cancel active work") as store:
+        runtime = SQLiteWorkflowRuntime(store.connection)
+        job = runtime.enqueue(
+            project_id=store.manifest.project_id, kind="task", parameters={}, max_attempts=3
+        )
+
+        def interrupted(context, parameters):
+            runtime.cancel(context.job_id)
+            raise error
+
+        completed = runtime.run_once({"task": interrupted})
+        assert completed is not None
+        assert completed.job_id == job.job_id
+        assert completed.state == JobState.CANCELLED
+        assert completed.attempt_count == 1
+        assert runtime.run_once({"task": interrupted}) is None
+
+
+def test_handler_error_without_cancellation_remains_failed(tmp_path: Path) -> None:
+    with ProjectStore.create(tmp_path / "project", name="Real failure") as store:
+        runtime = SQLiteWorkflowRuntime(store.connection)
+        runtime.enqueue(project_id=store.manifest.project_id, kind="task", parameters={})
+
+        def failed(context, parameters):
+            raise RuntimeError("renderer failure")
+
+        completed = runtime.run_once({"task": failed})
+        assert completed is not None
+        assert completed.state == JobState.FAILED
+
+
 def test_expired_running_lease_is_recovered_without_losing_attempt_history(tmp_path: Path) -> None:
     with ProjectStore.create(tmp_path / "project", name="Recovery") as store:
         runtime = SQLiteWorkflowRuntime(store.connection, lease_seconds=5)
