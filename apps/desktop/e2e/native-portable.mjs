@@ -600,12 +600,15 @@ try {
   let editor = page.getByRole("dialog", { name: "Integrated advanced video editor" });
   await expect(editor).toBeVisible({ timeout: parsed.actionTimeoutMs });
   await editor.getByLabel("Rights for new editor media").selectOption("owned");
-  await editor.getByLabel("Import media files").setInputFiles({
-    name: importedImageName,
-    mimeType: "image/png",
-    buffer: await readFile(importedImagePath),
-  });
-  let importedCard = editor.getByRole("listitem").filter({ hasText: importedImageName });
+  let importedCard = editor.getByRole("listitem").filter({ hasText: importedImageName }).first();
+  const importedImageReused = await importedCard.count() > 0;
+  if (!importedImageReused) {
+    await editor.getByLabel("Import media files").setInputFiles({
+      name: importedImageName,
+      mimeType: "image/png",
+      buffer: await readFile(importedImagePath),
+    });
+  }
   await expect(importedCard).toContainText("ready", { timeout: parsed.actionTimeoutMs });
   await expect.poll(async () => importedCard.locator("img").evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
 
@@ -654,7 +657,7 @@ try {
   await page.getByRole("button", { name: /^edit tracks & timing/i }).click();
   editor = page.getByRole("dialog", { name: "Integrated advanced video editor" });
   await expect(editor).toBeVisible({ timeout: parsed.actionTimeoutMs });
-  importedCard = editor.getByRole("listitem").filter({ hasText: importedImageName });
+  importedCard = editor.getByRole("listitem").filter({ hasText: importedImageName }).first();
   await expect(importedCard).toContainText("ready", { timeout: parsed.actionTimeoutMs });
   const reloadedAssetUrl = await importedCard.locator("img").getAttribute("src");
   if (!reloadedAssetUrl || !/^(asset:|http:\/\/asset\.localhost)/u.test(reloadedAssetUrl)) {
@@ -892,6 +895,7 @@ try {
     editorProof: {
       documentExports,
       importedImageName,
+      importedImageReused,
       importedImageAssetProtocolUrl: reloadedAssetUrl,
       importedImagePlacement: "media-bin-only",
       editedTitle,
