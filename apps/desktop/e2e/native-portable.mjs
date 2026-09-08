@@ -16,6 +16,7 @@ import {
   runCooperativeNativeStop,
 } from "./native-stop-coordinator.mjs";
 import { reconcileOwnedWorkerProcessSnapshots, verifyIncompleteProcessRows } from "./native-process-identity.mjs";
+import { assertResumableMaster, rendererIdentity } from "./native-resumed-master.mjs";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -508,9 +509,16 @@ try {
       masterRetryAttempt = row.attempt_count;
     } finally { database.close(); }
   }
-  await page.getByRole("button", { name: /render 1080p master/i }).click();
-  await expect(page.getByText(/export queued|export blocked|export cancelled|export ready/i)).toBeVisible({ timeout: parsed.actionTimeoutMs });
-  await expect(jobs).toHaveClass(/open/);
+  if (parsed.resumeMasterJobId) {
+    await validateResumedMaster(parsed.resumeMasterJobId, reviewedProject.project, parsed.codecPreference);
+    if (!await jobs.evaluate((element) => element.classList.contains("open"))) {
+      await page.getByRole("button", { name: /^jobs$/i }).click();
+    }
+  } else {
+    await page.getByRole("button", { name: /render 1080p master/i }).click();
+    await expect(page.getByText(/export queued|export blocked|export cancelled|export ready/i)).toBeVisible({ timeout: parsed.actionTimeoutMs });
+    await expect(jobs).toHaveClass(/open/);
+  }
   if (parsed.retryMasterJobId) {
     const currentMasterJobIds = await persistedJobIds(page, reviewedProject.project.nativeProjectId, "export_master");
     if (!priorMasterJobIds.includes(parsed.retryMasterJobId)
@@ -518,7 +526,7 @@ try {
       throw new Error("Master retry resolved a different export identity; refusing to retry the old job");
     }
   }
-  const nativeExport = parsed.retryMasterJobId ? { id: parsed.retryMasterJobId } : await waitForNewPersistedJob(
+  const nativeExport = parsed.resumeMasterJobId ? { id: parsed.resumeMasterJobId } : parsed.retryMasterJobId ? { id: parsed.retryMasterJobId } : await waitForNewPersistedJob(
     page,
     reviewedProject.project.nativeProjectId,
     "export_master",
@@ -852,6 +860,7 @@ try {
     persistedSceneDurations,
     generationStageJobIdsPreserved: generationJobIdsBeforeMaster,
     exportState,
+    resumedMasterJobId: parsed.resumeMasterJobId,
     editorExportState,
     exportResult: result,
     editorProof: {
@@ -1238,6 +1247,7 @@ function parseArguments(arguments_) {
     resumeCompletedGeneration: false,
     retryPolicyExport: false,
     retryMasterJobId: null,
+    resumeMasterJobId: null,
     designedVisuals: false,
     expectedNarrationCacheHits: null,
     reviewFile: null,
@@ -1295,6 +1305,7 @@ function parseArguments(arguments_) {
     else if (name === "--evidence-class") result.evidenceClass = requiredText(value, name, 100);
     else if (name === "--codec") result.codecPreference = codecPreference(value, name);
     else if (name === "--retry-master-job-id") result.retryMasterJobId = requiredText(value, name, 100);
+    else if (name === "--resume-master-job-id") result.resumeMasterJobId = requiredText(value, name, 100);
     else if (name === "--credential-file") result.credentialFile = path.resolve(requiredText(value, name, 500));
     else if (name === "--review-file") result.reviewFile = path.resolve(requiredText(value, name, 500));
     else if (name === "--gpu-coordination-path") result.gpuCoordinationPath = path.resolve(requiredText(value, name, 500));
@@ -1308,6 +1319,9 @@ function parseArguments(arguments_) {
   if (!result.portableRoot) throw new Error("--portable-root is required");
   if (result.retryMasterJobId && !result.resumeCompletedGeneration) {
     throw new Error("--retry-master-job-id requires --resume-completed-generation");
+  }
+  if (result.resumeMasterJobId && (!result.resumeCompletedGeneration || result.retryMasterJobId)) {
+    throw new Error("--resume-master-job-id requires completed-generation mode without a master retry");
   }
   if (result.resumeProject && !result.resumeProjectDirectory) {
     throw new Error("--resume-project-directory is required when resuming a native project");
@@ -1448,6 +1462,27 @@ async function persistedJobIds(page, projectId, operation) {
       .filter((job) => job.projectId === expectedProjectId && job.operation === expectedOperation)
       .map((job) => job.id);
   }, { expectedProjectId: projectId, expectedOperation: operation });
+}
+
+async function validateResumedMaster(jobId, project, codecPreference) {
+  const runtimeRoot = path.join(parsed.portableRoot, "Runtime");
+  const manifest = JSON.parse(await readFile(path.join(runtimeRoot, "runtime-manifest.json"), "utf8"));
+  const identity = rendererIdentity(manifest.components);
+  const database = new DatabaseSync(path.join(project.nativeProjectDirectory, "project.sqlite3"), { readOnly: true });
+  let row;
+  try { row = database.prepare("SELECT kind,state,parameters_json,result_json FROM jobs WHERE job_id=?").get(jobId); }
+  finally { database.close(); }
+  const candidate = row?.result_json ? JSON.parse(row.result_json) : {};
+  const hash = candidate.masterProvenanceArtifactHash;
+  if (!/^[0-9a-f]{64}$/u.test(hash ?? "")) throw new Error("Resumed master has no immutable provenance receipt");
+  const receiptPath = path.join(project.nativeProjectDirectory, "objects", "sha256", hash.slice(0, 2), hash.slice(2));
+  if (await sha256(receiptPath) !== hash) throw new Error("Resumed master receipt hash mismatch");
+  const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+  const result = assertResumableMaster(row, { jobId, generationId: project.nativeGenerationId, codecPreference }, identity, receipt);
+  const relative = path.relative(project.nativeProjectDirectory, result.path);
+  if (path.isAbsolute(relative) || relative.startsWith("..") || await sha256(result.path) !== result.artifactHash) {
+    throw new Error("Resumed master delivery is outside the project or has different bytes");
+  }
 }
 
 async function waitForNewPersistedJob(page, projectId, operation, previousIds, timeoutMs) {
