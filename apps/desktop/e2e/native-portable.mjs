@@ -511,7 +511,7 @@ try {
   }
   if (parsed.resumeMasterJobId) {
     await validateResumedMaster(parsed.resumeMasterJobId, reviewedProject.project, parsed.codecPreference);
-    if (!await jobs.evaluate((element) => element.classList.contains("open"))) {
+    if (await jobs.count() === 0 || !await jobs.evaluate((element) => element.classList.contains("open"))) {
       await page.getByRole("button", { name: /^jobs$/i }).click();
     }
   } else {
