@@ -35,6 +35,30 @@ of suspended-launch or adversarial process containment.
 
 ## Verification boundary
 
+### Integrated September 8 retake
+
+On package `694362f`, actual HEVC master job
+`f02fcaa6-fda4-4df4-8aca-825c3b3605cc` ran the renderer and reached `CANCELLED`
+at 07:12:25.054 UTC, about three seconds after the stop request. It promoted
+no result. The desktop exited with code zero after WM_CLOSE, but the complete
+shutdown gate **failed**. CIM could not establish a strong identity for one
+descendant; a subsequent independent scan found two new worker processes
+created after the close request, parented to the exact closing desktop.
+
+Root recorded their executable paths, creation times, and descendants, then
+stopped only those verified workers and their conhost. The sandbox process scan
+was empty before releasing its own retained GPU claim. Evidence is preserved in
+`E:\temp\avt-final-media-inspection-20260907\native-cancellation-shutdown-race-694362f`
+and sibling `native-cancellation-leaked-workers-20260908.json`.
+
+`ce2add4` adds permanent supervisor closure for desktop exit. Ordinary stop
+remains restartable; final close rejects subsequent start/restart/ping calls,
+including launches still verifying runtime files. Seven Rust sidecar tests
+passed, including an in-flight request, concurrent teardown, and late calls.
+This source result requires a rebuilt-package retake. The harness must also
+retain a complete identity-bound process inventory rather than treating an
+empty inventory after a snapshot error as successful cleanup.
+
 The runtime cancellation unit selection passed 14 tests. The renderer suite and
 actual subprocess cancellation integration passed 37 tests. The combined
 renderer/editor selection passed 49 tests; the final native/editor selection
