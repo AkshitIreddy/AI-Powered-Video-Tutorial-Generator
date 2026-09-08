@@ -1,7 +1,9 @@
 # Native render cancellation audit
 
-September 8, 2026. Source fixes are committed on local `main`; current-package
-acceptance remains pending. No provider generation was used in these tests.
+September 8, 2026. Current-package cancellation and normal shutdown passed on
+desktop source `ea5c935`, worker source `694362f`, and harness `97dd51e`.
+No provider generation was used in these tests. Full master/editor qualification
+is a separate, still-running acceptance.
 
 The September 7 interrupted export was a failed render with a durable cancel
 request, not a successful cancellation. Force-stopping the harness skipped its
@@ -65,8 +67,31 @@ renderer/editor selection passed 49 tests; the final native/editor selection
 passed 40 tests. These selections overlap and must not be added together.
 Ruff and source mypy checks passed for the modified Python modules.
 
-Still required: package these sources; cancel an active real packaged render;
-verify `CANCELLED`, no promoted output, normal `WM_CLOSE`, and absence of the
-exact owned process tree. Then complete the full master/editor acceptance.
-The cooperative harness stop path is separately under review. A force kill
-cannot run JavaScript cleanup and must not be described as a graceful stop.
+### Accepted rebuilt-package retake
+
+The same HEVC job was explicitly retried through the native job card. On
+attempt 4, the observer saw renderer PID 32752 actively running for more than
+five seconds, then requested cooperative stop at 08:08:16.387 UTC. SQLite
+persisted `CANCELLED` at 08:08:21.418 UTC with a null result. Desktop PID 6520
+closed normally with exit code zero; the receipt captured 18 owned process
+identities, no remaining processes, no fallback cleanup, and no problems.
+An independent executable-path scan also found no sandbox processes before
+GPU ownership returned to `no`.
+
+Evidence: `E:\temp\avt-final-media-inspection-20260907\native-cancellation-accepted-ea5c935`.
+The package hashes are:
+
+- Desktop: `01976a5e16fd63d2329a0a07b0bd7224cbea70e3fa6eb0e18b28e5d0496ba518`
+- Worker: `aca5806cc6a76298bd1265f87fe76c14faa5f70dead5e38afdfbedabd656c85c`
+- Runtime manifest: `98f42c5df52b9f1a685e8b64e7a24e9648256b54d8db114e8324680b39058665`
+
+Attempts 2 and 3 are preserved as failed inventory gates, even though their
+jobs cancelled and independent scans found no survivors. Newly born Chromium
+children sometimes had incomplete CIM identities. `97dd51e` resolves only the
+already enumerated weak rows against one verification snapshot; it does not
+chase additional children. Changed, reused, or conflicting identities remain
+failures. Sixteen identity/stop-coordinator tests passed before attempt 4.
+
+This accepts the cooperative active-render cancellation path and rebuilt
+desktop shutdown. A force kill cannot run JavaScript cleanup and must not be
+described as a graceful stop. Full master/editor acceptance remains separate.
