@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from .project import ProjectStore
 
 EDITOR_RENDER_SCHEMA = "alystria.editor.render.v1"
-EDITOR_EXPORT_IMPLEMENTATION_VERSION = "editor-export-v4-decoded-delivery-gate"
+EDITOR_EXPORT_IMPLEMENTATION_VERSION = "editor-export-v5-caption-line-endings"
 EDITOR_TIMEBASE_HZ = 240_000
 SUPPORTED_CODECS = frozenset(
     {"vp9", "av1", "h264_nvenc", "h264_mf", "libx264", "hevc_nvenc"}
@@ -609,7 +609,9 @@ def build_editor_export_plan(
             if not isinstance(text, str):
                 raise EditorExportError(f"Text clip {clip_id} has no text")
             text_path = staging_dir / f"text-{text_number:04d}.txt"
-            text_path.write_text(text, encoding="utf-8")
+            # drawtext treats CR and LF as separate line breaks on Windows.
+            # Preserve one authored break per line without host newline expansion.
+            text_path.write_text(text.replace("\r\n", "\n").replace("\r", "\n"), encoding="utf-8", newline="\n")
             style = _mapping(clip.get("textStyle"), f"clip {clip_id} textStyle")
             font_size = _integer(style.get("fontSize"), f"clip {clip_id} fontSize", minimum=6)
             if font_size > 512:
@@ -622,6 +624,7 @@ def build_editor_export_plan(
             if "Text uses the pinned FFmpeg fallback font; editor font family and weight are not yet bound as CAS font assets." not in plan_warnings:
                 plan_warnings.append("Text uses the pinned FFmpeg fallback font; editor font family and weight are not yet bound as CAS font assets.")
             x_expr = "w*0.05" if align == "left" else "w-text_w-w*0.05" if align == "right" else "(w-text_w)/2"
+            text_align = {"left": "T+L", "center": "T+C", "right": "T+R"}[align]
             y_expr = "h*0.05" if position == "top" else "h-text_h-h*0.05" if position == "bottom" else "(h-text_h)/2"
             x_expression = _automation_expression(keyframes, "transform.x", x)
             y_expression = _automation_expression(keyframes, "transform.y", y)
@@ -633,7 +636,7 @@ def build_editor_export_plan(
             next_canvas = f"textcanvas{text_number + 1}"
             chains.append(
                 f"[{visual_label}]drawtext=fontfile='{_filter_path(_fallback_font_path())}':textfile='{_filter_path(text_path)}':fontsize={font_size}:"
-                f"fontcolor={font_color}{box_args}:alpha='{opacity_expression}':x='{x_expr}+({x_expression})':y='{y_expr}+({y_expression})':"
+                f"expansion=none:text_align={text_align}:fontcolor={font_color}{box_args}:alpha='{opacity_expression}':x='{x_expr}+({x_expression})':y='{y_expr}+({y_expression})':"
                 f"enable='gte(t,{start})*lt(t,{_seconds(start_ticks + timeline_ticks)})'[{next_canvas}]"
             )
             visual_label = next_canvas

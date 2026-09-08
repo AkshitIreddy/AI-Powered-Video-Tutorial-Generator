@@ -143,7 +143,9 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
     output.parent.mkdir(parents=True)
     staging = tmp_path / "staging" / "manual"
     probe = FakeMediaProbe()
-    plan = build_editor_export_plan(store, manifest(digest), ffmpeg_path=Path("ffmpeg.exe"), media_probe=probe, output_path=output, staging_dir=staging)
+    value = manifest(digest)
+    value["clips"][3]["text"] = "First\r\nSecond\rThird\nFourth"
+    plan = build_editor_export_plan(store, value, ffmpeg_path=Path("ffmpeg.exe"), media_probe=probe, output_path=output, staging_dir=staging)
     command = " ".join((*plan.audio_argv, *plan.argv))
     assert "[0:a]" not in plan.argv[plan.argv.index("-filter_complex") + 1]
     assert "[0:v]" not in plan.audio_argv[plan.audio_argv.index("-filter_complex") + 1]
@@ -154,6 +156,7 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
     assert "rotw(iw)" not in command
     assert "overlay=x='(W-w)/2+(" in command
     assert "drawtext=fontfile=" in command
+    assert "expansion=none:text_align=T+C" in command
     assert "fontfile=" in command
     assert "[0:a]atrim=start=0.5:duration=2" in command
     assert "geq=" in command
@@ -166,6 +169,7 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
     assert plan.warnings
     assert probe.calls == [(store.cas.source, Path("ffprobe.exe"), 30)]
     assert (staging / "text-0000.txt").read_text(encoding="utf-8") == "A title; with filter syntax"
+    assert (staging / "text-0001.txt").read_bytes() == b"First\nSecond\nThird\nFourth"
 
 
 def test_elides_neutral_rotation_and_opacity_pixel_filters(tmp_path: Path) -> None:
@@ -336,7 +340,7 @@ def _actual_manifest(digest: str, project_id: str) -> dict[str, object]:
                 "audio": audio, "keyframes": [
                     {"property": "transform.x", "timelineTicks": 0, "value": -5, "interpolation": "linear"},
                     {"property": "transform.x", "timelineTicks": 239_999, "value": 5, "interpolation": "linear"},
-                ], "text": "TITLE", "textStyle": {**text_style, "position": "top"},
+                ], "text": "TITLE 100%", "textStyle": {**text_style, "position": "top"},
             },
             {
                 "id": "caption", "trackId": "captions", "kind": "captions", "layer": 2, "assetId": None,
