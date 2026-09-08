@@ -107,7 +107,49 @@ The package was refreshed only after all app/worker processes had exited. `App`,
 
 The 5.91 GB historical `E:\temp\Alystria Studio` tree was moved intact on the same volume to `E:\uesless\AI Video Tutorial Generator Historical Alystria Studio 2026-09-07` after a read-only dependency audit. The source path remained absent during both September 7 packaged-app narration attempts, and no historical-path dependency appeared. The moved tree retains 5,909,712,222 bytes, 6,823 files, and 1,384 directories with no reparse points; it remains available for exact rollback until the final Elena run completes.
 
-## Remaining gates
+## September 8 package and accepted master
+
+The current portable package was independently verified at
+`2026-09-08T11:45:26.784835+00:00`: all 762 manifest components matched, with a
+BOM-free manifest. Desktop source is a4e4e8a and worker source is 69f8c59;
+the source tree at verification was 65ae46f. Exact SHA-256 values:
+
+| Component | SHA-256 |
+| --- | --- |
+| Desktop executable | `b0030358655844836386ff396783b15f1a5fe7c78bc6955c8a1c28702df477f6` |
+| Pipeline executable | `67082407465d0a23136b4531a05be8682fa16c5a35581646a417d38307220432` |
+| Runtime manifest | `5bbad842d0e0cdb5ae77ecbe6ea792d96d0b7f1fc2404cfb9e111d3d6304223f` |
+| Portable manifest | `f27e570f111ca770cec92c0569838289e036574422b9dc808e68ccecbb85329b` |
+
+Verification receipt:
+`E:\temp\AI Video Tutorial Generator\build\acceptance-final-a4e4e8a-69f8c59\root-package-verification.json`.
+
+The previously promoted master job
+`e849d162-64fe-4d03-acb7-8bd75872836a` is accepted after independent decode and
+sampled visual inspection. Its 180-second, 1080p/30 H.264/AAC output has SHA-256
+`904b5e414303b0f79b9e48230a728afdae907257282fd8109404d0305222f1a6`.
+Measured audio is -16.24 LUFS / -1.96 dBTP with zero clipped samples; 49 exact
+caption cues pass the configured reading-rate and line-length bounds. Sixteen
+decoded checkpoints include teaching progression, executable arithmetic, the
+sparse Elena opening and closed-mouth rest. This is not auditory listening or
+an exhaustive lip-sync benchmark. Evidence is preserved under
+`E:\temp\avt-final-media-inspection-20260907\accepted-master-media-20260908`.
+
+The final package reuses this approved master and generation without making
+new provider requests or acquiring an AI GPU lease. The full editor journey
+is running; its media is not accepted merely because the earlier package
+passed automation. The earlier malformed edited audio remains rejected and
+the corrected-but-low-bitrate replacement remains short of the true-peak
+target, as detailed in the editor audit. A fresh native screenshot confirms
+the final portrait type/thumbnail correction and collapsed unlinked catalog
+references. Official OTIO 0.18.1 also parsed the current run's actual export,
+SHA-256 `8034d7bcb17272d4a4cef4a28fdaa6b726755225e591ee143d2df0026bc6f696`,
+with 55 clips and five resolving file references across 180 seconds.
+
+## Historical September 5–7 gate snapshot
+
+The table below predates the September 8 evidence above. Its pending entries
+are preserved as history, not assertions about the accepted master.
 
 | Gate | Status |
 | --- | --- |

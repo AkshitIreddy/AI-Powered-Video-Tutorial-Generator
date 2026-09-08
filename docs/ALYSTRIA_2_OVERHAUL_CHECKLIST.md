@@ -1,6 +1,6 @@
 # AI Video Tutorial Generator local-overhaul acceptance record
 
-Updated 2026-09-05. This replaces the obsolete September 2 all-green snapshot,
+Updated 2026-09-08. This replaces the obsolete September 2 all-green snapshot,
 which used the old Alystria name, palette, assets, test counts, and prototype
 controls. Git history preserves that record. A checked item below means the
 current implementation has matching source-level or browser evidence. It does
@@ -27,10 +27,10 @@ Primary evidence:
   user work.
 - [x] Home, Templates, Models, Settings, Plan, Storyboard, Studio, Design,
   Review, Export, creation, and narrow layouts were captured and inspected. The
-  13-route capture reported no page error or document horizontal overflow.
-- [x] The current UI matrix passed 25 Playwright cases with three intentional
-  viewport skips. The current coordinator run also reports 235 desktop unit
-  tests passing after caption, text-creation, and setup-replay integration.
+  September 5 13-route capture reported no page error or document horizontal overflow.
+- [x] The September 5 UI matrix passed 25 Playwright cases with three intentional
+  viewport skips. September 8 final desktop tests passed 255 cases in 35 files
+  after the portrait-type correction.
 - [x] First-run setup and contextual onboarding use real highlighted controls,
   meaningful actions, replay, completed-setup detection, keyboard navigation,
   and a non-blurred target.
@@ -170,11 +170,14 @@ These are product-depth gaps, not claims hidden behind completed checkboxes.
 - [ ] Native render deliberately blocks unsupported pan, text rotation/scale,
   arbitrary effects, and custom font-asset binding instead of silently ignoring
   them.
-- [ ] OTIO output has not completed an official OpenTimelineIO parser and named
-  Windows NLE round-trip compatibility matrix.
-- [ ] Presenter runtime preflight and short component evidence exist, but the
-  final packaged tutorial is still required to qualify natural idle behavior,
-  identity stability, synchronization, and closed-mouth silence end to end.
+- [ ] A named Windows NLE round-trip compatibility matrix remains open. Official
+  OpenTimelineIO 0.18.1 parsing and round-trip of an actual native export passed:
+  55 clips, five resolving file references and a 180-second timeline. This
+  validates interchange structure, not effect-render parity.
+- [ ] The accepted 180-second master includes the sparse 8.2-second Elena
+  opening. Decoded samples show stable identity and closed-mouth rest. An
+  every-frame synchronization/naturalness evaluation and auditory listening
+  remain unproven; sampled inspection is not a complete presenter benchmark.
 
 ## Release-only and owner-approval gates
 

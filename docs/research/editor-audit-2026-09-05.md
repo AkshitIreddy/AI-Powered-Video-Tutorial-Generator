@@ -435,10 +435,33 @@ edit. Arbitrary user-authored overlaps are not automatically rearranged.
 Evidence: `E:\temp\avt-final-media-inspection-20260907\editor-caption-spacing-proof-20260908\opening-centered.png`.
 
 The focused suite passes 22 tests, including real FFmpeg, with Ruff and mypy.
-The c35e657 worker is packaged with desktop 88f8c5f; all 762 runtime components
-verified at 11:07:24 UTC. Full native replacement acceptance is running; this
-section does not yet accept the replacement video. The earlier folder named
+The c35e657 worker was packaged with desktop 88f8c5f; all 762 runtime components
+verified at 11:07:24 UTC. Its full native replacement journey completed at
+11:24 UTC. The earlier folder named
 `accepted-editor-media-ac3594c-20260908` is explicitly marked REJECTED.
+
+The replacement's 5,400 decoded frames and exactly 180 seconds of audio pass
+the duration/finite-sample gate, with zero clipped samples. All 18 teaching
+checkpoints were inspected: compact captions, separated opening title, correct
+Karatsuba arithmetic/code, readable recurrence, stable sampled presenter and
+closed-mouth rest. Small inactive stroke endpoints remain visible on the
+whiteboard. This is sampled visual review, not auditory listening.
+
+Independent loudness measurement exposed another delivery limitation: default
+64 kbps Opus reconstructed a -0.32 dBTP peak despite the prepared PCM's
+-1.96 dBTP. Full-duration 96/128/192 kbps comparisons measured -1.31/-1.33/
+-1.79 dBTP respectively, all at -16.24 LUFS. Commit 69f8c59 explicitly uses
+192 kbps delivery audio and changes the export implementation identity to v6.
+The decoded gate checks clipping and duration, not authored loudness targets;
+independent loudness/true-peak qualification remains necessary. The final
+native v6 export is pending at this checkpoint.
+
+Desktop c993c18 moves ready media ahead of unlinked starter references, with
+an explicit toggle preserving all 38 references. a4e4e8a resolves legacy
+portrait media kind from verified CAS metadata and restores the thumbnail.
+The September 8 native close-up shows Elena as `image · Still image` with her
+decoded portrait, rather than a video with unknown duration. Evidence:
+`E:\temp\AI Video Tutorial Generator Test Sandbox\Evidence\native-ui-acceptance\07a-usable-project-media.png`.
 
 Reference: [FFmpeg drawtext alignment and text-file options](https://ffmpeg.org/ffmpeg-filters.html#drawtext-1).
 The implementation was checked against decoded output on the pinned Windows

@@ -1,6 +1,49 @@
 # AI Video Tutorial Generator implementation ledger
 
-Current audit: **2026-09-07**, local `main`. The historical checklist below records the August 28 baseline; it is not a substitute for current integrated acceptance.
+Current audit: **2026-09-08**, local `main`. The historical checklist below records the August 28 baseline; it is not a substitute for current integrated acceptance.
+
+## September 8 verification
+
+The accepted Karatsuba master is 180 seconds, 1920×1080 at 30 fps, with 5,400
+decoded frames and independently measured -16.24 LUFS / -1.96 dBTP audio.
+Sixteen decoded teaching/presenter checkpoints were visually inspected. Its
+49 caption cues satisfy the configured duration, line-length and reading-rate
+bounds. Exact paths and hashes are in the generation audit and continuation.
+This is sampled visual inspection and measured audio, not an auditory listening
+or every-frame lip-sync claim.
+
+The first full native editor journey passed automation but produced only
+56.35 seconds of overlapping, clipped audio. That artifact is explicitly
+rejected. Source fixes restore sample-clock timestamps after timeline delays,
+preserve silence gaps, and decode both delivery streams before promotion.
+Four real FFmpeg regressions failed before the correction and pass afterward.
+Windows caption line endings and literal percent text are also corrected.
+
+The corrected native editor journey completed at 11:24 UTC with 5,400 frames,
+exactly 180 seconds of audio, zero clipping, and all 18 visual checkpoints
+inspected. Peak renderer RSS was 1.157 GiB. Its default Opus bitrate still
+missed the -1.5 dBTP delivery target. Worker 69f8c59 therefore sets 192 kbps:
+an actual full-duration audio comparison measured -16.24 LUFS / -1.79 dBTP.
+The final integrated export with this setting is still running; the audio-only
+comparison is not presented as its acceptance.
+
+Desktop a4e4e8a presents usable media first, keeps 38 unlinked library references
+behind an explicit toggle, and resolves saved portrait type/thumbnail from
+verified CAS media. The current native close-up confirms the portrait image
+and readable still-image label. The final full desktop suite passed 255 cases in 35 files (209.69 seconds).
+Typecheck, lint,
+desktop build, and 22 focused pipeline tests pass. Package verification on
+65ae46f matched all 762 components at 11:45 UTC. Current-package final export,
+clean profile and recovery results will be recorded separately.
+
+Official OpenTimelineIO 0.18.1 parsed and round-tripped an actual native export
+with 55 clips, five resolving CAS file references, and 180-second duration.
+This does not qualify effect parity or a named Windows NLE. Frame-accurate
+editor preview, proxies, transitions, overlap/slip/roll tools, nested sequences,
+and timeline-range regeneration remain unfinished product work. Installer,
+signing and distribution remain separate owner-approved release work.
+
+## Earlier checkpoints
 
 See [Product](docs/research/product-audit-2026-09-05.md), [Generation](docs/research/generation-audit-2026-09-05.md), [Editor](docs/research/editor-audit-2026-09-05.md), [Onboarding](docs/research/onboarding-audit-2026-09-05.md), [Catalog](docs/research/catalog-audit-2026-09-05.md), [Presenter and voice](docs/research/presenter-voice-audit-2026-09-05.md), and [Windows integration](docs/research/windows-integration-audit-2026-09-05.md) for current findings, fixes, measurements, and remaining gates.
 

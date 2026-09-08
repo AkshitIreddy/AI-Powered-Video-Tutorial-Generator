@@ -8,7 +8,7 @@ AI Video Tutorial Generator is a Windows-first, local-first desktop environment 
 
 ![Current teaching workbench, empty local profile](docs/images/workbench-home-2026-09-05.png)
 
-The [September 5 independent audit](docs/research/product-audit-2026-09-05.md) records the current product changes and evidence boundaries. The screenshots here show the September 5 browser UI; they do not substitute for the separately documented native Windows acceptance. Current verification is tracked in the [implementation ledger](IMPLEMENTATION_STATUS.md).
+The [September 5 independent audit](docs/research/product-audit-2026-09-05.md) records the product changes and evidence boundaries. The screenshots here show the September 5 browser UI; they do not substitute for the separately documented native Windows acceptance. September 8 verification and remaining work are tracked in the [implementation ledger](IMPLEMENTATION_STATUS.md) and [continuation checkpoint](CONTINUE_2026-09-08.md).
 
 [Documentation](docs/README.md) · [Architecture](docs/architecture/overview.md) · [Local model profiles](docs/models/local-profiles.md) · [Free/trial provider guide](docs/providers/free-and-trial.md) · [Security and privacy](docs/security/security-and-privacy.md) · [Evaluation](docs/testing/evaluation.md) · [Implementation ledger](IMPLEMENTATION_STATUS.md)
 
@@ -40,7 +40,7 @@ No content-bearing cloud call should occur before provider, payload class, reten
 
 ![Current New Tutorial wizard in an empty browser profile](docs/images/new-tutorial-2026-09-05.png)
 
-Studio mode reveals stable scene navigation, the shared exact preview, Content/Design/Motion inspectors, pronunciation and evidence controls, dependency impact, 240,000-tick choreography, target overrides, narration/caption tracks, preservation locks, candidates, scene-local regeneration, undo/redo, revision history, and persistent jobs—without remounting or discarding project state.
+Studio mode reveals stable scene navigation, authored scene preview, Content/Design/Motion inspectors, pronunciation and evidence controls, dependency impact, 240,000-tick choreography, target overrides, narration/caption tracks, preservation locks, candidates, scene-local regeneration, undo/redo, revision history, and persistent jobs—without remounting or discarding project state. The timeline editor's HTML media preview is not qualified as frame-accurate; transitions, proxy media, nested sequences, and timeline-range AI regeneration remain product gaps. See the [editor audit](docs/research/editor-audit-2026-09-05.md).
 
 The included asset library works before a project exists, without an image API key.
 
