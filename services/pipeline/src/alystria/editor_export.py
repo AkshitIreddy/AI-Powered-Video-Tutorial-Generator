@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from .project import ProjectStore
 
 EDITOR_RENDER_SCHEMA = "alystria.editor.render.v1"
-EDITOR_EXPORT_IMPLEMENTATION_VERSION = "editor-export-v5-caption-line-endings"
+EDITOR_EXPORT_IMPLEMENTATION_VERSION = "editor-export-v6-delivery-audio-quality"
 EDITOR_TIMEBASE_HZ = 240_000
 SUPPORTED_CODECS = frozenset(
     {"vp9", "av1", "h264_nvenc", "h264_mf", "libx264", "hevc_nvenc"}
@@ -697,7 +697,7 @@ def build_editor_export_plan(
     argv = (
         str(ffmpeg_path), "-hide_banner", "-nostdin", "-y", *input_args, "-i", str(programme_path),
         "-filter_complex", ";".join(chains), "-map", "[delivery]", "-map", f"{next_input}:a:0",
-        "-r", f"{fps:.9f}", *video_args, "-pix_fmt", "yuv420p", "-c:a", audio_codec,
+        "-r", f"{fps:.9f}", *video_args, "-pix_fmt", "yuv420p", "-c:a", audio_codec, "-b:a", "192k",
         "-color_primaries", "bt709", "-color_trc", "iec61966-2-1", "-colorspace", "bt709", "-color_range", "tv",
         "-ar", "48000", "-t", duration_seconds, str(output_path),
     )

@@ -165,6 +165,7 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
     assert "afade=t=in:st=0:d=0.1" in command
     assert "afade=t=out:st=0.9:d=0.1" in command
     assert "-c:v libvpx-vp9" in command
+    assert "-c:a libopus -b:a 192k" in command
     assert plan.media_type == "video/webm"
     assert plan.warnings
     assert probe.calls == [(store.cas.source, Path("ffprobe.exe"), 30)]
