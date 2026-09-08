@@ -2,7 +2,7 @@ import { chromium, expect } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { execFile, spawn } from "node:child_process";
-import { mkdir, open, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import process from "node:process";
@@ -664,6 +664,28 @@ try {
 
   const durableEditorProject = await persistedEditorDocument(page, activeProjectIdentity);
   assertCurrentFullLengthEditorDocument(durableEditorProject, mediaBindings, 180);
+  const documentExports = [];
+  const exportsDirectory = path.join(activeProjectIdentity.projectDirectory, "exports");
+  for (const [button, extension, schemaField, schema] of [
+    ["Export project JSON", ".editor.json", "schema", "alystria.editor.project.v1"],
+    ["Export OTIO", ".otio", "OTIO_SCHEMA", "Timeline.1"],
+  ]) {
+    const before = new Set(await readdir(exportsDirectory));
+    await editor.getByRole("button", { name: button, exact: true }).click();
+    await expect(editor.getByText("Document exported to the project's exports folder.", { exact: true })).toBeVisible();
+    const added = (await readdir(exportsDirectory)).filter(name => !before.has(name) && name.endsWith(extension));
+    if (added.length !== 1) throw new Error(`Expected one saved ${extension} document, found ${added.length}`);
+    const documentPath = path.join(exportsDirectory, added[0]);
+    const document = JSON.parse(await readFile(documentPath, "utf8"));
+    if (document[schemaField] !== schema) throw new Error(`Invalid saved ${extension} schema`);
+    if (extension === ".otio") {
+      const references = document.tracks.children.flatMap(track => track.children).filter(clip => clip.OTIO_SCHEMA === "Clip.2")
+        .map(clip => clip.media_references[clip.active_media_reference_key]).filter(reference => reference.OTIO_SCHEMA === "ExternalReference.1");
+      if (!references.length || references.some(reference => /asset\.localhost|^blob:/u.test(reference.target_url))) throw new Error("OTIO contains app-only media URLs");
+    }
+    documentExports.push({ path: documentPath, sha256: await sha256(documentPath), schema });
+  }
+  await page.screenshot({ path: path.join(evidenceRoot, "08b-editor-native-document-exports.png"), fullPage: true });
   stopCoordinator?.throwIfRequested();
   const priorEditorJobIds = await persistedJobIds(page, reviewedProject.project.nativeProjectId, "editor_timeline_export");
   await editor.getByRole("button", { name: "Render timeline" }).click();
@@ -864,6 +886,7 @@ try {
     editorExportState,
     exportResult: result,
     editorProof: {
+      documentExports,
       importedImageName,
       importedImageAssetProtocolUrl: reloadedAssetUrl,
       importedImagePlacement: "media-bin-only",
