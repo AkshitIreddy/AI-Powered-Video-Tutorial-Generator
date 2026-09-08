@@ -627,6 +627,57 @@ describe("built-in scene catalog", () => {
     expect(mediaY + mediaHeight).toBeLessThanOrEqual(stageY + stageHeight);
   });
 
+  it("keeps complete portrait presenter teaching points beside the picture-in-picture stage", () => {
+    const spec = specimenFor("presenter-slide");
+    if (spec.content.kind !== "presenter-slide") throw new Error("Expected presenter-slide specimen");
+    const scene = compileScene({
+      ...spec,
+      content: {
+        ...spec.content,
+        title: "1. Karatsuba Primer: Why Split Numbers?",
+        placement: "picture-in-picture",
+        slideItems: [
+          { id: "concept", text: "Karatsuba splits numbers into high and low halves to reduce multiplication count" },
+          { id: "example", text: "12 → a=1, b=2; 34 → c=3, d=4" },
+        ],
+      },
+    }, portrait);
+    const markup = renderToStaticMarkup(createElement(SceneView, {
+      scene,
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 3, reducedMotion: true },
+    }));
+
+    const stageX = Number(markup.match(/data-presenter-stage="portrait" data-stage-x="([\d.]+)"/u)?.[1]);
+    const insight = markup.match(/data-presenter-insight="true" data-insight-x="([\d.]+)" data-insight-width="([\d.]+)"/u);
+    expect(insight).not.toBeNull();
+    expect(Number(insight?.[1]) + Number(insight?.[2])).toBeLessThanOrEqual(stageX);
+    const copyColumns = [...markup.matchAll(/data-sequence-copy-x="([\d.]+)" data-sequence-copy-width="([\d.]+)"/gu)];
+    expect(copyColumns).toHaveLength(2);
+    for (const column of copyColumns) {
+      expect(Number(column[1]) + Number(column[2])).toBeLessThanOrEqual(stageX + 0.5);
+    }
+    expect(markup).toContain("multiplication");
+    expect(markup).toContain("count");
+  });
+
+  it("preserves normal portrait insight width for vertically stacked presenter placements", () => {
+    const spec = specimenFor("presenter-slide");
+    if (spec.content.kind !== "presenter-slide") throw new Error("Expected presenter-slide specimen");
+    for (const placement of ["split-left", "split-right", "full"] as const) {
+      const scene = compileScene({
+        ...spec,
+        id: "presenter-" + placement,
+        content: { ...spec.content, placement },
+      }, portrait);
+      const markup = renderToStaticMarkup(createElement(SceneView, {
+        scene,
+        frame: { tick: TIMEBASE_TICKS_PER_SECOND * 3, reducedMotion: true },
+      }));
+      const insightWidth = Number(markup.match(/data-presenter-insight="true" data-insight-x="[\d.]+" data-insight-width="([\d.]+)"/u)?.[1]);
+      expect(insightWidth).toBeGreaterThan(scene.metrics.bodySize * 12);
+    }
+  });
+
   it("keeps the teaching relationship visible in the premium scene families", () => {
     const render = (kind: Parameters<typeof specimenFor>[0]) => renderToStaticMarkup(createElement(SceneView, {
       scene: compileScene(specimenFor(kind), landscape),

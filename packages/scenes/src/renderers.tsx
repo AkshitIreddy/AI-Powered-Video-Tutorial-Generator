@@ -1115,7 +1115,19 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
   const placement = content.placement ?? (withSlide ? "split-left" : "full");
   const layout = presenterLayoutFromBody(body, props.scene.metrics, placement, withSlide);
   const portraitRect = layout.stage;
-  const slideRect = layout.insight;
+  const unconstrainedSlideRect = layout.insight;
+  const pictureInPictureOverlapsInsight = unconstrainedSlideRect
+    && placement === "picture-in-picture"
+    && unconstrainedSlideRect.x < portraitRect.x
+    && unconstrainedSlideRect.x + unconstrainedSlideRect.width > portraitRect.x
+    && unconstrainedSlideRect.y < portraitRect.y + portraitRect.height
+    && unconstrainedSlideRect.y + unconstrainedSlideRect.height > portraitRect.y;
+  const slideRect = unconstrainedSlideRect && props.scene.metrics.profile === "portrait" && pictureInPictureOverlapsInsight
+    ? {
+        ...unconstrainedSlideRect,
+        width: Math.max(1, portraitRect.x - unconstrainedSlideRect.x - props.scene.metrics.gutter * 0.5),
+      }
+    : unconstrainedSlideRect;
   const titleHeading = comparablePresenterHeading(content.title);
   const points = (content.slideItems ?? [])
     .filter((point) => comparablePresenterHeading(point.text) !== titleHeading)
@@ -1144,7 +1156,8 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
           const copyWidth = Math.max(0, rect.x + rect.width - copyX);
           const copyFontSize = legible(props.scene.metrics.bodySize * 1.04);
           const copyLineHeight = copyFontSize * 1.16;
-          const copyLines = wrapText(point.text, Math.max(8, Math.floor(copyWidth / (copyFontSize * 0.56)))).slice(0, 2);
+          const maximumCopyLines = props.scene.metrics.profile === "portrait" ? 3 : 2;
+          const copyLines = wrapText(point.text, Math.max(8, Math.floor(copyWidth / (copyFontSize * 0.56)))).slice(0, maximumCopyLines);
           const supportingFontSize = legible(props.scene.metrics.smallSize);
           const supportingGap = point.supportingText ? props.scene.metrics.unit * 0.55 : 0;
           const copyBlockHeight = copyLines.length * copyLineHeight + supportingGap + (point.supportingText ? supportingFontSize * 1.08 : 0);
@@ -1158,6 +1171,7 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
             data-sequence-divider-x={dividerX}
             data-sequence-gutter-center-x={dividerX}
             data-sequence-copy-x={copyX}
+            data-sequence-copy-width={copyWidth}
             data-sequence-copy-center-y={copyCenterY}
             data-sequence-copy-baseline-y={copyBaselineY}
             data-sequence-row-center-y={rect.y + rect.height / 2}
@@ -1167,7 +1181,7 @@ export function PresenterRenderer(props: SceneRendererProps<PresenterContent>) {
           >
             <text x={rect.x} y={copyCenterY} dominantBaseline="central" fill={numberColor} fontFamily={theme.fontDisplay} fontSize={numberFontSize} fontWeight="840" letterSpacing={-1.2}>{String(index + 1).padStart(2, "0")}</text>
             <line x1={dividerX} x2={dividerX} y1={rect.y + rect.height * 0.18} y2={rect.y + rect.height * 0.82} stroke={color} strokeWidth={Math.max(5, props.scene.metrics.unit * 0.48)} />
-            <MultilineText x={copyX} y={copyBaselineY} lines={copyLines} lineHeight={copyLineHeight} fill={theme.ink} fontFamily={theme.fontBody} fontSize={copyFontSize} fontWeight="720" maxLines={2} />
+            <MultilineText x={copyX} y={copyBaselineY} lines={copyLines} lineHeight={copyLineHeight} fill={theme.ink} fontFamily={theme.fontBody} fontSize={copyFontSize} fontWeight="720" maxLines={maximumCopyLines} />
             {point.supportingText ? <MultilineText x={copyX} y={supportingBaselineY} lines={[truncate(point.supportingText, Math.max(12, Math.floor(copyWidth / (supportingFontSize * 0.56))))]} lineHeight={supportingFontSize * 1.08} fill={theme.mutedInk} fontFamily={theme.fontBody} fontSize={supportingFontSize} fontWeight="600" maxLines={1} /> : null}
           </g>;
         }) : content.talkingPoint ? <g><path d={`M ${slideRect.x + props.scene.metrics.gutter * 0.6} ${slideRect.y + slideRect.height * 0.24} H ${slideRect.x + slideRect.width - props.scene.metrics.gutter * 0.6}`} stroke={theme.secondary} strokeWidth={Math.max(5, props.scene.metrics.unit * 0.5)} /><WrappedText text={content.talkingPoint} rect={{ x: slideRect.x + props.scene.metrics.gutter * 0.6, y: slideRect.y + slideRect.height * 0.34, width: slideRect.width - props.scene.metrics.gutter * 1.2, height: slideRect.height * 0.48 }} theme={theme} fontFamily={theme.fontDisplay} fontSize={legible(props.scene.metrics.subtitleSize * 1.2)} fontWeight="730" maxLines={5} lineHeight={1.12} /></g> : null}
