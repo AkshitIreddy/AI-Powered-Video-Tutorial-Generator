@@ -15,6 +15,7 @@ import {
   createStopRequestCoordinator,
   runCooperativeNativeStop,
 } from "./native-stop-coordinator.mjs";
+import { reconcileOwnedWorkerProcessSnapshots } from "./native-process-identity.mjs";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -491,10 +492,33 @@ try {
   await page.getByLabel("Frame rate").selectOption("30");
   await page.getByLabel("Codec preference").selectOption(parsed.codecPreference);
   const priorMasterJobIds = await persistedJobIds(page, reviewedProject.project.nativeProjectId, "export_master");
+  let masterRetryAttempt = null;
+  if (parsed.retryMasterJobId) {
+    const database = new DatabaseSync(path.join(reviewedProject.project.nativeProjectDirectory, "project.sqlite3"), { readOnly: true });
+    try {
+      const row = database.prepare("SELECT kind,state,attempt_count,parameters_json FROM jobs WHERE job_id=?").get(parsed.retryMasterJobId);
+      const parameters = row ? JSON.parse(row.parameters_json) : null;
+      if (row?.kind !== "native.export_master" || row.state !== "CANCELLED"
+        || parameters?.baseGenerationId !== reviewedProject.project.nativeGenerationId
+        || parameters?.codecPreference !== parsed.codecPreference
+        || parameters?.target?.fps !== 30 || parameters?.target?.width !== 1920
+        || parameters?.target?.height !== 1080) {
+        throw new Error("Explicit master retry must name this generation's cancelled 1080p30 export with the selected codec");
+      }
+      masterRetryAttempt = row.attempt_count;
+    } finally { database.close(); }
+  }
   await page.getByRole("button", { name: /render 1080p master/i }).click();
-  await expect(page.getByText(/export queued|export blocked/i)).toBeVisible({ timeout: parsed.actionTimeoutMs });
+  await expect(page.getByText(/export queued|export blocked|export cancelled|export ready/i)).toBeVisible({ timeout: parsed.actionTimeoutMs });
   await expect(jobs).toHaveClass(/open/);
-  const nativeExport = await waitForNewPersistedJob(
+  if (parsed.retryMasterJobId) {
+    const currentMasterJobIds = await persistedJobIds(page, reviewedProject.project.nativeProjectId, "export_master");
+    if (!priorMasterJobIds.includes(parsed.retryMasterJobId)
+      || currentMasterJobIds.some((id) => !priorMasterJobIds.includes(id))) {
+      throw new Error("Master retry resolved a different export identity; refusing to retry the old job");
+    }
+  }
+  const nativeExport = parsed.retryMasterJobId ? { id: parsed.retryMasterJobId } : await waitForNewPersistedJob(
     page,
     reviewedProject.project.nativeProjectId,
     "export_master",
@@ -503,6 +527,15 @@ try {
   );
   activeNativeJob = nativeJobIdentity(nativeExport.id);
   const exportJob = await jobCardById(page, jobs, nativeExport.id);
+  if (parsed.retryMasterJobId) {
+    await exportJob.getByRole("button", { name: /^retry /i }).click();
+    await expect.poll(() => {
+      const database = new DatabaseSync(path.join(reviewedProject.project.nativeProjectDirectory, "project.sqlite3"), { readOnly: true });
+      try {
+        return database.prepare("SELECT attempt_count FROM jobs WHERE job_id=?").get(nativeExport.id)?.attempt_count ?? 0;
+      } finally { database.close(); }
+    }, { timeout: parsed.actionTimeoutMs }).toBeGreaterThan(masterRetryAttempt);
+  }
   const completedNativeExport = await waitForPersistedJobTerminal(page, nativeExport.id, parsed.jobTimeoutMs);
   activeNativeJob = null;
   stopCoordinator?.throwIfRequested();
@@ -955,6 +988,12 @@ async function ensureNativeShutdown(request, { cancelActiveJob, stopReceipt }) {
   if (shutdownPromise) return await shutdownPromise;
   shutdownPromise = (async () => {
     let activeJob = null;
+    const workerProcessSnapshotDiagnostics = {
+      schemaVersion: 1,
+      initial: null,
+      postDesktopExit: [],
+    };
+    const workerProcessIdentitiesToVerify = new Map();
     const initialProblems = [];
     if (cancelActiveJob) {
       try {
@@ -980,11 +1019,23 @@ async function ensureNativeShutdown(request, { cancelActiveJob, stopReceipt }) {
       waitForActiveJobTerminal: async (job) => await waitForNativeJobTerminalOnDisk(job, 5_000),
       snapshotOwnedProcessTree: async () => {
         if (!child || !workerPid || child.exitCode !== null) return [];
-        const tree = await snapshotOwnedWorkerProcessTree(workerExecutable, child.pid, workerPid);
-        if (!tree.some((identity) => identity.pid === workerPid)) {
-          throw new Error(`Native readiness worker ${workerPid} was absent before WM_CLOSE`);
+        try {
+          const snapshot = await snapshotOwnedWorkerProcessTree(workerExecutable, child.pid, workerPid);
+          workerProcessSnapshotDiagnostics.initial = snapshot.diagnostics;
+          if (!snapshot.processTree.some((identity) => identity.pid === workerPid)) {
+            throw new Error(`Native readiness worker ${workerPid} was absent before WM_CLOSE`);
+          }
+          for (const identity of snapshot.processTree) {
+            workerProcessIdentitiesToVerify.set(processIdentityKey(identity), identity);
+          }
+          return snapshot.processTree;
+        } catch (error) {
+          workerProcessSnapshotDiagnostics.initial = error?.diagnostics ?? {
+            schemaVersion: 1,
+            failure: error instanceof Error ? error.message : String(error),
+          };
+          throw error;
         }
-        return tree;
       },
       requestDesktopClose: async () => {
         if (!child || child.exitCode !== null) return;
@@ -1007,7 +1058,35 @@ async function ensureNativeShutdown(request, { cancelActiveJob, stopReceipt }) {
         if (child?.exitCode === null) throw new Error("Exact desktop process remained after fallback termination");
         return { checkedAtUtc: new Date().toISOString(), exitCode: child?.exitCode ?? null, forced: true };
       },
-      waitForOwnedProcessTreeExit: async (tree) => await waitForOwnedWorkerProcessTreeExit(tree, 10_000),
+      waitForOwnedProcessTreeExit: async (tree) => {
+        for (const identity of tree) {
+          workerProcessIdentitiesToVerify.set(processIdentityKey(identity), identity);
+        }
+        const expected = [...workerProcessIdentitiesToVerify.values()];
+        const result = await waitForOwnedWorkerProcessTreeExit(expected, 10_000);
+        let lateSnapshot;
+        try {
+          lateSnapshot = await snapshotLateOwnedWorkerProcessTree(workerExecutable, child?.pid ?? null);
+        } catch (error) {
+          workerProcessSnapshotDiagnostics.postDesktopExit.push(error?.diagnostics ?? {
+            schemaVersion: 1,
+            failure: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
+        workerProcessSnapshotDiagnostics.postDesktopExit.push({
+          ...lateSnapshot.diagnostics,
+          observedProcessTree: lateSnapshot.processTree,
+        });
+        for (const identity of lateSnapshot.processTree) {
+          workerProcessIdentitiesToVerify.set(processIdentityKey(identity), identity);
+        }
+        const remaining = new Map(result.remaining.map((identity) => [processIdentityKey(identity), identity]));
+        for (const identity of lateSnapshot.processTree) {
+          remaining.set(processIdentityKey(identity), identity);
+        }
+        return { ...result, remaining: [...remaining.values()] };
+      },
       forceStopOwnedProcessTree: async (remaining) => await forceStopOwnedProcessTree(remaining),
       writeReceipt: async (value) => { rawReceipt = value; },
     });
@@ -1017,6 +1096,11 @@ async function ensureNativeShutdown(request, { cancelActiveJob, stopReceipt }) {
     }
     if (request.source === "acceptance-finally" && receipt.fallback) {
       finalProblems.push("Normal acceptance shutdown required exact process fallback cleanup");
+    }
+    const lateWorkerPids = workerProcessSnapshotDiagnostics.postDesktopExit
+      .flatMap((snapshot) => (snapshot.observedProcessTree ?? []).map((identity) => identity.pid));
+    if (lateWorkerPids.length > 0) {
+      finalProblems.push(`Packaged worker processes were observed after desktop exit: ${[...new Set(lateWorkerPids)].join(", ")}`);
     }
     const finalReceipt = {
       ...receipt,
@@ -1031,6 +1115,7 @@ async function ensureNativeShutdown(request, { cancelActiveJob, stopReceipt }) {
       workerExecutable,
       workerExitCheckedAtUtc: receipt.workerExit?.checkedAtUtc ?? null,
       remainingWorkerProcesses: receipt.workerExit?.remaining ?? receipt.workerProcessTree,
+      workerProcessSnapshotDiagnostics,
       rawState: rawReceipt?.state ?? null,
     };
     await writeFile(shutdownReceiptPath, `${JSON.stringify(finalReceipt, null, 2)}\n`, "utf8");
@@ -1152,6 +1237,7 @@ function parseArguments(arguments_) {
     resumeFailedMedia: false,
     resumeCompletedGeneration: false,
     retryPolicyExport: false,
+    retryMasterJobId: null,
     designedVisuals: false,
     expectedNarrationCacheHits: null,
     reviewFile: null,
@@ -1208,6 +1294,7 @@ function parseArguments(arguments_) {
     else if (name === "--expected-narration-cache-hits") result.expectedNarrationCacheHits = nonNegativeInteger(value, name);
     else if (name === "--evidence-class") result.evidenceClass = requiredText(value, name, 100);
     else if (name === "--codec") result.codecPreference = codecPreference(value, name);
+    else if (name === "--retry-master-job-id") result.retryMasterJobId = requiredText(value, name, 100);
     else if (name === "--credential-file") result.credentialFile = path.resolve(requiredText(value, name, 500));
     else if (name === "--review-file") result.reviewFile = path.resolve(requiredText(value, name, 500));
     else if (name === "--gpu-coordination-path") result.gpuCoordinationPath = path.resolve(requiredText(value, name, 500));
@@ -1219,6 +1306,9 @@ function parseArguments(arguments_) {
     index += 1;
   }
   if (!result.portableRoot) throw new Error("--portable-root is required");
+  if (result.retryMasterJobId && !result.resumeCompletedGeneration) {
+    throw new Error("--retry-master-job-id requires --resume-completed-generation");
+  }
   if (result.resumeProject && !result.resumeProjectDirectory) {
     throw new Error("--resume-project-directory is required when resuming a native project");
   }
@@ -2173,47 +2263,50 @@ async function windowsProcessSnapshot() {
 }
 
 async function snapshotOwnedWorkerProcessTree(workerPath, desktopPid, readyPid) {
-  const processes = await windowsProcessSnapshot();
-  const byPid = new Map(processes.map((entry) => [entry.pid, entry]));
-  const expectedPath = normalizedWindowsPath(workerPath);
-  const workerProcesses = processes.filter((entry) => normalizedWindowsPath(entry.executablePath) === expectedPath);
-  const hasAncestor = (entry, ancestorPids) => {
-    const seen = new Set();
-    let current = entry;
-    while (current && !seen.has(current.pid)) {
-      if (ancestorPids.has(current.pid) || ancestorPids.has(current.parentPid)) return true;
-      seen.add(current.pid);
-      current = byPid.get(current.parentPid);
-    }
-    return false;
-  };
-  const ready = byPid.get(readyPid);
-  if (!ready || normalizedWindowsPath(ready.executablePath) !== expectedPath
-    || typeof ready.creationDate !== "string" || !ready.creationDate) {
-    throw new Error(`Ready worker ${readyPid} has no strong executable-path and creation-time identity`);
+  const firstCapturedAtUtc = new Date().toISOString();
+  const first = await windowsProcessSnapshot();
+  await delay(75);
+  const secondCapturedAtUtc = new Date().toISOString();
+  const second = await windowsProcessSnapshot();
+  return reconcileOwnedWorkerProcessSnapshots({
+    first,
+    second,
+    workerPath,
+    desktopPid,
+    readyPid,
+    normalizePath: normalizedWindowsPath,
+    firstCapturedAtUtc,
+    secondCapturedAtUtc,
+  });
+}
+
+async function snapshotLateOwnedWorkerProcessTree(workerPath, desktopPid) {
+  if (!desktopPid) {
+    return {
+      processTree: [],
+      diagnostics: { schemaVersion: 1, skipped: "desktop PID unavailable" },
+    };
   }
-  const desktopDescendants = workerProcesses.filter((entry) => hasAncestor(entry, new Set([desktopPid])));
-  const workerPids = new Set(desktopDescendants.map((entry) => entry.pid));
-  const roots = desktopDescendants.filter((entry) => !workerPids.has(entry.parentPid));
-  if (roots.length === 0 || roots.some((entry) => typeof entry.creationDate !== "string" || !entry.creationDate || !entry.executablePath)) {
-    throw new Error("The desktop worker roots have no strong executable-path and creation-time identity");
-  }
-  const rootPids = new Set(roots.map((entry) => entry.pid));
-  const owned = processes.filter((entry) => hasAncestor(entry, rootPids));
-  if (!owned.some((entry) => entry.pid === readyPid)) {
-    throw new Error(`Ready worker ${readyPid} is not a descendant of an identity-bound desktop worker root`);
-  }
-  if (owned.some((entry) => typeof entry.creationDate !== "string" || !entry.creationDate || !entry.executablePath)) {
-    throw new Error("An owned worker descendant has no strong executable-path and creation-time identity");
-  }
-  return owned
-    .map((entry) => ({
-      pid: entry.pid,
-      parentPid: entry.parentPid,
-      creationDate: entry.creationDate,
-      executablePath: entry.executablePath,
-    }))
-    .sort((left, right) => left.pid - right.pid);
+  const firstCapturedAtUtc = new Date().toISOString();
+  const first = await windowsProcessSnapshot();
+  await delay(75);
+  const secondCapturedAtUtc = new Date().toISOString();
+  const second = await windowsProcessSnapshot();
+  return reconcileOwnedWorkerProcessSnapshots({
+    first,
+    second,
+    workerPath,
+    desktopPid,
+    readyPid: null,
+    normalizePath: normalizedWindowsPath,
+    firstCapturedAtUtc,
+    secondCapturedAtUtc,
+    allowNoWorkers: true,
+  });
+}
+
+function processIdentityKey(identity) {
+  return `${identity.pid}\0${identity.creationDate}\0${normalizedWindowsPath(identity.executablePath)}`;
 }
 
 function sameProcessIdentity(actual, expected) {
