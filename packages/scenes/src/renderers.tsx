@@ -837,13 +837,27 @@ export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
   const compactMinimum = props.scene.metrics.profile === "portrait" ? 30 : 36;
   const compactMaximum = props.scene.metrics.profile === "portrait" ? 38 : 44;
   const longestCodeLine = Math.max(1, ...lines.map((line) => line.text.length));
-  const annotationReserve = lines.some((line) => line.annotation)
-    ? Math.max(props.scene.metrics.gutter * 3.2, props.scene.metrics.bodySize * 5)
+  const longestAnnotation = Math.max(0, ...lines.map((line) => line.annotation?.length ?? 0));
+  const compactCandidate = lines.length <= 8 && lines.every((line) => line.text.length <= 56);
+  const compactAnnotationFontSize = clamp(props.scene.metrics.bodySize * 1.18, 26, 32);
+  const compactAnnotationReserve = longestAnnotation > 0
+    ? Math.min(
+        codeRect.width * 0.38,
+        Math.max(props.scene.metrics.gutter * 3.2, longestAnnotation * compactAnnotationFontSize * 0.56 + props.scene.metrics.gutter * 1.4),
+      )
     : props.scene.metrics.gutter;
+  const compactAvailableCodeWidth = Math.max(1, codeRect.width - props.scene.metrics.bodySize * 1.85 - compactAnnotationReserve);
+  const compactProgram = compactCandidate
+    && longestCodeLine * compactMinimum * 0.61 <= compactAvailableCodeWidth;
+  const annotationReserve = longestAnnotation > 0
+    ? compactProgram
+      ? compactAnnotationReserve
+      : Math.max(props.scene.metrics.gutter * 3.2, props.scene.metrics.bodySize * 5)
+    : props.scene.metrics.gutter;
+  const annotationFontSize = compactProgram
+    ? compactAnnotationFontSize
+    : legible(props.scene.metrics.smallSize);
   const availableCodeWidth = Math.max(1, codeRect.width - props.scene.metrics.bodySize * 1.85 - annotationReserve);
-  const compactProgram = lines.length <= 8
-    && lines.every((line) => line.text.length <= 56)
-    && longestCodeLine * compactMinimum * 0.61 <= availableCodeWidth;
   const codeFontSize = compactProgram
     ? clamp(Math.min(props.scene.metrics.bodySize * 1.8, availableCodeWidth / (longestCodeLine * 0.61)), compactMinimum, compactMaximum)
     : legible(props.scene.metrics.bodySize * 0.92);
@@ -851,6 +865,10 @@ export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
   const activeActions = content.actions?.filter((action) => props.frame.tick >= action.startTick && props.frame.tick <= action.endTick) ?? [];
   const actionPriority = { run: 4, explain: 3, highlight: 2, type: 1 } as const;
   const activeAction = activeActions.toSorted((left, right) => actionPriority[right.type] - actionPriority[left.type])[0];
+  const lensOutputText = activeAction?.output ?? activeAction?.narrationAnchor ?? "Follow the active statement";
+  const lensOutputFontSize = compactProgram && activeAction?.output
+    ? clamp(props.scene.metrics.bodySize * 1.15, 26, 32)
+    : legible(props.scene.metrics.smallSize);
   const upcomingLineAction = content.kind === "live-code"
     ? content.actions?.find((action) => action.lineId && action.startTick > props.frame.tick)
     : undefined;
@@ -860,7 +878,7 @@ export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
   const activeLine = lines[activeIndex] ?? lines[0];
   const functionName = lines.find((line) => /\b(def|function|fn)\b/u.test(line.text))?.text.match(/(?:def|function|fn)\s+([A-Za-z_][\w]*)/u)?.[1] ?? content.filename ?? "program";
   return withFrame(props, (
-    <g id="body" data-semantic-role="code" data-tutorial-mode={content.kind === "live-code" ? "live-code" : undefined} data-active-code-line={content.kind === "live-code" ? activeIndex + 1 : undefined}>
+    <g id="body" data-semantic-role="code" data-tutorial-mode={content.kind === "live-code" ? "live-code" : undefined} data-active-code-line={content.kind === "live-code" ? activeIndex + 1 : undefined} data-compact-code-program={compactProgram ? "true" : "false"} data-code-annotation-reserve={annotationReserve.toFixed(2)}>
       <path d={`M ${codeRect.x} ${codeRect.y} H ${codeRect.x + codeRect.width} V ${codeRect.y + codeRect.height} H ${codeRect.x + props.scene.metrics.unit * 1.2} L ${codeRect.x} ${codeRect.y + codeRect.height - props.scene.metrics.unit * 1.2} Z`} fill={theme.codeBackground} filter={`url(#soft-shadow-${safeId(props.scene.spec.id)})`} />
       <rect x={codeRect.x} y={codeRect.y} width={codeRect.width} height={headerHeight} fill="#252A3D" />
       <rect x={codeRect.x} y={codeRect.y} width={Math.max(8, props.scene.metrics.unit * 0.8)} height={headerHeight} fill={theme.primary} />
@@ -886,14 +904,16 @@ export function CodeRenderer(props: SceneRendererProps<CodeContent>) {
         const actionHighlight = content.actions?.some((action) => action.type === "highlight" && action.lineId === line.id && props.frame.tick >= action.startTick && props.frame.tick <= action.endTick);
         const lineFocused = content.kind === "live-code" ? Boolean(activeAction) && index === activeIndex : Boolean(line.highlight || actionHighlight);
         const typingNow = Boolean(typeAction && typeProgress > 0 && typeProgress < 1 && !props.frame.reducedMotion);
-        return <g key={line.id} id={line.id} data-code-line={index + 1} data-code-line-focus={lineFocused ? "active" : "inactive"} data-code-font-size={codeFontSize.toFixed(2)} data-typing-progress={typeAction ? typeProgress.toFixed(4) : undefined} style={animationStyle(props.scene.choreography, line.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>{lineFocused || diffTone ? <g><rect x={codeRect.x + props.scene.metrics.bodySize * 0.2} y={y - lineHeight * 0.72} width={codeRect.width - props.scene.metrics.bodySize * 0.4} height={lineHeight} fill={diffTone ?? theme.primary} opacity="0.22" /><rect x={codeRect.x} y={y - lineHeight * 0.72} width={Math.max(7, props.scene.metrics.unit * 0.7)} height={lineHeight} fill={diffTone ?? theme.accent} /></g> : null}<text x={codeRect.x + props.scene.metrics.bodySize * 0.95} y={y} textAnchor="end" fill="#949BB1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)}>{index + 1}</text><text x={codeRect.x + props.scene.metrics.bodySize * 1.85} y={y} fill={color} fontFamily={theme.fontMono} fontSize={codeFontSize} xmlSpace="preserve">{truncate(visibleText, props.scene.metrics.profile === "portrait" ? 52 : isWide ? 62 : 92)}{typingNow ? <tspan fill={theme.accent}>▌</tspan> : null}</text>{line.annotation ? <text data-code-annotation={annotationVisible ? "revealed" : "pending"} x={codeRect.x + codeRect.width - props.scene.metrics.gutter} y={y} textAnchor="end" fill="#F4C56A" fontFamily={theme.fontBody} fontSize={legible(props.scene.metrics.smallSize)} opacity={annotationVisible ? 1 : 0}>{truncate(line.annotation, 28)}</text> : null}</g>;
+        return <g key={line.id} id={line.id} data-code-line={index + 1} data-code-line-focus={lineFocused ? "active" : "inactive"} data-code-font-size={codeFontSize.toFixed(2)} data-typing-progress={typeAction ? typeProgress.toFixed(4) : undefined} style={animationStyle(props.scene.choreography, line.id, props.frame.tick, props.frame.reducedMotion) as CSSProperties}>{lineFocused || diffTone ? <g><rect x={codeRect.x + props.scene.metrics.bodySize * 0.2} y={y - lineHeight * 0.72} width={codeRect.width - props.scene.metrics.bodySize * 0.4} height={lineHeight} fill={diffTone ?? theme.primary} opacity="0.22" /><rect x={codeRect.x} y={y - lineHeight * 0.72} width={Math.max(7, props.scene.metrics.unit * 0.7)} height={lineHeight} fill={diffTone ?? theme.accent} /></g> : null}<text x={codeRect.x + props.scene.metrics.bodySize * 0.95} y={y} textAnchor="end" fill="#949BB1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)}>{index + 1}</text><text x={codeRect.x + props.scene.metrics.bodySize * 1.85} y={y} fill={color} fontFamily={theme.fontMono} fontSize={codeFontSize} xmlSpace="preserve">{truncate(visibleText, props.scene.metrics.profile === "portrait" ? 52 : isWide ? 62 : 92)}{typingNow ? <tspan fill={theme.accent}>▌</tspan> : null}</text>{line.annotation ? <text data-code-annotation={annotationVisible ? "revealed" : "pending"} data-code-annotation-font-size={annotationFontSize.toFixed(2)} x={codeRect.x + codeRect.width - props.scene.metrics.gutter} y={y} textAnchor="end" fill="#F4C56A" fontFamily={theme.fontBody} fontSize={annotationFontSize} opacity={annotationVisible ? 1 : 0}>{truncate(line.annotation, 28)}</text> : null}</g>;
       })}
       {lensRect ? <g data-code-lens="execution" data-live-code-action={content.kind === "live-code" ? activeAction?.type ?? "idle" : undefined}>
         <path d={`M ${lensRect.x} ${lensRect.y} H ${lensRect.x + lensRect.width} V ${lensRect.y + lensRect.height} H ${lensRect.x} L ${lensRect.x + props.scene.metrics.unit * 1.2} ${lensRect.y + lensRect.height * 0.5} Z`} fill={shade(theme.primary, 0.28)} />
         <path d={`M ${lensRect.x} ${lensRect.y} H ${lensRect.x + lensRect.width} V ${lensRect.y + lensRect.height} H ${lensRect.x} L ${lensRect.x + props.scene.metrics.unit * 1.2} ${lensRect.y + lensRect.height * 0.5} Z`} fill={`url(#micro-grid-${safeId(props.scene.spec.id)})`} opacity="0.62" />
         <text x={lensRect.x + props.scene.metrics.gutter} y={lensRect.y + legible(props.scene.metrics.smallSize) * 1.3} fill={theme.accent} fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="820" letterSpacing={1.8}>{content.kind === "live-code" ? "LIVE CODE TIMELINE" : "EXECUTION LENS"}</text>
         <text x={lensRect.x + props.scene.metrics.gutter} y={lensRect.y + lensRect.height * 0.33} fill={theme.surface} fontFamily={theme.fontDisplay} fontSize={props.scene.metrics.titleSize * 2.25} fontWeight="830" letterSpacing={-2}>{activeAction?.type === "run" ? "RUN" : `L${activeIndex + 1}`}</text>
-        <WrappedText text={activeAction?.output ?? activeAction?.narrationAnchor ?? activeLine?.text.trim() ?? "Follow the active statement"} rect={{ x: lensRect.x + props.scene.metrics.gutter, y: lensRect.y + lensRect.height * 0.38, width: lensRect.width - props.scene.metrics.gutter * 2, height: lensRect.height * 0.18 }} theme={theme} fill="#E3E6F1" fontFamily={theme.fontMono} fontSize={legible(props.scene.metrics.smallSize)} fontWeight="650" maxLines={4} />
+        <g data-code-lens-output-font-size={lensOutputFontSize.toFixed(2)}>
+          <WrappedText text={activeAction ? lensOutputText : activeLine?.text.trim() ?? lensOutputText} rect={{ x: lensRect.x + props.scene.metrics.gutter, y: lensRect.y + lensRect.height * 0.38, width: lensRect.width - props.scene.metrics.gutter * 2, height: lensRect.height * 0.22 }} theme={theme} fill="#E3E6F1" fontFamily={theme.fontMono} fontSize={lensOutputFontSize} fontWeight="650" maxLines={4} />
+        </g>
         <line x1={lensRect.x + props.scene.metrics.gutter} x2={lensRect.x + lensRect.width - props.scene.metrics.gutter} y1={lensRect.y + lensRect.height * 0.64} y2={lensRect.y + lensRect.height * 0.64} stroke={theme.accent} strokeWidth={Math.max(3, props.scene.metrics.unit * 0.34)} />
         {(content.kind === "live-code"
           ? [

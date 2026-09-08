@@ -673,6 +673,79 @@ describe("built-in scene catalog", () => {
     expect(markup).not.toContain(">SPLIT<");
     expect(markup).not.toContain(">RETURN<");
   });
+
+  it("keeps compact computed annotations and execution output legible without changing long-code fallback", () => {
+    const compactSpec = {
+      id: "compact-arithmetic",
+      durationTicks: TIMEBASE_TICKS_PER_SECOND * 8,
+      seed: "compact-arithmetic",
+      content: {
+        kind: "live-code" as const,
+        title: "Worked example: 12 × 34",
+        filename: "lesson.py",
+        language: "python",
+        lines: [
+          { id: "compact.1", text: "ac = 1 * 3", annotation: "ac = 3" },
+          { id: "compact.2", text: "bd = 2 * 4", annotation: "bd = 8" },
+          { id: "compact.3", text: "cross = (1 + 2) * (3 + 4) - ac - bd", annotation: "cross = 10" },
+          { id: "compact.4", text: "result = ac * 100 + cross * 10 + bd", annotation: "result = 408" },
+        ],
+        actions: [{ id: "compact.run", type: "run" as const, startTick: TIMEBASE_TICKS_PER_SECOND * 5, endTick: TIMEBASE_TICKS_PER_SECOND * 7, output: "result = 408" }],
+      },
+    };
+    const render = (target: typeof landscape | typeof portrait) => renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(compactSpec, target),
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 6, reducedMotion: true },
+    }));
+    const landscapeMarkup = render(landscape);
+    const portraitMarkup = render(portrait);
+
+    for (const markup of [landscapeMarkup, portraitMarkup]) {
+      expect(markup).toContain('data-compact-code-program="true"');
+      const annotationSizes = [...markup.matchAll(/data-code-annotation-font-size="([\d.]+)"/gu)].map((match) => Number(match[1]));
+      expect(annotationSizes).toHaveLength(4);
+      expect(annotationSizes.every((size) => size >= 26 && size <= 32)).toBe(true);
+    }
+    const lensOutputSize = Number(landscapeMarkup.match(/data-code-lens-output-font-size="([\d.]+)"/u)?.[1]);
+    expect(lensOutputSize).toBeGreaterThanOrEqual(26);
+    expect(lensOutputSize).toBeLessThanOrEqual(32);
+    expect(Number(landscapeMarkup.match(/data-code-annotation-reserve="([\d.]+)"/u)?.[1])).toBeGreaterThan(180);
+
+    const explanationMarkup = renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene({
+        ...compactSpec,
+        id: "compact-arithmetic-explanation",
+        content: {
+          ...compactSpec.content,
+          actions: [{
+            id: "compact.explain",
+            type: "explain" as const,
+            lineId: "compact.4",
+            startTick: TIMEBASE_TICKS_PER_SECOND * 5,
+            endTick: TIMEBASE_TICKS_PER_SECOND * 7,
+            narrationAnchor: "Add the shifted high product, cross term, and low product to reconstruct the original multiplication.",
+          }],
+        },
+      }, landscape),
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 6, reducedMotion: true },
+    }));
+    expect(Number(explanationMarkup.match(/data-code-lens-output-font-size="([\d.]+)"/u)?.[1])).toBeLessThan(26);
+
+    const longSpec = {
+      ...compactSpec,
+      id: "long-program",
+      content: {
+        ...compactSpec.content,
+        lines: Array.from({ length: 9 }, (_, index) => ({ id: `long.${index + 1}`, text: `value_${index + 1} = calculate_a_deliberately_long_intermediate_value_for_the_general_renderer()`, annotation: `value ${index + 1}` })),
+      },
+    };
+    const longMarkup = renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(longSpec, landscape),
+      frame: { tick: TIMEBASE_TICKS_PER_SECOND * 6, reducedMotion: true },
+    }));
+    expect(longMarkup).toContain('data-compact-code-program="false"');
+    expect(Number(longMarkup.match(/data-code-annotation-font-size="([\d.]+)"/u)?.[1])).toBeLessThan(26);
+  });
 });
 
 describe("preflight diagnostics", () => {
