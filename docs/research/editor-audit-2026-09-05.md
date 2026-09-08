@@ -266,6 +266,31 @@ All sources were reviewed on 2026-09-05. The ledger records how each source affe
 | [Blender proxy setup](https://docs.blender.org/manual/en/latest/video_editing/edit/montage/strips/properties/proxy.html) | Proxy sizes and timecode indices affect preview behavior. | Include timecode/index policy in the future proxy spike. |
 | [Mediabunny repository](https://github.com/Vanilagy/mediabunny) | A TypeScript media toolkit can demux/mux around browser codecs; project is MPL-2.0. | Promising browser spike; defer dependency and licensing choice. |
 
+## September 8 official OTIO parser correction
+
+An independent export from current editor source was rejected by the official
+OpenTimelineIO 0.18.1 Windows wheel: `available_range` decoded as a dictionary
+instead of a TimeRange. The exporter omitted `RationalTime.1`/`TimeRange.1`
+schema tags and used a singular Clip.1 media-reference field under a Clip.2
+label. Local round-trip tests had hidden this because they restored the embedded
+app document rather than interpreting the interchange structure.
+
+Exports now include typed time objects and Clip.2 `media_references` with an
+explicit active key. Imports support this structure and retain compatibility
+with older local exports. Missing active references fail explicitly. The
+[official serialized schema](https://opentimelineio.readthedocs.io/en/v0.18.1/tutorials/otio-serialized-schema-only-fields.html)
+defines these fields.
+
+The real source export passes the official parser and a generic round-trip
+with all private project/track/clip metadata removed: 30-frame gap, 15-frame
+source offset, 60-frame clip, 90-frame timeline at 30 fps, and the original media
+URI all survive. Evidence is under
+`E:\temp\avt-final-media-inspection-20260907`: `otio-rejected-before-fix.otio`,
+`otio-current-source.otio`, `otio-official-generic-roundtrip.otio`, and
+`otio-parser-report.json`. Focused adapter/browser bridge checks: 23 passed.
+This qualifies core schema/timing/media-reference interchange, not a named NLE,
+retiming/effects parity, or independent rendering of generated text layers.
+
 ## Verification evidence
 
 September 7 full-length preparation found that the native project record still

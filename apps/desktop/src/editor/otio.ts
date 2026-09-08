@@ -10,11 +10,11 @@ export class EditorProjectFormatError extends Error {
 }
 
 function rational(value: number, rate: number): OtioLikeRationalTime {
-  return { value, rate };
+  return { OTIO_SCHEMA: "RationalTime.1", value, rate };
 }
 
 function timeRange(startFrame: number, durationFrames: number, rate: number): OtioLikeTimeRange {
-  return { start_time: rational(startFrame, rate), duration: rational(durationFrames, rate) };
+  return { OTIO_SCHEMA: "TimeRange.1", start_time: rational(startFrame, rate), duration: rational(durationFrames, rate) };
 }
 
 function trackOtioKind(kind: TrackKind): "Video" | "Audio" {
@@ -50,7 +50,8 @@ function exportClip(project: EditorProject, clip: EditorClip, rate: number): Oti
       alystria_track_kind: clip.kind,
     },
     source_range: timeRange(clip.sourceRange.startFrame, clip.timelineRange.durationFrames, rate),
-    media_reference: mediaReference,
+    media_references: { DEFAULT_MEDIA: mediaReference },
+    active_media_reference_key: "DEFAULT_MEDIA",
   };
 }
 
@@ -97,6 +98,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function clipMediaReference(clip: OtioLikeClip): NonNullable<OtioLikeClip["media_reference"]> {
+  const reference = clip.media_references
+    ? clip.media_references[clip.active_media_reference_key ?? "DEFAULT_MEDIA"]
+    : clip.media_reference;
+  if (!reference || !["ExternalReference.1", "MissingReference.1"].includes(reference.OTIO_SCHEMA)) {
+    throw new EditorProjectFormatError(`Clip ${clip.name} has no supported active media reference.`);
+  }
+  return { ...reference, metadata: reference.metadata ?? {} };
+}
+
 function asFiniteNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -141,16 +152,17 @@ function importGenericOtio(timeline: OtioLikeTimeline): EditorProject {
         continue;
       }
       const embeddedClip = isRecord(child.metadata.alystria_clip) ? child.metadata.alystria_clip as unknown as EditorClip : null;
-      const importedAsset = isRecord(child.media_reference.metadata.alystria_asset)
-        ? child.media_reference.metadata.alystria_asset as unknown as EditorMediaAsset
+      const mediaReference = clipMediaReference(child);
+      const importedAsset = isRecord(mediaReference.metadata.alystria_asset)
+        ? mediaReference.metadata.alystria_asset as unknown as EditorMediaAsset
         : null;
       if (importedAsset?.id) assets.set(importedAsset.id, importedAsset);
-      const declaredAssetId = typeof child.media_reference.metadata.alystria_asset_id === "string" ? child.media_reference.metadata.alystria_asset_id : null;
-      const targetUrl = child.media_reference.OTIO_SCHEMA === "ExternalReference.1" ? child.media_reference.target_url : undefined;
+      const declaredAssetId = typeof mediaReference.metadata.alystria_asset_id === "string" ? mediaReference.metadata.alystria_asset_id : null;
+      const targetUrl = mediaReference.OTIO_SCHEMA === "ExternalReference.1" ? mediaReference.target_url : undefined;
       const assetId = declaredAssetId ?? importedAsset?.id ?? (targetUrl ? `otio-asset-${trackIndex}-${clips.length}` : null);
       if (assetId && !assets.has(assetId)) {
-        const availableDuration = child.media_reference.available_range
-          ? frameFromRational(child.media_reference.available_range.duration, globalRate)
+        const availableDuration = mediaReference.available_range
+          ? frameFromRational(mediaReference.available_range.duration, globalRate)
           : null;
         assets.set(assetId, {
           id: assetId,

@@ -344,11 +344,13 @@ export type EditorAction =
   | { type: "CLEAR_ANNOUNCEMENT" };
 
 export interface OtioLikeRationalTime {
+  OTIO_SCHEMA?: "RationalTime.1";
   value: number;
   rate: number;
 }
 
 export interface OtioLikeTimeRange {
+  OTIO_SCHEMA?: "TimeRange.1";
   start_time: OtioLikeRationalTime;
   duration: OtioLikeRationalTime;
 }
@@ -358,12 +360,17 @@ export interface OtioLikeClip {
   name: string;
   metadata: Record<string, unknown>;
   source_range: OtioLikeTimeRange;
-  media_reference: {
-    OTIO_SCHEMA: "ExternalReference.1" | "MissingReference.1";
-    target_url?: string;
-    available_range?: OtioLikeTimeRange;
-    metadata: Record<string, unknown>;
-  };
+  /** Legacy local exports used this Clip.1 field with a Clip.2 label. */
+  media_reference?: OtioLikeMediaReference;
+  media_references?: Record<string, OtioLikeMediaReference>;
+  active_media_reference_key?: string;
+}
+
+export interface OtioLikeMediaReference {
+  OTIO_SCHEMA: "ExternalReference.1" | "MissingReference.1";
+  target_url?: string;
+  available_range?: OtioLikeTimeRange;
+  metadata: Record<string, unknown>;
 }
 
 export interface OtioLikeTrack {

@@ -23,6 +23,36 @@ describe("editor project adapters", () => {
     expect(() => parseEditorProject("not json")).toThrow(/could not be parsed/i);
   });
 
+  it("exports typed OTIO times and imports active Clip.2 references without private project metadata", () => {
+    const project = makeSampleProject();
+    const otio = exportOtioLike(project);
+    expect(otio.global_start_time.OTIO_SCHEMA).toBe("RationalTime.1");
+    delete otio.metadata.alystria_project;
+    for (const track of otio.tracks.children) {
+      track.metadata = {};
+      for (const child of track.children) {
+        expect(child.source_range.OTIO_SCHEMA).toBe("TimeRange.1");
+        expect(child.source_range.start_time.OTIO_SCHEMA).toBe("RationalTime.1");
+        expect(child.source_range.duration.OTIO_SCHEMA).toBe("RationalTime.1");
+        child.metadata = {};
+        if (child.OTIO_SCHEMA === "Gap.1") continue;
+        expect(child.media_reference).toBeUndefined();
+        const reference = child.media_references!.DEFAULT_MEDIA!;
+        reference.metadata = {};
+        child.media_references = { selected: reference };
+        child.active_media_reference_key = "selected";
+      }
+    }
+    const imported = importOtioLike(otio);
+    expect(imported.tracks[6]!.clips[0]!.timelineRange).toEqual({ startFrame: 80, durationFrames: 20 });
+    expect(imported.assets.some(asset => asset.uri === project.assets[0]!.uri)).toBe(true);
+    expect(imported.tracks[2]!.clips[0]!.assetId).toBeNull();
+    const clip = otio.tracks.children[0]!.children[0]!;
+    if (clip.OTIO_SCHEMA !== "Clip.2") throw new Error("Expected clip");
+    clip.active_media_reference_key = "missing";
+    expect(() => importOtioLike(otio)).toThrow(/no supported active media reference/i);
+  });
+
   it("rejects clips that do not match their track or refer to missing media", () => {
     const wrongTrack = makeSampleProject();
     wrongTrack.tracks[0]!.clips[0]!.kind = "captions";
