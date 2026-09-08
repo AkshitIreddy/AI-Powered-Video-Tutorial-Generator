@@ -6,6 +6,24 @@ import { AdvancedVideoEditor, createEditorProjectFromAlystriaProject, defaultCli
 import { makeProposal, makeSampleProject } from "./fixtures";
 
 describe("AdvancedVideoEditor", () => {
+  it("keeps unused catalog references out of project media without losing them", async () => {
+    const user = userEvent.setup();
+    const project = makeSampleProject();
+    const unused = { ...project.assets[0]!, id: "unused-catalog", name: "Unlinked catalog presenter",
+      status: "pending" as const,
+      metadata: { alystriaAssetSource: "starter-pack", playableUriRequired: true } };
+    delete unused.uri;
+    delete unused.previewUrl;
+    delete unused.importReceiptId;
+    project.assets.push(unused);
+    render(<AdvancedVideoEditor project={project} />);
+    expect(screen.queryByText(unused.name)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: /Show unlinked library references/ }));
+    expect(screen.getByText(unused.name)).toBeInTheDocument();
+    expect(screen.getByText("Not linked")).toBeInTheDocument();
+    expect(project.assets.some((asset) => asset.id === unused.id)).toBe(true);
+  });
+
   it("renders an accessible seven-track editor without inventing preview media", () => {
     render(<AdvancedVideoEditor project={makeSampleProject()} proposals={[makeProposal()]} />);
 

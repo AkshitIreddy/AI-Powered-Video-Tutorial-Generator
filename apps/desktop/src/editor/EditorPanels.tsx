@@ -17,6 +17,15 @@ export function MediaBin({ state, dispatch, onImportFiles, onCreateClipFromAsset
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showLibraryReferences, setShowLibraryReferences] = useState(false);
+  const usedAssets = new Set(state.project.tracks.flatMap((track) => track.clips.map((clip) => clip.assetId)));
+  const libraryReferences = new Set(state.project.assets.filter((asset) =>
+    asset.status === "pending" && !asset.uri && !asset.importReceiptId
+    && asset.metadata.alystriaAssetSource === "starter-pack" && !usedAssets.has(asset.id),
+  ).map((asset) => asset.id));
+  const visibleAssets = state.project.assets
+    .filter((asset) => showLibraryReferences || !libraryReferences.has(asset.id))
+    .toSorted((left, right) => Number(right.status === "ready") - Number(left.status === "ready"));
 
   const importFiles = async (files: FileList | null) => {
     if (!files?.length || !onImportFiles) return;
@@ -52,8 +61,12 @@ export function MediaBin({ state, dispatch, onImportFiles, onCreateClipFromAsset
         ) : null}
       </header>
       {error ? <p className="aly-editor-media-bin__error" role="alert">{error}</p> : null}
+      {libraryReferences.size > 0 ? <label className="aly-editor-media-bin__reference-toggle">
+        <input type="checkbox" checked={showLibraryReferences} onChange={(event) => setShowLibraryReferences(event.target.checked)} />
+        <span>Show unlinked library references ({libraryReferences.size})<small>Catalog entries, with no import or render queued.</small></span>
+      </label> : null}
       <div className="aly-editor-media-bin__assets" role="list" aria-label="Imported media">
-        {state.project.assets.map((asset) => {
+        {visibleAssets.map((asset) => {
           const receipt = asset.importReceiptId ? state.project.importReceipts.find((candidate) => candidate.id === asset.importReceiptId) : undefined;
           const selected = state.selection.assetId === asset.id;
           return (
@@ -62,15 +75,15 @@ export function MediaBin({ state, dispatch, onImportFiles, onCreateClipFromAsset
                 <span className="aly-editor-media-card__preview" aria-hidden="true">
                   {asset.thumbnailUrl ? <img src={asset.thumbnailUrl} alt="" /> : <span>{asset.kind.slice(0, 1).toUpperCase()}</span>}
                 </span>
-                <span className="aly-editor-media-card__copy"><strong>{asset.name}</strong><span>{asset.kind} · {asset.durationFrames ? formatTimecode(asset.durationFrames, state.project.frameRate) : "Duration pending"}</span></span>
-                <span className={`aly-editor-media-card__status aly-editor-media-card__status--${asset.status}`}>{asset.status}</span>
+                <span className="aly-editor-media-card__copy"><strong>{asset.name}</strong><span>{asset.kind} · {asset.durationFrames ? formatTimecode(asset.durationFrames, state.project.frameRate) : asset.kind === "image" ? "Still image" : "Duration unknown"}</span></span>
+                <span className={`aly-editor-media-card__status aly-editor-media-card__status--${asset.status}`}>{asset.status === "pending" && asset.metadata.playableUriRequired ? "Not linked" : asset.status}</span>
               </button>
               {onCreateClipFromAsset && asset.status === "ready" ? <button type="button" className="aly-editor-media-card__place" aria-label={`Place ${asset.name} at playhead`} onClick={() => placeAsset(asset)}>Place at playhead</button> : null}
               {receipt?.status === "failed" ? <span className="aly-editor-media-card__receipt-error">{receipt.errorMessage ?? "Import failed."}</span> : null}
             </article>
           );
         })}
-        {!state.project.assets.length ? <div className="aly-editor-media-bin__empty">No media has been imported. This editor does not create placeholder media.</div> : null}
+        {!visibleAssets.length ? <div className="aly-editor-media-bin__empty">Import media or generate a scene to begin editing.</div> : null}
       </div>
       {state.project.importReceipts.length ? (
         <details className="aly-editor-media-bin__receipts">

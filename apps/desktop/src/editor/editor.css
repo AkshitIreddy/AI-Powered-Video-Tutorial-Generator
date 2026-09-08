@@ -131,6 +131,9 @@
 .aly-editor-proposals__empty,
 .aly-editor-inspector__empty { margin: 10px; padding: 18px; border: 1px dashed var(--aly-editor-line-strong); border-radius: 11px; color: var(--aly-editor-muted); font-size: 12px; line-height: 1.5; text-align: center; }
 .aly-editor-media-bin__receipts { margin: 0 10px 10px; border-top: 1px solid var(--aly-editor-line); color: var(--aly-editor-muted); font-size: 11px; }
+.aly-editor-media-bin__reference-toggle { display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--aly-editor-line); color: var(--aly-editor-muted); font-size: 11px; cursor: pointer; }
+.aly-editor-media-bin__reference-toggle input { margin-top: 2px; accent-color: var(--aly-editor-accent); }
+.aly-editor-media-bin__reference-toggle small { display: block; margin-top: 4px; line-height: 1.4; }
 .aly-editor-media-bin__receipts summary { padding: 9px 0; cursor: pointer; }
 .aly-editor-media-bin__receipts ul { display: grid; gap: 5px; margin: 0; padding: 0 0 8px; list-style: none; }
 .aly-editor-media-bin__receipts li { display: flex; justify-content: space-between; gap: 8px; }
