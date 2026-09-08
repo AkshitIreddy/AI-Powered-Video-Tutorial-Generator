@@ -334,6 +334,42 @@ is required before calling the combined document/editor journey accepted.
 
 ## Verification evidence
 
+### September 8 full-length memory failure and correction
+
+The native 180-second editor export reached 19.27 GiB FFmpeg RSS, leaving only
+0.41 GiB available system RAM. The acceptance coordinator cancelled job
+`37fad2bb-0a9f-4301-b1b9-aaf1b78a53b4` through normal IPC. It reached CANCELLED,
+the desktop exited 0, no worker descendants remained, and available RAM recovered
+to 20.65 GiB. The partial video was not promoted.
+
+Bounded probes used the exact saved manifest and master. Each could stop at
+6 GiB RSS or 4 GiB available RAM. A 15-second original combined graph exceeded
+the RSS budget in 14.14 seconds. The video-only graph completed at 1.14 GiB.
+Reducing filter threads alone did not remove the buffering. Input seeking
+improved startup speed but did not establish bounded memory.
+
+The corrected renderer first prepares the full programme audio as float PCM,
+then renders visual layers while reading that prepared audio for the final
+encode. This prevents delayed audio mixing from forcing decoded video to queue
+inside the same graph. Timing, gains, fades, source offsets and caption styling
+remain in their original filters. Both passes share the timeout budget and
+cancellation checks; intermediate PCM remains in the owned attempt directory.
+The corrected 15-second audio/video probe completed in 20.92 seconds at 1.146 GiB.
+Fourteen editor/export tests passed, including real decoded audio/video/color
+checks. A separate cache regression verifies engine changes invalidate old editor
+jobs while identical requests still deduplicate. Counts overlap with prior tests.
+
+Evidence: `E:\temp\avt-final-media-inspection-20260907\editor-memory-*-20260908`.
+The updated worker is built from `ac3594c`, SHA-256
+`b36fa0cca66e8aebb1046c361c43aeaff167c95c3cc2e35c834ff5bc77989297`.
+The full 180-second native retake remains in progress at this checkpoint;
+bounded source probes are not a substitute for it.
+
+Reference: [FFmpeg filtering, buffering and seeking documentation](https://ffmpeg.org/ffmpeg.html).
+Its buffering/thread controls informed the discriminating probes; the measured
+audio/video separation result, rather than thread-count speculation, selected
+the implemented correction.
+
 September 7 full-length preparation found that the native project record still
 held planned durations while narration had produced different scene windows.
 New editor documents now derive contiguous frame intervals from the verified
