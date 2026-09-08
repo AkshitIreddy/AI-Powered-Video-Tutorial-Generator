@@ -194,6 +194,25 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByRole("button", { name: /prepare export/i })).toBeEnabled();
   });
 
+  it.each([false, true])("keeps promoted review media ahead of refreshed generation jobs (edited=%s)", async (edited) => {
+    const snapshot = structuredClone(exampleSnapshot);
+    snapshot.projects[0] = { ...snapshot.projects[0]!, nativeProjectId: "review-project", nativeGenerationId: "generation", nativeProjectDirectory: "C:/review-project" };
+    const base = { title: "Media", detail: "Saved output", status: "complete" as const, progress: 100, projectId: "review-project" };
+    snapshot.jobs = [
+      { ...base, id: "generation", result: { path: "data:video/mp4;base64,GENERATION", mediaType: "video/mp4" } },
+      { ...base, id: "old-master", operation: "export_master", result: { generationId: "older-generation", path: "data:video/mp4;base64,STALE", mediaType: "video/mp4" } },
+      { ...base, id: "master", operation: "export_master", result: { generationId: "generation", path: "data:video/mp4;base64,MASTER", mediaType: "video/mp4" } },
+      ...(edited ? [{ ...base, id: "edit", operation: "editor_timeline_export" as const, result: { outputPath: "data:video/mp4;base64,EDITED", mediaType: "video/mp4" } }] : []),
+    ];
+    localStorage.setItem("alystria-studio-v2", JSON.stringify(snapshot));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /^open project$/i }));
+    await user.click(within(screen.getByRole("navigation", { name: /project workspace/i })).getByRole("button", { name: /review/i }));
+    expect(screen.getByLabelText(/authoritative generated tutorial media/i)).toHaveAttribute("src", edited ? "data:video/mp4;base64,EDITED" : "data:video/mp4;base64,MASTER");
+    expect(screen.getByText(edited ? "Edited timeline export" : "Promoted master export")).toBeInTheDocument();
+  });
+
   it("defaults to a clean master with YouTube-ready caption sidecars", async () => {
     const user = userEvent.setup();
     render(<App />);

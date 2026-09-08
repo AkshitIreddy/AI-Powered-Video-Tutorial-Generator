@@ -3686,16 +3686,18 @@ function codecPreferenceLabel(codec: CodecPreference): string {
 }
 
 function authoritativeReviewMedia(project: ProjectRecord, jobs: readonly JobRecord[], environment: RuntimeState["environment"]): { src: string; label: string; mediaType: string; artifactHash?: string } | null {
-  const candidate = jobs.find((job) => {
+  const mediaPriority = (job: JobRecord) => job.operation === "editor_timeline_export" ? 4 : job.operation === "export_master" ? 3 : job.operation === "render_scene" ? 2 : 1;
+  const candidate = jobs.filter((job) => {
     const path = job.result?.path ?? job.result?.outputPath;
     const mediaType = job.result?.mediaType;
     return job.projectId === project.nativeProjectId
       && job.status === "complete"
+      && (typeof job.result?.generationId !== "string" || !project.nativeGenerationId || job.result.generationId === project.nativeGenerationId)
       && (job.operation === "export_master" || job.operation === "render_scene" || job.operation === "editor_timeline_export" || job.id === project.nativeGenerationId)
       && typeof path === "string"
       && path.length > 0
       && (typeof mediaType !== "string" || mediaType.startsWith("video/"));
-  });
+  }).sort((left, right) => mediaPriority(right) - mediaPriority(left))[0];
   const path = candidate?.result?.path ?? candidate?.result?.outputPath;
   if (!candidate || typeof path !== "string") return null;
   const direct = /^(blob:|data:|https?:)/u.test(path);
