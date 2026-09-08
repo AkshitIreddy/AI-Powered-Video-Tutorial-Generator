@@ -15,7 +15,7 @@ import {
   createStopRequestCoordinator,
   runCooperativeNativeStop,
 } from "./native-stop-coordinator.mjs";
-import { reconcileOwnedWorkerProcessSnapshots } from "./native-process-identity.mjs";
+import { reconcileOwnedWorkerProcessSnapshots, verifyIncompleteProcessRows } from "./native-process-identity.mjs";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -2263,33 +2263,32 @@ async function windowsProcessSnapshot() {
 }
 
 async function snapshotOwnedWorkerProcessTree(workerPath, desktopPid, readyPid) {
-  const transientAttempts = [];
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const firstCapturedAtUtc = new Date().toISOString();
-    const first = await windowsProcessSnapshot();
-    await delay(75);
-    const secondCapturedAtUtc = new Date().toISOString();
-    const second = await windowsProcessSnapshot();
+  const firstCapturedAtUtc = new Date().toISOString();
+  const first = await windowsProcessSnapshot();
+  await delay(75);
+  const secondCapturedAtUtc = new Date().toISOString();
+  const second = await windowsProcessSnapshot();
+  const input = { first, second, workerPath, desktopPid, readyPid,
+    normalizePath: normalizedWindowsPath, firstCapturedAtUtc, secondCapturedAtUtc };
+  try {
+    return reconcileOwnedWorkerProcessSnapshots(input);
+  } catch (error) {
+    const phase = error?.diagnostics?.failure?.phase;
+    if (!["new-second-incomplete", "weak-first-unresolved"].includes(phase)) throw error;
+    const verificationCapturedAtUtc = new Date().toISOString();
+    const verification = await windowsProcessSnapshot();
+    const verified = verifyIncompleteProcessRows(second, verification, normalizedWindowsPath);
     try {
-      const result = reconcileOwnedWorkerProcessSnapshots({
-        first, second, workerPath, desktopPid, readyPid,
-        normalizePath: normalizedWindowsPath, firstCapturedAtUtc, secondCapturedAtUtc,
-      });
-      result.diagnostics.transientAttempts = transientAttempts;
+      const result = reconcileOwnedWorkerProcessSnapshots({ ...input, second: verified.rows });
+      result.diagnostics.incompleteRowVerification = { verificationCapturedAtUtc, ...verified.diagnostics };
       return result;
-    } catch (error) {
-      const phase = error?.diagnostics?.failure?.phase;
-      if (attempt === 2 || !["new-second-incomplete", "weak-first-unresolved"].includes(phase)) {
-        if (error?.diagnostics) error.diagnostics.transientAttempts = transientAttempts;
-        throw error;
+    } catch (verificationError) {
+      if (verificationError?.diagnostics) {
+        verificationError.diagnostics.incompleteRowVerification = { verificationCapturedAtUtc, ...verified.diagnostics };
       }
-      // Chromium may be creating a child while CIM enumerates it. Retry a
-      // complete inventory; never approve an identity that remains incomplete.
-      transientAttempts.push(error.diagnostics);
-      await delay(100);
+      throw verificationError;
     }
   }
-  throw new Error("Worker identity snapshot retry budget exhausted");
 }
 
 async function snapshotLateOwnedWorkerProcessTree(workerPath, desktopPid) {

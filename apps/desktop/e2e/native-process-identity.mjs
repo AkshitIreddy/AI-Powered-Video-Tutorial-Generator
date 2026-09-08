@@ -1,3 +1,27 @@
+export function verifyIncompleteProcessRows(snapshot, verification, normalizePath) {
+  const currentByPid = new Map(verification.map((entry) => [entry.pid, entry]));
+  const diagnostics = { resolvedPids: [], exitedPids: [], unresolvedPids: [] };
+  const rows = snapshot.flatMap((entry) => {
+    if (entry.creationDate && entry.executablePath) return [entry];
+    const current = currentByPid.get(entry.pid);
+    if (!current) {
+      diagnostics.exitedPids.push(entry.pid);
+      return [];
+    }
+    // Resolve only the identities already enumerated, rather than adding new
+    // children born during verification and chasing a continuously moving tree.
+    if (entry.creationDate && current.creationDate === entry.creationDate
+      && current.parentPid === entry.parentPid && current.executablePath
+      && (!entry.executablePath || normalizePath(current.executablePath) === normalizePath(entry.executablePath))) {
+      diagnostics.resolvedPids.push(entry.pid);
+      return [current];
+    }
+    diagnostics.unresolvedPids.push(entry.pid);
+    return [entry]; // Reconciliation still rejects any unresolved owned row.
+  });
+  return { rows, diagnostics };
+}
+
 export class ProcessIdentitySnapshotError extends Error {
   constructor(message, diagnostics) {
     super(message);

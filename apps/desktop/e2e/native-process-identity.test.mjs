@@ -4,9 +4,23 @@ import test from "node:test";
 import {
   ProcessIdentitySnapshotError,
   reconcileOwnedWorkerProcessSnapshots,
+  verifyIncompleteProcessRows,
 } from "./native-process-identity.mjs";
 
 const workerPath = "C:\\Sandbox\\Runtime\\alystria-pipeline.exe";
+test("verify enumerated incomplete children without chasing newer children or reused PIDs", () => {
+  const weak = { pid: 20, parentPid: 10, creationDate: "time-a", executablePath: "" };
+  const strong = { ...weak, executablePath: "C:\\Runtime\\chrome.exe" };
+  const newer = { ...strong, pid: 21 };
+  const normalize = (value) => value.toLowerCase();
+  assert.deepEqual(verifyIncompleteProcessRows([weak], [strong, newer], normalize).rows, [strong]);
+  const exited = verifyIncompleteProcessRows([weak], [newer], normalize);
+  assert.deepEqual(exited.rows, []);
+  assert.deepEqual(exited.diagnostics.exitedPids, [20]);
+  const reused = verifyIncompleteProcessRows([weak], [{ ...strong, creationDate: "time-b" }], normalize);
+  assert.deepEqual(reused.rows, [weak]);
+  assert.deepEqual(reused.diagnostics.unresolvedPids, [20]);
+});
 const normalizePath = (value) => typeof value === "string"
   ? value.replaceAll("/", "\\").toLowerCase()
   : "";
