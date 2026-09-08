@@ -3208,7 +3208,11 @@ function ExportWorkspace({ project, onWorkspace, onNotify, onExportArchive, onEx
     setExporting(true);
     try {
       const receipt = await onExportMaster({ aspect: aspect as "16:9" | "9:16" | "1:1", resolution: quality as "1080p" | "1440p" | "4K", fps, codecPreference, captionDeliveryMode, transcript, bibliography });
-      onNotify(receipt.state === "FAILED" || receipt.state === "BLOCKED" ? "Export blocked" : "Export queued", receipt.message, receipt.state === "FAILED" || receipt.state === "BLOCKED" ? "warning" : "info");
+      const needsAttention = ["FAILED", "BLOCKED", "CANCELLED", "STALE"].includes(receipt.state);
+      const title = receipt.state === "SUCCEEDED" ? "Export ready"
+        : receipt.state === "CANCELLED" ? "Export cancelled"
+          : needsAttention ? "Export blocked" : "Export queued";
+      onNotify(title, receipt.message, needsAttention ? "warning" : receipt.state === "SUCCEEDED" ? "success" : "info");
     } catch (error) {
       onNotify("Export blocked", errorMessage(error), "warning");
     } finally {
