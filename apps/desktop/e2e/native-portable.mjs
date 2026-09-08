@@ -10,6 +10,12 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import {
+  CooperativeStopRequested,
+  createStopRequestCoordinator,
+  runCooperativeNativeStop,
+} from "./native-stop-coordinator.mjs";
+
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -29,6 +35,8 @@ const reportPath = path.join(evidenceRoot, "report.json");
 const planReportPath = path.join(evidenceRoot, "plan-report.json");
 const policyRetryReportPath = path.join(evidenceRoot, "policy-retry-report.json");
 const shutdownReceiptPath = path.join(evidenceRoot, "shutdown-receipt.json");
+const stopRequestPath = path.join(portableRoot, "Evidence", "native-stop-request.json");
+const stopReceiptPath = path.join(evidenceRoot, "stop-receipt.json");
 const failurePath = path.join(evidenceRoot, "failure.json");
 const ffprobePath = path.join(portableRoot, "Runtime", "ffmpeg", "ffprobe.exe");
 const projectTitle = titleFromTopic(parsed.topic);
@@ -37,6 +45,7 @@ const targetAudience = "Computer science learners familiar with multiplication a
 const startedAt = new Date();
 let child;
 let browser;
+let page;
 let workerPid;
 let completed = false;
 let reviewedNarrationEdit = null;
@@ -49,6 +58,10 @@ let gpuObserverAbort = null;
 let gpuCoordinationEvidence = null;
 let rotationSequence = 0;
 let shutdownReceipt = null;
+let shutdownPromise = null;
+let activeNativeJob = null;
+let stopExitCode = null;
+let stopCoordinator = null;
 
 await rotateExistingPath(evidenceRoot);
 await mkdir(evidenceRoot, { recursive: true });
@@ -57,9 +70,20 @@ await rotateExistingPath(stdoutPath);
 await rotateExistingPath(stderrPath);
 await rotateExistingPath(policyRetryReportPath);
 await rotateExistingPath(shutdownReceiptPath);
+await rotateExistingPath(stopRequestPath);
+await rotateExistingPath(stopReceiptPath);
 const port = await reservePort();
 const stdout = await open(stdoutPath, "w");
 const stderr = await open(stderrPath, "w");
+
+stopCoordinator = createStopRequestCoordinator({
+  requestPath: stopRequestPath,
+  onStop: async (request) => {
+    stopExitCode = request.signal === "SIGTERM" ? 143 : request.signal ? 130 : 0;
+    await ensureNativeShutdown(request, { cancelActiveJob: true, stopReceipt: true });
+  },
+});
+stopCoordinator.start();
 
 try {
   child = spawn(executable, [], {
@@ -81,7 +105,7 @@ try {
   if (contexts.length !== 1) throw new Error(`Expected one native WebView context, found ${contexts.length}`);
   const pages = contexts[0].pages();
   if (pages.length !== 1) throw new Error(`Expected one native WebView page, found ${pages.length}`);
-  const page = pages[0];
+  page = pages[0];
 
   const pageErrors = [];
   const consoleErrors = [];
@@ -477,8 +501,11 @@ try {
     priorMasterJobIds,
     parsed.actionTimeoutMs,
   );
+  activeNativeJob = nativeJobIdentity(nativeExport.id);
   const exportJob = await jobCardById(page, jobs, nativeExport.id);
   const completedNativeExport = await waitForPersistedJobTerminal(page, nativeExport.id, parsed.jobTimeoutMs);
+  activeNativeJob = null;
+  stopCoordinator?.throwIfRequested();
   await expect(exportJob).toContainText("succeeded", { timeout: parsed.actionTimeoutMs });
   if (receiptState(completedNativeExport) !== "SUCCEEDED") {
     throw new Error(`Native export finished in ${receiptState(completedNativeExport) ?? "an unknown state"}, expected SUCCEEDED`);
@@ -526,6 +553,7 @@ try {
   const importedImageName = "included-chapter-frame.png";
   const importedImagePath = path.join(repoRoot, "apps", "desktop", "src", "assets", "teaching", "slide-chapter-v1.png");
   const editedTitle = "Karatsuba: three products";
+  stopCoordinator?.throwIfRequested();
   await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^studio$/i }).click();
   await page.getByRole("button", { name: /^edit tracks & timing/i }).click();
   let editor = page.getByRole("dialog", { name: "Integrated advanced video editor" });
@@ -595,6 +623,7 @@ try {
 
   const durableEditorProject = await persistedEditorDocument(page, activeProjectIdentity);
   assertCurrentFullLengthEditorDocument(durableEditorProject, mediaBindings, 180);
+  stopCoordinator?.throwIfRequested();
   const priorEditorJobIds = await persistedJobIds(page, reviewedProject.project.nativeProjectId, "editor_timeline_export");
   await editor.getByRole("button", { name: "Render timeline" }).click();
   const editorStatus = editor.locator(".aly-editor-shell__status");
@@ -606,7 +635,9 @@ try {
     priorEditorJobIds,
     parsed.actionTimeoutMs,
   );
+  activeNativeJob = nativeJobIdentity(nativeEditorExport.id);
   const completedNativeEditorExport = await waitForPersistedJobTerminal(page, nativeEditorExport.id, parsed.jobTimeoutMs);
+  activeNativeJob = null;
   if (receiptState(completedNativeEditorExport) !== "SUCCEEDED") {
     throw new Error(`Native editor export finished in ${receiptState(completedNativeEditorExport) ?? "an unknown state"}, expected SUCCEEDED`);
   }
@@ -821,26 +852,30 @@ try {
   };
   if (pageErrors.length || consoleErrors.length) throw new Error(`Native WebView emitted errors: ${JSON.stringify({ pageErrors, consoleErrors })}`);
   completed = true;
-} catch (error) {
+} catch (caughtError) {
+  const error = stopCoordinator?.request
+    ? new CooperativeStopRequested(stopCoordinator.request)
+    : caughtError;
   if (error instanceof PlanOnlyCompletion || error instanceof PolicyRetryOnlyCompletion) {
     // The plan-only mode intentionally stops at the durable approval gate.
   } else {
-  workError = error;
-  const failure = {
-    schemaVersion: 1,
-    state: "failed",
-    evidenceClass: parsed.evidenceClass,
-    actualNativeWebView: true,
-    hiddenLaunch: true,
-    executable,
-    desktopPid: child?.pid ?? null,
-    workerPid: workerPid ?? null,
-    reason: error instanceof Error ? error.message : String(error),
-    startedAtUtc: startedAt.toISOString(),
-    failedAtUtc: new Date().toISOString(),
-  };
-  await writeFile(failurePath, `${JSON.stringify(failure, null, 2)}\n`, "utf8").catch(() => {});
-  throw error;
+    workError = error;
+    const failure = {
+      schemaVersion: 1,
+      state: error instanceof CooperativeStopRequested ? "stopped" : "failed",
+      evidenceClass: parsed.evidenceClass,
+      actualNativeWebView: true,
+      hiddenLaunch: true,
+      executable,
+      desktopPid: child?.pid ?? null,
+      workerPid: workerPid ?? null,
+      reason: error instanceof Error ? error.message : String(error),
+      stopRequest: error instanceof CooperativeStopRequested ? error.request : null,
+      startedAtUtc: startedAt.toISOString(),
+      failedAtUtc: new Date().toISOString(),
+    };
+    await writeFile(failurePath, `${JSON.stringify(failure, null, 2)}\n`, "utf8").catch(() => {});
+    if (!(error instanceof CooperativeStopRequested)) throw error;
   }
 } finally {
   let closeError = null;
@@ -853,66 +888,15 @@ try {
     }
   }
   try {
-    const shutdownStartedAt = new Date();
-    const shutdownProblems = [];
-    let workerProcessTree = [];
-    try {
-      workerProcessTree = child && workerPid
-        ? await snapshotOwnedWorkerProcessTree(workerExecutable, child.pid, workerPid)
-        : [];
-      if (workerPid && !workerProcessTree.some((identity) => identity.pid === workerPid)) {
-        shutdownProblems.push(`Native readiness worker ${workerPid} was absent from the identity-bound worker process tree before WM_CLOSE`);
-      }
-    } catch (error) {
-      shutdownProblems.push(`Worker process-tree snapshot failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    let wmClosePostedAt = null;
-    let desktopExitedAt = null;
-    if (child && child.exitCode === null) {
-      try {
-        await postWmClose(child.pid);
-        wmClosePostedAt = new Date();
-        await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(15_000)]);
-      } catch (error) {
-        shutdownProblems.push(`WM_CLOSE failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-    if (child && child.exitCode === null) {
-      child.kill();
-      shutdownProblems.push("Native app did not exit within 15 seconds of WM_CLOSE and required an exact desktop-process kill");
-      await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(5_000)]);
-    }
-    desktopExitedAt = new Date();
-    if (child && child.exitCode !== 0) shutdownProblems.push(`Native app exited with code ${child.exitCode}`);
-    let workerExit = { checkedAtUtc: new Date().toISOString(), remaining: workerProcessTree };
-    try {
-      workerExit = await waitForOwnedWorkerProcessTreeExit(workerProcessTree, 10_000);
-    } catch (error) {
-      shutdownProblems.push(`Worker process-tree exit check failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    if (workerExit.remaining.length > 0) {
-      shutdownProblems.push(`Identity-bound native worker process tree remained alive after WM_CLOSE: ${JSON.stringify(workerExit.remaining)}`);
-    }
-    shutdownReceipt = {
-      schemaVersion: 1,
-      state: shutdownProblems.length === 0 ? "passed" : "failed",
-      shutdownStartedAtUtc: shutdownStartedAt.toISOString(),
-      wmClosePostedAtUtc: wmClosePostedAt?.toISOString() ?? null,
-      desktopExitedAtUtc: desktopExitedAt.toISOString(),
-      desktopExitCode: child?.exitCode ?? null,
-      desktopPid: child?.pid ?? null,
-      readyWorkerPid: workerPid ?? null,
-      workerExecutable,
-      workerProcessTree,
-      workerExitCheckedAtUtc: workerExit.checkedAtUtc,
-      remainingWorkerProcesses: workerExit.remaining,
-      problems: shutdownProblems,
-    };
-    await writeFile(shutdownReceiptPath, `${JSON.stringify(shutdownReceipt, null, 2)}\n`, "utf8");
-    if (shutdownProblems.length > 0) throw new Error(shutdownProblems.join("; "));
+    shutdownReceipt = await ensureNativeShutdown(
+      stopCoordinator?.request ?? { source: "acceptance-finally", reason: completed ? "completed" : "failed" },
+      { cancelActiveJob: Boolean(stopCoordinator?.request), stopReceipt: Boolean(stopCoordinator?.request) },
+    );
+    if (shutdownReceipt.problems.length > 0) throw new Error(shutdownReceipt.problems.join("; "));
   } catch (error) {
     closeError ??= error;
   }
+  stopCoordinator?.dispose();
   try {
     if (browser) await browser.close();
   } catch (error) {
@@ -932,7 +916,205 @@ try {
     await rotateExistingPath(planReportPath, "rejected");
     await rotateExistingPath(policyRetryReportPath, "rejected");
   }
-  if (closeError && !workError) throw closeError;
+  if (stopExitCode !== null) process.exitCode = stopExitCode;
+  if (closeError && (!workError || workError instanceof CooperativeStopRequested)) throw closeError;
+}
+
+function nativeJobIdentity(jobId) {
+  if (!activeProjectIdentity?.projectId || !activeProjectIdentity?.projectDirectory) {
+    throw new Error("Cannot bind an active native job before the project identity is known");
+  }
+  return {
+    jobId,
+    projectId: activeProjectIdentity.projectId,
+    projectDirectory: activeProjectIdentity.projectDirectory,
+  };
+}
+
+function resolveActiveNativeJobForStop() {
+  if (activeNativeJob) return activeNativeJob;
+  if (!activeProjectIdentity?.projectId || !activeProjectIdentity?.projectDirectory) return null;
+  const database = new DatabaseSync(path.join(activeProjectIdentity.projectDirectory, "project.sqlite3"), { readOnly: true });
+  try {
+    const rows = database.prepare(
+      `SELECT job_id,kind FROM jobs
+       WHERE state='RUNNING' AND kind IN ('native.export_master','native.editor_timeline_export')
+       ORDER BY created_at DESC`,
+    ).all();
+    if (rows.length === 0) return null;
+    if (rows.length > 1) {
+      throw new Error(`Refusing to guess between ${rows.length} active native export jobs`);
+    }
+    return nativeJobIdentity(rows[0].job_id);
+  } finally {
+    database.close();
+  }
+}
+
+async function ensureNativeShutdown(request, { cancelActiveJob, stopReceipt }) {
+  if (shutdownPromise) return await shutdownPromise;
+  shutdownPromise = (async () => {
+    let activeJob = null;
+    const initialProblems = [];
+    if (cancelActiveJob) {
+      try {
+        activeJob = resolveActiveNativeJobForStop();
+      } catch (error) {
+        initialProblems.push(`Active-job resolution failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    let rawReceipt = null;
+    let wmClosePostedAtUtc = null;
+    const receipt = await runCooperativeNativeStop({
+      request,
+      activeJob,
+      initialProblems,
+      cancelActiveJob: async (job) => {
+        if (!page || page.isClosed()) throw new Error("Native WebView is unavailable for active-job cancellation");
+        return await withTimeout(
+          invokeNative(page, "job_cancel", job),
+          5_000,
+          `Cancelling active native job ${job.jobId}`,
+        );
+      },
+      waitForActiveJobTerminal: async (job) => await waitForNativeJobTerminalOnDisk(job, 5_000),
+      snapshotOwnedProcessTree: async () => {
+        if (!child || !workerPid || child.exitCode !== null) return [];
+        const tree = await snapshotOwnedWorkerProcessTree(workerExecutable, child.pid, workerPid);
+        if (!tree.some((identity) => identity.pid === workerPid)) {
+          throw new Error(`Native readiness worker ${workerPid} was absent before WM_CLOSE`);
+        }
+        return tree;
+      },
+      requestDesktopClose: async () => {
+        if (!child || child.exitCode !== null) return;
+        await postWmClose(child.pid);
+        wmClosePostedAtUtc = new Date().toISOString();
+      },
+      waitForDesktopExit: async () => {
+        if (!child || child.exitCode !== null) {
+          return { checkedAtUtc: new Date().toISOString(), exitCode: child?.exitCode ?? null, alreadyExited: true };
+        }
+        await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(15_000)]);
+        if (child.exitCode === null) throw new Error("Native app did not exit within 15 seconds of WM_CLOSE");
+        return { checkedAtUtc: new Date().toISOString(), exitCode: child.exitCode, alreadyExited: false };
+      },
+      forceStopDesktop: async () => {
+        if (child?.exitCode === null) {
+          child.kill();
+          await Promise.race([new Promise((resolve) => child.once("exit", resolve)), delay(5_000)]);
+        }
+        if (child?.exitCode === null) throw new Error("Exact desktop process remained after fallback termination");
+        return { checkedAtUtc: new Date().toISOString(), exitCode: child?.exitCode ?? null, forced: true };
+      },
+      waitForOwnedProcessTreeExit: async (tree) => await waitForOwnedWorkerProcessTreeExit(tree, 10_000),
+      forceStopOwnedProcessTree: async (remaining) => await forceStopOwnedProcessTree(remaining),
+      writeReceipt: async (value) => { rawReceipt = value; },
+    });
+    const finalProblems = [...receipt.problems];
+    if (child && child.exitCode !== null && child.exitCode !== 0) {
+      finalProblems.push(`Native app exited with code ${child.exitCode}`);
+    }
+    if (request.source === "acceptance-finally" && receipt.fallback) {
+      finalProblems.push("Normal acceptance shutdown required exact process fallback cleanup");
+    }
+    const finalReceipt = {
+      ...receipt,
+      problems: finalProblems,
+      state: finalProblems.length === 0
+        ? request.source === "acceptance-finally" ? "passed" : "stopped"
+        : "failed",
+      wmClosePostedAtUtc,
+      desktopExitCode: child?.exitCode ?? null,
+      desktopPid: child?.pid ?? null,
+      readyWorkerPid: workerPid ?? null,
+      workerExecutable,
+      workerExitCheckedAtUtc: receipt.workerExit?.checkedAtUtc ?? null,
+      remainingWorkerProcesses: receipt.workerExit?.remaining ?? receipt.workerProcessTree,
+      rawState: rawReceipt?.state ?? null,
+    };
+    await writeFile(shutdownReceiptPath, `${JSON.stringify(finalReceipt, null, 2)}\n`, "utf8");
+    if (stopReceipt) await writeFile(stopReceiptPath, `${JSON.stringify(finalReceipt, null, 2)}\n`, "utf8");
+    return finalReceipt;
+  })();
+  return await shutdownPromise;
+}
+
+async function waitForNativeJobTerminalOnDisk(job, timeoutMs) {
+  const terminal = new Set(["SUCCEEDED", "FAILED", "CANCELLED", "STALE"]);
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    const database = new DatabaseSync(path.join(job.projectDirectory, "project.sqlite3"), { readOnly: true });
+    try {
+      last = database.prepare(
+        "SELECT job_id,state,progress,cancel_requested,updated_at,completed_at,error_json FROM jobs WHERE job_id=?",
+      ).get(job.jobId) ?? null;
+    } finally {
+      database.close();
+    }
+    if (last && terminal.has(last.state)) return persistedStopJob(last);
+    await delay(100);
+  }
+  throw new Error(`Job ${job.jobId} did not reach a terminal state within ${timeoutMs} ms; last=${JSON.stringify(persistedStopJob(last))}`);
+}
+
+function persistedStopJob(row) {
+  if (!row) return null;
+  return {
+    jobId: row.job_id,
+    state: row.state,
+    progress: row.progress,
+    cancelRequested: Boolean(row.cancel_requested),
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at,
+    error: row.error_json ? JSON.parse(row.error_json) : null,
+  };
+}
+
+async function forceStopOwnedProcessTree(expected) {
+  if (expected.length === 0) return [];
+  const current = await windowsProcessSnapshot();
+  const live = expected.filter((identity) => current.some((candidate) => sameProcessIdentity(candidate, identity)));
+  const byPid = new Map(live.map((identity) => [identity.pid, identity]));
+  const depth = (identity) => {
+    let value = 0;
+    let currentIdentity = identity;
+    const seen = new Set();
+    while (byPid.has(currentIdentity.parentPid) && !seen.has(currentIdentity.parentPid)) {
+      seen.add(currentIdentity.parentPid);
+      currentIdentity = byPid.get(currentIdentity.parentPid);
+      value += 1;
+    }
+    return value;
+  };
+  const childFirst = [...live].sort((left, right) => depth(right) - depth(left));
+  const forced = [];
+  for (const identity of childFirst) {
+    const refreshed = await windowsProcessSnapshot();
+    if (!refreshed.some((candidate) => sameProcessIdentity(candidate, identity))) continue;
+    try {
+      process.kill(identity.pid, "SIGTERM");
+      forced.push(identity);
+    } catch (error) {
+      if (error?.code !== "ESRCH") throw error;
+    }
+  }
+  return forced;
+}
+
+async function withTimeout(operation, timeoutMs, label) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} exceeded ${timeoutMs} ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 async function rotateExistingPath(target, label = "previous") {
@@ -1182,6 +1364,7 @@ async function waitForNewPersistedJob(page, projectId, operation, previousIds, t
   const previous = new Set(previousIds);
   let found = null;
   await expect.poll(async () => {
+    stopCoordinator?.throwIfRequested();
     found = await page.evaluate(({ expectedProjectId, expectedOperation, excluded }) => {
       const state = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
       return (state.jobs ?? []).find((job) => job.projectId === expectedProjectId
@@ -1196,6 +1379,7 @@ async function waitForNewPersistedJob(page, projectId, operation, previousIds, t
 async function waitForPersistedJobTerminal(page, jobId, timeoutMs) {
   let found = null;
   await expect.poll(async () => {
+    stopCoordinator?.throwIfRequested();
     found = await page.evaluate((expectedJobId) => {
       const state = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
       return (state.jobs ?? []).find((job) => job.id === expectedJobId) ?? null;
