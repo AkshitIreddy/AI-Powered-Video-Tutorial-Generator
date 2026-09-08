@@ -782,7 +782,7 @@ $Manifest = [ordered]@{
         "No provider keys or production project folders are copied."
     )
 }
-$Manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
+[IO.File]::WriteAllText($ManifestPath, ($Manifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
 $RefreshCommitted = $true
 }
 catch {

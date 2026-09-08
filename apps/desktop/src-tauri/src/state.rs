@@ -173,7 +173,7 @@ fn portable_layout_override() -> Result<Option<PortableLayout>, CommandError> {
     }
     let executable =
         std::env::current_exe().map_err(|_| CommandError::io("portable executable discovery"))?;
-    portable_root_from_executable(&executable)
+    portable_root_from_executable(&executable)?
         .map(|root| PortableLayout::from_root(&root))
         .transpose()
 }
@@ -209,21 +209,44 @@ pub(crate) fn prepare_portable_process_environment() -> Result<(), CommandError>
     Ok(())
 }
 
-fn portable_root_from_executable(executable: &Path) -> Option<PathBuf> {
-    let app_directory = executable.parent()?;
-    if app_directory.file_name()?.to_string_lossy() != "App" {
-        return None;
+fn portable_root_from_executable(executable: &Path) -> Result<Option<PathBuf>, CommandError> {
+    let Some(app_directory) = executable.parent() else {
+        return Ok(None);
+    };
+    if app_directory.file_name().is_none_or(|name| name != "App") {
+        return Ok(None);
     }
-    let root = app_directory.parent()?;
+    let Some(root) = app_directory.parent() else {
+        return Ok(None);
+    };
     let manifest_path = root.join("test-area-manifest.json");
+    let invalid_manifest = || {
+        CommandError::new(
+            "INVALID_PORTABLE_MANIFEST",
+            "The portable application manifest is invalid. Repair the portable package before opening it.",
+            false,
+        )
+    };
+    let bytes = match fs::read(manifest_path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(invalid_manifest()),
+    };
+    // Windows PowerShell 5.1 writes a BOM for -Encoding UTF8. Accept older
+    // portable manifests produced by that shell without leaving portable mode.
+    let bytes = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&bytes);
     let manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read(manifest_path).ok()?).ok()?;
-    if manifest.get("kind")?.as_str()? != "ai-video-tutorial-generator-portable-debug-test-area"
-        || manifest.pointer("/desktop/path")?.as_str()? != "App\\AI Video Tutorial Generator.exe"
+        serde_json::from_slice(bytes).map_err(|_| invalid_manifest())?;
+    if manifest.get("kind").and_then(|value| value.as_str())
+        != Some("ai-video-tutorial-generator-portable-debug-test-area")
+        || manifest
+            .pointer("/desktop/path")
+            .and_then(|value| value.as_str())
+            != Some("App\\AI Video Tutorial Generator.exe")
     {
-        return None;
+        return Err(invalid_manifest());
     }
-    Some(root.to_path_buf())
+    Ok(Some(root.to_path_buf()))
 }
 
 fn validate_existing_portable_directory(root: &Path, path: &Path) -> Result<(), CommandError> {
@@ -672,8 +695,22 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            portable_root_from_executable(&executable),
+            portable_root_from_executable(&executable).unwrap(),
             Some(temporary.path().to_path_buf())
+        );
+        let manifest_path = temporary.path().join("test-area-manifest.json");
+        let mut powershell_utf8 = b"\xef\xbb\xbf".to_vec();
+        powershell_utf8.extend(fs::read(&manifest_path).unwrap());
+        fs::write(manifest_path, powershell_utf8).unwrap();
+        assert_eq!(
+            portable_root_from_executable(&executable).unwrap(),
+            Some(temporary.path().to_path_buf()),
+            "Windows PowerShell UTF-8 encoding must not redirect the app to a nonportable profile"
+        );
+        fs::write(temporary.path().join("test-area-manifest.json"), b"{broken").unwrap();
+        assert_eq!(
+            portable_root_from_executable(&executable).unwrap_err().code,
+            "INVALID_PORTABLE_MANIFEST"
         );
     }
 
