@@ -43,7 +43,7 @@ export interface SourceRecord {
   attribution?: string | null;
 }
 
-export type StudioAssetKind = "presenter" | "background" | "font" | "music" | "sfx";
+export type StudioAssetKind = "presenter" | "background" | "element" | "font" | "music" | "sfx";
 
 /**
  * A portable rights/provenance record. Uploaded bytes stay in the project CAS;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import copy
 import uuid
 from pathlib import Path
@@ -150,6 +151,66 @@ def test_customization_save_merges_only_the_visual_bible_and_creates_revision(
         assert durable.snapshot["topic"] == "Binary search"
         assert durable.snapshot["mediaAssets"] == []
         assert durable.snapshot["customization"] == receipt["customization"]
+
+
+def test_customization_persists_a_teaching_element_as_an_editor_image(tmp_path: Path) -> None:
+    root, project_id, head = _project(tmp_path)
+    service = PipelineService()
+    content = b"\x89PNG\r\n\x1a\n" + b"safe-teaching-element"
+    imported = service.asset_import(
+        {
+            "projectId": project_id,
+            "projectDirectory": str(root),
+            "expectedHeadRevisionId": head,
+            "kind": "editorImage",
+            "filename": "teal-underline.png",
+            "mimeType": "image/png",
+            "privacy": "public",
+            "rights": {
+                "status": "owned",
+                "creator": "AI Video Tutorial Generator built-in image library",
+                "license": "Included generated asset",
+                "attribution": "Built-in artwork",
+                "commercialUse": "allowed",
+                "redistribution": "allowed",
+                "modelInput": "allowed",
+            },
+            "presenter": None,
+            "contentBase64": base64.b64encode(content).decode("ascii"),
+        }
+    )
+    artifact = imported["artifact"]
+    customization = _customization()
+    customization["assets"] = [
+        {
+            "id": artifact["id"],
+            "kind": "element",
+            "label": "Teal brush underline",
+            "source": "generated",
+            "filename": "teal-underline.png",
+            "mediaType": "image/png",
+            "byteSize": artifact["byteSize"],
+            "sha256": artifact["sha256"],
+            "creator": "AI Video Tutorial Generator built-in image library",
+            "license": "Included generated asset",
+            "attribution": "Built-in artwork",
+            "rightsStatus": "cleared",
+        }
+    ]
+
+    saved = _save(
+        service,
+        root,
+        project_id,
+        imported["headRevisionId"],
+        customization,
+    )
+
+    assert saved["customization"]["assets"][0]["kind"] == "element"
+    with ProjectStore.open(root) as store:
+        durable = store.head_revision()
+        assert durable is not None
+        assert durable.snapshot["mediaAssets"][0]["kind"] == "editorImage"
 
 
 def test_customization_save_rejects_stale_head_without_overwrite(tmp_path: Path) -> None:

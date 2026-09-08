@@ -145,6 +145,36 @@ describe("Alystria ProjectRecord adapter", () => {
     });
   });
 
+  it("keeps included teaching elements as editor images without background semantics", () => {
+    const project = createEditorProjectFromAlystriaProject({
+      id: "teaching-element-project",
+      title: "Teaching element",
+      duration: 1,
+      scenes: [{ id: "scene-1", title: "Opening", duration: 6, narration: "Opening narration." }],
+      customization: {
+        assets: [{
+          id: "included-underline",
+          kind: "element",
+          label: "Teal brush underline",
+          source: "generated",
+          sha256: "f".repeat(64),
+          mediaType: "image/png",
+          rightsStatus: "cleared",
+        }],
+      },
+    }, { now: "2026-09-08T12:00:00Z" });
+
+    expect(project.assets[0]).toMatchObject({
+      id: "included-underline",
+      kind: "image",
+      hash: "f".repeat(64),
+      metadata: {
+        alystriaAssetKind: "element",
+        exportEligible: true,
+      },
+    });
+  });
+
   it("binds generated scene artifacts to renderable clips without duplicating a configured presenter", () => {
     const project = createEditorProjectFromAlystriaProject({
       id: "record-project",

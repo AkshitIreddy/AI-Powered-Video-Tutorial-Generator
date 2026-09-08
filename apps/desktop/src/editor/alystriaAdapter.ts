@@ -16,7 +16,7 @@ export interface AlystriaSceneLike {
 
 export interface AlystriaStudioAssetLike {
   id: string;
-  kind: "presenter" | "background" | "font" | "music" | "sfx";
+  kind: "presenter" | "background" | "element" | "font" | "music" | "sfx";
   label: string;
   source?: "starter-pack" | "user-upload" | "generated" | "licensed-media";
   filename?: string;
@@ -116,7 +116,7 @@ function bindingAsset(role: "visual" | "render" | "narration" | "presenter", bin
 function mediaKind(kind: AlystriaStudioAssetLike["kind"]): MediaKind {
   if (kind === "music" || kind === "sfx") return "audio";
   if (kind === "presenter") return "video";
-  if (kind === "background") return "image";
+  if (kind === "background" || kind === "element") return "image";
   return "document";
 }
 

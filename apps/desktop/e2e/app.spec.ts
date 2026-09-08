@@ -110,6 +110,48 @@ test("included artwork reaches the shared scene renderer and merges into a saved
   await page.getByRole("button", { name: "Projects", exact: true }).click();
   await page.getByRole("button", { name: /karatsuba, visually/i }).click();
   await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: "Studio", exact: true }).click();
+  await page.getByRole("button", { name: "Design", exact: true }).click();
+
+  await expect.poll(async () => page.evaluate(() => {
+    const snapshot = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+    const customization = snapshot.projects.find((project: { id: string }) => project.id === "karatsuba")?.customization;
+    const underline = customization?.assets.find((asset: { label: string }) => asset.label === "Teal brush underline");
+    return {
+      kind: underline?.kind,
+      backgroundAssetId: customization?.backgroundAssetId,
+      assets: customization?.assets
+        .filter((asset: { source: string }) => asset.source !== "starter-pack")
+        .map((asset: { kind: string; label: string }) => ({ kind: asset.kind, label: asset.label })),
+    };
+  })).toEqual({
+    kind: "element",
+    backgroundAssetId: "bundled-slide-paper",
+    assets: [
+      { kind: "background", label: "Warm paper canvas" },
+      { kind: "element", label: "Teal brush underline" },
+    ],
+  });
+  const backgroundSelector = page.getByLabel(/Project background/u);
+  await expect(backgroundSelector).toBeVisible();
+  await expect(backgroundSelector.getByRole("option", { name: "Warm paper canvas", exact: true })).toHaveCount(1);
+  await expect(backgroundSelector.getByRole("option", { name: "Teal brush underline", exact: true })).toHaveCount(0);
+  await backgroundSelector.scrollIntoViewIfNeeded();
+  await page.locator(".inspector").screenshot({ path: `${output}/teaching-element-excluded-from-backgrounds.png` });
+
+  await page.evaluate(() => {
+    const snapshot = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+    const customization = snapshot.projects.find((project: { id: string }) => project.id === "karatsuba")?.customization;
+    const underline = customization?.assets.find((asset: { label: string }) => asset.label === "Teal brush underline");
+    if (underline) underline.kind = "background";
+    localStorage.setItem("alystria-studio-v2", JSON.stringify(snapshot));
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /^open project$/i }).click();
+  await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: "Studio", exact: true }).click();
+  await page.getByRole("button", { name: "Design", exact: true }).click();
+  const legacyBackgroundSelector = page.getByLabel(/Project background/u);
+  await expect(legacyBackgroundSelector.getByRole("option", { name: "Warm paper canvas", exact: true })).toHaveCount(1);
+  await expect(legacyBackgroundSelector.getByRole("option", { name: "Teal brush underline", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: /advanced editor/i }).click();
 
   const underlineMedia = page.getByRole("listitem").filter({ hasText: "Teal brush underline" });

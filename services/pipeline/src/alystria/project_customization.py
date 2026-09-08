@@ -20,10 +20,11 @@ _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$")
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
-_ASSET_KINDS = frozenset({"presenter", "background", "font", "music", "sfx"})
+_ASSET_KINDS = frozenset({"presenter", "background", "element", "font", "music", "sfx"})
 _DURABLE_KINDS = {
     "presenter": "presenterPortrait",
     "background": "backgroundImage",
+    "element": "editorImage",
     "font": "font",
     "music": "music",
     "sfx": "soundEffect",

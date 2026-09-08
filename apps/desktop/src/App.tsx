@@ -1231,7 +1231,7 @@ function App() {
       receipt = (await importBundledAsset(asset, { ...identity, expectedHeadRevisionId: head.headRevisionId })).receipt;
     }
     const id = receipt?.artifact.id ?? `bundled-${asset.id}`;
-    const reference: StudioAssetReference = { id, kind: "background", label: asset.label, source: "generated", filename: asset.filename, mediaType: "image/png", byteSize: asset.byteSize, sha256: asset.sha256, creator: "AI Video Tutorial Generator included image library", license: "Included generated asset · project use and export allowed", attribution: "Built-in artwork · generated and visually reviewed 2026-09-05", rightsStatus: "cleared" };
+    const reference: StudioAssetReference = { id, kind: asset.kind, label: asset.label, source: "generated", filename: asset.filename, mediaType: "image/png", byteSize: asset.byteSize, sha256: asset.sha256, creator: "AI Video Tutorial Generator included image library", license: "Included generated asset · project use and export allowed", attribution: "Built-in artwork · generated and visually reviewed 2026-09-05", rightsStatus: "cleared" };
     const customization = canvasCustomization(project);
     const next: CanvasCustomization = { ...customization, assets: [...customization.assets.filter((item) => item.id !== id), reference] };
 
@@ -2862,6 +2862,17 @@ function DesignInspector({ project, customization, onChange, onNotify, onPreview
   const updateCaption = (patch: Partial<CanvasCustomization["captions"]>) => update({ captions: { ...customization.captions, ...patch } });
   const updatePresenter = (patch: Partial<CanvasCustomization["presenter"]>) => update({ presenter: { ...customization.presenter, ...patch } });
   const updateAudio = (patch: Partial<CanvasCustomization["audio"]>) => update({ audio: { ...customization.audio, ...patch } });
+  const projectBackgrounds = customization.assets.filter((asset) => {
+    if (asset.kind !== "background" || asset.source === "starter-pack") return false;
+    // Builds before element identity existed persisted included teaching elements as backgrounds.
+    // Exclude only the app's pinned records, without overriding an uploaded background choice.
+    return !bundledAssets.some((bundled) => bundled.kind === "element" && (
+      (asset.source === "generated"
+        && asset.creator === "AI Video Tutorial Generator included image library"
+        && bundled.sha256 === asset.sha256)
+      || `bundled-${bundled.id}` === asset.id
+    ));
+  });
   const acceptAsset = async (file: File, kind: StudioAssetKind) => {
     if (file.size > MAX_STUDIO_ASSET_BYTES) {
       onNotify("Asset is too large", `${file.name} is ${formatBytes(file.size)}; studio preview assets must be 24 MiB or smaller.`, "warning");
@@ -2895,7 +2906,7 @@ function DesignInspector({ project, customization, onChange, onNotify, onPreview
     const digest = await crypto.subtle.digest("SHA-256", bytes);
     const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     const cleared = uploadRights === "owned" || (uploadRights === "licensed" && licensedRedistribution === "allowed" && (kind !== "presenter" || licensedModelInput === "allowed"));
-    const nativeKind = kind === "presenter" ? "presenterPortrait" : kind === "background" ? "backgroundImage" : kind === "sfx" ? "soundEffect" : kind;
+    const nativeKind = kind === "presenter" ? "presenterPortrait" : kind === "background" ? "backgroundImage" : kind === "element" ? "editorImage" : kind === "sfx" ? "soundEffect" : kind;
     let receipt: ProjectAssetImportReceipt | undefined;
     if (project.nativeProjectId && project.nativeProjectDirectory && project.nativeHeadRevisionId) {
       const importAtHead = (expectedHeadRevisionId: string) => projectAssetImport({
@@ -3003,7 +3014,7 @@ function DesignInspector({ project, customization, onChange, onNotify, onPreview
       <InspectorSection title="Canvas">
         <div className="choice-grid compact">{(["paper", "image"] as const).map((mode) => <button key={mode} className={customization.backgroundMode === mode ? "active" : ""} onClick={() => update({ backgroundMode: mode })}><span className={`material-swatch ${mode}`} />{mode === "paper" ? "Color" : "Image"}</button>)}</div>
         <div className="starter-backgrounds" aria-label="Generated starter backgrounds">{Object.entries(STARTER_BACKGROUND_PREVIEWS).map(([id, src]) => { const asset = customization.assets.find((item) => item.id === id); return <button key={id} className={customization.backgroundAssetId === id ? "active" : ""} onClick={() => update({ backgroundMode: "image", backgroundAssetId: id })}><img src={src} alt="" /><span><strong>{asset?.label}</strong><small>Generated · MIT starter pack</small></span></button>; })}</div>
-        {customization.assets.some((asset) => asset.kind === "background" && asset.source !== "starter-pack") && <label>Project background<select value={customization.backgroundAssetId ?? ""} onChange={(event) => update({ backgroundMode: "image", backgroundAssetId: event.target.value || null })}><option value="">Choose a project background</option>{customization.assets.filter((asset) => asset.kind === "background" && asset.source !== "starter-pack").map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label>}
+        {projectBackgrounds.length > 0 && <label>Project background<select value={customization.backgroundAssetId ?? ""} onChange={(event) => update({ backgroundMode: "image", backgroundAssetId: event.target.value || null })}><option value="">Choose a project background</option>{projectBackgrounds.map((asset) => <option key={asset.id} value={asset.id}>{asset.label}</option>)}</select></label>}
         <AssetUpload label="Upload a background" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" onFile={(file) => { void acceptAsset(file, "background"); }} />
       </InspectorSection>
       <InspectorSection title="Frame & motion">
