@@ -276,3 +276,24 @@ source is absent. The adjacent `MOVE-MANIFEST.json` records both paths and
 verification. This was a reversible move for owner deletion, not reclaimed
 space. The active app, current build, models, projects, and media evidence were
 not moved.
+
+## Superseded portable payloads quarantined — 2026-09-08
+
+Twenty-two obsolete `portable-payload-*` rollback copies were moved from
+`E:\temp\AI Video Tutorial Generator\proof-history` into
+`E:\uesless\AI Video Tutorial Generator Superseded Portable Payloads 2026-09-08`.
+They total 17,931,840,134 logical bytes (16.70 GiB). The source inventory was
+rechecked immediately before moving: ordinary ancestors and descendants only,
+exact file/directory counts and bytes, no active process reference, and source
+and destination constrained to their explicit parent directories. Each move
+used a same-volume .NET directory rename; no files were deleted.
+
+The group contains `MOVE-MANIFEST.json`; an independent copy is preserved at
+`E:\temp\avt-final-media-inspection-20260907\superseded-payload-moves-20260908.json`.
+The accepted-master payload `portable-payload-before-refresh-20260908-093927238-bddc1d6b`
+and immediate rollback `portable-payload-before-refresh-20260908-103808358-c09b500f`
+remain in proof-history. Owner profiles, media evidence, projects, models,
+trusted runtime source, current build and installed runtime remain in place.
+Deleting the quarantine group is the owner's action; moving it does not free
+disk space. The earlier obsolete Rust-cache quarantine was no longer present
+at this later inventory, so its September 8 record above is historical.
