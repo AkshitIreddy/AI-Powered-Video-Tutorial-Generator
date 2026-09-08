@@ -555,12 +555,13 @@ try {
 
   await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /^review$/i }).click();
   await expect(page.getByRole("heading", { name: /review the whole argument/i })).toBeVisible();
-  await expect(page.locator(".review-controls")).toContainText("Promoted master export", { timeout: parsed.actionTimeoutMs });
+  await expect(page.locator(".review-controls")).toContainText(/Promoted master export|Edited timeline export/u, { timeout: parsed.actionTimeoutMs });
+  const preEditorReviewLabel = await page.locator(".review-controls").innerText();
   reviewVideo = page.getByLabel("Authoritative generated tutorial media");
   await expect(reviewVideo).toBeVisible();
   await expect.poll(async () => reviewVideo.evaluate((video) => Number.isFinite(video.duration) && video.duration >= 178 && video.duration <= 182), { timeout: parsed.actionTimeoutMs }).toBe(true);
-  const promotedMasterReviewPlayback = await verifyVideoPlayback(reviewVideo, parsed.actionTimeoutMs);
-  await page.screenshot({ path: path.join(evidenceRoot, "06-promoted-master-review.png"), fullPage: true });
+  const preEditorReviewPlayback = await verifyVideoPlayback(reviewVideo, parsed.actionTimeoutMs);
+  await page.screenshot({ path: path.join(evidenceRoot, "06-current-export-review.png"), fullPage: true });
 
   const mediaBindings = await invokeNative(page, "editor_bindings_get", {
     projectId: reviewedProject.project.nativeProjectId,
@@ -624,6 +625,8 @@ try {
   await editor.getByLabel("Text size").fill("32");
   await editor.getByLabel("Text size").press("Enter");
   await editor.getByLabel("Text placement").selectOption("bottom");
+  await editor.getByLabel("Y", { exact: true }).fill("-180");
+  await editor.getByLabel("Y", { exact: true }).press("Enter");
   await page.waitForFunction(({ projectId, imported, text }) => {
     const workspace = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
     const project = workspace.projects?.find((candidate) => candidate.nativeProjectId === projectId);
@@ -631,7 +634,7 @@ try {
     if (!document) return false;
     const clips = (document.tracks ?? []).flatMap((track) => track.clips ?? []);
     return document.assets?.some((asset) => asset.name === imported && /^[0-9a-f]{64}$/u.test(asset.hash ?? ""))
-      && clips.some((clip) => clip.kind === "titles" && clip.text === text);
+      && clips.some((clip) => clip.kind === "titles" && clip.text === text && clip.transform?.y === -180);
   }, { projectId: activeProjectIdentity.projectId, imported: importedImageName, text: editedTitle });
   await expect.poll(async () => {
     const durable = await invokeNative(page, "project_snapshot_get", {
@@ -732,6 +735,15 @@ try {
   if (project.duration !== 3) throw new Error(`Native tutorial duration was ${project.duration}, expected 3`);
   const result = completedNativeExport.result ?? null;
   const editorResult = completedNativeEditorExport.result ?? null;
+  const deliveryVerification = editorResult?.deliveryVerification;
+  if (!deliveryVerification
+    || deliveryVerification.decodedVideoFrames !== 5400
+    || Math.abs(deliveryVerification.audioDurationSeconds - 180) > 1 / 30
+    || deliveryVerification.audioSampleRate !== 48000
+    || !Number.isFinite(deliveryVerification.audioPeakDbfs)
+    || deliveryVerification.audioPeakDbfs >= 0) {
+    throw new Error("Edited delivery lacks passing decoded audio/video verification");
+  }
   const nativeGeneration = (await persistedProject(page, activeProjectIdentity)).generationJob;
   const generationState = receiptState(nativeGeneration);
   const generationJobIdsAfterEditor = parsed.resumeCompletedGeneration
@@ -899,6 +911,8 @@ try {
       importedImageAssetProtocolUrl: reloadedAssetUrl,
       importedImagePlacement: "media-bin-only",
       editedTitle,
+      titleOffsetY: -180,
+      deliveryVerification,
       outputPath: editorResult.outputPath,
       artifactHash: editorResult.artifactHash,
       mediaType: editorResult.mediaType,
@@ -908,7 +922,8 @@ try {
       editedReviewPlayback,
     },
     generatedReviewPlayback,
-    promotedMasterReviewPlayback,
+    preEditorReviewLabel,
+    preEditorReviewPlayback,
     reviewedNarrationEdit: reviewedNarrationEdit ? {
       ...reviewedNarrationEdit,
       narrationStageArtifactHash: narrationStage.artifactHash,
