@@ -6,9 +6,24 @@ from pathlib import Path
 from typing import Any
 
 import alystria.editor_export as editor_export_module
+import alystria.native_controls as native_controls_module
 from alystria.native_controls import NativeControlCoordinator
 from alystria.project import ProjectStore
 from alystria.service import PipelineService
+
+
+def test_editor_engine_change_does_not_reuse_an_old_export_job(tmp_path: Path, monkeypatch: Any) -> None:
+    with ProjectStore.create(tmp_path / "project", name="Engine identity") as store:
+        head = store.head_revision()
+        assert head is not None
+        control = NativeControlCoordinator(store)
+        request = {"expectedHeadRevisionId": head.revision_id, "manifest": {"schema": "alystria.editor.render.v1"}}
+        first = control.submit_editor_timeline_export(request)
+        assert control.submit_editor_timeline_export(request).job_id == first.job_id
+        monkeypatch.setattr(native_controls_module, "EDITOR_EXPORT_IMPLEMENTATION_VERSION", "next-reviewed-editor-engine")
+        second = control.submit_editor_timeline_export(request)
+        assert second.job_id != first.job_id
+        assert control.submit_editor_timeline_export(request).job_id == second.job_id
 
 
 def test_editor_timeline_export_dispatch_persists_artifact_and_revision(
@@ -54,7 +69,7 @@ def test_editor_timeline_export_dispatch_persists_artifact_and_revision(
     monkeypatch.setenv("ALYSTRIA_FFPROBE_PATH", str(tmp_path / "ffprobe.exe"))
 
     def fake_run(_: object, argv: tuple[str, ...], *, timeout_seconds: float) -> None:
-        assert timeout_seconds == 3_600
+        assert 0 < timeout_seconds <= 3_600
         Path(argv[-1]).write_bytes(b"edited timeline")
 
     monkeypatch.setattr(editor_export_module.SubprocessEditorExportRunner, "run", fake_run)

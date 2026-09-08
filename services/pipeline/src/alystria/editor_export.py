@@ -24,6 +24,7 @@ from typing import Any, Protocol
 from .project import ProjectStore
 
 EDITOR_RENDER_SCHEMA = "alystria.editor.render.v1"
+EDITOR_EXPORT_IMPLEMENTATION_VERSION = "editor-export-v2-separated-audio"
 EDITOR_TIMEBASE_HZ = 240_000
 SUPPORTED_CODECS = frozenset(
     {"vp9", "av1", "h264_nvenc", "h264_mf", "libx264", "hevc_nvenc"}

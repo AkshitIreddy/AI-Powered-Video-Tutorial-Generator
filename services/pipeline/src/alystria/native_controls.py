@@ -18,7 +18,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
-from alystria.editor_export import render_editor_timeline
+from alystria.editor_export import EDITOR_EXPORT_IMPLEMENTATION_VERSION, render_editor_timeline
 from alystria.generation import GenerationCoordinator, GenerationState
 from alystria.generation.adapters import GenerationMediaClient, RendererClient
 from alystria.generation.caption_bundle import build_caption_bundle
@@ -554,7 +554,7 @@ class NativeControlCoordinator:
     def _enqueue(self, kind: str, parameters: dict[str, Any], root_hash: str) -> Job:
         action = ActionKey(
             kind,
-            CONTROL_IMPLEMENTATION_VERSION,
+            EDITOR_EXPORT_IMPLEMENTATION_VERSION if kind == "native.editor_timeline_export" else CONTROL_IMPLEMENTATION_VERSION,
             parameters,
             input_hashes=(root_hash,),
             provider="local-native",
