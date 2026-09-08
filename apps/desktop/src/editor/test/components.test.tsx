@@ -214,7 +214,7 @@ describe("AdvancedVideoEditor", () => {
 
   it("shows a failed document save and allows a retry", async () => {
     const user = userEvent.setup();
-    const onExportOtio = vi.fn().mockRejectedValueOnce(new Error("Exports folder unavailable")).mockResolvedValueOnce(undefined);
+    const onExportOtio = vi.fn().mockRejectedValueOnce({ code: "IO_ERROR", message: "Exports folder unavailable" }).mockResolvedValueOnce(undefined);
     render(<AdvancedVideoEditor project={makeSampleProject()} onExportOtio={onExportOtio} />);
     await user.click(screen.getByRole("button", { name: "Export OTIO" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Exports folder unavailable");

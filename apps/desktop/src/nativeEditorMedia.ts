@@ -4,7 +4,19 @@ import { editorDocumentExport, projectAssetImport, projectSnapshotGet, type Asse
 
 export async function exportNativeEditorDocument(document: EditorProject, format: "editorJson" | "otio", identity: ProjectIdentityRequest, resolve: NativeMediaResolver) {
   const portable = prepareEditorProjectForPersistence(document);
+  const usedAssets = new Set(portable.tracks.flatMap((track) => track.clips.flatMap((clip) => clip.assetId ? [clip.assetId] : [])));
   for (const asset of portable.assets) {
+    // Library entries are not necessarily imported CAS objects. Keep their
+    // identity for relinking without letting unused entries block interchange.
+    if (!usedAssets.has(asset.id)) {
+      if (asset.uri && /^(asset:|http:\/\/asset\.localhost|blob:)/u.test(asset.uri)) {
+        delete asset.uri;
+        delete asset.previewUrl;
+        delete asset.thumbnailUrl;
+        asset.status = "pending";
+      }
+      continue;
+    }
     if (!asset.hash || asset.metadata.browserSessionOnly === true) continue;
     const stored = await resolve({ ...identity, artifactHash: asset.hash });
     let path = stored.path.replace(/^\\\\\?\\UNC\\/u, "//").replace(/^\\\\\?\\/u, "").replace(/\\/gu, "/");

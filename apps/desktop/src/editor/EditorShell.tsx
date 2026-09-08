@@ -84,7 +84,8 @@ export function AdvancedVideoEditor({
       }
       setDocumentExportStatus({ message: nativeExport ? "Document exported to the project's exports folder." : "Document download requested.", failed: false });
     } catch (error) {
-      setDocumentExportStatus({ message: `Document export failed: ${error instanceof Error ? error.message : "The document could not be saved. Try again."}`, failed: true });
+      const message = typeof error === "string" ? error : error && typeof error === "object" && "message" in error && typeof error.message === "string" ? error.message : "The document could not be saved. Try again.";
+      setDocumentExportStatus({ message: `Document export failed: ${message}`, failed: true });
     } finally { setExportingDocument(false); }
   };
   const [waveforms, setWaveforms] = useState<Record<string, EditorWaveformPreview>>({});
