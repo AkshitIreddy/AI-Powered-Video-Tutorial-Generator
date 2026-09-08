@@ -41,6 +41,10 @@ from .generation.forced_alignment import (
     DeferredPinnedOnnxCtcAligner,
     ForcedAlignmentClient,
 )
+from .generation.renderer_client import (
+    _repository_renderer_build_sha256,
+    declared_renderer_build_sha256,
+)
 from .jobs import (
     ActionKey,
     DependencyGraph,
@@ -843,7 +847,11 @@ class PipelineService:
             # Submission remains a bounded SQLite transaction. Runtime
             # resolution and heavyweight rendering happen only on the
             # background supervisor thread.
-            control = NativeControlCoordinator(store)
+            control = NativeControlCoordinator(
+                store,
+                renderer=_queued_renderer_identity(include_build_identity=True)
+                if operation == "export" else None,
+            )
             submit = {
                 "regenerate": control.submit_regeneration,
                 "search": control.submit_visual_search,
@@ -972,8 +980,9 @@ class _QueuedRendererClient:
 
     renderer_id = "alystria-node-renderer"
 
-    def __init__(self, renderer_version: str) -> None:
+    def __init__(self, renderer_version: str, build_sha256: str | None = None) -> None:
         self.renderer_version = renderer_version
+        self.renderer_build_sha256 = build_sha256
 
     def render(self, request: dict[str, Any]) -> RenderedTutorial:
         del request
@@ -1000,7 +1009,8 @@ def _enqueue_generation_coordinator(
     )
 
 
-def _queued_renderer_identity() -> RendererClient:
+def _queued_renderer_identity(*, include_build_identity: bool = False) -> RendererClient:
+    build_sha256 = None
     mode = os.environ.get("ALYSTRIA_RENDERER_MODE", "production").strip().casefold()
     if mode == "fixture":
         return DeterministicRendererClient()
@@ -1021,6 +1031,17 @@ def _queued_renderer_identity() -> RendererClient:
             None,
         )
         version = None if renderer is None else renderer.get("version")
+        if include_build_identity:
+            ledger = {}
+            for component in components:
+                if not isinstance(component, dict) or not isinstance(component.get("id"), str):
+                    raise RendererRuntimeError("Invalid runtime component ledger")
+                if component["id"] in ledger:
+                    raise RendererRuntimeError("Duplicate runtime component identity")
+                ledger[component["id"]] = component
+            if "renderer-cli" not in ledger:
+                raise RendererRuntimeError("Runtime renderer CLI identity is missing")
+            build_sha256 = declared_renderer_build_sha256(ledger)
     elif mode == "repository":
         root_value = os.environ.get("ALYSTRIA_REPOSITORY_ROOT")
         if not root_value:
@@ -1031,11 +1052,15 @@ def _queued_renderer_identity() -> RendererClient:
             )
         )
         version = package.get("version") if isinstance(package, dict) else None
+        if include_build_identity:
+            root = Path(root_value).resolve(strict=True)
+            cli = Path(os.environ.get("ALYSTRIA_RENDERER_CLI_PATH") or root / "services/renderer/dist/src/cli.js")
+            build_sha256 = _repository_renderer_build_sha256(root, cli)
     else:
         raise RendererRuntimeError(f"Unsupported ALYSTRIA_RENDERER_MODE {mode!r}")
     if not isinstance(version, str) or not version.strip():
         raise RendererRuntimeError("Renderer identity is missing its version")
-    return _QueuedRendererClient(version)
+    return _QueuedRendererClient(version, build_sha256)
 
 
 def _production_generation_coordinator(

@@ -1666,11 +1666,35 @@ def _safe_runtime_relative_path(value: str, label: str) -> PurePosixPath:
     return relative
 
 
+def declared_renderer_build_sha256(components: Mapping[str, Mapping[str, Any]]) -> str:
+    """Queue identity only; execution must still verify all installed bytes."""
+    return hashlib.sha256(_canonical_json(_renderer_build_ledger(components)).encode("utf-8")).hexdigest()
+
+
 def _installed_renderer_build_sha256(
     root: Path,
     components: Mapping[str, Mapping[str, Any]],
 ) -> str:
-    """Hash the verified renderer package ledger, not only its CLI entrypoint."""
+    ledger = _renderer_build_ledger(components)
+    cli_relative = _required_string(components["renderer-cli"], "relativePath").replace("\\", "/")
+    for relative_text, expected_sha256 in ledger:
+        candidate = root.joinpath(*Path(relative_text).parts)
+        try:
+            resolved = candidate.resolve(strict=True)
+            resolved.relative_to(root)
+        except (OSError, ValueError) as error:
+            raise RendererRuntimeError(
+                f"Runtime renderer component {relative_text!r} escapes its verified pack"
+            ) from error
+        label = "renderer CLI" if relative_text == cli_relative else f"renderer component {relative_text!r}"
+        _verify_regular_file(candidate, label, expected_sha256)
+    return hashlib.sha256(_canonical_json(ledger).encode("utf-8")).hexdigest()
+
+
+def _renderer_build_ledger(
+    components: Mapping[str, Mapping[str, Any]],
+) -> list[tuple[str, str]]:
+    """Validate the declared renderer ledger without reading executable bytes."""
 
     cli = components["renderer-cli"]
     cli_relative = _safe_runtime_relative_path(
@@ -1710,24 +1734,10 @@ def _installed_renderer_build_sha256(
             raise RendererRuntimeError(
                 f"Runtime component {component_id!r} has an invalid SHA-256"
             )
-        candidate = root.joinpath(*relative.parts)
-        try:
-            resolved = candidate.resolve(strict=True)
-            resolved.relative_to(root)
-        except (OSError, ValueError) as error:
-            raise RendererRuntimeError(
-                f"Runtime component {component_id!r} escapes its verified pack"
-            ) from error
-        label = (
-            "renderer CLI"
-            if component_id == "renderer-cli"
-            else f"renderer component {component_id!r}"
-        )
-        _verify_regular_file(candidate, label, expected_sha256)
         selected.append((relative_text, expected_sha256))
     if cli_relative.as_posix() not in seen_paths:
         raise RendererRuntimeError("Renderer build ledger does not include its CLI entrypoint")
-    return hashlib.sha256(_canonical_json(sorted(selected)).encode("utf-8")).hexdigest()
+    return sorted(selected)
 
 
 def _repository_renderer_build_sha256(root: Path, cli: Path) -> str:

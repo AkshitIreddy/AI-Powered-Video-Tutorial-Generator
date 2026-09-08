@@ -67,9 +67,9 @@ class ConstantVideoRenderer(VersionedVideoRenderer):
 
 
 def _completed_generation(
-    tmp_path: Path,
+    tmp_path: Path, *, project_id: str | None = None,
 ) -> tuple[ProjectStore, NativeControlCoordinator, str, str]:
-    store = ProjectStore.create(tmp_path / "Promoted Master", name="Promoted master")
+    store = ProjectStore.create(tmp_path / "Promoted Master", name="Promoted master", project_id=project_id)
     renderer = VersionedVideoRenderer()
     generation = GenerationCoordinator(store, renderer_client=renderer)
     started = generation.start(
@@ -663,5 +663,53 @@ def test_editor_rejects_foreign_caption_bundle_even_when_master_claims_it(
 
         with pytest.raises(ValueError, match="provenance receipt is incoherent"):
             control.editor_bindings(generation_id)
+    finally:
+        store.close()
+
+
+def test_service_master_submission_matches_verified_worker_renderer_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    from alystria.generation.renderer_client import _installed_renderer_build_sha256
+    from alystria.service import PipelineService
+
+    store, control, generation_id, _ = _completed_generation(tmp_path, project_id=str(uuid.uuid4()))
+    try:
+        runtime_root = tmp_path / "runtime"
+        components = {}
+        for component_id, relative, content in [
+            ("renderer-cli", "renderer/dist/src/cli.js", b"entrypoint"),
+            ("renderer-scene", "renderer/scenes.js", b"scene implementation"),
+        ]:
+            target = runtime_root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            components[component_id] = {
+                "id": component_id, "relativePath": relative, "version": "1",
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        manifest = runtime_root / "manifest.json"
+        manifest.write_text(json.dumps({"components": list(components.values())}), encoding="utf-8")
+        monkeypatch.setenv("ALYSTRIA_RENDERER_MODE", "production")
+        monkeypatch.setenv("ALYSTRIA_RUNTIME_MANIFEST_PATH", str(manifest))
+        def forbidden_resolution(*args: Any, **kwargs: Any) -> None:
+            raise AssertionError("Submission must not resolve or probe executable runtimes")
+        monkeypatch.setattr("alystria.service._production_renderer_client", forbidden_resolution)
+        verified_identity = _installed_renderer_build_sha256(runtime_root, components)
+        assert isinstance(control.renderer, VersionedVideoRenderer)
+        control.renderer.renderer_build_sha256 = verified_identity
+        request = {
+            **_master_params(control, generation_id, fps=30),
+            "projectId": store.manifest.project_id,
+            "projectDirectory": str(tmp_path / "Promoted Master"),
+        }
+        receipt = PipelineService().control_export_master(request)
+        job_id = receipt["jobId"]
+        queued = control.status(job_id)
+        assert queued.parameters["rendererRuntimeIdentitySha256"] == verified_identity
+        control.runtime.run_once(control.handlers)
+        assert control.status(job_id).state.value == "SUCCEEDED"
     finally:
         store.close()
