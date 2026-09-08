@@ -65,6 +65,8 @@ try {
   const hardwareReview = dialog.getByRole("checkbox", { name: /reviewed this system summary/i });
   if (!await hardwareReview.isChecked()) await hardwareReview.check();
   await continueOnboarding(dialog);
+  await expect(dialog.getByText(/Saved selections do not install models/)).toBeVisible();
+  await page.screenshot({ path: path.join(evidenceRoot, "02-model-toolkit-availability.png"), fullPage: true });
   await continueOnboarding(dialog);
   const displayName = dialog.getByLabel("Display name");
   if (!(await displayName.inputValue()).trim()) await displayName.fill("Akshit");

@@ -61,6 +61,7 @@ function mergeSetupConfiguration(
     modelIds: unique([
       ...REQUIRED_ONBOARDING_MODEL_IDS,
       ...configuration.modelIds,
+      ...(setup.selectedModelIds ?? []),
       ...(setup.installedModelIds ?? []),
       ...(setup.attachedModelIds ?? []),
     ]),

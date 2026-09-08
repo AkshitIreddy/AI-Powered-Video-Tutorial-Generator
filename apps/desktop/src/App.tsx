@@ -785,7 +785,7 @@ function App() {
   const [runtime, setRuntime] = useState<RuntimeState>({ environment: desktopEnvironment(), bootstrap: null, loading: true, error: null });
   const [diagnosticReport, setDiagnosticReport] = useState<DiagnosticReport | null>(null);
   const [detectedConnections, setDetectedConnections] = useState<string[]>([]);
-  const [attachedModelIds, setAttachedModelIds] = useState<string[]>([]);
+  const [selectedSetupModelIds, setSelectedSetupModelIds] = useState<string[]>([]);
   const [initialOnboarding] = useState(persistedOnboardingState);
   const persistOnboarding = useCallback((state: PersistedOnboardingState) => {
     localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(state));
@@ -797,7 +797,7 @@ function App() {
       runtimeConfigured: runtime.bootstrap?.worker.state === "ready",
       privacyConfigured: false,
       connectedProviderIds: detectedConnections,
-      attachedModelIds,
+      selectedModelIds: selectedSetupModelIds,
       existingProfile: initialOnboarding?.configuration.profile ?? null,
       hardwareInspected: diagnosticReport !== null,
       hardware: diagnosticReport ? {
@@ -809,7 +809,7 @@ function App() {
         warnings: diagnosticReport.checks.filter((check) => check.level === "warning" || check.level === "failure").map((check) => check.summary),
       } : null,
     };
-  }, [attachedModelIds, detectedConnections, diagnosticReport, initialOnboarding, runtime.bootstrap?.worker.state, runtime.environment]);
+  }, [selectedSetupModelIds, detectedConnections, diagnosticReport, initialOnboarding, runtime.bootstrap?.worker.state, runtime.environment]);
   const onboarding = useOnboardingController({
     persistedState: initialOnboarding,
     setupState: onboardingSetup,
@@ -822,10 +822,10 @@ function App() {
       Promise.all(providerConfigs.filter((provider) => !provider.local).map(async (provider) => [provider.id, await providerSecretStatus({ providerId: provider.id, credentialKind: "api_key" })] as const)),
     ]).then(([setup, refs]) => {
       if (!active) return;
-      setAttachedModelIds(setup.selectedModelIds);
+      setSelectedSetupModelIds(setup.selectedModelIds);
       setDetectedConnections(refs.filter(([, reference]) => reference.availability === "present").map(([providerId]) => providerId));
     }).catch(() => {
-      if (active) { setAttachedModelIds([]); setDetectedConnections([]); }
+      if (active) { setSelectedSetupModelIds([]); setDetectedConnections([]); }
     });
     return () => { active = false; };
   }, [runtime.environment]);

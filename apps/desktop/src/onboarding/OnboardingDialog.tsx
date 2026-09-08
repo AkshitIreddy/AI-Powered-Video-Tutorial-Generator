@@ -92,6 +92,7 @@ function formatModelBytes(bytes: number): string {
 function WelcomeChapter({ productName, brandMarkSrc, setup }: { productName: string; brandMarkSrc?: string | undefined; setup: OnboardingSetupState }) {
   const connected = setup.connectedProviderIds?.length ?? 0;
   const attached = new Set([...(setup.installedModelIds ?? []), ...(setup.attachedModelIds ?? [])]).size;
+  const selected = new Set(setup.selectedModelIds ?? []).size;
   const configured = connected + attached + (setup.existingProfile?.displayName ? 1 : 0);
   return (
     <div className="aly-onboarding-welcome">
@@ -104,7 +105,7 @@ function WelcomeChapter({ productName, brandMarkSrc, setup }: { productName: str
         <li><strong>Cloud use remains explicit.</strong><span>Provider selection never grants blanket permission to upload source material.</span></li>
         <li><strong>Existing setup is preserved.</strong><span>Detected providers, models, and profile details are carried into this guide.</span></li>
       </ul>
-      {configured ? <div className="aly-onboarding-welcome__detected" role="status"><strong>Your existing setup is already here.</strong><span>{connected} provider{connected === 1 ? "" : "s"} connected · {attached} model{attached === 1 ? "" : "s"} attached{setup.existingProfile?.displayName ? ` · profile ${setup.existingProfile.displayName}` : ""}</span></div> : null}
+      {configured ? <div className="aly-onboarding-welcome__detected" role="status"><strong>Your existing setup is already here.</strong><span>{connected} provider{connected === 1 ? "" : "s"} connected{attached > 0 ? ` · ${attached} model${attached === 1 ? "" : "s"} attached` : ""}{selected > 0 ? ` · ${selected} model selection${selected === 1 ? "" : "s"}` : ""}{setup.existingProfile?.displayName ? ` · profile ${setup.existingProfile.displayName}` : ""}</span></div> : null}
     </div>
   );
 }
@@ -266,15 +267,16 @@ function ChapterContent({
     case "hardware":
       return <HardwareChapter setup={setup} reviewed={configuration.hardwareReviewed} onReviewedChange={(hardwareReviewed) => controller.updateConfiguration({ hardwareReviewed })} />;
     case "model": {
-      const pendingDownloadBytes = catalog.models
-        .filter((model) => configuration.modelIds.includes(model.id) && !setup.installedModelIds?.includes(model.id) && !setup.attachedModelIds?.includes(model.id))
-        .reduce((total, model) => total + (model.downloadBytes ?? 0), 0);
+      const pendingModels = catalog.models.filter((model) => configuration.modelIds.includes(model.id)
+        && !model.installed && !setup.installedModelIds?.includes(model.id) && !setup.attachedModelIds?.includes(model.id));
+      const pendingDownloadBytes = pendingModels.reduce((total, model) => total + (model.downloadBytes ?? 0), 0);
+      const unknownDownloads = pendingModels.filter((model) => model.downloadBytes === undefined).length;
       return (
         <fieldset className="aly-onboarding-options aly-onboarding-options--models">
           <legend className="aly-onboarding-sr-only">Model toolkit</legend>
           <div className="aly-onboarding-download-summary">
-            <strong>{pendingDownloadBytes > 0 ? `${formatModelBytes(pendingDownloadBytes)} selected download` : "No additional download required"}</strong>
-            <span>Estimates can vary by quantization and provider packaging. Installed footprint and temporary peak are shown when known.</span>
+            <strong>{pendingDownloadBytes > 0 ? `${formatModelBytes(pendingDownloadBytes)} selected download` : pendingModels.length ? "Download sizes need review" : "No additional download required"}</strong>
+            <span>Saved selections do not install models. {unknownDownloads > 0 ? `${unknownDownloads} selected download size${unknownDownloads === 1 ? " is" : "s are"} not published. ` : ""}Review installation in Models & providers; estimates vary by quantization and packaging.</span>
           </div>
           {catalog.models.map((model) => {
             const installed = model.installed || setup.installedModelIds?.includes(model.id);
@@ -291,7 +293,7 @@ function ChapterContent({
               disabled={model.compatible === false || model.required}
               label={model.name}
               description={model.description ?? `${model.medium} model from ${model.providerId}`}
-              badge={installed ? "Installed" : attached ? "Already attached" : model.compatible === false ? "Not compatible" : model.required ? "Required" : undefined}
+              badge={installed ? "Installed" : attached ? "Already attached" : model.compatible === false ? "Not compatible" : setup.selectedModelIds?.includes(model.id) ? "Selected · install not verified" : model.required ? "Required" : undefined}
               metadata={`${size}${footprint}${model.requirementReason ? ` · ${model.requirementReason}` : ""}`}
               onChange={() => { if (!model.required) controller.updateConfiguration({ modelIds: toggleValue(configuration.modelIds, model.id) }); }}
             />

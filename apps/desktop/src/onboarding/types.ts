@@ -98,6 +98,8 @@ export interface OnboardingSetupState {
   privacyConfigured?: boolean;
   detectedPrivacy?: PrivacyPreference | null;
   connectedProviderIds?: readonly string[];
+  /** Saved choices only; these do not prove installation or attachment. */
+  selectedModelIds?: readonly string[];
   installedModelIds?: readonly string[];
   attachedModelIds?: readonly string[];
   hardware?: HardwareSummary | null;

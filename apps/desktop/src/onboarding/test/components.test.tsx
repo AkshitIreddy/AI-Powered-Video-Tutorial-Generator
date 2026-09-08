@@ -33,12 +33,14 @@ const catalog: OnboardingCatalog = {
 function OnboardingHarness({
   persistedState,
   setupState,
+  onboardingCatalog = catalog,
   onPersist = vi.fn(),
   onExit = vi.fn(),
   onComplete = vi.fn(),
 }: {
   persistedState?: PersistedOnboardingState;
   setupState?: OnboardingSetupState;
+  onboardingCatalog?: OnboardingCatalog;
   onPersist?: (state: PersistedOnboardingState) => void | Promise<void>;
   onExit?: (state: PersistedOnboardingState) => void;
   onComplete?: (state: PersistedOnboardingState) => void;
@@ -47,7 +49,7 @@ function OnboardingHarness({
   return (
     <>
       <OnboardingReplayButton controller={controller} />
-      <OnboardingDialog controller={controller} setupState={setupState} catalog={catalog} />
+      <OnboardingDialog controller={controller} setupState={setupState} catalog={onboardingCatalog} />
     </>
   );
 }
@@ -74,6 +76,27 @@ function ProfileHarness({
 }
 
 describe("OnboardingDialog", () => {
+  it("keeps saved model choices separate from installed models and download estimates", async () => {
+    const user = userEvent.setup();
+    render(<OnboardingHarness setupState={{ connectedProviderIds: ["nvidia"], selectedModelIds: ["chosen", "unknown", "installed"] }} onboardingCatalog={{
+      ...catalog,
+      models: [
+        { id: "chosen", name: "Chosen model", providerId: "local", medium: "speech", downloadBytes: 1024 ** 3 },
+        { id: "unknown", name: "Unpriced model", providerId: "local", medium: "speech" },
+        { id: "installed", name: "Available model", providerId: "local", medium: "speech", installed: true, downloadBytes: 3 * 1024 ** 3 },
+      ],
+    }} />);
+    expect(screen.getByText(/3 model selections/)).toBeVisible();
+    expect(screen.queryByText(/3 models attached/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Chapter 6 Review your model toolkit/i }));
+    expect(screen.getByRole("checkbox", { name: /Chosen model/ })).toBeChecked();
+    expect(screen.getByText("1.0 GB selected download")).toBeVisible();
+    expect(screen.getByText(/1 selected download size is not published/)).toBeVisible();
+    expect(screen.getAllByText("Selected · install not verified")).toHaveLength(2);
+    expect(screen.getByText("Installed", { exact: true })).toBeVisible();
+    expect(screen.queryByText("No additional download required")).not.toBeInTheDocument();
+  });
+
   it("exits a completed setup replay without reapplying setup or reopening on remount", async () => {
     const user = userEvent.setup();
     const onComplete = vi.fn();
