@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol, cast
 
+from alystria.owned_process import WindowsProcessGroup
 from alystria.project import ProjectStore
 
 from .adapters import RenderedTutorial
@@ -252,7 +253,11 @@ class SubprocessCommandRunner:
             )
         else:
             popen_options["start_new_session"] = True
+        ownership: WindowsProcessGroup | None = None
+        process: subprocess.Popen[bytes] | None = None
         try:
+            if os.name == "nt":
+                ownership = WindowsProcessGroup()
             process = subprocess.Popen(
                 list(argv),
                 cwd=cwd,
@@ -264,36 +269,53 @@ class SubprocessCommandRunner:
                 creationflags=creation_flags,
                 **popen_options,
             )
+            if ownership is not None:
+                ownership.assign(process)
         except OSError as error:
+            if process is not None and process.poll() is None:
+                process.kill()
+            if ownership is not None:
+                ownership.close()
+            if process is not None:
+                process.wait(timeout=3)
             raise RendererRuntimeError(f"Could not start renderer process: {error}") from error
 
-        started = time.monotonic()
-        while True:
-            elapsed = time.monotonic() - started
-            if cancelled():
+        try:
+            started = time.monotonic()
+            while True:
+                elapsed = time.monotonic() - started
+                if cancelled():
+                    self._stop(process, ownership)
+                    process.communicate(timeout=3)
+                    raise RendererCancelledError("Render cancelled")
+                if elapsed >= timeout_seconds:
+                    self._stop(process, ownership)
+                    process.communicate(timeout=3)
+                    raise RendererTimeoutError(
+                        f"Renderer exceeded the {timeout_seconds:g}-second timeout"
+                    )
+                try:
+                    stdout, stderr = process.communicate(
+                        timeout=min(0.2, max(0.01, timeout_seconds - elapsed))
+                    )
+                    return CommandResult(
+                        process.returncode if process.returncode is not None else -1,
+                        _bounded_decode(stdout),
+                        _bounded_decode(stderr),
+                    )
+                except subprocess.TimeoutExpired:
+                    continue
+        finally:
+            if ownership is not None:
+                ownership.close()
+            elif process.poll() is None:
                 self._stop(process)
-                process.communicate()
-                raise RendererCancelledError("Render cancelled")
-            if elapsed >= timeout_seconds:
-                self._stop(process)
-                process.communicate()
-                raise RendererTimeoutError(
-                    f"Renderer exceeded the {timeout_seconds:g}-second timeout"
-                )
-            try:
-                stdout, stderr = process.communicate(
-                    timeout=min(0.2, max(0.01, timeout_seconds - elapsed))
-                )
-                return CommandResult(
-                    process.returncode if process.returncode is not None else -1,
-                    _bounded_decode(stdout),
-                    _bounded_decode(stderr),
-                )
-            except subprocess.TimeoutExpired:
-                continue
 
     @staticmethod
-    def _stop(process: subprocess.Popen[bytes]) -> None:
+    def _stop(process: subprocess.Popen[bytes], ownership: WindowsProcessGroup | None = None) -> None:
+        if ownership is not None:
+            ownership.terminate()
+            return
         if process.poll() is not None:
             return
         try:

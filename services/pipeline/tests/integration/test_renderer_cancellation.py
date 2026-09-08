@@ -5,12 +5,15 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from alystria.generation.renderer_client import SubprocessCommandRunner
 from alystria.jobs import JobState, SQLiteWorkflowRuntime
 from alystria.project import ProjectStore
 
 
-def test_durable_cancel_stops_a_real_running_subprocess(tmp_path: Path) -> None:
+@pytest.mark.parametrize("with_descendant", [False, True])
+def test_durable_cancel_stops_a_real_running_subprocess(tmp_path: Path, with_descendant: bool) -> None:
     project = tmp_path / "project"
     ready = tmp_path / "child-ready"
     cancel_times: list[float] = []
@@ -37,8 +40,14 @@ def test_durable_cancel_stops_a_real_running_subprocess(tmp_path: Path) -> None:
         control.start()
 
         def render(context, parameters):
+            script = "import pathlib,sys,time,subprocess; "
+            if with_descendant:
+                # Inherited output pipes expose a surviving descendant: killing
+                # only the parent leaves communicate blocked until this exits.
+                script += "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(6)'], stdout=sys.stdout, stderr=sys.stderr); "
+            script += "pathlib.Path(sys.argv[1]).write_text('ready'); time.sleep(20)"
             SubprocessCommandRunner().run(
-                [sys.executable, "-c", "import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text('ready'); time.sleep(20)", str(ready)],
+                [sys.executable, "-c", script, str(ready)],
                 cwd=tmp_path,
                 timeout_seconds=7,
                 cancelled=context.is_cancelled,
