@@ -1694,7 +1694,7 @@ def _installed_renderer_build_sha256(
 def _renderer_build_ledger(
     components: Mapping[str, Mapping[str, Any]],
 ) -> list[tuple[str, str]]:
-    """Validate the declared renderer ledger without reading executable bytes."""
+    """Bind rendering code and its installed toolchain without reading bytes."""
 
     cli = components["renderer-cli"]
     cli_relative = _safe_runtime_relative_path(
@@ -1706,20 +1706,35 @@ def _renderer_build_ledger(
         else ()
     )
     prefix_text = "/".join(renderer_prefix) + "/" if renderer_prefix else ""
+    toolchain_ids = {"node", "chromium", "ffmpeg", "ffprobe"}
+    toolchain_prefixes: set[str] = set()
+    for component_id in toolchain_ids:
+        if component_id not in components:
+            raise RendererRuntimeError(f"Renderer toolchain ledger is missing {component_id!r}")
+        relative = _safe_runtime_relative_path(
+            _required_string(components[component_id], "relativePath"),
+            f"Runtime component {component_id!r}",
+        )
+        if len(relative.parts) > 1:
+            toolchain_prefixes.add("/".join(relative.parts[:-1]) + "/")
     selected: list[tuple[str, str]] = []
     seen_paths: set[str] = set()
     for component_id, component in components.items():
         raw_relative = _required_string(component, "relativePath")
         normalized = raw_relative.replace("\\", "/")
-        if renderer_prefix:
-            if not normalized.startswith(prefix_text):
-                continue
-        elif component_id != "renderer-cli":
+        is_renderer = (
+            normalized.startswith(prefix_text) if renderer_prefix
+            else component_id == "renderer-cli"
+        )
+        is_toolchain = component_id in toolchain_ids or any(
+            normalized.startswith(prefix) for prefix in toolchain_prefixes
+        )
+        if not is_renderer and not is_toolchain:
             continue
         relative = _safe_runtime_relative_path(
             raw_relative, f"Runtime component {component_id!r}"
         )
-        if renderer_prefix and relative.parts[: len(renderer_prefix)] != renderer_prefix:
+        if is_renderer and renderer_prefix and relative.parts[: len(renderer_prefix)] != renderer_prefix:
             raise RendererRuntimeError(
                 f"Runtime component {component_id!r} escapes the renderer package"
             )

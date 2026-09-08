@@ -682,6 +682,10 @@ def test_service_master_submission_matches_verified_worker_renderer_identity(
         for component_id, relative, content in [
             ("renderer-cli", "renderer/dist/src/cli.js", b"entrypoint"),
             ("renderer-scene", "renderer/scenes.js", b"scene implementation"),
+            ("node", "node/node.exe", b"node"),
+            ("chromium", "chromium/chrome.exe", b"chromium"),
+            ("ffmpeg", "ffmpeg/ffmpeg.exe", b"ffmpeg"),
+            ("ffprobe", "ffmpeg/ffprobe.exe", b"ffprobe"),
         ]:
             target = runtime_root / relative
             target.parent.mkdir(parents=True, exist_ok=True)

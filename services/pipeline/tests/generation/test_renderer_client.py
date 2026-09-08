@@ -27,6 +27,7 @@ from alystria.generation.renderer_client import (
     _windows_executable_identity,
     _windows_path_is_below,
     create_production_renderer_client,
+    declared_renderer_build_sha256,
 )
 from alystria.project import ProjectStore
 from alystria.service import _production_renderer_client
@@ -1359,6 +1360,42 @@ def test_installed_renderer_build_fingerprint_tracks_scene_bundle_not_only_cli(
             runner.render_manifest["metadata"]["rendererBuildSha256"]
             == rebuilt.runtime.renderer_build_sha256
         )
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("component_id", ["node", "chromium", "ffmpeg", "ffprobe"])
+def test_installed_renderer_identity_tracks_toolchain_and_shared_libraries(
+    tmp_path: Path, component_id: str,
+) -> None:
+    pack_root = tmp_path / "pack"
+    pack_root.mkdir()
+    manifest_path, paths = installed_pack(pack_root)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    ledger = {item["id"]: item for item in manifest["components"]}
+    before = declared_renderer_build_sha256(ledger)
+    paths[component_id].write_bytes(b"updated-toolchain")
+    ledger[component_id]["sha256"] = digest(paths[component_id])
+    assert declared_renderer_build_sha256(ledger) != before
+    library = paths[component_id].parent / "codec.dll"
+    library.write_bytes(b"shared-codec-v1")
+    ledger["shared-library"] = {
+        **ledger[component_id], "id": "shared-library",
+        "relativePath": library.relative_to(pack_root).as_posix(),
+        "sha256": digest(library),
+    }
+    before = declared_renderer_build_sha256(ledger)
+    library.write_bytes(b"untrusted-replacement")
+    manifest["components"] = list(ledger.values())
+    manifest_path.write_text(canonical(manifest), encoding="utf-8")
+    store = ProjectStore.create(tmp_path / "project", name="Toolchain identity")
+    try:
+        with pytest.raises(RendererRuntimeError, match="SHA-256"):
+            create_production_renderer_client(
+                store, runtime_pack_root=pack_root, runtime_manifest_path=manifest_path,
+            )
+        ledger["shared-library"]["sha256"] = digest(library)
+        assert declared_renderer_build_sha256(ledger) != before
     finally:
         store.close()
 
