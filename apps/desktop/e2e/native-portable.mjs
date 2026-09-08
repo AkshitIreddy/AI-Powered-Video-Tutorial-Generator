@@ -2090,7 +2090,13 @@ async function invokeNative(page, command, input) {
   return await page.evaluate(async ({ command, input }) => {
     const invoke = globalThis.__TAURI_INTERNALS__?.invoke;
     if (typeof invoke !== "function") throw new Error("Tauri IPC is unavailable in the native WebView");
-    return await invoke(command, { input });
+    try { return await invoke(command, { input }); }
+    catch (error) {
+      // Native rejections are structured objects; Playwright otherwise reports
+      // only "Object" and loses the failing contract. Never include IPC inputs.
+      if (command === "editor_bindings_get") throw new Error(`${command}: ${error?.code ?? "UNKNOWN"}: ${error?.message ?? "Native request failed"}`);
+      throw error;
+    }
   }, { command, input });
 }
 
