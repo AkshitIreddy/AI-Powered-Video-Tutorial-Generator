@@ -2263,21 +2263,33 @@ async function windowsProcessSnapshot() {
 }
 
 async function snapshotOwnedWorkerProcessTree(workerPath, desktopPid, readyPid) {
-  const firstCapturedAtUtc = new Date().toISOString();
-  const first = await windowsProcessSnapshot();
-  await delay(75);
-  const secondCapturedAtUtc = new Date().toISOString();
-  const second = await windowsProcessSnapshot();
-  return reconcileOwnedWorkerProcessSnapshots({
-    first,
-    second,
-    workerPath,
-    desktopPid,
-    readyPid,
-    normalizePath: normalizedWindowsPath,
-    firstCapturedAtUtc,
-    secondCapturedAtUtc,
-  });
+  const transientAttempts = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const firstCapturedAtUtc = new Date().toISOString();
+    const first = await windowsProcessSnapshot();
+    await delay(75);
+    const secondCapturedAtUtc = new Date().toISOString();
+    const second = await windowsProcessSnapshot();
+    try {
+      const result = reconcileOwnedWorkerProcessSnapshots({
+        first, second, workerPath, desktopPid, readyPid,
+        normalizePath: normalizedWindowsPath, firstCapturedAtUtc, secondCapturedAtUtc,
+      });
+      result.diagnostics.transientAttempts = transientAttempts;
+      return result;
+    } catch (error) {
+      const phase = error?.diagnostics?.failure?.phase;
+      if (attempt === 2 || !["new-second-incomplete", "weak-first-unresolved"].includes(phase)) {
+        if (error?.diagnostics) error.diagnostics.transientAttempts = transientAttempts;
+        throw error;
+      }
+      // Chromium may be creating a child while CIM enumerates it. Retry a
+      // complete inventory; never approve an identity that remains incomplete.
+      transientAttempts.push(error.diagnostics);
+      await delay(100);
+    }
+  }
+  throw new Error("Worker identity snapshot retry budget exhausted");
 }
 
 async function snapshotLateOwnedWorkerProcessTree(workerPath, desktopPid) {
