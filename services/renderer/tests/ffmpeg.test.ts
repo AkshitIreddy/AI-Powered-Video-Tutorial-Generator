@@ -62,6 +62,17 @@ test("GPL encoder stays visibly separated", () => {
   assert.match(plan.licensingWarnings.join(" "), /GPL runtime pack/);
 });
 
+test("delivery converts and tags encoder frames even when mezzanine tags are absent", () => {
+  for (const pixelFormat of ["yuv420p", "yuv420p10le"] as const) {
+    const plan = planDeliveryEncode("untagged.mkv", undefined, "output.mp4", { codec: "hevc_nvenc", pixelFormat });
+    const filter = plan.args[plan.args.indexOf("-vf") + 1];
+    assert.equal(filter, `scale=out_color_matrix=bt709:out_range=tv,format=${pixelFormat},setparams=range=limited:color_primaries=bt709:color_trc=iec61966-2-1:colorspace=bt709`);
+  }
+  assert.throws(() => planDeliveryEncode("video.mkv", undefined, "output.mp4", {
+    codec: "h264_nvenc", pixelFormat: "yuv420p,movie=untrusted" as "yuv420p",
+  }), /Unsupported delivery pixel format/);
+});
+
 test("hardware H.264 plans force the selected backend and QSV is available as NVENC fallback", () => {
   const qsv = planDeliveryEncode("video.mkv", "audio.wav", "output.mp4", { codec: "h264_qsv", quality: 20 });
   assert.deepEqual(qsv.args.slice(qsv.args.indexOf("-c:v"), qsv.args.indexOf("-c:v") + 4), ["-c:v", "h264_qsv", "-global_quality", "20"]);

@@ -391,6 +391,10 @@ function videoCodecArguments(options: DeliveryOptions): { args: string[]; warnin
 
 export function planDeliveryEncode(videoPath: string, audioPath: string | undefined, outputPath: string, options: DeliveryOptions): CommandPlan {
   const codec = videoCodecArguments(options);
+  const pixelFormat = options.pixelFormat ?? "yuv420p";
+  if (pixelFormat !== "yuv420p" && pixelFormat !== "yuv420p10le") {
+    throw new TypeError(`Unsupported delivery pixel format ${String(pixelFormat)}`);
+  }
   const audioBitrate = bitrate(options.audioBitrate, "192k");
   const captionMode = options.captionMode ?? "sidecar";
   if (!(new Set<CaptionDeliveryMode>(["sidecar", "embedded", "burned", "both"])).has(captionMode)) {
@@ -412,6 +416,10 @@ export function planDeliveryEncode(videoPath: string, audioPath: string | undefi
     if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(language)) throw new TypeError(`Invalid caption language ${language}`);
     args.push("-map", `${captionInput}:s:0`, "-c:s", webm ? "webvtt" : "mov_text", "-metadata:s:s:0", `language=${language}`);
   }
+  // FFmpeg can propagate unspecified decoded-frame tags over output stream
+  // options. Convert the authored sRGB raster to limited-range Rec.709 YCbCr,
+  // then tag the actual encoder frames; keep stream options for muxers too.
+  args.push("-vf", `scale=out_color_matrix=bt709:out_range=tv,format=${pixelFormat},setparams=range=limited:color_primaries=bt709:color_trc=iec61966-2-1:colorspace=bt709`);
   args.push(...codec.args, "-color_primaries", "bt709", "-color_trc", "iec61966-2-1", "-colorspace", "bt709");
   args.push("-map_metadata", "-1", "-fflags", "+bitexact", "-flags:v", "+bitexact");
   if (audioPath) args.push("-flags:a", "+bitexact");

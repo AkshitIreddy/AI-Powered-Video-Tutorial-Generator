@@ -28,6 +28,37 @@ Local receipts are in
 `E:\temp\AI Video Tutorial Generator\build\ffmpeg-candidate-20260908`
 (`candidate-verification.json` and `one-frame-nvenc-probes.json`).
 
+## September 8 colour-metadata retake
+
+The complete 180-second native H.264 encode selected `h264_nvenc` and encoded
+all 5,400 frames, but the unchanged delivery QA rejected its missing transfer
+and primaries tags (`bt709/unknown/unknown`). Job
+`1a84146b-c7c0-43fe-b378-ce6d8fea0cbf` failed without promotion. Normal native
+shutdown passed with no remaining owned processes; the GPU marker returned to
+`no`. This is a failed media qualification, not a successful master.
+
+Three-frame encodes from the actual untagged RGB FFV1 composite reproduced
+the issue in both H.264 and HEVC. Output stream flags alone were insufficient.
+The delivery plan now explicitly converts to limited-range Rec.709 YCbCr and
+sets sRGB transfer/Rec.709 primaries on the encoder frames. It retains stream
+flags for muxers and the strict QA gate. The filter pixel format is allowlisted
+before interpolation. This follows FFmpeg's [scale and setparams contracts](https://ffmpeg.org/ffmpeg-filters.html#setparams).
+
+The actual generated source plan passed three-frame output probes for H.264
+8-bit, HEVC 8-bit and 10-bit, and VP9 8-bit: each reports `bt709`,
+`iec61966-2-1`, `bt709`, and limited range. Renderer planner/executor source
+checks passed 25 tests with three opt-in media tests skipped; the real source
+plan probes are separate evidence. Rebuilt full native acceptance remains
+required. Evidence:
+
+- `E:\temp\avt-final-media-inspection-20260907\encoder-color-probes-20260908`
+- `E:\temp\avt-final-media-inspection-20260907\delivery-plan-color-regression-20260908`
+- `E:\temp\avt-final-media-inspection-20260907\failed-color-master-media-inspection-20260908`
+
+Independent decoded-audio measurements on the rejected video found -16.24
+LUFS, -1.96 dBTP, zero clipped samples, and 180 seconds of media. These do
+not override the failed colour gate or constitute auditory listening.
+
 ## Earlier snapshot
 
 Research and machine-verification snapshot: **2026-08-30**.
