@@ -73,6 +73,7 @@ def test_editor_timeline_export_dispatch_persists_artifact_and_revision(
         Path(argv[-1]).write_bytes(b"edited timeline")
 
     monkeypatch.setattr(editor_export_module.SubprocessEditorExportRunner, "run", fake_run)
+    monkeypatch.setattr(editor_export_module, "verify_editor_delivery", lambda *_args, **_kwargs: {"testDouble": True})
     monkeypatch.setattr(editor_export_module.SubprocessEditorMediaProbe, "has_audio_stream", lambda *_args, **_kwargs: False)
     transform = {"x": 0, "y": 0, "scaleX": 1, "scaleY": 1, "rotation": 0, "anchorX": 0.5, "anchorY": 0.5}
     audio = {"volumeDb": 0, "pan": 0, "muted": False, "fadeInTicks": 0, "fadeOutTicks": 0}

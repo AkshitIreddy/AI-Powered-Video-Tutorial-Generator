@@ -198,7 +198,8 @@ def test_elides_neutral_rotation_and_opacity_pixel_filters(tmp_path: Path) -> No
     assert "geq=" not in command
 
 
-def test_executes_without_shell_and_content_addresses_delivery(tmp_path: Path) -> None:
+def test_executes_without_shell_and_content_addresses_delivery(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(editor_export_module, "verify_editor_delivery", lambda *_args, **_kwargs: {"testDouble": True})
     digest = "b" * 64
     registered: list[SimpleNamespace] = []
     store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest), register_artifacts=lambda artifacts: registered.extend(artifacts))
@@ -228,6 +229,24 @@ def test_cancellation_after_encode_prevents_artifact_promotion(tmp_path: Path) -
         )
     assert runner.argv
     assert not registered
+
+
+def test_failed_delivery_verification_prevents_artifact_promotion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reject(*_args: object, **_kwargs: object) -> None:
+        raise EditorExportError("Editor delivery audio lasts 0.500s; expected 2.000s")
+
+    monkeypatch.setattr(editor_export_module, "verify_editor_delivery", reject)
+    digest = "b" * 64
+    registered: list[SimpleNamespace] = []
+    store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"),
+                            cas=FakeCas(tmp_path, digest), register_artifacts=registered.extend)
+    with pytest.raises(EditorExportError, match="audio lasts"):
+        render_editor_timeline(store, manifest(digest), ffmpeg_path=Path("ffmpeg.exe"),
+                               media_probe=FakeMediaProbe(), runner=FakeRunner())
+    assert not registered
+    assert not list((tmp_path / "exports" / "editor").iterdir())
 
 
 def test_rejects_untrusted_or_unsupported_timeline_features(tmp_path: Path) -> None:
@@ -330,6 +349,27 @@ def _actual_manifest(digest: str, project_id: str) -> dict[str, object]:
             },
         ],
     }
+
+
+@pytest.mark.skipif(_ffmpeg() is None, reason="FFmpeg is required for delivery rejection proof")
+@pytest.mark.parametrize(("audio_duration", "gain", "error"), [
+    (0.3, 1, "audio lasts"), (1, 32, "audio clips"),
+])
+def test_actual_delivery_gate_rejects_short_or_clipping_audio(
+    tmp_path: Path, audio_duration: float, gain: int, error: str,
+) -> None:
+    ffmpeg = _ffmpeg()
+    assert ffmpeg is not None
+    output = tmp_path / "bad-delivery.mkv"
+    subprocess.run([
+        str(ffmpeg), "-v", "error", "-f", "lavfi", "-i", "color=s=20x20:r=10:d=1",
+        "-f", "lavfi", "-i", f"sine=duration={audio_duration}:sample_rate=48000",
+        "-af", f"volume={gain}", "-c:v", "ffv1", "-c:a", "pcm_f32le", str(output),
+    ], check=True, capture_output=True)
+    with pytest.raises(EditorExportError, match=error):
+        editor_export_module.verify_editor_delivery(
+            output, ffmpeg_path=ffmpeg, duration_seconds=1, fps=10, timeout_seconds=10,
+        )
 
 
 @pytest.mark.skipif(_ffmpeg() is None, reason="FFmpeg is required for audio placement proof")

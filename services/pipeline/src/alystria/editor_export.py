@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from .project import ProjectStore
 
 EDITOR_RENDER_SCHEMA = "alystria.editor.render.v1"
-EDITOR_EXPORT_IMPLEMENTATION_VERSION = "editor-export-v3-sample-clock-audio"
+EDITOR_EXPORT_IMPLEMENTATION_VERSION = "editor-export-v4-decoded-delivery-gate"
 EDITOR_TIMEBASE_HZ = 240_000
 SUPPORTED_CODECS = frozenset(
     {"vp9", "av1", "h264_nvenc", "h264_mf", "libx264", "hevc_nvenc"}
@@ -111,6 +111,66 @@ class SubprocessEditorExportRunner:
         if completed.exit_code != 0:
             detail = completed.stderr[-2000:].strip()
             raise EditorExportError(f"FFmpeg editor export failed: {detail or f'exit {completed.exit_code}'}")
+
+
+def verify_editor_delivery(
+    output_path: Path, *, ffmpeg_path: Path, duration_seconds: float, fps: float,
+    timeout_seconds: float, cancel_check: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
+    """Decode both streams before promotion; container duration can conceal short audio."""
+    from .generation.renderer_client import RendererClientError, SubprocessCommandRunner
+
+    try:
+        completed = SubprocessCommandRunner().run(
+            (
+                str(ffmpeg_path), "-hide_banner", "-nostdin", "-nostats", "-xerror",
+                "-progress", "pipe:1", "-i", str(output_path),
+                "-map", "0:v:0", "-map", "0:a:0", "-af",
+                "aresample=48000,aformat=sample_fmts=flt,astats=reset=0:measure_perchannel=none:"
+                "measure_overall=Peak_level+Number_of_samples+Number_of_NaNs+Number_of_Infs",
+                "-fps_mode", "passthrough", "-f", "null", "-",
+            ),
+            cwd=output_path.parent, timeout_seconds=timeout_seconds,
+            cancelled=cancel_check or (lambda: False),
+        )
+    except RendererClientError as error:
+        raise EditorExportError(f"Editor delivery verification could not run: {error}") from error
+    if completed.exit_code != 0:
+        raise EditorExportError(f"Editor delivery could not be decoded: {completed.stderr[-1600:]}")
+
+    def metric(label: str) -> float:
+        matches = re.findall(rf"{re.escape(label)}: ([^\s]+)", completed.stderr)
+        try:
+            return float(matches[-1])
+        except (IndexError, ValueError) as error:
+            raise EditorExportError(f"Editor delivery verification omitted {label}") from error
+
+    samples = metric("Number of samples")
+    peak_db = metric("Peak level dB")
+    if not math.isfinite(samples) or samples <= 0:
+        raise EditorExportError("Editor delivery has no decoded audio samples")
+    audio_seconds = samples / 48000
+    # AAC may include one padded audio frame; allow at most one video frame
+    # or 25 ms, while still rejecting truncated streams and missing long gaps.
+    if abs(audio_seconds - duration_seconds) > max(1 / fps, 0.025) + 1e-6:
+        raise EditorExportError(
+            f"Editor delivery audio lasts {audio_seconds:.3f}s; expected {duration_seconds:.3f}s"
+        )
+    if metric("Number of NaNs") or metric("Number of Infs") or math.isnan(peak_db):
+        raise EditorExportError("Editor delivery contains invalid audio samples")
+    if peak_db >= 0:
+        raise EditorExportError("Editor delivery audio clips; lower clip or track volume before exporting")
+    frames = re.findall(r"(?m)^frame=\s*(\d+)", completed.stdout)
+    if not frames or "progress=end" not in completed.stdout:
+        raise EditorExportError("Editor delivery verification did not finish decoding video")
+    decoded_frames = int(frames[-1])
+    if abs(decoded_frames - duration_seconds * fps) > 1 + 1e-6:
+        raise EditorExportError("Editor delivery video frame count does not match the timeline")
+    return {
+        "decodedVideoFrames": decoded_frames, "decodedAudioSamples": int(samples),
+        "audioSampleRate": 48000, "audioDurationSeconds": audio_seconds,
+        "audioPeakDbfs": peak_db if math.isfinite(peak_db) else None,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -697,6 +757,18 @@ def render_editor_timeline(
             raise EditorExportError("Editor export cancelled before promotion")
         if not selected_output.is_file() or selected_output.stat().st_size <= 0:
             raise EditorExportError("FFmpeg reported success but produced no editor delivery")
+        remaining = timeout_seconds - (time.monotonic() - started)
+        if remaining <= 0:
+            raise EditorExportError("Editor export timed out before delivery verification")
+        frame_rate = _mapping(manifest.get("frameRate"), "manifest.frameRate")
+        verification = verify_editor_delivery(
+            selected_output, ffmpeg_path=ffmpeg_path,
+            duration_seconds=plan.duration_ticks / EDITOR_TIMEBASE_HZ,
+            fps=float(frame_rate["numerator"]) / float(frame_rate["denominator"]),
+            timeout_seconds=remaining, cancel_check=cancel_check,
+        )
+        if cancel_check is not None and cancel_check():
+            raise EditorExportError("Editor export cancelled before promotion")
         sidecar_paths = _write_caption_sidecars(
             [_mapping(item, "manifest clip") for item in _list(manifest.get("clips"), "manifest.clips")],
             selected_output,
@@ -731,6 +803,7 @@ def render_editor_timeline(
             "manifestHash": plan.manifest_hash,
             "warnings": list(plan.warnings),
             "captionSidecars": sidecars,
+            "deliveryVerification": verification,
         }
     except Exception:
         selected_output.unlink(missing_ok=True)
