@@ -44,7 +44,7 @@ class FakeRunner:
         self.argv: tuple[str, ...] = ()
 
     def run(self, argv: Sequence[str], *, timeout_seconds: float) -> None:
-        assert timeout_seconds == 3600
+        assert 0 < timeout_seconds <= 3600
         self.argv = tuple(argv)
         Path(argv[-1]).write_bytes(b"rendered timeline")
 
@@ -142,7 +142,9 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
     staging = tmp_path / "staging" / "manual"
     probe = FakeMediaProbe()
     plan = build_editor_export_plan(store, manifest(digest), ffmpeg_path=Path("ffmpeg.exe"), media_probe=probe, output_path=output, staging_dir=staging)
-    command = " ".join(plan.argv)
+    command = " ".join((*plan.audio_argv, *plan.argv))
+    assert "[0:a]" not in plan.argv[plan.argv.index("-filter_complex") + 1]
+    assert "[0:v]" not in plan.audio_argv[plan.audio_argv.index("-filter_complex") + 1]
     assert "trim=start=0.5:duration=2" in command
     assert "setpts=(PTS-STARTPTS)/2.000000000" in command
     assert "min(1280/iw,720/ih)" in command
@@ -257,7 +259,7 @@ def test_requested_source_audio_is_omitted_when_verified_video_has_no_audio_stre
     )
     command = " ".join(plan.argv)
     assert "[0:a]" not in command
-    assert "[1:a]" in command
+    assert "[1:a]" in " ".join(plan.audio_argv)
     assert "visual requested source audio, but its verified video asset has no audio stream." in plan.warnings
     assert probe.calls == [(store.cas.source, Path("verified-ffprobe.exe"), 30)]
 

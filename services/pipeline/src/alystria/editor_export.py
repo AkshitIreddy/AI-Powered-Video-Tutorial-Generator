@@ -1,8 +1,8 @@
 """Deterministic FFmpeg export for validated editor timeline manifests.
 
 The browser contract carries only content-addressed artifact hashes. This module
-resolves those hashes through the project CAS, builds one shell-free FFmpeg
-command, and fails closed for timeline features it cannot render faithfully.
+resolves those hashes through the project CAS, prepares programme audio, then
+renders visuals with shell-free FFmpeg commands. Unsupported features fail closed.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import math
 import os
 import re
 import subprocess
+import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -114,6 +115,7 @@ class SubprocessEditorExportRunner:
 @dataclass(frozen=True, slots=True)
 class EditorExportPlan:
     argv: tuple[str, ...]
+    audio_argv: tuple[str, ...]
     output_path: Path
     manifest_hash: str
     duration_ticks: int
@@ -415,6 +417,7 @@ def build_editor_export_plan(
 
     duration_seconds = _seconds(duration_ticks)
     chains: list[str] = [f"color=c={background}:s={width}x{height}:r={fps:.9f}:d={duration_seconds},format=rgba[canvas0]"]
+    audio_chains: list[str] = []
     visual_label = "canvas0"
     audio_labels: list[str] = []
     visual_number = 0
@@ -525,7 +528,7 @@ def build_editor_export_plan(
                 delay_ms = round(start_ticks * 1000 / EDITOR_TIMEBASE_HZ)
                 filters.extend((f"adelay={delay_ms}|{delay_ms}", f"atrim=duration={duration_seconds}"))
                 label = f"audio{audio_number}"
-                chains.append(f"[{input_index}:a]{','.join(filters)}[{label}]")
+                audio_chains.append(f"[{input_index}:a]{','.join(filters)}[{label}]")
                 audio_labels.append(f"[{label}]")
                 audio_number += 1
         elif kind in TEXT_KINDS:
@@ -591,14 +594,14 @@ def build_editor_export_plan(
             delay_ms = round(start_ticks * 1000 / EDITOR_TIMEBASE_HZ)
             filters.extend((f"adelay={delay_ms}|{delay_ms}", f"atrim=duration={duration_seconds}"))
             label = f"audio{audio_number}"
-            chains.append(f"[{input_index}:a]{','.join(filters)}[{label}]")
+            audio_chains.append(f"[{input_index}:a]{','.join(filters)}[{label}]")
             audio_labels.append(f"[{label}]")
             audio_number += 1
 
     if audio_labels:
-        chains.append(f"{''.join(audio_labels)}amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0:normalize=0,atrim=duration={duration_seconds}[programme]")
+        audio_chains.append(f"{''.join(audio_labels)}amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0:normalize=0,atrim=duration={duration_seconds}[programme]")
     else:
-        chains.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={duration_seconds}[programme]")
+        audio_chains.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={duration_seconds}[programme]")
     video_args, audio_codec, media_type, warnings = _codec_args(codec, quality, bitrate)
     warnings = [*plan_warnings, *warnings]
     # Compositing onto the authored RGBA canvas can discard input color tags.
@@ -608,14 +611,24 @@ def build_editor_export_plan(
         f"[{visual_label}]scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,"
         "setparams=range=limited:color_primaries=bt709:color_trc=iec61966-2-1:colorspace=bt709[delivery]"
     )
-    argv = (
+    # A combined graph with delayed source-audio branches buffers decoded video
+    # from later clips while the audio mixer advances. On a real 180-second
+    # timeline this exhausted 19 GiB. Prepare float PCM separately so the visual
+    # graph never needs to drain audio from the same decoder inputs.
+    programme_path = staging_dir / "programme.wav"
+    audio_argv = (
         str(ffmpeg_path), "-hide_banner", "-nostdin", "-y", *input_args,
-        "-filter_complex", ";".join(chains), "-map", "[delivery]", "-map", "[programme]",
+        "-filter_complex", ";".join(audio_chains), "-map", "[programme]",
+        "-vn", "-c:a", "pcm_f32le", "-ar", "48000", "-t", duration_seconds, str(programme_path),
+    )
+    argv = (
+        str(ffmpeg_path), "-hide_banner", "-nostdin", "-y", *input_args, "-i", str(programme_path),
+        "-filter_complex", ";".join(chains), "-map", "[delivery]", "-map", f"{next_input}:a:0",
         "-r", f"{fps:.9f}", *video_args, "-pix_fmt", "yuv420p", "-c:a", audio_codec,
         "-color_primaries", "bt709", "-color_trc", "iec61966-2-1", "-colorspace", "bt709", "-color_range", "tv",
         "-ar", "48000", "-t", duration_seconds, str(output_path),
     )
-    return EditorExportPlan(argv, output_path, manifest_hash, duration_ticks, codec, media_type, tuple(warnings))
+    return EditorExportPlan(argv, audio_argv, output_path, manifest_hash, duration_ticks, codec, media_type, tuple(warnings))
 
 
 def render_editor_timeline(
@@ -661,7 +674,15 @@ def render_editor_timeline(
     )
     sidecar_paths: tuple[Path, ...] = ()
     try:
-        (runner or SubprocessEditorExportRunner(cancel_check)).run(plan.argv, timeout_seconds=timeout_seconds)
+        selected_runner = runner or SubprocessEditorExportRunner(cancel_check)
+        started = time.monotonic()
+        selected_runner.run(plan.audio_argv, timeout_seconds=timeout_seconds)
+        if cancel_check is not None and cancel_check():
+            raise EditorExportError("Editor export cancelled before promotion")
+        remaining = timeout_seconds - (time.monotonic() - started)
+        if remaining <= 0:
+            raise EditorExportError("Editor export timed out during audio preparation")
+        selected_runner.run(plan.argv, timeout_seconds=remaining)
         if cancel_check is not None and cancel_check():
             raise EditorExportError("Editor export cancelled before promotion")
         if not selected_output.is_file() or selected_output.stat().st_size <= 0:
