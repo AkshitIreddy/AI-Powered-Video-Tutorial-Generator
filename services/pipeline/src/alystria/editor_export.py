@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from .project import ProjectStore
 
 EDITOR_RENDER_SCHEMA = "alystria.editor.render.v1"
-EDITOR_EXPORT_IMPLEMENTATION_VERSION = "editor-export-v2-separated-audio"
+EDITOR_EXPORT_IMPLEMENTATION_VERSION = "editor-export-v3-sample-clock-audio"
 EDITOR_TIMEBASE_HZ = 240_000
 SUPPORTED_CODECS = frozenset(
     {"vp9", "av1", "h264_nvenc", "h264_mf", "libx264", "hevc_nvenc"}
@@ -295,6 +295,9 @@ def _hex_color(value: object, label: str) -> str:
 
 
 def _atempo(rate: float) -> str:
+    # Even unit-speed atempo changes the sample count at clip boundaries.
+    if rate == 1:
+        return "anull"
     parts: list[float] = []
     remaining = rate
     while remaining > 2:
@@ -526,8 +529,12 @@ def build_editor_export_plan(
                     filters.append(f"afade=t=in:st=0:d={_seconds(fade_in_ticks)}")
                 if fade_out_ticks:
                     filters.append(f"afade=t=out:st={_seconds(timeline_ticks - fade_out_ticks)}:d={_seconds(fade_out_ticks)}")
-                delay_ms = round(start_ticks * 1000 / EDITOR_TIMEBASE_HZ)
-                filters.extend((f"adelay={delay_ms}|{delay_ms}", f"atrim=duration={duration_seconds}"))
+                # adelay can retain source-offset timestamps. Rebase its output
+                # sample clock before trimming, or FFmpeg strips the inserted silence.
+                delay_samples = round(start_ticks * 48000 / EDITOR_TIMEBASE_HZ)
+                filters.extend(("aresample=48000", f"atrim=duration={_seconds(timeline_ticks)}",
+                                f"adelay={delay_samples}S:all=1", "asetpts=N/SR/TB",
+                                f"atrim=duration={duration_seconds}"))
                 label = f"audio{audio_number}"
                 audio_chains.append(f"[{input_index}:a]{','.join(filters)}[{label}]")
                 audio_labels.append(f"[{label}]")
@@ -592,15 +599,17 @@ def build_editor_export_plan(
                 filters.append(f"afade=t=in:st=0:d={_seconds(fade_in_ticks)}")
             if fade_out_ticks:
                 filters.append(f"afade=t=out:st={_seconds(timeline_ticks - fade_out_ticks)}:d={_seconds(fade_out_ticks)}")
-            delay_ms = round(start_ticks * 1000 / EDITOR_TIMEBASE_HZ)
-            filters.extend((f"adelay={delay_ms}|{delay_ms}", f"atrim=duration={duration_seconds}"))
+            delay_samples = round(start_ticks * 48000 / EDITOR_TIMEBASE_HZ)
+            filters.extend(("aresample=48000", f"atrim=duration={_seconds(timeline_ticks)}",
+                                f"adelay={delay_samples}S:all=1", "asetpts=N/SR/TB",
+                                f"atrim=duration={duration_seconds}"))
             label = f"audio{audio_number}"
             audio_chains.append(f"[{input_index}:a]{','.join(filters)}[{label}]")
             audio_labels.append(f"[{label}]")
             audio_number += 1
 
     if audio_labels:
-        audio_chains.append(f"{''.join(audio_labels)}amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0:normalize=0,atrim=duration={duration_seconds}[programme]")
+        audio_chains.append(f"{''.join(audio_labels)}amix=inputs={len(audio_labels)}:duration=longest:dropout_transition=0:normalize=0,apad=whole_len={round(duration_ticks * 48000 / EDITOR_TIMEBASE_HZ)},atrim=end_sample={round(duration_ticks * 48000 / EDITOR_TIMEBASE_HZ)},asetpts=N/SR/TB[programme]")
     else:
         audio_chains.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={duration_seconds}[programme]")
     video_args, audio_codec, media_type, warnings = _codec_args(codec, quality, bitrate)

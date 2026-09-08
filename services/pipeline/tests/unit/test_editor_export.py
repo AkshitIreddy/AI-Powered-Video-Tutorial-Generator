@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import array
+import copy
 import hashlib
 import json
 import shutil
@@ -328,6 +330,53 @@ def _actual_manifest(digest: str, project_id: str) -> dict[str, object]:
             },
         ],
     }
+
+
+@pytest.mark.skipif(_ffmpeg() is None, reason="FFmpeg is required for audio placement proof")
+@pytest.mark.parametrize("kind", ["slides", "narration"])
+@pytest.mark.parametrize("sample_rate", [44100, 48000])
+def test_actual_audio_preserves_delayed_source_trims_and_timeline_gaps(
+    tmp_path: Path, kind: str, sample_rate: int,
+) -> None:
+    ffmpeg = _ffmpeg()
+    assert ffmpeg is not None
+    source_path = tmp_path / "source.mkv"
+    subprocess.run([
+        str(ffmpeg), "-v", "error", "-f", "lavfi", "-i", "color=s=20x20:r=1:d=6",
+        "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate={sample_rate}:duration=6",
+        "-c:v", "ffv1", "-c:a", "pcm_s16le", str(source_path),
+    ], check=True, capture_output=True)
+    with ProjectStore.create(tmp_path / "project", name="Audio placement") as store:
+        source = store.add_artifact_bytes(source_path.read_bytes(), media_type="video/x-matroska")
+        value = _actual_manifest(source.hash, store.manifest.project_id)
+        value["durationTicks"] = 6 * 240_000
+        if kind == "narration":
+            value["assets"][0]["kind"] = "audio"
+        clips = []
+        for index, start in enumerate((0, 2, 4)):
+            clip = copy.deepcopy(value["clips"][0])
+            clip.update(id=f"clip-{index}", kind=kind, keyframes=[],
+                        timelineStartTicks=start * 240_000, sourceStartTicks=start * 240_000)
+            clips.append(clip)
+        value["clips"] = clips
+        plan = build_editor_export_plan(
+            store, value, ffmpeg_path=ffmpeg, output_path=tmp_path / "unused.webm",
+            staging_dir=tmp_path / "staging",
+        )
+        subprocess.run(plan.audio_argv, check=True, capture_output=True)
+        decoded = subprocess.run([
+            str(ffmpeg), "-v", "error", "-i", plan.audio_argv[-1],
+            "-ac", "1", "-ar", "48000", "-f", "f32le", "pipe:1",
+        ], check=True, capture_output=True).stdout
+        samples = array.array("f", decoded)
+        assert len(samples) == 6 * 48000
+        for second in range(6):
+            window = samples[second * 48000 + 4800:second * 48000 + 43200]
+            peak = max(map(abs, window))
+            if second % 2 == 0:
+                assert 0.08 < peak < 0.10, (second, peak)
+            else:
+                assert peak < 0.0001, (second, peak)
 
 
 @pytest.mark.skipif(_ffmpeg() is None, reason="FFmpeg is required for native editor media proof")
