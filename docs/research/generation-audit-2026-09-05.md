@@ -408,3 +408,35 @@ Unverified/revoked rights remain blocked. The provider connection description
 now states the restriction before use. The security/NVIDIA selection passed
 41 tests, with Ruff and strict mypy passing. This is a local evaluation export,
 not permission to publish the NVIDIA-generated assets.
+
+
+### September 8 accepted promoted master
+
+Job `e849d162-64fe-4d03-acb7-8bd75872836a` produced the independently inspected
+180.000-second, 1920x1080, 30 fps H.264/AAC master. Video SHA-256 is
+`904b5e414303b0f79b9e48230a728afdae907257282fd8109404d0305222f1a6`.
+The delivery retains BT.709 matrix/primaries, sRGB transfer and limited range.
+Root viewed all 16 sampled frames across the lesson (0.5 through 178 seconds),
+including the mathematical derivation, code and recurrence sequence. The sparse
+Elena opening uses the approved 8.2-second presenter clip and matched Aria audio.
+This is sampled visual acceptance, not an assertion that every lip-sync frame
+has been independently scored.
+
+Full audio decoding measures 8,640,512 mono samples at 48 kHz (180.010667 seconds,
+including AAC padding), peak 0.7984314, zero clipped samples, -16.24 LUFS,
+-1.96 dBTP and 2.70 LU loudness range. The 49 subtitle cues are nonoverlapping,
+with two-line/42-character and 20-character-per-second bounds checked against the
+approved narration. VTT SHA is
+`48dc32affa5975f5ca3c436e7c1a13eea0742d984e196dc14749d10190fb19f8`;
+SRT SHA is `79a329ddace32d7c168b1b5bfbc91afde40aa175444af0b61f1031f0e5a255d2`.
+
+Master path:
+`E:\temp\AI Video Tutorial Generator Test Sandbox\Projects\explain-karatsuba-multiplication-using-12-34-derive--mtoekhmp\exports\master-1920x1080-30fps-2127b606db.mp4`.
+Evidence: `E:\temp\avt-final-media-inspection-20260907\accepted-master-media-20260908`
+and `promoted-master-independent-audit-20260908.json` in its parent directory.
+The immutable renderer identity is
+`e984b5d4a479cb84be1a87747d2a583a097e4e0040f907dc34f975011a9b97b2`.
+Later pipeline-only editor corrections preserve that renderer identity and reuse
+this verified master. The first full editor export was independently rejected
+for shortened/overlapping audio; master acceptance does not imply editor acceptance.
+See the editor audit for the subsequent sample-clock and decoded-delivery fixes.
