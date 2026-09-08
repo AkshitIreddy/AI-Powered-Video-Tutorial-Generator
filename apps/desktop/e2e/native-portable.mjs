@@ -1479,7 +1479,7 @@ async function validateResumedMaster(jobId, project, codecPreference) {
   if (await sha256(receiptPath) !== hash) throw new Error("Resumed master receipt hash mismatch");
   const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
   const result = assertResumableMaster(row, { jobId, generationId: project.nativeGenerationId, codecPreference }, identity, receipt);
-  const relative = path.relative(project.nativeProjectDirectory, result.path);
+  const relative = path.relative(path.toNamespacedPath(path.resolve(project.nativeProjectDirectory)), path.toNamespacedPath(path.resolve(result.path)));
   if (path.isAbsolute(relative) || relative.startsWith("..") || await sha256(result.path) !== result.artifactHash) {
     throw new Error("Resumed master delivery is outside the project or has different bytes");
   }
