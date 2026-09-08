@@ -212,6 +212,20 @@ def test_executes_without_shell_and_content_addresses_delivery(tmp_path: Path) -
     assert "00:00:00,200 --> 00:00:01,000" in Path(receipt["captionSidecars"][1]["path"]).read_text(encoding="utf-8")
 
 
+def test_cancellation_after_encode_prevents_artifact_promotion(tmp_path: Path) -> None:
+    digest = "b" * 64
+    registered: list[SimpleNamespace] = []
+    store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest), register_artifacts=lambda artifacts: registered.extend(artifacts))
+    runner = FakeRunner()
+    with pytest.raises(EditorExportError, match="cancelled before promotion"):
+        render_editor_timeline(
+            store, manifest(digest), ffmpeg_path=Path("ffmpeg.exe"),
+            media_probe=FakeMediaProbe(), runner=runner, cancel_check=lambda: True,
+        )
+    assert runner.argv
+    assert not registered
+
+
 def test_rejects_untrusted_or_unsupported_timeline_features(tmp_path: Path) -> None:
     digest = "c" * 64
     store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest))

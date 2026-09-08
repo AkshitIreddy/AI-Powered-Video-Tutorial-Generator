@@ -14,6 +14,7 @@ import json
 import os
 import re
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -639,19 +640,27 @@ class NativeControlCoordinator:
         narration, captions = self._scene_media(generation_id, str(scene["id"]))
         presenters = self._scene_presenters(generation_id, str(scene["id"]))
         context.set_progress(0.1, message="Submitting one immutable scene to the pinned renderer")
-        rendered = self.renderer.render(
-            {
-                "schemaVersion": 1,
-                "generationId": context.job_id,
-                "timebase": TICKS_PER_SECOND,
-                "seed": 0,
-                "targets": [params["target"]],
-                "scenes": [_renderer_scene(scene)],
-                "narration": narration,
-                "captions": captions,
-                "presenters": presenters,
-            }
+        cancellation_scope = getattr(self.renderer, "cancellation_scope", None)
+        scope = (
+            cancellation_scope(context.is_cancelled)
+            if callable(cancellation_scope)
+            else nullcontext()
         )
+        with scope:
+            rendered = self.renderer.render(
+                {
+                    "schemaVersion": 1,
+                    "generationId": context.job_id,
+                    "timebase": TICKS_PER_SECOND,
+                    "seed": 0,
+                    "targets": [params["target"]],
+                    "scenes": [_renderer_scene(scene)],
+                    "narration": narration,
+                    "captions": captions,
+                    "presenters": presenters,
+                }
+            )
+        context.check_cancelled()
         artifact = self.store.add_artifact_bytes(
             rendered.content,
             media_type=rendered.media_type,
@@ -818,7 +827,15 @@ class NativeControlCoordinator:
                 "captions": copy.deepcopy(caption_bundle),
             }
         )
-        rendered = self.renderer.render(master_render_request)
+        cancellation_scope = getattr(self.renderer, "cancellation_scope", None)
+        scope = (
+            cancellation_scope(context.is_cancelled)
+            if callable(cancellation_scope)
+            else nullcontext()
+        )
+        with scope:
+            rendered = self.renderer.render(master_render_request)
+        context.check_cancelled()
         caption_delivery = {
             "mode": caption_delivery_mode,
             "sidecars": ["vtt", "srt"],
@@ -934,7 +951,9 @@ class NativeControlCoordinator:
             params["manifest"],
             ffmpeg_path=Path(ffmpeg_value),
             ffprobe_path=Path(ffprobe_value),
+            cancel_check=context.is_cancelled,
         )
+        context.check_cancelled()
         snapshot = copy.deepcopy(head.snapshot)
         previous = snapshot.get("editorExports")
         snapshot["editorExports"] = [

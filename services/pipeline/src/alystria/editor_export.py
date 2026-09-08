@@ -14,7 +14,7 @@ import os
 import re
 import subprocess
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -89,22 +89,26 @@ class SubprocessEditorMediaProbe:
 
 
 class SubprocessEditorExportRunner:
+    def __init__(self, cancel_check: Callable[[], bool] | None = None) -> None:
+        self.cancel_check = cancel_check or (lambda: False)
+
     def run(self, argv: Sequence[str], *, timeout_seconds: float) -> None:
+        # Share renderer lifetime ownership so cancellation also stops any
+        # descendants and cannot leave output-pipe readers waiting indefinitely.
+        from .generation.renderer_client import RendererClientError, SubprocessCommandRunner
+
         try:
-            completed = subprocess.run(
-                tuple(argv),
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                check=False,
-                shell=False,
-                timeout=timeout_seconds,
-                creationflags=_hidden_creation_flags(),
+            completed = SubprocessCommandRunner().run(
+                argv,
+                cwd=Path.cwd(),
+                timeout_seconds=timeout_seconds,
+                cancelled=self.cancel_check,
             )
-        except (OSError, subprocess.TimeoutExpired) as error:
+        except RendererClientError as error:
             raise EditorExportError(f"FFmpeg editor export could not run: {error}") from error
-        if completed.returncode != 0:
-            detail = completed.stderr.decode("utf-8", errors="replace")[-2000:].strip()
-            raise EditorExportError(f"FFmpeg editor export failed: {detail or f'exit {completed.returncode}'}")
+        if completed.exit_code != 0:
+            detail = completed.stderr[-2000:].strip()
+            raise EditorExportError(f"FFmpeg editor export failed: {detail or f'exit {completed.exit_code}'}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -616,6 +620,7 @@ def render_editor_timeline(
     output_path: Path | None = None,
     runner: EditorExportRunner | None = None,
     timeout_seconds: float = 3_600,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """Render, verify, and content-address one editor timeline delivery."""
 
@@ -648,7 +653,9 @@ def render_editor_timeline(
     )
     sidecar_paths: tuple[Path, ...] = ()
     try:
-        (runner or SubprocessEditorExportRunner()).run(plan.argv, timeout_seconds=timeout_seconds)
+        (runner or SubprocessEditorExportRunner(cancel_check)).run(plan.argv, timeout_seconds=timeout_seconds)
+        if cancel_check is not None and cancel_check():
+            raise EditorExportError("Editor export cancelled before promotion")
         if not selected_output.is_file() or selected_output.stat().st_size <= 0:
             raise EditorExportError("FFmpeg reported success but produced no editor delivery")
         sidecar_paths = _write_caption_sidecars(

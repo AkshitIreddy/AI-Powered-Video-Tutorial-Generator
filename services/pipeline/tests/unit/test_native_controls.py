@@ -6,6 +6,8 @@ import json
 import struct
 import uuid
 import zlib
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -98,6 +100,33 @@ class RecordingRenderer:
                 "avDriftFrames": 0.0,
             },
         )
+
+
+class CancellationAwareRenderer(RecordingRenderer):
+    def __init__(self, store: ProjectStore) -> None:
+        super().__init__()
+        self.store = store
+        self.cancel_next = True
+        self.active_cancel_check: Callable[[], bool] | None = None
+        self.scope_entries = 0
+
+    @contextmanager
+    def cancellation_scope(self, cancel_check: Callable[[], bool]) -> Iterator[None]:
+        assert self.active_cancel_check is None
+        self.active_cancel_check = cancel_check
+        self.scope_entries += 1
+        try:
+            yield
+        finally:
+            self.active_cancel_check = None
+
+    def render(self, request: dict[str, object]) -> RenderedTutorial:
+        assert self.active_cancel_check is not None
+        if self.cancel_next:
+            self.cancel_next = False
+            SQLiteWorkflowRuntime(self.store.connection).cancel(str(request["generationId"]))
+            assert self.active_cancel_check()
+        return super().render(request)
 
 
 def _project(tmp_path: Path) -> ProjectStore:
@@ -380,6 +409,54 @@ def test_scene_render_is_queued_then_promotes_real_renderer_bytes(tmp_path: Path
         assert len(renderer.requests) == 1
 
 
+def test_scene_render_cancellation_scope_prevents_promotion_and_resets(
+    tmp_path: Path,
+) -> None:
+    with _project(tmp_path) as store:
+        renderer = CancellationAwareRenderer(store)
+        control = NativeControlCoordinator(store, renderer=renderer)
+        head = store.head_revision()
+        assert head is not None
+        cancelled_job = control.submit_scene_render(
+            {
+                "baseRevisionId": head.revision_id,
+                "sceneId": "scene-one",
+                "aspect": "16:9",
+                "resolution": "1080p",
+                "fps": 30,
+            }
+        )
+
+        control.runtime.run_once(control.handlers)
+
+        cancelled = control.status(cancelled_job.job_id)
+        assert cancelled.state.value == "CANCELLED"
+        assert cancelled.result is None
+        assert store.connection.execute(
+            "SELECT COUNT(*) FROM artifacts WHERE media_type LIKE 'video/%'"
+        ).fetchone()[0] == 0
+        assert not list((store.root / "exports" / "previews").glob("*"))
+        assert renderer.active_cancel_check is None
+
+        completed_job = control.submit_scene_render(
+            {
+                "baseRevisionId": head.revision_id,
+                "sceneId": "scene-one",
+                "aspect": "16:9",
+                "resolution": "1080p",
+                "fps": 24,
+            }
+        )
+        control.runtime.run_once(control.handlers)
+
+        completed = control.status(completed_job.job_id)
+        assert completed.state.value == "SUCCEEDED"
+        assert completed.result is not None
+        assert Path(completed.result["path"]).is_file()
+        assert renderer.scope_entries == 2
+        assert renderer.active_cancel_check is None
+
+
 def test_scene_render_fails_closed_without_pinned_runtime(tmp_path: Path) -> None:
     with _project(tmp_path) as store:
         head = store.head_revision()
@@ -479,8 +556,9 @@ def test_selected_qa_repair_and_master_export_use_completed_generation(
 
 
 def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: Path) -> None:
-    renderer = RecordingRenderer()
     with _project(tmp_path) as store:
+        renderer = CancellationAwareRenderer(store)
+        renderer.cancel_next = False
         generation = GenerationCoordinator(store, renderer_client=renderer)
         started = generation.start(
             GenerationRequest(
@@ -536,10 +614,13 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
         )
         assert job.state.value == "QUEUED"
         calls_before = len(renderer.requests)
+        scopes_before = renderer.scope_entries
         control.runtime.run_once(control.handlers)
         completed = control.status(job.job_id)
         assert completed.state.value == "SUCCEEDED"
         assert len(renderer.requests) == calls_before + 1
+        assert renderer.scope_entries == scopes_before + 1
+        assert renderer.active_cancel_check is None
         for key in (
             "scenes", "seed", "visualBible", "assets", "narration",
             "presenters", "audioCustomization", "visualCustomization", "fontCustomization",
@@ -596,6 +677,79 @@ def test_master_export_is_queued_and_materializes_requested_sidecars(tmp_path: P
         }
         assert completed.result["codecPreference"] == "av1"
         assert completed.result["rendererCodec"] == "av1"
+
+
+def test_master_render_cancellation_scope_prevents_video_and_export_promotion(
+    tmp_path: Path,
+) -> None:
+    with _project(tmp_path) as store:
+        generation_renderer = RecordingRenderer()
+        generation = GenerationCoordinator(store, renderer_client=generation_renderer)
+        started = generation.start(
+            GenerationRequest(
+                topic="Cancelable durable export",
+                audience="Test learners",
+                duration_seconds=30,
+                deterministic_seed=91,
+            )
+        )
+        generation.run_pending()
+        generation.approve(started.generation_id, name="Approved")
+        generation.run_pending()
+        assert generation.status(started.generation_id).state is GenerationState.SUCCEEDED
+        head = store.head_revision()
+        assert head is not None
+        renderer = CancellationAwareRenderer(store)
+        control = NativeControlCoordinator(store, renderer=renderer)
+        videos_before = store.connection.execute(
+            "SELECT COUNT(*) FROM artifacts WHERE media_type LIKE 'video/%'"
+        ).fetchone()[0]
+        exports_before = set((store.root / "exports").glob("*"))
+        cancelled_job = control.submit_master_export(
+            {
+                "baseRevisionId": head.revision_id,
+                "baseJobId": started.generation_id,
+                "aspect": "16:9",
+                "resolution": "1080p",
+                "fps": 30,
+                "captionDeliveryMode": "sidecar",
+                "transcript": False,
+                "bibliography": False,
+            }
+        )
+
+        control.runtime.run_once(control.handlers)
+
+        cancelled = control.status(cancelled_job.job_id)
+        assert cancelled.state.value == "CANCELLED"
+        assert cancelled.result is None
+        assert store.connection.execute(
+            "SELECT COUNT(*) FROM artifacts WHERE media_type LIKE 'video/%'"
+        ).fetchone()[0] == videos_before
+        assert set((store.root / "exports").glob("*")) == exports_before
+        assert renderer.scope_entries == 1
+        assert renderer.active_cancel_check is None
+
+        completed_job = control.submit_master_export(
+            {
+                "baseRevisionId": head.revision_id,
+                "baseJobId": started.generation_id,
+                "aspect": "16:9",
+                "resolution": "1080p",
+                "fps": 25,
+                "captionDeliveryMode": "sidecar",
+                "transcript": False,
+                "bibliography": False,
+            }
+        )
+        control.runtime.run_once(control.handlers)
+
+        completed = control.status(completed_job.job_id)
+        assert completed.state.value == "SUCCEEDED"
+        assert completed.result is not None
+        assert Path(completed.result["path"]).is_file()
+        assert renderer.scope_entries == 2
+        assert renderer.active_cancel_check is None
 
 
 @pytest.mark.parametrize(
