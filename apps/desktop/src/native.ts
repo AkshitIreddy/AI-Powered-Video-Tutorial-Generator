@@ -288,11 +288,6 @@ export interface GenerationRequest {
   scope: GenerationScope;
   quality: QualityPreset;
   privacy: PrivacyMode;
-  budget: {
-    currency: string;
-    hardLimitMinorUnits: number;
-    requireKnownPricing: boolean;
-  };
   approvedProviderIds: string[];
   preservationLocks: string[];
 }
@@ -440,7 +435,6 @@ export interface ProviderApproval {
   privacyApproved: boolean;
   retentionApproved: boolean;
   regionApproved: boolean;
-  budgetApproved: boolean;
   termsApproved: boolean;
   modelAccessCheckedAt: string | null;
   /** Non-secret Cloudflare account identifier used only for Workers AI URL construction. */
@@ -451,12 +445,6 @@ export interface TutorialRoutingPolicy {
   version: 1;
   privacyMode: PrivacyMode;
   dataClassification: "public" | "project" | "private" | "biometric" | "secret";
-  budget: {
-    currency: string;
-    hardLimitMicros: number | null;
-    requireKnownPricing: boolean;
-    approved: boolean;
-  };
   approvals: ProviderApproval[];
   routes: Array<{
     capability: ProviderCapability;
@@ -512,7 +500,6 @@ export interface ProjectModelRouteSnapshot {
   boundary: "local" | "cloud";
   retention: ProviderApproval["retention"];
   regions: string[];
-  estimatedCostMicros?: number;
   fallbackConsent: boolean;
 }
 

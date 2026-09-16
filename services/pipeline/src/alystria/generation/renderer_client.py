@@ -607,6 +607,10 @@ class SubprocessRendererClient:
             }
             for metadata_key in (
                 "presenterName",
+                "presenterId",
+                "presenterProfileId",
+                "speakerId",
+                "portraitAssetId",
                 "presenterDisclosure",
                 "presenterPlacement",
                 "presenterFit",

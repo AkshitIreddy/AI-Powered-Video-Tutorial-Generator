@@ -11,7 +11,7 @@ export interface DistributionProviderEntry {
   approvedByDefault: boolean;
   capabilities: string[];
   dataBoundary: string;
-  pricing: { status: string; hardBudgetEligible: boolean };
+  pricing: { status: string };
   usagePolicy?: {
     productionEligible: boolean;
     acceptedDataClasses: string[];

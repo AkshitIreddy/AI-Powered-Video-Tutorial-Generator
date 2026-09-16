@@ -518,12 +518,60 @@ class LocalPresenterMediaClient:
         if selected is None and isinstance(presenter, Mapping):
             selected = presenter.get("profileId")
         profile_id = self.default_profile_id if selected is None else str(selected).strip()
-        try:
-            return self.profiles[profile_id]
-        except KeyError as error:
+        configured = self.profiles.get(profile_id)
+        portrait_hash = scene.get("portraitArtifactHash")
+        if configured is not None:
+            if portrait_hash is not None and portrait_hash != configured.portrait_artifact_hash:
+                raise LocalPresenterPolicyError(
+                    f"Presenter profile {profile_id!r} does not match the reviewed portrait"
+                )
+            return configured
+
+        if scene.get("presenterModelInputAllowed") is not True:
             raise LocalPresenterPolicyError(
                 f"Presenter profile {profile_id!r} is not configured for local generation"
-            ) from error
+            )
+        if not isinstance(portrait_hash, str) or not SHA256_PATTERN.fullmatch(portrait_hash):
+            raise LocalPresenterPolicyError(
+                f"Presenter profile {profile_id!r} has no reviewed portrait hash"
+            )
+        if not self.store.cas.verify(portrait_hash):
+            raise LocalPresenterPolicyError(
+                f"Presenter profile {profile_id!r} portrait is missing or corrupt"
+            )
+        row = self.store.connection.execute(
+            "SELECT media_type FROM artifacts WHERE hash=?", (portrait_hash,)
+        ).fetchone()
+        if row is None or str(row["media_type"]).casefold() not in {
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+        }:
+            raise LocalPresenterPolicyError(
+                f"Presenter profile {profile_id!r} portrait is not a registered image"
+            )
+        identity_type = scene.get("presenterIdentityType")
+        if identity_type not in {"synthetic", "realPerson"}:
+            raise LocalPresenterPolicyError(
+                f"Presenter profile {profile_id!r} has no reviewed identity policy"
+            )
+        consent_id = scene.get("presenterConsentId")
+        subject_id = scene.get("presenterSubjectId")
+        if identity_type == "realPerson" and (
+            not isinstance(consent_id, str)
+            or not consent_id.strip()
+            or not isinstance(subject_id, str)
+            or not subject_id.strip()
+        ):
+            raise LocalPresenterPolicyError(
+                f"Real-person presenter profile {profile_id!r} has no reviewed consent binding"
+            )
+        return LocalPresenterProfileBinding(
+            profile_id=profile_id,
+            portrait_artifact_hash=portrait_hash,
+            consent_id=consent_id.strip() if isinstance(consent_id, str) else None,
+            subject_id=subject_id.strip() if isinstance(subject_id, str) else None,
+        )
 
     def _generate(
         self,

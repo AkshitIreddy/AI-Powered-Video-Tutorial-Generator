@@ -437,9 +437,7 @@ def _approved_public_vlm_route(
         return None, "no_explicit_vlm_route"
     if (
         Capability.VISION_LANGUAGE not in approval.capabilities
-        or not policy.budget.approved
         or not approval.privacy_approved
-        or not approval.budget_approved
         or not approval.retention_approved
         or not approval.region_approved
         or not route.model.strip()

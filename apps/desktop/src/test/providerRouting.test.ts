@@ -29,7 +29,6 @@ describe("provider routing review", () => {
       profile,
       secretRefs: secrets,
       dataClassification: "project",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "grounded",
@@ -39,7 +38,7 @@ describe("provider routing review", () => {
     expect(review.errors).toEqual([]);
     expect(review.privacy).toBe("cloud");
     expect(review.approvedProviderIds).toEqual(["openai", "elevenlabs"]);
-    expect(review.policy?.budget.hardLimitMicros).toBe(2_500_000);
+    expect(review.policy).not.toHaveProperty("budget");
     expect(review.policy?.routes.map((route) => route.capability)).toEqual([
       "llm.structured",
       "research.web",
@@ -55,14 +54,13 @@ describe("provider routing review", () => {
       profile,
       secretRefs: { openai: secret("openai") },
       dataClassification: "project",
-      hardLimitMinorUnits: 100,
       approvalChecked: false,
       hasPrivateSources: false,
       groundingMode: "strict",
     });
 
     expect(review.policy).toBeNull();
-    expect(review.errors).toContain("Review and approve the named providers, retention boundary, and hard budget.");
+    expect(review.errors).toContain("Review and approve the named providers and their data-handling boundaries.");
     expect(review.errors).toContain("elevenlabs needs a credential in the OS vault before this profile can be approved.");
   });
 
@@ -77,7 +75,6 @@ describe("provider routing review", () => {
       },
       secretRefs: secrets,
       dataClassification: "project",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "creative",
@@ -103,7 +100,6 @@ describe("provider routing review", () => {
       profile: cloudflareProfile,
       secretRefs: { ...secrets, "cloudflare-workers-ai": secret("cloudflare-workers-ai") },
       dataClassification: "project",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "grounded",
@@ -120,7 +116,6 @@ describe("provider routing review", () => {
         "cloudflare-workers-ai": "0123456789abcdef0123456789abcdef",
       },
       dataClassification: "project",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "grounded",
@@ -145,7 +140,6 @@ describe("provider routing review", () => {
         "cloudflare-workers-ai": "0123456789abcdef0123456789abcdef",
       },
       dataClassification: "project",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "grounded",
@@ -172,7 +166,6 @@ describe("provider routing review", () => {
       },
       secretRefs: { ...secrets, [providerId]: secret(providerId) },
       dataClassification: "project",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "grounded",
@@ -196,7 +189,6 @@ describe("provider routing review", () => {
         },
         secretRefs: { ...secrets, [providerId]: secret(providerId) },
         dataClassification: "project",
-        hardLimitMinorUnits: 250,
         approvalChecked: true,
         hasPrivateSources: false,
         groundingMode: "grounded",
@@ -218,7 +210,6 @@ describe("provider routing review", () => {
       },
       secretRefs: { ...secrets, "nvidia-nim": secret("nvidia-nim") },
       dataClassification: "public",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "grounded",
@@ -244,7 +235,7 @@ describe("provider routing review", () => {
         visualReview: { providerId: "gemini", modelId: "gemini-3.7-flash" },
       } },
       secretRefs: { ...secrets, gemini: secret("gemini") },
-      dataClassification: "public", hardLimitMinorUnits: 250,
+      dataClassification: "public",
       approvalChecked: true, hasPrivateSources: false, groundingMode: "grounded",
     });
     expect(review.errors).toEqual([]);
@@ -260,7 +251,6 @@ describe("provider routing review", () => {
       },
       secretRefs: secrets,
       dataClassification: "public",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "grounded",
@@ -280,7 +270,6 @@ describe("provider routing review", () => {
       },
       secretRefs: { ...secrets, [providerId]: secret(providerId) },
       dataClassification: "public",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "grounded",
@@ -298,7 +287,6 @@ describe("provider routing review", () => {
       profile: nimProfile,
       secretRefs: { ...secrets, "nvidia-nim": secret("nvidia-nim") },
       dataClassification: "project",
-      hardLimitMinorUnits: 100,
       approvalChecked: true,
       hasPrivateSources: true,
       groundingMode: "creative",
@@ -334,7 +322,6 @@ describe("provider routing review", () => {
       profile: localProfile,
       secretRefs: secrets,
       dataClassification: "project",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "grounded",
@@ -365,7 +352,6 @@ describe("provider routing review", () => {
       profile: localProfile,
       secretRefs: secrets,
       dataClassification: "project",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "grounded",
@@ -397,7 +383,6 @@ describe("provider routing review", () => {
       profile: localVoiceProfile,
       secretRefs: secrets,
       dataClassification: "public",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "creative",
@@ -435,7 +420,6 @@ describe("provider routing review", () => {
       profile: localProfile,
       secretRefs: secrets,
       dataClassification: "public",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "creative",
@@ -450,7 +434,6 @@ describe("provider routing review", () => {
       },
       secretRefs: secrets,
       dataClassification: "public",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "creative",
@@ -484,7 +467,6 @@ describe("provider routing review", () => {
       profile: mayaProfile,
       secretRefs: secrets,
       dataClassification: "public",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "creative",
@@ -502,7 +484,6 @@ describe("provider routing review", () => {
       },
       secretRefs: secrets,
       dataClassification: "public",
-      hardLimitMinorUnits: 250,
       approvalChecked: true,
       hasPrivateSources: false,
       groundingMode: "creative",

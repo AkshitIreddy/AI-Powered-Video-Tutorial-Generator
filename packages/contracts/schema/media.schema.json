@@ -166,6 +166,8 @@
       "properties": {
         "mode": { "enum": ["none", "auto", "avatar", "real-person", "illustrated"] },
         "profileId": { "$ref": "common.schema.json#/$defs/Id" },
+        "speakerId": { "$ref": "common.schema.json#/$defs/Id" },
+        "voiceId": { "type": "string", "minLength": 1, "maxLength": 256 },
         "usage": { "enum": ["none", "hook", "transition", "misconception", "recap", "full-scene"] },
         "direction": { "type": "string", "maxLength": 3000 },
         "gestureCues": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/TickRange" } },

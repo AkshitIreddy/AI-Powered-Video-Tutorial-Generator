@@ -3,7 +3,6 @@
 from .keys import ActionKey, DependencyGraph
 from .models import Job, JobEvent, JobState, UsageSummary
 from .runtime import (
-    BudgetExceededError,
     CancellationRequested,
     DBOSWorkflowRuntime,
     JobContext,
@@ -16,7 +15,6 @@ from .workflow import MockGenerationWorkflow
 
 __all__ = [
     "ActionKey",
-    "BudgetExceededError",
     "CancellationRequested",
     "DBOSWorkflowRuntime",
     "DependencyGraph",

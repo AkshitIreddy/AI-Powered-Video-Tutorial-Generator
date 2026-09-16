@@ -81,6 +81,16 @@ describe("reviewed generation approval", () => {
     expect(payload.storyboard.scenes[0]).toMatchObject({ generatedAsset: "asset-1", narration: "Use the latest reviewed narration.", durationTicks: 2_880_000 });
   });
 
+  it("saves the reviewed cast and speaker assignment instead of the stale draft cast", () => {
+    const presenterSelection = { schemaVersion: 1 as const, mode: "on" as const,
+      presenters: [{ presenterId: "speaker-two", portraitAssetId: "portrait-two", voiceId: "voice-two" }],
+      sceneAssignments: [{ sceneId: "scene-1", presenterId: "speaker-two" }] };
+    const merged = mergeReviewedStoryboard({ ...durableSnapshot(), presenterSelection: { mode: "off" } }, { ...review, presenterSelection });
+    expect(merged.presenterSelection).toEqual(presenterSelection);
+    presenterSelection.sceneAssignments[0]!.presenterId = "later-edit";
+    expect(merged.presenterSelection).toMatchObject({ sceneAssignments: [{ sceneId: "scene-1", presenterId: "speaker-two" }] });
+  });
+
   it("refuses an unsupported timing edit rather than changing frozen generation timing", () => {
     expect(() => mergeReviewedStoryboard(durableSnapshot(), { ...review, scenes: review.scenes.map((scene, index) => index === 0 ? { ...scene, duration: 13 } : scene) })).toThrow("Scene timing changed during review");
   });

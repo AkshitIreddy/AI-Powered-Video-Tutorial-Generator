@@ -26,11 +26,6 @@ def _desktop_params(store: ProjectStore) -> dict[str, object]:
         "scope": {"kind": "project"},
         "quality": "standard",
         "privacy": "local",
-        "budget": {
-            "currency": "USD",
-            "hardLimitMinorUnits": 0,
-            "requireKnownPricing": True,
-        },
         "approvedProviderIds": [],
         "preservationLocks": [],
     }

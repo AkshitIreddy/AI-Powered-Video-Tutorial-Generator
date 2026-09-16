@@ -78,12 +78,6 @@ def cloudflare_policy() -> dict[str, Any]:
         "version": 1,
         "privacyMode": "cloud",
         "dataClassification": "project",
-        "budget": {
-            "currency": "USD",
-            "hardLimitMicros": 10_000,
-            "requireKnownPricing": True,
-            "approved": True,
-        },
         "approvals": [
             {
                 "providerId": "cloudflare-workers-ai",
@@ -97,7 +91,6 @@ def cloudflare_policy() -> dict[str, Any]:
                 "privacyApproved": True,
                 "retentionApproved": True,
                 "regionApproved": True,
-                "budgetApproved": True,
                 "termsApproved": False,
                 "modelAccessCheckedAt": None,
             }
@@ -131,7 +124,7 @@ def test_adapter_uses_fixed_host_account_path_and_exact_model() -> None:
             CLOUDFLARE_FLUX_MODEL,
             seed=17,
         ),
-        context(hard_budget_micros=1_000),
+        context(),
     )
 
     sent = transport.requests[0]

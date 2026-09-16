@@ -304,6 +304,9 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
         learner: LearnerProfile,
         objectives: Sequence[LearningObjective],
         target_duration_seconds: int,
+        *,
+        minimum_sections: int = 1,
+        presenter_count: int = 0,
     ) -> Sequence[OutlineSection]:
         objective_payload = [
             {
@@ -313,7 +316,10 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             }
             for objective in objectives
         ]
-        minimum_sections = 5 if target_duration_seconds >= 150 else 3
+        minimum_sections = max(
+            5 if target_duration_seconds >= 150 else 3,
+            minimum_sections,
+        )
         outline_schema = copy.deepcopy(_OUTLINE_SCHEMA)
         outline_schema["properties"]["sections"]["minItems"] = minimum_sections
         allowed_objective_ids = [objective.id for objective in objectives]
@@ -335,6 +341,13 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                 "targetDurationSeconds": target_duration_seconds,
                 "requirements": [
                     f"Use {minimum_sections} to seven purposeful sections in a coherent teaching arc.",
+                    *(
+                        [
+                            f"The selected cast has {presenter_count} presenters. Author at least {presenter_count} distinct speaking sections so each presenter can lead one scene."
+                        ]
+                        if presenter_count > 1
+                        else []
+                    ),
                     "Cover every objective ID and use no objective ID that was not supplied.",
                     "Allocate realistic time for explanation, an example, and a concise recap.",
                     "Titles must be specific to the subject, not generic production instructions.",
@@ -343,7 +356,12 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             ensure_ascii=False,
         )
         idempotency_key = _idempotency(
-            "outline", topic, objective_payload, target_duration_seconds
+            "outline",
+            topic,
+            objective_payload,
+            target_duration_seconds,
+            minimum_sections,
+            presenter_count,
         )
         result = self.client.generate(
             TextRequest(

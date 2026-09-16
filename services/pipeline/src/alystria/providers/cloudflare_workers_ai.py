@@ -106,7 +106,6 @@ class CloudflareWorkersAIAdapter(GuardedAdapter):
                 "Cloudflare Account ID is missing or invalid",
                 provider_id=self.descriptor.provider_id,
             )
-        self._guard_budget(request, context)
         body: dict[str, Any] = {"prompt": prompt, "steps": CLOUDFLARE_FLUX_STEPS}
         if request.seed is not None:
             body["seed"] = request.seed

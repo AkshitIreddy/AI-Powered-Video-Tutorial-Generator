@@ -1,4 +1,5 @@
 import type { JobReceipt, ProjectSnapshotReceipt } from "./native";
+import type { CanvasCustomization, PresenterSelection } from "./types";
 
 export interface ReviewedGenerationScene {
   id: string;
@@ -14,6 +15,8 @@ export interface FrozenGenerationReview {
   generationId: string;
   jobId: string;
   scenes: ReviewedGenerationScene[];
+  presenterSelection?: PresenterSelection;
+  customization?: CanvasCustomization;
 }
 
 interface ApprovalDependencies {
@@ -66,6 +69,8 @@ export function mergeReviewedStoryboard(durableSnapshot: Record<string, unknown>
   });
   const merged: Record<string, unknown> = {
     ...durableSnapshot,
+    ...(review.presenterSelection ? { presenterSelection: structuredClone(review.presenterSelection) } : {}),
+    ...(review.customization ? { customization: structuredClone(review.customization) } : {}),
     payload: { ...payload, storyboard: { ...storyboard, scenes: mergedStoryboardScenes } },
   };
   return merged;

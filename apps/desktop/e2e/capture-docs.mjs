@@ -31,7 +31,8 @@ async function capture(name) {
 }
 
 try {
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  await page.locator(".app-shell").waitFor();
   await page.getByRole("button", { name: "Skip setup", exact: true }).click();
   const tour = page.locator(".aly-onboarding-tour");
   if (await tour.isVisible()) await tour.getByRole("button", { name: "Exit tour" }).click();
@@ -53,8 +54,8 @@ try {
 
   await page.getByRole("button", { name: "Home", exact: true }).click();
   await page.getByRole("button", { name: /new tutorial/i }).first().click();
-  await page.getByPlaceholder(/explain why karatsuba/i).fill(
-    "Explain why Karatsuba multiplication needs only three recursive products.",
+  await page.getByPlaceholder("What would you like to teach? Describe your topic, question, or learning goal.").fill(
+    "Explain how ocean tides change over a day.",
   );
   await capture("new-tutorial");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();

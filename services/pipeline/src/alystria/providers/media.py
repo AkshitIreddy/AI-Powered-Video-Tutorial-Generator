@@ -144,7 +144,6 @@ class LaunchMediaAdapter(GuardedAdapter):
 
     def build_request(self, request: ProviderRequest, context: RequestContext) -> HttpRequest:
         self._guard(request.capability, context)
-        self._guard_budget(request, context)
         try:
             spec = self.config.operations[request.capability]
         except KeyError as exc:

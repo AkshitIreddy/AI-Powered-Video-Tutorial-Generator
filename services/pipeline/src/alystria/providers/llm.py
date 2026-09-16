@@ -95,7 +95,6 @@ class BaseLLMAdapter(GuardedAdapter):
                 provider_id=self.descriptor.provider_id,
             )
         self._guard(request.capability, context)
-        self._guard_budget(request, context)
         response = self._send(self.build_request(request, context), context)
         payload = self._json_response(response)
         return self.parse_response(request, payload)

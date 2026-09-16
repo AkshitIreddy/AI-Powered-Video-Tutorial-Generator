@@ -86,7 +86,6 @@ def routing_policy() -> dict[str, Any]:
             "privacyApproved": True,
             "retentionApproved": True,
             "regionApproved": True,
-            "budgetApproved": True,
             "termsApproved": True,
             "modelAccessCheckedAt": "2026-09-01T00:00:00Z",
         },
@@ -101,7 +100,6 @@ def routing_policy() -> dict[str, Any]:
             "privacyApproved": True,
             "retentionApproved": True,
             "regionApproved": True,
-            "budgetApproved": True,
         },
     ]
     routes = [
@@ -128,12 +126,6 @@ def routing_policy() -> dict[str, Any]:
         "version": 1,
         "privacyMode": "cloud",
         "dataClassification": "public",
-        "budget": {
-            "currency": "USD",
-            "hardLimitMicros": 1_000_000,
-            "requireKnownPricing": True,
-            "approved": True,
-        },
         "approvals": approvals,
         "routes": routes,
     }
@@ -289,7 +281,6 @@ def build_request(portrait_hash: str) -> GenerationRequest:
         ),
         presenter_mode="on",
         deterministic_seed=20260901,
-        hard_budget_micros=1_000_000,
         metadata={
             "quality": "studio",
             "distributionPurpose": "private",

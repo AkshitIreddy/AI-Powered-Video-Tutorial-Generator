@@ -164,7 +164,6 @@ def test_desktop_request_carries_closed_visual_contract_without_paths(tmp_path: 
         request = request_from_desktop(
             store,
             {
-                "budget": {"hardLimitMinorUnits": 0, "currency": "USD", "requireKnownPricing": True},
                 "approvedProviderIds": [],
             },
         )
@@ -175,3 +174,63 @@ def test_desktop_request_carries_closed_visual_contract_without_paths(tmp_path: 
     assert contract["captionStyle"]["safeInsetPercent"] == 9
     assert "procedural fallback" in contract["warnings"][0]
     assert "path" not in str(contract).casefold()
+
+
+def test_desktop_request_resolves_multiple_presenter_portraits_into_cas(
+    tmp_path: Path,
+) -> None:
+    repository_root = Path(__file__).resolve().parents[4]
+    presenter_ids = [
+        "presenter-portrait.anime-astrid-v1",
+        "presenter-portrait.graphic-luca-v1",
+    ]
+    snapshot = {
+        "title": "Two guides",
+        "brief": {
+            "topic": "Explain a state machine",
+            "audience": "Beginners",
+            "durationSeconds": 180,
+        },
+        "customization": _customization(),
+        "presenterSelection": {
+            "schemaVersion": 1,
+            "mode": "on",
+            "presenters": [
+                {
+                    "presenterId": presenter_ids[0],
+                    "portraitAssetId": presenter_ids[0],
+                    "voiceId": "voice.hana",
+                },
+                {
+                    "presenterId": presenter_ids[1],
+                    "portraitAssetId": presenter_ids[1],
+                    "voiceId": "voice.kenji",
+                },
+            ],
+            "sceneAssignments": [],
+        },
+    }
+    with _project(tmp_path, snapshot) as store:
+        request = request_from_desktop(
+            store,
+            {"approvedProviderIds": []},
+            starter_visual_root=repository_root,
+        )
+        selection = request.metadata["presenterSelection"]
+
+        assert request.presenter_mode == "on"
+        assert [item["presenterId"] for item in selection["presenters"]] == presenter_ids
+        assert [item["voiceId"] for item in selection["presenters"]] == [
+            "voice.hana",
+            "voice.kenji",
+        ]
+        hashes = [item["portraitArtifactHash"] for item in selection["presenters"]]
+        assert len(set(hashes)) == 2
+        assert all(store.cas.verify(digest) for digest in hashes)
+        assert len(
+            [
+                item
+                for item in request.metadata["visualCustomization"]["assets"]
+                if item["role"] == "presenter-portrait"
+            ]
+        ) == 2

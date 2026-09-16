@@ -279,6 +279,9 @@ class EducationalProvider(Protocol):
         learner: LearnerProfile,
         objectives: Sequence[LearningObjective],
         target_duration_seconds: int,
+        *,
+        minimum_sections: int = 1,
+        presenter_count: int = 0,
     ) -> Sequence[OutlineSection]: ...
 
     def draft_script(self, plan: LearningPlan, grounding: GroundingMode) -> ScriptDraft: ...
@@ -307,7 +310,11 @@ class DeterministicOfflineProvider:
         learner: LearnerProfile,
         objectives: Sequence[LearningObjective],
         target_duration_seconds: int,
+        *,
+        minimum_sections: int = 1,
+        presenter_count: int = 0,
     ) -> Sequence[OutlineSection]:
+        del presenter_count
         seconds_each = max(30, target_duration_seconds // max(1, len(objectives)))
         strategies = (
             "activate prior knowledge",
@@ -315,6 +322,7 @@ class DeterministicOfflineProvider:
             "guided practice",
             "retrieval recap",
         )
+        section_count = max(len(objectives), minimum_sections)
         return tuple(
             OutlineSection.create(
                 f"{index + 1}. {objective.statement}",
@@ -323,7 +331,10 @@ class DeterministicOfflineProvider:
                 estimated_seconds=seconds_each,
                 evidence_claim_ids=objective.claim_ids,
             )
-            for index, objective in enumerate(objectives)
+            for index, objective in (
+                (index, objectives[index % len(objectives)])
+                for index in range(section_count)
+            )
         )
 
     def draft_script(self, plan: LearningPlan, grounding: GroundingMode) -> ScriptDraft:
@@ -512,8 +523,17 @@ class EducationalWorkflow:
         prerequisites: PrerequisiteDag,
         misconceptions: Sequence[Misconception] = (),
         target_duration_seconds: int = 600,
+        minimum_outline_sections: int = 1,
+        presenter_count: int = 0,
     ) -> LearningPlan:
-        outline = self.provider.build_outline(topic, learner, objectives, target_duration_seconds)
+        outline = self.provider.build_outline(
+            topic,
+            learner,
+            objectives,
+            target_duration_seconds,
+            minimum_sections=minimum_outline_sections,
+            presenter_count=presenter_count,
+        )
         return LearningPlan(
             topic.strip(),
             learner,

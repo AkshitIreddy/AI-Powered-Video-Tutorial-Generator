@@ -459,7 +459,7 @@ export const stockAndReviewCloudCatalogItems: readonly CatalogItem[] = Object.fr
     },
     credentialConfigured: false,
     reachable: null,
-    description: "Reviews up to eight quarantined image previews with your Gemini key. Free quota may be available; budget checks use a conservative paid ceiling. Every stock candidate still needs your acceptance.",
+    description: "Reviews up to eight quarantined image previews with your Gemini key. Free quota may be available, and every stock candidate still needs your acceptance.",
     documentationUrl: "https://ai.google.dev/gemini-api/docs/generate-content/image-understanding",
     sourceUrl: "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash",
     retrievedAt: "2026-09-08T00:00:00.000Z",

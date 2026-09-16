@@ -71,8 +71,6 @@ class ProviderGateInput:
     route: RouteDecision
     retention_approved: bool
     payload_class_approved: bool
-    estimated_cost_micros: int | None
-    hard_budget_micros: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +93,6 @@ class StoryboardGateInput:
     verifiable_claims: int
     supported_claims: int
     unresolved_major_claims: int
-    cost_approved: bool
     privacy_approved: bool
     rights_plan_approved: bool
 
@@ -175,30 +172,6 @@ class SecurityGates:
                     value.route.provider_id,
                 )
             )
-        if value.estimated_cost_micros is None:
-            findings.append(
-                _finding(
-                    "provider.unbounded-cost",
-                    "provider cost cannot be bounded",
-                    value.route.provider_id,
-                )
-            )
-        elif value.estimated_cost_micros < 0 or value.hard_budget_micros < 0:
-            findings.append(
-                _finding(
-                    "provider.invalid-cost",
-                    "provider cost or hard budget is invalid",
-                    value.route.provider_id,
-                )
-            )
-        elif value.estimated_cost_micros > value.hard_budget_micros:
-            findings.append(
-                _finding(
-                    "provider.budget",
-                    "estimated cost exceeds the hard budget",
-                    value.route.provider_id,
-                )
-            )
         return GateDecision(GateKind.PROVIDER, tuple(findings))
 
     @staticmethod
@@ -262,12 +235,6 @@ class SecurityGates:
                     "storyboard.major-claims",
                     "major or critical claims remain unresolved",
                     value.storyboard_id,
-                )
-            )
-        if not value.cost_approved:
-            findings.append(
-                _finding(
-                    "storyboard.cost", "generation cost plan is not approved", value.storyboard_id
                 )
             )
         if not value.privacy_approved:

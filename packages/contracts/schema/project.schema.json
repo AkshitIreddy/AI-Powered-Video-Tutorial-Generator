@@ -45,7 +45,7 @@
         "voiceId": { "type": "string", "minLength": 1, "maxLength": 200 }, "presenterProfileId": { "$ref": "common.schema.json#/$defs/Id" },
         "boundary": { "enum": ["local", "cloud"] }, "retention": { "enum": ["local_only", "zero_data_retention", "configurable", "provider_default", "unknown"] },
         "regions": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 100 }, "uniqueItems": true },
-        "estimatedCostMicros": { "type": "integer", "minimum": 0 }, "fallbackConsent": { "type": "boolean" }
+        "estimatedCostMicros": { "description": "Legacy route estimate retained only when reading older project snapshots.", "type": "integer", "minimum": 0 }, "fallbackConsent": { "type": "boolean" }
       },
       "allOf": [
         { "if": { "properties": { "boundary": { "const": "local" } }, "required": ["boundary"] }, "then": { "required": ["modelRevision", "installFingerprint"] } }
@@ -62,9 +62,9 @@
     },
     "ProjectSettings": {
       "type": "object", "additionalProperties": false,
-      "required": ["groundingMode", "quality", "budgetProfile", "executionMode", "captionsEnabled", "musicEnabled", "presenterMode", "repairLimit", "privacyClassification"],
+      "required": ["groundingMode", "quality", "executionMode", "captionsEnabled", "musicEnabled", "presenterMode", "repairLimit", "privacyClassification"],
       "properties": {
-        "groundingMode": { "enum": ["creative", "grounded", "strict"] }, "quality": { "enum": ["draft", "standard", "high", "maximum"] }, "budgetProfile": { "enum": ["economy", "balanced", "quality", "custom"] },
+        "groundingMode": { "enum": ["creative", "grounded", "strict"] }, "quality": { "enum": ["draft", "standard", "high", "maximum"] }, "budgetProfile": { "description": "Legacy setting accepted when reading older projects.", "enum": ["economy", "balanced", "quality", "custom"] },
         "executionMode": { "enum": ["cloud", "local", "hybrid"] }, "captionsEnabled": { "type": "boolean" }, "musicEnabled": { "type": "boolean" }, "presenterMode": { "enum": ["none", "auto", "always"] },
         "repairLimit": { "type": "integer", "minimum": 0, "maximum": 2 }, "privacyClassification": { "enum": ["public", "internal", "private", "restricted"] }, "crossProviderCritique": { "type": "boolean" },
         "modelProfileSnapshot": { "$ref": "#/$defs/ProjectModelProfileSnapshot" }

@@ -43,6 +43,7 @@ const failurePath = path.join(evidenceRoot, "failure.json");
 const ffprobePath = path.join(portableRoot, "Runtime", "ffmpeg", "ffprobe.exe");
 const projectTitle = titleFromTopic(parsed.topic);
 let activeProjectIdentity = null;
+let resumedPresenterSelectionBefore = null;
 const targetAudience = "Computer science learners familiar with multiplication and basic recursion";
 const startedAt = new Date();
 let child;
@@ -146,6 +147,7 @@ try {
     activeProjectIdentity = relinked;
     await waitForPersistedProject(page, activeProjectIdentity, parsed.actionTimeoutMs);
     const recovered = await persistedProject(page, activeProjectIdentity);
+    resumedPresenterSelectionBefore = JSON.stringify(recovered.project.presenterSelection ?? null);
     const recoveredGenerationId = recovered.project.nativeGenerationId;
     if (typeof recoveredGenerationId !== "string" || recoveredGenerationId !== recovered.generationJob.id) {
       throw new Error("The recovered project and learning-plan job disagree on the native generation identity");
@@ -204,12 +206,22 @@ try {
   } else {
     await page.getByRole("button", { name: /new tutorial/i }).click();
     const wizard = page.locator(".wizard-modal");
-    await wizard.getByPlaceholder(/explain why karatsuba/i).fill(parsed.topic);
+    await wizard.getByPlaceholder("What would you like to teach? Describe your topic, question, or learning goal.").fill(parsed.topic);
     await wizard.getByRole("button", { name: /continue/i }).click();
     await wizard.getByLabel("Audience").fill(targetAudience);
     await wizard.getByLabel("Target duration").selectOption("custom");
     await wizard.getByLabel("Exact duration in minutes").fill("3");
     await wizard.getByLabel("Language").selectOption("English");
+    await wizard.getByRole("button", { name: /continue/i }).click();
+    await expect(wizard.getByRole("heading", { name: "Who will teach?" })).toBeVisible();
+    if (parsed.requirePresenter) {
+      await wizard.getByRole("button", { name: "Choose a cast" }).click();
+      const configuredPresenter = wizard.getByRole("button", { name: "Select Elena · news anchor" });
+      await configuredPresenter.click();
+      await expect(configuredPresenter).toHaveAttribute("aria-pressed", "true");
+    } else {
+      await expect(wizard.getByRole("button", { name: "Just the lesson" })).toHaveAttribute("aria-pressed", "true");
+    }
     await wizard.getByRole("button", { name: /continue/i }).click();
     await wizard.getByRole("button", { name: /^creative/i }).click();
     await wizard.getByRole("button", { name: /continue/i }).click();
@@ -221,7 +233,6 @@ try {
     }
     await wizard.getByLabel("Creation profile").selectOption(parsed.profileId);
     await wizard.getByLabel("Content class", { exact: true }).selectOption("public");
-    await wizard.getByLabel("Hard budget in cents").fill(String(parsed.hardBudgetCents));
     await wizard.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
     await expect(wizard.locator(".routing-readiness")).toContainText("Ready");
     await wizard.screenshot({ path: path.join(evidenceRoot, "02-reviewed-policy.png") });
@@ -240,6 +251,10 @@ try {
   await expect(jobs).toHaveClass(/open/);
   if (!activeProjectIdentity) throw new Error("The native project identity was not established");
   const planProject = await persistedProject(page, activeProjectIdentity);
+  if (parsed.resumeProject
+    && JSON.stringify(planProject.project.presenterSelection ?? null) !== resumedPresenterSelectionBefore) {
+    throw new Error("Relinking the native project changed its stored presenter cast");
+  }
   const planningJob = await jobCardById(page, jobs, planProject.generationJob.id);
   await expect(planningJob).toContainText(
     parsed.resumeCompletedGeneration ? "succeeded" : parsed.resumeFailedMedia || parsed.retryPolicyExport ? "failed" : "blocked",
@@ -258,7 +273,7 @@ try {
   if (!planningApproval?.generationId) throw new Error("The durable planning gate returned no generation identity");
   const planEvidence = readReviewablePlan(planProject.project.nativeProjectDirectory, planningApproval.generationId);
   if (parsed.requirePresenter) {
-    assertRepresentativeProjectContract(planProject.project, planEvidence.storyboard.payload, parsed.profileId);
+    assertRepresentativeProjectContract(planProject.project, planEvidence.storyboard.payload, parsed.profileId, !parsed.resumeProject);
   }
   if (parsed.planOnly) {
     const planReport = {
@@ -274,6 +289,7 @@ try {
       audience: targetAudience,
       providerRoutingPolicy: planProject.project.providerRoutingPolicy ?? null,
       presenter: planProject.project.customization?.presenter ?? null,
+      presenterSelection: planProject.project.presenterSelection ?? null,
       stages: planEvidence,
       createdAtUtc: new Date().toISOString(),
     };
@@ -802,13 +818,16 @@ try {
   if (parsed.requirePresenter && presenterEvidence.length === 0) {
     throw new Error("Representative native acceptance required a presenter, but the generated binding set had none");
   }
-  if (parsed.requirePresenter && (presenterEvidence.length !== 1
-    || presenterEvidence[0].sceneId !== expectedSceneIds[0]
-    || presenterEvidence[0].activeDurationSeconds <= 0)) {
-    throw new Error("Representative native acceptance did not bind exactly one positive-duration presenter to the opening scene");
+  const expectedPresenterSceneIds = project.presenterSelection?.mode === "on"
+    ? expectedSceneIds
+    : expectedSceneIds.slice(0, 1);
+  if (parsed.requirePresenter && (presenterEvidence.length !== expectedPresenterSceneIds.length
+    || expectedPresenterSceneIds.some((sceneId) => !presenterEvidence.some((item) => item.sceneId === sceneId))
+    || presenterEvidence.some((item) => item.activeDurationSeconds <= 0))) {
+    throw new Error("Representative native acceptance did not bind one positive-duration presenter to every expected scene");
   }
   if (parsed.requirePresenter) {
-    assertRepresentativeProjectContract(project, planEvidence.storyboard.payload, parsed.profileId);
+    assertRepresentativeProjectContract(project, planEvidence.storyboard.payload, parsed.profileId, !parsed.resumeProject);
   }
   if (!parsed.resumeCompletedGeneration && !reviewedNarrationEdit) {
     throw new Error("The native journey did not record its pre-approval narration edit");
@@ -898,6 +917,10 @@ try {
       profileId: parsed.profileId,
       providerRoutingPolicy: project.providerRoutingPolicy ?? null,
       presenterCustomization: project.customization?.presenter ?? null,
+      presenterSelection: project.presenterSelection ?? null,
+      resumedPresenterSelectionPreserved: parsed.resumeProject
+        ? JSON.stringify(project.presenterSelection ?? null) === resumedPresenterSelectionBefore
+        : null,
       teachingBrief: parsed.topic,
       audience: targetAudience,
     },
@@ -1298,7 +1321,6 @@ function parseArguments(arguments_) {
     topic:
       "Explain Karatsuba multiplication using 12 × 34, derive cross = (a + b)(c + d) - ac - bd, show how three recursive products give T(n) = 3T(n/2) + O(n), and recap when it helps.",
     profileId: "portable-test-local",
-    hardBudgetCents: 0,
     evidenceClass: "deterministic-native-integration-smoke",
     codecPreference: "av1",
     requirePresenter: false,
@@ -1364,7 +1386,6 @@ function parseArguments(arguments_) {
     else if (name === "--job-timeout-ms") result.jobTimeoutMs = positiveNumber(value, name);
     else if (name === "--topic") result.topic = requiredText(value, name, 240);
     else if (name === "--profile-id") result.profileId = requiredText(value, name, 100);
-    else if (name === "--hard-budget-cents") result.hardBudgetCents = nonNegativeInteger(value, name);
     else if (name === "--expected-narration-cache-hits") result.expectedNarrationCacheHits = nonNegativeInteger(value, name);
     else if (name === "--evidence-class") result.evidenceClass = requiredText(value, name, 100);
     else if (name === "--codec") result.codecPreference = codecPreference(value, name);
@@ -2188,18 +2209,35 @@ function bindingDurationSeconds(binding) {
   return Number.isFinite(milliseconds) && milliseconds > 0 ? milliseconds / 1_000 : 0;
 }
 
-function assertRepresentativeProjectContract(project, storyboardPayload, profileId) {
+function assertRepresentativeProjectContract(project, storyboardPayload, profileId, requireExplicitSelection = false) {
   assertRepresentativeProviderPolicy(project?.providerRoutingPolicy, profileId);
   if (project?.customization?.presenter?.assetId !== "presenter-portrait.broadcast-elena-v1") {
     throw new Error("Representative project did not retain the reviewed Elena presenter profile");
+  }
+  const selection = project?.presenterSelection;
+  if (requireExplicitSelection && !selection) {
+    throw new Error("Fresh representative project did not persist its explicit presenter selection");
+  }
+  if (selection && (selection.mode !== "on"
+    || selection.presenters?.length !== 1
+    || selection.presenters[0]?.presenterId !== "presenter-portrait.broadcast-elena-v1"
+    || selection.presenters[0]?.portraitAssetId !== "presenter-portrait.broadcast-elena-v1")) {
+    throw new Error("Representative project presenter selection did not retain only the reviewed Elena profile");
   }
   const scenes = storyboardPayload?.storyboard?.scenes;
   if (!Array.isArray(scenes) || scenes.length === 0) {
     throw new Error("Representative storyboard has no durable scenes to review");
   }
   const presenterIndexes = scenes.flatMap((scene, index) => String(scene?.type ?? scene?.kind ?? "").includes("presenter") ? [index] : []);
-  if (presenterIndexes.length !== 1 || presenterIndexes[0] !== 0) {
-    throw new Error(`Representative storyboard must use Elena only in the opening scene; found presenter scenes ${presenterIndexes.join(",") || "none"}`);
+  const expectedPresenterIndexes = selection?.mode === "on"
+    ? scenes.map((_, index) => index)
+    : [0];
+  if (presenterIndexes.length !== expectedPresenterIndexes.length
+    || expectedPresenterIndexes.some((index) => !presenterIndexes.includes(index))) {
+    throw new Error(`Representative storyboard presenter scenes ${presenterIndexes.join(",") || "none"} did not match expected scenes ${expectedPresenterIndexes.join(",")}`);
+  }
+  if (selection?.mode === "on" && scenes.some((scene) => scene.presenterId !== "presenter-portrait.broadcast-elena-v1")) {
+    throw new Error("Representative storyboard did not assign the reviewed Elena profile to every presenter scene");
   }
 }
 

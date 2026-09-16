@@ -4349,6 +4349,798 @@
       }
     },
     {
+      "id": "presenter-portrait.anime-library-clara-v1",
+      "kind": "presenter-portrait",
+      "name": "Clara — Anime Library Guide",
+      "description": "Fictional synthetic contemporary-anime tutor in a warm library setting.",
+      "tags": [
+        "anime",
+        "library",
+        "humanities",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/anime-library-clara-v1.webp",
+        "contentHash": "56ec09bebaaa71b84e7d192b5708d0f6e3ff714c572d7fa0fc3a2d85c9457615",
+        "byteSize": 69044
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 8e9797514965da7174120ada4027ae905d93d86e5cf212777a1ecb1141ddfeff; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:12:40.755Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic contemporary-anime tutor in a warm library setting."
+      }
+    },
+    {
+      "id": "presenter-portrait.anime-botanical-julian-v1",
+      "kind": "presenter-portrait",
+      "name": "Julian — Botanical Illustration Guide",
+      "description": "Fictional synthetic botanical-illustration tutor in a sunlit conservatory.",
+      "tags": [
+        "illustration",
+        "botanical",
+        "science",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/anime-botanical-julian-v1.webp",
+        "contentHash": "74a548fd51eb1348253aa2154c4d69b35bb0c3af8184d4810dc4e964986d7238",
+        "byteSize": 127126
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 a4ecd2dae684fb7a91d7fb10a8ceb79fd63e1be6d203f174a42b761b17cdec04; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:13:55.966Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic botanical-illustration tutor in a sunlit conservatory."
+      }
+    },
+    {
+      "id": "presenter-portrait.anime-seaside-mara-v1",
+      "kind": "presenter-portrait",
+      "name": "Mara — Seaside Anime Guide",
+      "description": "Fictional synthetic slice-of-life anime tutor in a bright seaside classroom.",
+      "tags": [
+        "anime",
+        "seaside",
+        "classroom",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/anime-seaside-mara-v1.webp",
+        "contentHash": "274a5f3ccd2dd568b68d15bdf012af55e9867a1a6c8e147aea2f1d35f9fc3673",
+        "byteSize": 66842
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 8622f2d254ffd1890695965a27be4bfc276a44074875d3fbc18f97e65a6e77e9; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:15:04.519Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic slice-of-life anime tutor in a bright seaside classroom."
+      }
+    },
+    {
+      "id": "presenter-portrait.anime-observatory-leon-v1",
+      "kind": "presenter-portrait",
+      "name": "Leon — Observatory Anime Guide",
+      "description": "Fictional synthetic retro-science anime tutor in a space observatory.",
+      "tags": [
+        "anime",
+        "space",
+        "astronomy",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/anime-observatory-leon-v1.webp",
+        "contentHash": "9532c44d98017f624cbe872529688d92cf9d1d542ce8e81298afd8b232ba777f",
+        "byteSize": 65690
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 0f30041fec0dee391835e13e76133979980dff01180c4787ce2551b45b78ca10; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:15:59.341Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic retro-science anime tutor in a space observatory."
+      }
+    },
+    {
+      "id": "presenter-portrait.anime-maker-tess-v1",
+      "kind": "presenter-portrait",
+      "name": "Tess — Maker Anime Guide",
+      "description": "Fictional synthetic technical-anime tutor in a practical maker workshop.",
+      "tags": [
+        "anime",
+        "maker",
+        "engineering",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/anime-maker-tess-v1.webp",
+        "contentHash": "7c5dbdda69adb9c08cb2caa26e6897ded22ad3ee2743880593f4ce0c4179e718",
+        "byteSize": 75710
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 7f16b3b106266b61de3d767bbe676f105c184e5685fb0a831d1475048675d6b4; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:17:33.321Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic technical-anime tutor in a practical maker workshop."
+      }
+    },
+    {
+      "id": "presenter-portrait.anime-music-evan-v1",
+      "kind": "presenter-portrait",
+      "name": "Evan — Music Studio Anime Guide",
+      "description": "Fictional synthetic classic-cel anime tutor in a warm music studio.",
+      "tags": [
+        "anime",
+        "music",
+        "studio",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/anime-music-evan-v1.webp",
+        "contentHash": "6b3bf506019a778002efa221cf79c35f0be219944d4981d0efb6271d33dd750f",
+        "byteSize": 50434
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 b5c96c738ad32857ca005e3d16707ef5028ef536e0d5126f39ba0fc668216a05; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:19:28.414Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic classic-cel anime tutor in a warm music studio."
+      }
+    },
+    {
+      "id": "presenter-portrait.anime-art-iris-v1",
+      "kind": "presenter-portrait",
+      "name": "Iris — Painterly Illustration Guide",
+      "description": "Fictional synthetic painterly-illustration tutor in a sunlit art studio.",
+      "tags": [
+        "illustration",
+        "art",
+        "painterly",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/anime-art-iris-v1.webp",
+        "contentHash": "d85c304cbc6d5c994d831edf0306be5d0dbce12a16c1c94e442cbddca8a7de4b",
+        "byteSize": 109468
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 4956f0169eab0ed7abde45a8178034983101d7ae50864c4e40aa2e044181628f; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:20:25.190Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic painterly-illustration tutor in a sunlit art studio."
+      }
+    },
+    {
+      "id": "presenter-portrait.anime-science-adrian-v1",
+      "kind": "presenter-portrait",
+      "name": "Adrian — Science Lab Anime Guide",
+      "description": "Fictional synthetic near-future anime tutor in a modern science laboratory.",
+      "tags": [
+        "anime",
+        "science",
+        "laboratory",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/anime-science-adrian-v1.webp",
+        "contentHash": "ae02790d162216ee10bd53cd607e53552f551836aaa2c87507d1601e880cb559",
+        "byteSize": 65006
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 5ec7143d083ab419df09075d71ed6a55a98a08ec93ec5ff575a8099cd7cadbaf; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:21:24.675Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic near-future anime tutor in a modern science laboratory."
+      }
+    },
+    {
+      "id": "presenter-portrait.gouache-maeve-v1",
+      "kind": "presenter-portrait",
+      "name": "Maeve — Editorial Gouache Guide",
+      "description": "Fictional synthetic editorial-gouache tutor with warm, tactile brushwork.",
+      "tags": [
+        "gouache",
+        "editorial",
+        "illustration",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/gouache-maeve-v1.webp",
+        "contentHash": "c27e363f620ecdf5f78902a0f6e2e30484bb975ac12e40fd18d40562b348203b",
+        "byteSize": 102602
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 ea4f20311b95529c1f8f43efc6e49fc7fde717fd9803d94bd6a1cae62db84177; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:23:12.364Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic editorial-gouache tutor with warm, tactile brushwork."
+      }
+    },
+    {
+      "id": "presenter-portrait.ligne-claire-hugo-v1",
+      "kind": "presenter-portrait",
+      "name": "Hugo — Ligne Claire Guide",
+      "description": "Fictional synthetic ligne-claire tutor in a bright architecture studio.",
+      "tags": [
+        "ligne-claire",
+        "architecture",
+        "illustration",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/ligne-claire-hugo-v1.webp",
+        "contentHash": "dcac5ddfb8e1c4da51a9ed19b728500875a83715e617a06ee256f8f865385f14",
+        "byteSize": 63676
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 45f9fb761293e6148bff028627d5e22f9a3c2894c8f70b7972c846da5aa82acb; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:24:33.879Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic ligne-claire tutor in a bright architecture studio."
+      }
+    },
+    {
+      "id": "presenter-portrait.soft-clay-daphne-v1",
+      "kind": "presenter-portrait",
+      "name": "Daphne — Soft Clay Guide",
+      "description": "Fictional synthetic soft-clay tutor with tactile stop-motion character.",
+      "tags": [
+        "clay",
+        "tactile",
+        "illustration",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/soft-clay-daphne-v1.webp",
+        "contentHash": "a700a7d36346a1ab0c6d9c04df02c3bcb88fdcf0111d59eaf493d6cd01d4431b",
+        "byteSize": 77664
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 56aeb961026217ceed385ddb212e67c4ed97ea7bcd46a4313c97842f393995d2; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:25:26.742Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic soft-clay tutor with tactile stop-motion character."
+      }
+    },
+    {
+      "id": "presenter-portrait.storybook-watercolor-arthur-v1",
+      "kind": "presenter-portrait",
+      "name": "Arthur — Storybook Watercolor Guide",
+      "description": "Fictional synthetic storybook-watercolor tutor in a natural-history study.",
+      "tags": [
+        "watercolor",
+        "storybook",
+        "natural-history",
+        "presenter",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/storybook-watercolor-arthur-v1.webp",
+        "contentHash": "de50259fbcd2560ed93acaeaf3a7d66ce5ecf01203662f28b16e2dfaba528cb9",
+        "byteSize": 176662
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "derived",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "derived-edit",
+        "tool": "ImageMagick 7.1.1-43",
+        "model": "gpt-image 2.0",
+        "sourceRevision": "OpenAI built-in imagegen source sha256 e72ce0a4b592e5baf4bce0d6f4482447772a4f6edcd175830d85a2f3bc0be487; resized to 768px and encoded as WebP for app delivery",
+        "promptAvailability": "conversation-retained",
+        "synthetic": true,
+        "c2paStatus": "absent",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-16T08:26:41.476Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic adult presenter; no real person is intended or depicted. The retained source PNG carries embedded C2PA provenance; the optimized WebP derivative does not."
+      },
+      "technical": {
+        "mediaType": "image/webp",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 768,
+          "height": 768
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic storybook-watercolor tutor in a natural-history study."
+      }
+    },
+    {
       "id": "lower-third.precision",
       "kind": "lower-third",
       "name": "Precision Label",
@@ -5718,7 +6510,19 @@
           "presenter-portrait.documentary-malik-v1",
           "presenter-portrait.playful-lucia-v1",
           "presenter-portrait.science-zara-v1",
-          "presenter-portrait.mathematics-arjun-v1"
+          "presenter-portrait.mathematics-arjun-v1",
+          "presenter-portrait.anime-library-clara-v1",
+          "presenter-portrait.anime-botanical-julian-v1",
+          "presenter-portrait.anime-seaside-mara-v1",
+          "presenter-portrait.anime-observatory-leon-v1",
+          "presenter-portrait.anime-maker-tess-v1",
+          "presenter-portrait.anime-music-evan-v1",
+          "presenter-portrait.anime-art-iris-v1",
+          "presenter-portrait.anime-science-adrian-v1",
+          "presenter-portrait.gouache-maeve-v1",
+          "presenter-portrait.ligne-claire-hugo-v1",
+          "presenter-portrait.soft-clay-daphne-v1",
+          "presenter-portrait.storybook-watercolor-arthur-v1"
         ],
         "musicAssetIds": [
           "starter.audio.music.focus-loop",
@@ -5820,7 +6624,19 @@
           "presenter-portrait.academic-amara-v1",
           "presenter-portrait.playful-lucia-v1",
           "presenter-portrait.science-zara-v1",
-          "presenter-portrait.mathematics-arjun-v1"
+          "presenter-portrait.mathematics-arjun-v1",
+          "presenter-portrait.anime-library-clara-v1",
+          "presenter-portrait.anime-botanical-julian-v1",
+          "presenter-portrait.anime-seaside-mara-v1",
+          "presenter-portrait.anime-observatory-leon-v1",
+          "presenter-portrait.anime-maker-tess-v1",
+          "presenter-portrait.anime-music-evan-v1",
+          "presenter-portrait.anime-art-iris-v1",
+          "presenter-portrait.anime-science-adrian-v1",
+          "presenter-portrait.gouache-maeve-v1",
+          "presenter-portrait.ligne-claire-hugo-v1",
+          "presenter-portrait.soft-clay-daphne-v1",
+          "presenter-portrait.storybook-watercolor-arthur-v1"
         ],
         "musicAssetIds": [
           "starter.audio.music.inquiry-loop",
@@ -5924,7 +6740,19 @@
           "presenter-portrait.modern-tech-minji-v1",
           "presenter-portrait.playful-lucia-v1",
           "presenter-portrait.science-zara-v1",
-          "presenter-portrait.mathematics-arjun-v1"
+          "presenter-portrait.mathematics-arjun-v1",
+          "presenter-portrait.anime-library-clara-v1",
+          "presenter-portrait.anime-botanical-julian-v1",
+          "presenter-portrait.anime-seaside-mara-v1",
+          "presenter-portrait.anime-observatory-leon-v1",
+          "presenter-portrait.anime-maker-tess-v1",
+          "presenter-portrait.anime-music-evan-v1",
+          "presenter-portrait.anime-art-iris-v1",
+          "presenter-portrait.anime-science-adrian-v1",
+          "presenter-portrait.gouache-maeve-v1",
+          "presenter-portrait.ligne-claire-hugo-v1",
+          "presenter-portrait.soft-clay-daphne-v1",
+          "presenter-portrait.storybook-watercolor-arthur-v1"
         ],
         "musicAssetIds": [
           "starter.audio.music.focus-loop",
@@ -6027,7 +6855,19 @@
           "presenter-portrait.modern-tech-minji-v1",
           "presenter-portrait.documentary-malik-v1",
           "presenter-portrait.science-zara-v1",
-          "presenter-portrait.mathematics-arjun-v1"
+          "presenter-portrait.mathematics-arjun-v1",
+          "presenter-portrait.anime-library-clara-v1",
+          "presenter-portrait.anime-botanical-julian-v1",
+          "presenter-portrait.anime-seaside-mara-v1",
+          "presenter-portrait.anime-observatory-leon-v1",
+          "presenter-portrait.anime-maker-tess-v1",
+          "presenter-portrait.anime-music-evan-v1",
+          "presenter-portrait.anime-art-iris-v1",
+          "presenter-portrait.anime-science-adrian-v1",
+          "presenter-portrait.gouache-maeve-v1",
+          "presenter-portrait.ligne-claire-hugo-v1",
+          "presenter-portrait.soft-clay-daphne-v1",
+          "presenter-portrait.storybook-watercolor-arthur-v1"
         ],
         "musicAssetIds": [
           "starter.audio.music.inquiry-loop",
@@ -6130,7 +6970,19 @@
           "presenter-portrait.modern-tech-minji-v1",
           "presenter-portrait.documentary-malik-v1",
           "presenter-portrait.science-zara-v1",
-          "presenter-portrait.mathematics-arjun-v1"
+          "presenter-portrait.mathematics-arjun-v1",
+          "presenter-portrait.anime-library-clara-v1",
+          "presenter-portrait.anime-botanical-julian-v1",
+          "presenter-portrait.anime-seaside-mara-v1",
+          "presenter-portrait.anime-observatory-leon-v1",
+          "presenter-portrait.anime-maker-tess-v1",
+          "presenter-portrait.anime-music-evan-v1",
+          "presenter-portrait.anime-art-iris-v1",
+          "presenter-portrait.anime-science-adrian-v1",
+          "presenter-portrait.gouache-maeve-v1",
+          "presenter-portrait.ligne-claire-hugo-v1",
+          "presenter-portrait.soft-clay-daphne-v1",
+          "presenter-portrait.storybook-watercolor-arthur-v1"
         ],
         "musicAssetIds": [
           "starter.audio.music.focus-loop",
@@ -6236,7 +7088,19 @@
           "presenter-portrait.documentary-malik-v1",
           "presenter-portrait.playful-lucia-v1",
           "presenter-portrait.science-zara-v1",
-          "presenter-portrait.mathematics-arjun-v1"
+          "presenter-portrait.mathematics-arjun-v1",
+          "presenter-portrait.anime-library-clara-v1",
+          "presenter-portrait.anime-botanical-julian-v1",
+          "presenter-portrait.anime-seaside-mara-v1",
+          "presenter-portrait.anime-observatory-leon-v1",
+          "presenter-portrait.anime-maker-tess-v1",
+          "presenter-portrait.anime-music-evan-v1",
+          "presenter-portrait.anime-art-iris-v1",
+          "presenter-portrait.anime-science-adrian-v1",
+          "presenter-portrait.gouache-maeve-v1",
+          "presenter-portrait.ligne-claire-hugo-v1",
+          "presenter-portrait.soft-clay-daphne-v1",
+          "presenter-portrait.storybook-watercolor-arthur-v1"
         ],
         "musicAssetIds": [
           "starter.audio.music.focus-loop",
@@ -6337,7 +7201,19 @@
           "presenter-portrait.modern-tech-minji-v1",
           "presenter-portrait.documentary-malik-v1",
           "presenter-portrait.science-zara-v1",
-          "presenter-portrait.mathematics-arjun-v1"
+          "presenter-portrait.mathematics-arjun-v1",
+          "presenter-portrait.anime-library-clara-v1",
+          "presenter-portrait.anime-botanical-julian-v1",
+          "presenter-portrait.anime-seaside-mara-v1",
+          "presenter-portrait.anime-observatory-leon-v1",
+          "presenter-portrait.anime-maker-tess-v1",
+          "presenter-portrait.anime-music-evan-v1",
+          "presenter-portrait.anime-art-iris-v1",
+          "presenter-portrait.anime-science-adrian-v1",
+          "presenter-portrait.gouache-maeve-v1",
+          "presenter-portrait.ligne-claire-hugo-v1",
+          "presenter-portrait.soft-clay-daphne-v1",
+          "presenter-portrait.storybook-watercolor-arthur-v1"
         ],
         "musicAssetIds": [
           "starter.audio.music.inquiry-loop",
@@ -6439,7 +7315,19 @@
           "presenter-portrait.documentary-malik-v1",
           "presenter-portrait.playful-lucia-v1",
           "presenter-portrait.science-zara-v1",
-          "presenter-portrait.mathematics-arjun-v1"
+          "presenter-portrait.mathematics-arjun-v1",
+          "presenter-portrait.anime-library-clara-v1",
+          "presenter-portrait.anime-botanical-julian-v1",
+          "presenter-portrait.anime-seaside-mara-v1",
+          "presenter-portrait.anime-observatory-leon-v1",
+          "presenter-portrait.anime-maker-tess-v1",
+          "presenter-portrait.anime-music-evan-v1",
+          "presenter-portrait.anime-art-iris-v1",
+          "presenter-portrait.anime-science-adrian-v1",
+          "presenter-portrait.gouache-maeve-v1",
+          "presenter-portrait.ligne-claire-hugo-v1",
+          "presenter-portrait.soft-clay-daphne-v1",
+          "presenter-portrait.storybook-watercolor-arthur-v1"
         ],
         "musicAssetIds": [
           "starter.audio.music.inquiry-loop",
@@ -6541,7 +7429,19 @@
           "presenter-portrait.modern-tech-minji-v1",
           "presenter-portrait.documentary-malik-v1",
           "presenter-portrait.science-zara-v1",
-          "presenter-portrait.mathematics-arjun-v1"
+          "presenter-portrait.mathematics-arjun-v1",
+          "presenter-portrait.anime-library-clara-v1",
+          "presenter-portrait.anime-botanical-julian-v1",
+          "presenter-portrait.anime-seaside-mara-v1",
+          "presenter-portrait.anime-observatory-leon-v1",
+          "presenter-portrait.anime-maker-tess-v1",
+          "presenter-portrait.anime-music-evan-v1",
+          "presenter-portrait.anime-art-iris-v1",
+          "presenter-portrait.anime-science-adrian-v1",
+          "presenter-portrait.gouache-maeve-v1",
+          "presenter-portrait.ligne-claire-hugo-v1",
+          "presenter-portrait.soft-clay-daphne-v1",
+          "presenter-portrait.storybook-watercolor-arthur-v1"
         ],
         "musicAssetIds": [
           "starter.audio.music.inquiry-loop",
@@ -6642,7 +7542,19 @@
           "presenter-portrait.academic-amara-v1",
           "presenter-portrait.playful-lucia-v1",
           "presenter-portrait.science-zara-v1",
-          "presenter-portrait.mathematics-arjun-v1"
+          "presenter-portrait.mathematics-arjun-v1",
+          "presenter-portrait.anime-library-clara-v1",
+          "presenter-portrait.anime-botanical-julian-v1",
+          "presenter-portrait.anime-seaside-mara-v1",
+          "presenter-portrait.anime-observatory-leon-v1",
+          "presenter-portrait.anime-maker-tess-v1",
+          "presenter-portrait.anime-music-evan-v1",
+          "presenter-portrait.anime-art-iris-v1",
+          "presenter-portrait.anime-science-adrian-v1",
+          "presenter-portrait.gouache-maeve-v1",
+          "presenter-portrait.ligne-claire-hugo-v1",
+          "presenter-portrait.soft-clay-daphne-v1",
+          "presenter-portrait.storybook-watercolor-arthur-v1"
         ],
         "musicAssetIds": [
           "starter.audio.music.inquiry-loop",

@@ -159,6 +159,13 @@ export interface CreativeConfiguration {
   };
 }
 
+export interface PresenterSelection {
+  schemaVersion: 1;
+  mode: "off" | "auto" | "on";
+  presenters: Array<{ presenterId: string; portraitAssetId: string; voiceId?: string }>;
+  sceneAssignments: Array<{ sceneId: string; presenterId: string }>;
+}
+
 export interface ProjectRecord {
   id: string;
   title: string;
@@ -182,6 +189,8 @@ export interface ProjectRecord {
   canonicalFixtureId?: "fixture.karatsuba.undergraduate.en";
   /** Portable, export-safe visual/audio choices. Asset bytes are stored separately. */
   customization?: CanvasCustomization;
+  /** Explicit cast and scene speakers; omitted only for legacy single-presenter projects. */
+  presenterSelection?: PresenterSelection;
   /** Reproducible slide and presenter generation choices. */
   creative?: CreativeConfiguration;
   sceneCandidates?: unknown[];

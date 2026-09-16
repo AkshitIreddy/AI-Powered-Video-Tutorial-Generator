@@ -65,6 +65,10 @@ body, .app-shell, .main-content { background: var(--paper); }
 .lesson-lab__topic { font-size: 9px; color: #85728f; }
 .lesson-lab__stage h2 { margin: 10px 0 24px; font: 570 25px/1.2 var(--display); letter-spacing: -.03em; }
 .lesson-lab__array { display: flex; justify-content: center; gap: 6px; min-height: 80px; }
+.lesson-lab__workflow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 20px; }
+.lesson-lab__workflow > span { display: grid; justify-items: center; gap: 10px; padding: 16px 4px; color: #85758f; border: 1px solid #e6deec; border-radius: 9px; background: #faf8fc; }
+.lesson-lab__workflow > span.active { color: #62448a; border-color: #ad91ca; background: #ede3f8; }
+.lesson-lab__workflow small { font-size: 10px; font-weight: 600; }
 .lesson-lab__array > span { position: relative; display: grid; align-content: start; gap: 5px; width: 42px; transition: opacity .18s, transform .18s; }
 .lesson-lab__array small { color: #988da2; font: 10px var(--mono); }
 .lesson-lab__array b { border: 1px solid #cfc6dd; border-radius: 7px; display: grid; place-items: center; height: 42px; background: #f5f0fc; font: 600 17px var(--mono); color: #60467e; }

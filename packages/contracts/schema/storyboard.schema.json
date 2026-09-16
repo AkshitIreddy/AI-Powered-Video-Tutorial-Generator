@@ -151,10 +151,19 @@
         "graphSpec": { "$ref": "common.schema.json#/$defs/JsonValue" }
       }
     },
+    "WhiteboardVisual": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "boardStyle", "strokeTimeline", "finalBoardDescription"],
+      "properties": {
+        "kind": { "const": "whiteboard" },
+        "boardStyle": { "enum": ["whiteboard", "paper", "chalkboard"] },
+        "strokeTimeline": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "finalBoardDescription": { "$ref": "common.schema.json#/$defs/NonEmptyText" }
+      }
+    },
     "CodeVisual": {
       "type": "object", "additionalProperties": false, "required": ["kind", "language", "content"],
       "properties": {
-        "kind": { "enum": ["code", "code-walkthrough", "diff", "file-tree", "terminal", "execution-trace", "variable-state"] },
+        "kind": { "enum": ["code", "live-code", "code-walkthrough", "diff", "file-tree", "terminal", "execution-trace", "variable-state"] },
         "language": { "type": "string", "minLength": 1, "maxLength": 100 },
         "content": { "$ref": "common.schema.json#/$defs/NonEmptyText" },
         "fileName": { "type": "string", "maxLength": 500 },
@@ -213,7 +222,7 @@
     "VisualContent": {
       "oneOf": [
         { "$ref": "#/$defs/TextVisual" }, { "$ref": "#/$defs/ComparisonVisual" }, { "$ref": "#/$defs/DiagramVisual" },
-        { "$ref": "#/$defs/TimelineVisual" }, { "$ref": "#/$defs/MathVisual" }, { "$ref": "#/$defs/CodeVisual" },
+        { "$ref": "#/$defs/TimelineVisual" }, { "$ref": "#/$defs/MathVisual" }, { "$ref": "#/$defs/WhiteboardVisual" }, { "$ref": "#/$defs/CodeVisual" },
         { "$ref": "#/$defs/DataVisual" }, { "$ref": "#/$defs/MediaVisual" }, { "$ref": "#/$defs/SimulationVisual" },
         { "$ref": "#/$defs/PresenterVisual" }, { "$ref": "#/$defs/InstructionVisual" }, { "$ref": "#/$defs/SourcesVisual" }
       ]

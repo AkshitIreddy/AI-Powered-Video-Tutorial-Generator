@@ -30,5 +30,6 @@ export async function configureE2eWorkspace(page: Page, fixture: "clean" | "exam
     localStorage.setItem("alystria-studio-v2", JSON.stringify(workspace));
     sessionStorage.setItem("alystria-e2e-ready", "1");
   }, { onboarding: completedOnboarding, workspace: snapshot });
-  await page.goto("/", { waitUntil: "networkidle" });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.locator(".app-shell").waitFor();
 }

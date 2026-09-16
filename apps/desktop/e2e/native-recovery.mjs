@@ -31,6 +31,7 @@ try {
   await seedCleanWorkspace(first.page);
   await createBlockedTutorial(first.page);
   const beforeRestart = await persistedProject(first.page);
+  assertRecoveredCast(beforeRestart.project, "before restart");
   const firstDesktopPid = first.child.pid;
   await first.page.screenshot({ path: path.join(evidenceRoot, "01-before-restart.png"), fullPage: true });
   const firstWorkerPid = first.workerPid;
@@ -46,10 +47,21 @@ try {
   if (receiptState(recovered.generationJob) !== "BLOCKED") {
     throw new Error(`Restarted native app recovered ${receiptState(recovered.generationJob) ?? "unknown"}, expected BLOCKED`);
   }
+  assertRecoveredCast(recovered.project, "after restart");
+  if (JSON.stringify(recovered.project.presenterSelection) !== JSON.stringify(beforeRestart.project.presenterSelection)) {
+    throw new Error("Restarted native app changed the saved cast or scene assignment");
+  }
   await second.page.getByRole("button", { name: /open project/i }).click();
   await expect(second.page.getByRole("heading", { name: /shape the learning journey/i })).toBeVisible({ timeout: 30_000 });
   const jobs = second.page.getByRole("complementary", { name: /background jobs/i });
-  if (await jobs.count() === 0 || !await jobs.evaluate((element) => element.classList.contains("open"))) {
+  if (await jobs.evaluate((element) => element.classList.contains("open"))) {
+    await jobs.locator("header .icon-button").click();
+  }
+  await second.page.locator(".plan-progress button").filter({ hasText: "Presenters" }).click();
+  await expect(second.page.getByRole("button", { name: "Select Daniel · software instructor" })).toHaveAttribute("aria-pressed", "true");
+  await expect(second.page.getByRole("button", { name: "Select Astrid · anime editorial" })).toHaveAttribute("aria-pressed", "true");
+  await expect(second.page.locator(".scene-speaker-assignments select").first()).toHaveValue("presenter-portrait.anime-astrid-v1");
+  if (!await jobs.evaluate((element) => element.classList.contains("open"))) {
     await second.page.getByRole("button", { name: /^jobs$/i }).click();
   }
   const card = jobs.locator(".job-card").filter({ hasText: "Creating learning plan" });
@@ -74,6 +86,9 @@ try {
     stateBeforeRestart: "BLOCKED",
     stateAfterRestart: "BLOCKED",
     stateAfterCancel: "CANCELLED",
+    presenterSelectionBeforeRestart: beforeRestart.project.presenterSelection,
+    presenterSelectionAfterRestart: recovered.project.presenterSelection,
+    castPreservedAcrossRestart: true,
     firstWorkerExitedWithApp: true,
     firstDesktopPid,
     firstWorkerPid,
@@ -242,15 +257,24 @@ async function seedCleanWorkspace(page) {
 async function createBlockedTutorial(page) {
   await page.getByRole("button", { name: /new tutorial/i }).click();
   const wizard = page.locator(".wizard-modal");
-  await wizard.getByPlaceholder(/explain why karatsuba/i).fill(topic);
+  await expect(wizard).not.toContainText(/karatsuba|binary search/i);
+  await wizard.getByPlaceholder("What would you like to teach? Describe your topic, question, or learning goal.").fill(topic);
   await wizard.getByRole("button", { name: /continue/i }).click();
   await wizard.getByLabel("Audience").fill("Windows native recovery reviewers");
   await wizard.getByLabel("Target duration").selectOption("custom");
   await wizard.getByLabel("Exact duration in minutes").fill("3");
   await wizard.getByRole("button", { name: /continue/i }).click();
+  await expect(wizard.getByRole("heading", { name: "Who will teach?" })).toBeVisible();
+  await wizard.getByRole("button", { name: "Choose a cast" }).click();
+  await wizard.getByRole("button", { name: "Select Daniel · software instructor" }).click();
+  await wizard.getByRole("button", { name: "Select Astrid · anime editorial" }).click();
+  await expect(wizard.getByText("2 presenters selected", { exact: true })).toBeVisible();
+  await wizard.getByRole("button", { name: /continue/i }).click();
   await wizard.getByRole("button", { name: /^creative/i }).click();
   await wizard.getByRole("button", { name: /continue/i }).click();
   await wizard.getByRole("button", { name: "Standard", exact: true }).click();
+  await expect(wizard.getByLabel(/hard budget/i)).toHaveCount(0);
+  await expect(wizard.getByText(/hard creation budget/i)).toHaveCount(0);
   await expect(wizard.locator(".routing-readiness")).not.toContainText("Loading", { timeout: 120_000 });
   const setupError = wizard.getByRole("alert");
   if (await setupError.count() && await setupError.isVisible()) throw new Error(`Native model setup failed: ${(await setupError.innerText()).trim()}`);
@@ -259,6 +283,17 @@ async function createBlockedTutorial(page) {
   await wizard.getByRole("button", { name: /create learning plan/i }).click();
   const jobs = page.getByRole("complementary", { name: /background jobs/i });
   await expect(jobs.locator(".job-card").filter({ hasText: "Creating learning plan" })).toContainText("blocked", { timeout: 120_000 });
+  if (await jobs.evaluate((element) => element.classList.contains("open"))) {
+    await jobs.locator("header .icon-button").click();
+  }
+  await page.locator(".plan-progress button").filter({ hasText: "Presenters" }).click();
+  const assignments = page.locator(".scene-speaker-assignments select");
+  await expect(assignments.first()).toBeVisible();
+  await assignments.first().selectOption("presenter-portrait.anime-astrid-v1");
+  await expect.poll(async () => {
+    const saved = await persistedProject(page);
+    return saved.project.presenterSelection?.sceneAssignments?.[0]?.presenterId;
+  }).toBe("presenter-portrait.anime-astrid-v1");
 }
 
 async function persistedProject(page) {
@@ -271,6 +306,27 @@ async function persistedProject(page) {
 }
 
 function receiptState(job) { return job?.result?.receiptState ?? null; }
+
+function assertRecoveredCast(project, phase) {
+  const selection = project?.presenterSelection;
+  const expectedIds = [
+    "presenter-portrait.software-daniel-v1",
+    "presenter-portrait.anime-astrid-v1",
+  ];
+  if (selection?.mode !== "on"
+    || selection.presenters?.length !== expectedIds.length
+    || expectedIds.some((presenterId, index) => selection.presenters[index]?.presenterId !== presenterId
+      || selection.presenters[index]?.portraitAssetId !== presenterId)) {
+    throw new Error(`Native recovery ${phase} did not retain the selected two-presenter cast`);
+  }
+  const firstSceneId = project.scenes?.[0]?.id;
+  if (!firstSceneId
+    || selection.sceneAssignments?.length !== 1
+    || selection.sceneAssignments[0]?.sceneId !== firstSceneId
+    || selection.sceneAssignments[0]?.presenterId !== "presenter-portrait.anime-astrid-v1") {
+    throw new Error(`Native recovery ${phase} did not retain the explicit first-scene speaker`);
+  }
+}
 
 function completedOnboarding() {
   const chapters = ["welcome", "goal", "runtime", "privacy", "provider", "hardware", "model", "profile", "ready"];

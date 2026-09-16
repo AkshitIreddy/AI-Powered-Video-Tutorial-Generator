@@ -17,7 +17,6 @@ from alystria.providers import (
     CredentialGrant,
     DesktopCredentialBrokerResolver,
     EphemeralCredentialBroker,
-    FailureCode,
     HttpRequest,
     HttpResponse,
     ProviderFailure,
@@ -34,7 +33,6 @@ from alystria.providers.openai_compatible_structured import (
     MISTRAL_STRUCTURED_MODEL,
     OPENROUTER_STRUCTURED_MODEL,
 )
-from alystria.providers.runtime import provider_job_budget_scope
 from alystria.service import PipelineService, _configured_local_image_runtime
 
 
@@ -417,7 +415,7 @@ def test_reviewed_structured_cloud_routes_execute_through_runtime_factory(
         assert request.json_body["provider"] == {"require_parameters": True}
 
 
-def test_durable_job_budget_scope_blocks_groq_repair_reserve_before_transport() -> None:
+def test_legacy_budget_policy_is_accepted_but_does_not_block_provider_use() -> None:
     policy = parse_routing_policy(
         _structured_cloud_policy("groq", GROQ_STRUCTURED_MODEL)
     )
@@ -443,16 +441,15 @@ def test_durable_job_budget_scope_blocks_groq_repair_reserve_before_transport() 
         schema_name="lesson_plan",
     )
 
-    with provider_job_budget_scope(lambda: 1), pytest.raises(
-        ProviderFailure, match="hard budget"
-    ) as raised:
-        ProviderTextClient(runtime).generate(
-            request,
-            idempotency_key="groq-durable-retry",
-        )
+    result = ProviderTextClient(runtime).generate(
+        request,
+        idempotency_key="groq-legacy-budget-ignored",
+    )
 
-    assert raised.value.code is FailureCode.BUDGET_EXCEEDED
-    assert transport.requests == []
+    assert result.value.parsed == {"lesson": "verified"}
+    assert len(transport.requests) == 1
+    assert "budget" not in policy.to_dict()
+    assert "budgetApproved" not in policy.to_dict()["approvals"][0]
 
 
 def test_desktop_keyring_callback_uses_fresh_one_call_nonces() -> None:

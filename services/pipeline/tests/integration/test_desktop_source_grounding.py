@@ -20,11 +20,6 @@ def _desktop_params() -> dict[str, object]:
         "privacy": "local",
         "approvedProviderIds": [],
         "preservationLocks": [],
-        "budget": {
-            "currency": "USD",
-            "hardLimitMinorUnits": 0,
-            "requireKnownPricing": True,
-        },
     }
 
 

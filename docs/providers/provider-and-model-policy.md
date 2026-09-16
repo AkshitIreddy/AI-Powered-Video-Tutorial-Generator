@@ -42,8 +42,8 @@ prohibit production and confidential, sensitive, or personal inputs; make
 credits/limits variable; and permit certain de-identified content and logging
 uses for product/AI improvement, security, and fraud handling. The UI must show
 that conflict instead of collapsing it to a “no training” badge. Explicit terms,
-region/retention, model-access, and zero-dollar preview budget approvals are
-required; rate limits remain a separate availability gate.
+region/retention, and model-access approvals are required. Current account quota
+and rate limits remain provider-controlled availability constraints.
 
 Downloaded/self-hosted NIM microservices require their own NVIDIA AI Enterprise
 entitlement, infrastructure, model license, and privacy assessment. They are a
@@ -81,9 +81,9 @@ Model names in a plan are not permanent defaults. Deprecated or retired models a
 
 ## Approval and routing
 
-Automatic routing selects only configured and explicitly approved providers. Before the first content-bearing call, the user sees provider/model, payload classes, local/cloud boundary, endpoint/region, retention/training summary, expected quantity, upper-bound cost, and whether the result may be cached or reused.
+Automatic routing selects only configured and explicitly approved providers. Before the first content-bearing call, the user sees provider/model, payload classes, local/cloud boundary, endpoint/region, retention/training summary, free-tier or quota terms when the provider publishes them, and whether the result may be cached or reused.
 
-Hard budgets are evaluated against an upper bound, not an optimistic mean. Unknown or stale pricing blocks billable work. Usage records distinguish reserved estimate, provider-reported usage, reconciled cost, retries, cache hits, and uncharged failure.
+Alystria does not impose a monetary budget or require known pricing before an approved route can run. Free-tier availability varies by provider and account, so quota exhaustion and HTTP 429 responses are surfaced clearly instead of triggering unlimited retries or a silent paid-provider fallback. Usage records still retain provider-reported units, estimated or reconciled cost when known, retries, cache hits, and uncharged failures.
 
 Provider fallback is allowed only within an approval set whose members share the accepted content classification and policy. Cross-provider critique is disabled by default and enabled only under Maximum quality with separate disclosure.
 

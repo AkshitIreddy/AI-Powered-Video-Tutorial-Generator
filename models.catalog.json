@@ -11,8 +11,7 @@
       "revision": "alystria-fixture-1",
       "execution": "local",
       "capabilities": ["llm", "image", "tts", "presenter", "alignment"],
-      "launchStatus": "supported",
-      "hardBudgetEligible": true
+      "launchStatus": "supported"
     },
     {
       "id": "openai/gpt-image-2",
@@ -21,8 +20,7 @@
       "revision": "gpt-image-2",
       "execution": "cloud",
       "capabilities": ["image"],
-      "launchStatus": "catalog-only",
-      "hardBudgetEligible": false
+      "launchStatus": "catalog-only"
     },
     {
       "id": "local/qwen3.5-9b-gguf",
@@ -32,7 +30,6 @@
       "execution": "local",
       "capabilities": ["llm", "vision"],
       "launchStatus": "benchmark-and-artifact-pin-required",
-      "hardBudgetEligible": true,
       "artifactPolicy": { "format": "gguf", "trustRemoteCode": false, "sha256Required": true },
       "runtimePolicy": {
         "profileId": "windows-nvidia-llama-cpp-cuda12-headless",
@@ -53,7 +50,6 @@
       "execution": "local",
       "capabilities": ["embedding"],
       "launchStatus": "artifact-pin-required",
-      "hardBudgetEligible": true,
       "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
     },
     {
@@ -64,7 +60,6 @@
       "execution": "local",
       "capabilities": ["image"],
       "launchStatus": "benchmark-and-artifact-pin-required",
-      "hardBudgetEligible": true,
       "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
     },
     {
@@ -75,7 +70,6 @@
       "execution": "local",
       "capabilities": ["tts"],
       "launchStatus": "benchmark-and-artifact-pin-required",
-      "hardBudgetEligible": true,
       "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
     },
     {
@@ -86,7 +80,6 @@
       "execution": "local",
       "capabilities": ["tts"],
       "launchStatus": "artifact-pin-required",
-      "hardBudgetEligible": true,
       "artifactPolicy": { "format": "onnx", "trustRemoteCode": false, "sha256Required": true }
     },
     {
@@ -97,7 +90,6 @@
       "execution": "local",
       "capabilities": ["asr", "alignment"],
       "launchStatus": "artifact-pin-required",
-      "hardBudgetEligible": true,
       "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true }
     },
     {
@@ -108,7 +100,6 @@
       "execution": "local",
       "capabilities": ["presenter"],
       "launchStatus": "benchmark-and-artifact-pin-required",
-      "hardBudgetEligible": true,
       "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true },
       "notes": "Managed activation requires Alystria's pinned H.264 mux broker: real-probe h264_nvenc, then hardware-forced h264_mf, then a separately installed and explicitly approved GPL x264 pack. Upstream's hard-coded libx264 mux is not used."
     },
@@ -120,7 +111,6 @@
       "execution": "local",
       "capabilities": ["presenter"],
       "launchStatus": "benchmark-and-artifact-pin-required",
-      "hardBudgetEligible": true,
       "artifactPolicy": { "format": "safetensors", "trustRemoteCode": false, "sha256Required": true },
       "notes": "Official Flash profile reports 12 GB VRAM, 768x768 output, and five-step talking-head generation; benchmark with partial-video-length controls before enabling on the 12 GB laptop."
     }

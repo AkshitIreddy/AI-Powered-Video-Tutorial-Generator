@@ -14,13 +14,13 @@ export interface ProjectModelRouteSnapshot {
   medium: ProjectModelMedium; capability: ProjectModelCapability; providerId: EntityId; modelId: string; modelRevision?: string; installFingerprint?: Sha256;
   voiceId?: string; presenterProfileId?: EntityId; boundary: "local" | "cloud";
   retention: "local_only" | "zero_data_retention" | "configurable" | "provider_default" | "unknown"; regions: string[];
-  estimatedCostMicros?: number; fallbackConsent: boolean;
+  fallbackConsent: boolean;
 }
 export interface ProjectModelProfileSnapshot {
   schemaVersion: 1; profileId: EntityId; profileName: string; capturedAt: IsoDateTime; sourceSetupUpdatedAt?: IsoDateTime; routes: ProjectModelRouteSnapshot[];
 }
 export interface ProjectSettings {
-  groundingMode: "creative" | "grounded" | "strict"; quality: "draft" | "standard" | "high" | "maximum"; budgetProfile: "economy" | "balanced" | "quality" | "custom";
+  groundingMode: "creative" | "grounded" | "strict"; quality: "draft" | "standard" | "high" | "maximum";
   executionMode: "cloud" | "local" | "hybrid"; captionsEnabled: boolean; musicEnabled: boolean; presenterMode: "none" | "auto" | "always";
   repairLimit: number; privacyClassification: "public" | "internal" | "private" | "restricted"; crossProviderCritique?: boolean; modelProfileSnapshot?: ProjectModelProfileSnapshot;
 }

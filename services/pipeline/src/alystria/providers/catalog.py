@@ -2,8 +2,8 @@
 
 The catalog is intentionally conservative.  Empty regions and unknown policy
 fields mean "ask/show the provider's current policy", not global availability.
-Pricing is a snapshot input rather than guessed live data; requests under a hard
-budget are blocked when their price cannot be bounded.
+Pricing snapshots support transparent usage receipts; they do not gate an
+explicitly approved provider route.
 """
 
 from __future__ import annotations

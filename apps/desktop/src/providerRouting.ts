@@ -127,7 +127,6 @@ export function buildProviderRoutingReview(input: {
   profile: ModelProfile;
   secretRefs: Record<string, ProviderSecretRef>;
   dataClassification: "public" | "project";
-  hardLimitMinorUnits: number;
   approvalChecked: boolean;
   hasPrivateSources: boolean;
   groundingMode: "creative" | "grounded" | "strict";
@@ -249,7 +248,7 @@ export function buildProviderRoutingReview(input: {
     warnings.push(`${curatedPairing.label} has a curated ElevenLabs pairing (${curatedPairing.recommendedElevenLabsVoiceId}); the selected override remains available for creative control.`);
   }
   if (!input.approvalChecked) {
-    errors.push("Review and approve the named providers, retention boundary, and hard budget.");
+    errors.push("Review and approve the named providers and their data-handling boundaries.");
   }
 
   const approvals: ProviderApproval[] = selectedProviders.map(([providerId, capabilities]) => {
@@ -276,7 +275,6 @@ export function buildProviderRoutingReview(input: {
       privacyApproved: input.approvalChecked,
       retentionApproved: input.approvalChecked,
       regionApproved: input.approvalChecked,
-      budgetApproved: input.approvalChecked,
       termsApproved: input.approvalChecked && providerId === "nvidia-nim",
       modelAccessCheckedAt: providerId === "nvidia-nim" && input.approvalChecked ? (input.reviewedAt ?? new Date().toISOString()) : null,
       ...(providerId === "cloudflare-workers-ai"
@@ -292,12 +290,6 @@ export function buildProviderRoutingReview(input: {
     version: 1,
     privacyMode: privacy,
     dataClassification: input.dataClassification,
-    budget: {
-      currency: "USD",
-      hardLimitMicros: input.hardLimitMinorUnits * 10_000,
-      requireKnownPricing: true,
-      approved: true,
-    },
     approvals,
     routes,
   };

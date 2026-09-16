@@ -52,9 +52,12 @@ def resolve_visual_customization(
     """
 
     customization_value = snapshot.get("customization")
-    if customization_value is None:
+    presenter_selection_value = snapshot.get("presenterSelection")
+    if customization_value is None and presenter_selection_value is None:
         return _empty_customization()
-    customization = _mapping(customization_value, "Project customization")
+    customization = (
+        {} if customization_value is None else _mapping(customization_value, "Project customization")
+    )
     assets = _record_index(snapshot.get("mediaAssets", []), "mediaAssets")
     provenance = _record_index(
         snapshot.get("assetProvenance", []), "assetProvenance", key="assetId"
@@ -122,6 +125,54 @@ def resolve_visual_customization(
                 source=str(presenter_binding["source"]),
             )
 
+    # A multi-presenter selection is independent from the canvas inspector's
+    # primary portrait. Resolve every selected portrait through the same
+    # provenance and CAS boundary so downstream scene assignments never carry
+    # a catalog path or an unverified project asset.
+    selected_presenters = _presenter_selection_records(snapshot)
+    resolved_presenters: list[dict[str, Any]] = []
+    bound_asset_ids = {
+        str(item["assetId"])
+        for item in bindings
+        if item.get("role") == "presenter-portrait"
+    }
+    for selected in selected_presenters:
+        binding = _resolve_selection(
+            store,
+            selected["portraitAssetId"],
+            expected_kind="presenterPortrait",
+            starter_kind="presenter-portrait",
+            role="presenter-portrait",
+            starter_visual_root=starter_visual_root,
+            assets=assets,
+            provenance=provenance,
+            warnings=warnings,
+        )
+        if binding is None:
+            continue
+        if str(binding["assetId"]) not in bound_asset_ids:
+            bindings.append(
+                {
+                    **binding,
+                    "fit": "contain" if fit_value == "contain" else "cover",
+                }
+            )
+            bound_asset_ids.add(str(binding["assetId"]))
+        profile = _presenter_profile(
+            snapshot,
+            str(binding["assetId"]),
+            source=str(binding["source"]),
+        )
+        resolved_presenters.append(
+            {
+                **selected,
+                "portraitAssetId": str(binding["assetId"]),
+                "portraitArtifactHash": str(binding["artifactHash"]),
+                "portraitMediaType": str(binding["mediaType"]),
+                "profile": profile,
+            }
+        )
+
     caption_value = customization.get("captions", {})
     captions = _mapping(caption_value, "Project caption customization")
     caption_style = {
@@ -152,7 +203,9 @@ def resolve_visual_customization(
         "schemaVersion": 1,
         "assets": bindings,
         "presenter": {
-            "enabled": placement != "off" and presenter_binding is not None,
+            "enabled": (
+                placement != "off" and presenter_binding is not None
+            ) or bool(resolved_presenters),
             "placement": _renderer_placement(placement, side),
             "fit": "contain" if fit_value == "contain" else "cover",
             "side": side,
@@ -166,6 +219,7 @@ def resolve_visual_customization(
             ),
             **({"profile": presenter_profile} if presenter_profile else {}),
         },
+        "presenters": resolved_presenters,
         "captionStyle": caption_style,
         "warnings": warnings,
     }
@@ -183,6 +237,7 @@ def _empty_customization() -> dict[str, Any]:
             "scalePercent": 72.0,
             "frame": "soft",
         },
+        "presenters": [],
         "captionStyle": {
             "position": "auto",
             "style": "soft-panel",
@@ -196,6 +251,47 @@ def _empty_customization() -> dict[str, Any]:
         },
         "warnings": [],
     }
+
+
+def _presenter_selection_records(snapshot: Mapping[str, Any]) -> list[dict[str, str]]:
+    """Validate the persisted roster without interpreting scene assignment policy."""
+
+    raw = snapshot.get("presenterSelection")
+    if raw is None:
+        return []
+    selection = _mapping(raw, "presenterSelection")
+    mode = _enum(selection.get("mode", "off"), {"off", "auto", "on"}, "presenterSelection.mode")
+    if mode == "off":
+        return []
+    values = selection.get("presenters", [])
+    if not isinstance(values, list) or not 1 <= len(values) <= 12:
+        raise ValueError("presenterSelection.presenters must contain 1 to 12 presenters")
+    result: list[dict[str, str]] = []
+    presenter_ids: set[str] = set()
+    for index, value in enumerate(values):
+        record = _mapping(value, f"presenterSelection.presenters[{index}]")
+        presenter_id = _string(
+            record.get("presenterId"),
+            f"presenterSelection.presenters[{index}].presenterId",
+        )
+        if presenter_id in presenter_ids:
+            raise ValueError(f"presenterSelection has duplicate presenterId {presenter_id!r}")
+        presenter_ids.add(presenter_id)
+        normalized = {
+            "presenterId": presenter_id,
+            "portraitAssetId": _string(
+                record.get("portraitAssetId"),
+                f"presenterSelection.presenters[{index}].portraitAssetId",
+            ),
+        }
+        voice_id = record.get("voiceId")
+        if voice_id is not None:
+            normalized["voiceId"] = _string(
+                voice_id,
+                f"presenterSelection.presenters[{index}].voiceId",
+            )
+        result.append(normalized)
+    return result
 
 
 def _resolve_selection(
@@ -364,6 +460,7 @@ def _presenter_profile(
 ) -> dict[str, Any]:
     if source == "starter":
         return {
+            "profileId": asset_id,
             "displayName": asset_id.split(".")[-1].replace("-v1", "").replace("-", " ").title(),
             "identityType": "synthetic",
             "disclosureRequired": True,
@@ -395,6 +492,16 @@ def _presenter_profile(
         "identityType": identity,
         "disclosureRequired": bool(profile.get("disclosureRequired", True)),
         "modelInputAllowed": True,
+        **(
+            {
+                "consentRecordId": _string(
+                    profile.get("consentRecordId"), "presenter consentRecordId"
+                ),
+                "subjectId": _string(profile.get("subjectId"), "presenter subjectId"),
+            }
+            if identity == "realPerson"
+            else {}
+        ),
     }
 
 

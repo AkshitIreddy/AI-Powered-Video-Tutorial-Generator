@@ -13,7 +13,6 @@ import {
   ChevronDown,
   ChevronRight,
   CircleAlert,
-  CircleDollarSign,
   CircleHelp,
   Clock3,
   Cloud,
@@ -222,11 +221,12 @@ import type { StockProvider } from "./stockSearchRoutes";
 import { visualCandidates, type VisualCandidate } from "./visualCandidates";
 import { BundledAssetLibrary } from "./BundledAssetLibrary";
 import { presenterCollection } from "./presenterCollection";
+import { PresenterPicker } from "./PresenterPicker";
+import { NEW_PRESENTER_ASSETS, NEW_PRESENTER_PERSONAS } from "./presenterLibrary";
 import { BUILT_IN_STARTER_KIT } from "@alystria/themes";
 import { watchRuntimeBootstrap } from "./runtimeBootstrap";
 import { bundledAssets, importBundledAsset, type BundledAsset } from "./bundledAssets";
 import {
-  canonicalFixtureIdFromTopic,
   hydrateDurableProject,
   isDurableNativeJob,
   normalizeAppSnapshot,
@@ -240,6 +240,7 @@ import type {
   GlobalArea,
   JobRecord,
   ProjectRecord,
+  PresenterSelection,
   Scene,
   StudioAssetKind,
   StudioAssetReference,
@@ -271,7 +272,6 @@ interface TutorialCreationSettings {
   routingPolicy: TutorialRoutingPolicy;
   approvedProviderIds: string[];
   privacy: TutorialRoutingPolicy["privacyMode"];
-  hardLimitMinorUnits: number;
 }
 
 const ONBOARDING_STORAGE_KEY = "alystria-onboarding-v1";
@@ -495,6 +495,7 @@ const DEFAULT_CANVAS_CUSTOMIZATION: CanvasCustomization = {
     narrationDucking: 72,
   },
   assets: [
+    ...NEW_PRESENTER_ASSETS,
     starterAsset("presenter-portrait.educator-maya-v2", "presenter", "Maya · mathematics educator", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "15d33bfa90ec87899c949eb8a79aa9ddc83659e960769843f5bab2933de4ee02", 99766, "image/webp"),
     starterAsset("presenter-portrait.software-daniel-v1", "presenter", "Daniel · software instructor", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "1d255bf5667329819cb7783d799a32adf2185efe643436e1e3e2d7651bc597ce", 32826, "image/webp"),
     starterAsset("presenter-portrait.science-priya-v1", "presenter", "Priya · science educator", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "19721ae4c93b76b372eb9d4cf1b26974b345e9677f26a638c465cafdd1185ea3", 36586, "image/webp"),
@@ -557,9 +558,12 @@ interface PresenterPersona {
   readonly voiceDirection?: string;
   readonly elevenLabsVoiceId?: string;
   readonly idleReady?: boolean;
+  readonly style?: string;
+  readonly background?: string;
 }
 
 const STARTER_PRESENTER_PREVIEWS: Record<string, PresenterPersona> = {
+  ...NEW_PRESENTER_PERSONAS,
   "presenter-portrait.educator-maya-v2": { src: educatorMaya, focalPoint: "50% 20%", voiceDirection: "Warm, assured adult mathematics educator · clear medium pace", elevenLabsVoiceId: "Xb7hH8MSUJpSbSDYk0k2", idleReady: true },
   "presenter-portrait.software-daniel-v1": { src: softwareDaniel, focalPoint: "50% 20%" },
   "presenter-portrait.science-priya-v1": { src: sciencePriya, focalPoint: "50% 20%" },
@@ -591,6 +595,13 @@ const STARTER_PRESENTER_PREVIEWS: Record<string, PresenterPersona> = {
   "presenter-portrait.cartoon-camille-v1": { src: cartoonCamille, focalPoint: "50% 18%", voiceDirection: "Energetic adult physics maker · curious and articulate", idleReady: true },
   "presenter-portrait.cartoon-elias-v1": { src: cartoonElias, focalPoint: "50% 18%", voiceDirection: "Friendly adult design historian · measured and story-led", idleReady: true },
 };
+
+const PRESENTER_CHOICES = DEFAULT_CANVAS_CUSTOMIZATION.assets
+  .filter((asset) => asset.kind === "presenter" && presenterCollection.has(asset.id))
+  .flatMap((asset) => {
+    const persona = STARTER_PRESENTER_PREVIEWS[asset.id];
+    return persona ? [{ id: asset.id, label: asset.label, src: persona.src, focalPoint: persona.focalPoint, style: persona.style ?? asset.label.split(" · ")[1] ?? "Presenter", ...(persona.background ? { background: persona.background } : {}) }] : [];
+  });
 
 function presenterVoiceMatch(assetId: string | null, label?: string): Pick<CanvasCustomization["presenter"], "voiceDirection" | "preferredVoiceId"> {
   const persona = assetId ? STARTER_PRESENTER_PREVIEWS[assetId] : undefined;
@@ -697,7 +708,7 @@ const GUIDED_TOUR_STEPS: readonly GuidedTourStep[] = [
     id: "approve-plan",
     target: "[data-tour-target='approve-plan']",
     title: "Approve the plan before generation",
-    description: "Review the objectives, sequence, script, sources, provider boundary, and budget. Approval advances the durable generation job; the tour waits for that receipt.",
+    description: "Review the objectives, sequence, script, sources, provider boundary. Approval advances the durable generation job; the tour waits for that receipt.",
     placement: "bottom",
     allowTargetInteraction: true,
     completion: { type: "external", key: "plan-approved", label: "Approve the learning plan to continue generation.", completedLabel: "Plan approved and generation completed.", autoAdvance: true },
@@ -1491,7 +1502,6 @@ function App() {
       scope: { kind: "project" },
       quality: settings.quality,
       privacy: settings.privacy,
-      budget: { currency: "USD", hardLimitMinorUnits: settings.hardLimitMinorUnits, requireKnownPricing: true },
       approvedProviderIds: settings.approvedProviderIds,
       preservationLocks: [],
     });
@@ -1615,6 +1625,8 @@ function App() {
       generationId: jobId,
       jobId,
       scenes: structuredClone(project.scenes.map(({ id, title, narration, objective, duration }) => ({ id, title, narration, objective, duration }))),
+      ...(project.presenterSelection ? { presenterSelection: structuredClone(project.presenterSelection) } : {}),
+      ...(project.customization ? { customization: structuredClone(project.customization) } : {}),
     };
     approvalInFlightProjects.current.add(projectId);
     const scheduledAutosave = snapshotAutosaveTimers.current.get(projectId);
@@ -2643,7 +2655,7 @@ function ProjectWorkspace(props: {
   onSceneUpdate: (sceneId: string, update: Partial<Scene>) => void;
   onProjectCustomization: (customization: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => void;
   onProjectCreative: (creative: CreativeConfiguration) => void;
-  onProjectEdit: (update: Pick<Partial<ProjectRecord>, "scenes" | "sceneCandidates" | "customization" | "editorDocument" | "reviewNotes" | "nativeHeadRevisionId" | "nativeRevisionNumber">, options?: { alreadyDurable?: boolean }) => void;
+  onProjectEdit: (update: Pick<Partial<ProjectRecord>, "scenes" | "sceneCandidates" | "customization" | "presenterSelection" | "editorDocument" | "reviewNotes" | "nativeHeadRevisionId" | "nativeRevisionNumber">, options?: { alreadyDurable?: boolean }) => void;
   onEditorDocumentChange: (document: EditorProject) => void;
   onFlushEditorDocument: () => Promise<void>;
   editorSaveStatus?: EditorSaveStatus;
@@ -2673,19 +2685,19 @@ function ProjectHeader({ project, step, title, description, action }: { project:
   return <div className="project-page-header"><div><span className="section-kicker">{step} · {project.locale} · {project.audience}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>;
 }
 
-function PlanWorkspace({ project, onNotify, onApproveGeneration, approvalPending, onImportSources, onSceneUpdate, onUndo, onRedo }: ProjectWorkspaceProps) {
+function PlanWorkspace({ project, onNotify, onApproveGeneration, approvalPending, onImportSources, onSceneUpdate, onUndo, onRedo, onProjectEdit }: ProjectWorkspaceProps) {
   const [tab, setTab] = useState("Learning plan");
   const objectiveScenes = project.scenes.filter((scene) => scene.objective.trim());
   const reviewedSources = project.sources.filter((source) => source.status === "verified").length;
   return <div className="page project-page plan-workspace">
     <ProjectHeader project={project} step="1 · Plan" title="Shape the learning journey" description="Start with the learner. Connect each scene to something they should understand." action={<button className="primary-button" data-tour-target="approve-plan" disabled={approvalPending} aria-busy={approvalPending} onClick={onApproveGeneration}>{approvalPending ? "Saving reviewed plan…" : "Approve learning plan"} {!approvalPending && <ArrowRight size={16} />}</button>} />
-    <div className="plan-progress" aria-label="Plan sections">{["Brief", "Sources", "Research", "Learning plan", "Script"].map((item, index) => <button key={item} data-tour-route={item === "Sources" ? "plan-sources" : undefined} className={tab === item ? "active" : ""} onClick={() => setTab(item)}><i>{index + 1}</i><span>{item}</span></button>)}</div>
+    <div className="plan-progress" aria-label="Plan sections">{["Brief", "Sources", "Research", "Learning plan", "Presenters", "Script"].map((item, index) => <button key={item} data-tour-route={item === "Sources" ? "plan-sources" : undefined} className={tab === item ? "active" : ""} onClick={() => setTab(item)}><i>{index + 1}</i><span>{item}</span></button>)}</div>
     <div className="plan-grid"><section className="plan-main-card">
       <div className="card-title-row"><div><span className="section-kicker">{project.title}</span><h2>{tab === "Learning plan" ? "What should the learner take away?" : tab}</h2></div></div>
       {tab === "Learning plan" ? <><div className="learner-strip"><div><UserRoundCheck size={18} /><span><small>Learner</small><strong>{project.audience}</strong></span></div><div><Clock3 size={18} /><span><small>Target</small><strong>{project.duration} minutes</strong></span></div><div><Languages size={18} /><span><small>Language</small><strong>{project.locale}</strong></span></div></div>
         <div className="objective-section"><div className="section-number"><BookOpen size={22} /></div><div><span className="section-kicker">Scene learning objectives</span><div className="objective-list">{objectiveScenes.map((scene) => <div key={scene.id}><span>{scene.index}</span><label className="objective-edit"><small>{scene.title}</small><textarea aria-label={`Objective for ${scene.title}`} rows={2} value={scene.objective} onChange={(event) => onSceneUpdate(scene.id, { objective: event.target.value })} /></label></div>)}</div>{!objectiveScenes.length && <p>Add a scene objective in Studio to begin the learning plan.</p>}</div></div>
         <div className="learning-sequence"><span className="section-kicker">The teaching sequence</span>{project.scenes.map((scene) => <div key={scene.id}><span>{String(scene.index).padStart(2, "0")}</span><strong>{scene.title}</strong><small>{formatTime(scene.duration)}</small></div>)}</div>
-      </> : tab === "Brief" ? <div className="brief-document"><span className="section-kicker">The question</span><h3>{project.topic}</h3><p>{project.description}</p><dl><div><dt>Who is learning?</dt><dd>{project.audience}</dd></div><div><dt>Available time</dt><dd>{project.duration} minutes</dd></div><div><dt>Language</dt><dd>{project.locale}</dd></div><div><dt>Privacy</dt><dd>{project.privacy}</dd></div></dl><p>Review and edit the scene objectives and script before approving this plan.</p></div> : tab === "Sources" || tab === "Research" ? <SourceEvidence project={project} research={tab === "Research"} onImportSources={onImportSources} onNotify={onNotify} /> : <ScriptEditor project={project} onNotify={onNotify} onSceneUpdate={onSceneUpdate} onUndo={onUndo} onRedo={onRedo} />}
+      </> : tab === "Presenters" ? <div className="plan-presenters"><PresenterPicker choices={PRESENTER_CHOICES} value={projectPresenterSelection(project)} onChange={(selection) => onProjectEdit({ presenterSelection: selection, customization: presenterCustomizationForSelection(project, selection) })} /><SceneSpeakerAssignments project={project} onChange={(selection) => onProjectEdit({ presenterSelection: selection })} /></div> : tab === "Brief" ? <div className="brief-document"><span className="section-kicker">The question</span><h3>{project.topic}</h3><p>{project.description}</p><dl><div><dt>Who is learning?</dt><dd>{project.audience}</dd></div><div><dt>Available time</dt><dd>{project.duration} minutes</dd></div><div><dt>Language</dt><dd>{project.locale}</dd></div><div><dt>Privacy</dt><dd>{project.privacy}</dd></div></dl><p>Review and edit the scene objectives and script before approving this plan.</p></div> : tab === "Sources" || tab === "Research" ? <SourceEvidence project={project} research={tab === "Research"} onImportSources={onImportSources} onNotify={onNotify} /> : <ScriptEditor project={project} onNotify={onNotify} onSceneUpdate={onSceneUpdate} onUndo={onUndo} onRedo={onRedo} />}
     </section><aside className="plan-aside"><div className="grounding-card"><div className="grounding-head"><span><ShieldCheck size={17} /> Sources & support</span></div><p>Source review and claim support are separate. Review the rendered lesson before export.</p><div className="grounding-meter"><span><strong>{reviewedSources} / {project.sources.length}</strong><small>source records reviewed</small></span><ProgressBar value={project.sources.length ? reviewedSources / project.sources.length * 100 : 0} /></div><button className="text-button" onClick={() => setTab("Sources")}>Review sources <ArrowRight size={15} /></button></div><div className="teaching-note"><span className="section-kicker">A useful review question</span><h3>Could they explain it back?</h3><p>Give each scene one job. Show an example, let the learner predict the next step, then explain what changed.</p><button className="text-button" onClick={() => setTab("Script")}>Read the full script <ArrowRight size={15} /></button></div></aside></div>
   </div>;
 }
@@ -2835,7 +2847,15 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
       setReturningFromEditor(false);
     }
   };
-  const customization = canvasCustomization(project);
+  const baseCustomization = canvasCustomization(project);
+  const sceneCast = projectPresenterSelection(project);
+  const assignedSpeakerId = sceneCast.sceneAssignments.find((entry) => entry.sceneId === activeScene.id)?.presenterId
+    ?? sceneCast.presenters[Math.max(0, activeIndex) % Math.max(1, sceneCast.presenters.length)]?.presenterId;
+  const assignedSpeaker = sceneCast.presenters.find((entry) => entry.presenterId === assignedSpeakerId);
+  const customization = project.presenterSelection ? { ...baseCustomization, presenter: { ...baseCustomization.presenter,
+    assetId: sceneCast.mode === "off" ? null : assignedSpeaker?.portraitAssetId ?? null,
+    placement: sceneCast.mode === "off" || !assignedSpeaker ? "off" as const : baseCustomization.presenter.placement === "off" ? "picture-in-picture" as const : baseCustomization.presenter.placement,
+  } } : baseCustomization;
   const creative = project.creative ?? DEFAULT_CREATIVE_CONFIGURATION;
   useEffect(() => { setEditorProject(projectRef.current.editorDocument ?? createEditorProjectFromAlystriaProject(projectRef.current, { now: new Date().toISOString() })); }, [project.id]);
   useEffect(() => { assetPreviewsRef.current = assetPreviews; }, [assetPreviews]);
@@ -3174,7 +3194,7 @@ function DesignInspector({ project, customization, onChange, onNotify, onPreview
         <p className="inspector-note">Every upload stores its filename, SHA-256, creator, license, attribution, and export status—never just a loose file path.</p>
       </InspectorSection>
       <InspectorSection title="Presenter">
-        <div className="presenter-grid">{[...Object.keys(STARTER_PRESENTER_PREVIEWS).filter((id) => presenterCollection.has(id)), ...customization.assets.filter((asset) => asset.kind === "presenter" && asset.source !== "starter-pack").map((asset) => asset.id)].map((id) => { const asset = customization.assets.find((item) => item.id === id); const voiceMatch = presenterVoiceMatch(id, asset?.label); return <button key={id} aria-label={asset?.label ?? id} className={customization.presenter.assetId === id ? "active" : ""} onClick={() => updatePresenter({ assetId: id, placement: "picture-in-picture", ...voiceMatch })}><PresenterPortrait assetId={id} /><span><strong>{asset?.label}</strong><small>{STARTER_PRESENTER_PREVIEWS[id] ? "Front-facing portrait" : "Presenter portrait"}</small></span></button>; })}</div>
+        {project.presenterSelection ? <p className="inspector-note">Your video uses an explicit cast. Choose presenters and assign each scene’s speaker in Plan → Presenters.</p> : (<div className="presenter-grid">{[...Object.keys(STARTER_PRESENTER_PREVIEWS).filter((id) => presenterCollection.has(id)), ...customization.assets.filter((asset) => asset.kind === "presenter" && asset.source !== "starter-pack").map((asset) => asset.id)].map((id) => { const asset = customization.assets.find((item) => item.id === id); const voiceMatch = presenterVoiceMatch(id, asset?.label); return <button key={id} aria-label={asset?.label ?? id} className={customization.presenter.assetId === id ? "active" : ""} onClick={() => updatePresenter({ assetId: id, placement: "picture-in-picture", ...voiceMatch })}><PresenterPortrait assetId={id} /><span><strong>{asset?.label}</strong><small>{STARTER_PRESENTER_PREVIEWS[id] ? "Front-facing portrait" : "Presenter portrait"}</small></span></button>; })}</div>)}
         <div className="presenter-upload-identity"><span>Uploaded portrait identity</span><div className="rights-selector two"><button className={presenterIdentity === "synthetic" ? "active" : ""} onClick={() => setPresenterIdentity("synthetic")}>Fictional / generated</button><button className={presenterIdentity === "realPerson" ? "active" : ""} onClick={() => setPresenterIdentity("realPerson")}>Real person</button></div><label>Presenter name<input value={presenterName} onChange={(event) => setPresenterName(event.target.value)} /></label>{presenterIdentity === "synthetic" ? <label className="mini-toggle"><input type="checkbox" checked={syntheticAttested} onChange={(event) => setSyntheticAttested(event.target.checked)} /><span><strong>I attest this identity is fictional or generated</strong><small>Required before local lip-sync or presenter animation.</small></span></label> : <div className="consent-fields"><label>Person shown<input value={consentSubject} onChange={(event) => { setConsentSubject(event.target.value); if (consentAuthority === "selfConsent") setConsentAttestor(event.target.value); }} /></label><label>Consent authority<select value={consentAuthority} onChange={(event) => { const authority = event.target.value as typeof consentAuthority; setConsentAuthority(authority); if (authority === "selfConsent") setConsentAttestor(consentSubject); }}><option value="selfConsent">Self-consent</option><option value="parentOrGuardian">Parent or guardian</option><option value="authorizedRepresentative">Authorized representative</option></select></label><label>Authorized distribution<select value={presenterDistributionScope} onChange={(event) => setPresenterDistributionScope(event.target.value as typeof presenterDistributionScope)}><option value="privatePreview">Private preview only</option><option value="publicNonCommercial">Public, non-commercial</option><option value="publicCommercial">Public and commercial</option></select></label><label>Consent attested by<input value={consentAttestor} readOnly={consentAuthority === "selfConsent"} onChange={(event) => setConsentAttestor(event.target.value)} /></label><label className="mini-toggle"><input type="checkbox" checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} /><span><strong>Portrait animation and the selected distribution scope are authorized</strong><small>Synthetic-media disclosure stays required. Revocation remains attached to this profile.</small></span></label></div>}</div>
         <AssetUpload label="Upload your presenter picture" accept="image/png,image/jpeg,image/webp" onFile={(file) => { void acceptAsset(file, "presenter"); }} />
         <label>Presenter layout<select value={customization.presenter.placement} onChange={(event) => updatePresenter({ placement: event.target.value as CanvasCustomization["presenter"]["placement"] })}><option value="off">Off</option><option value="picture-in-picture">Picture in picture</option><option value="split">Split stage</option><option value="full-frame">Full frame</option></select></label>
@@ -3201,6 +3221,27 @@ function AssetUpload({ label, accept, onFile }: { label: string; accept: string;
 function AssetLedger({ assets }: { assets: StudioAssetReference[] }) {
   const selected = assets.filter((asset) => asset.source !== "starter-pack");
   return <InspectorSection title="Project asset ledger">{selected.length ? <div className="asset-ledger">{selected.map((asset) => <div key={asset.id}><span className={`asset-state ${asset.rightsStatus}`}><FileCheck2 size={14} /></span><span><strong>{asset.label}</strong><small>{asset.kind} · {asset.license}{asset.byteSize ? ` · ${formatBytes(asset.byteSize)}` : ""}</small><code>{asset.sha256?.slice(0, 12)}…</code></span></div>)}</div> : <p className="inspector-note">No custom files yet. Starter-pack assets are already cleared and attributed.</p>}</InspectorSection>;
+}
+
+function projectPresenterSelection(project: ProjectRecord): PresenterSelection {
+  if (project.presenterSelection) return project.presenterSelection;
+  const id = project.customization?.presenter.assetId;
+  return { schemaVersion: 1, mode: id && project.customization?.presenter.placement !== "off" ? "auto" : "off", presenters: id ? [{ presenterId: id, portraitAssetId: id }] : [], sceneAssignments: [] };
+}
+
+function presenterCustomizationForSelection(project: ProjectRecord, selection: PresenterSelection): CanvasCustomization {
+  const customization = project.customization ?? DEFAULT_CANVAS_CUSTOMIZATION;
+  const id = selection.mode === "off" ? null : selection.presenters[0]?.portraitAssetId ?? null;
+  return { ...customization, presenter: { ...customization.presenter, assetId: id, placement: id ? "picture-in-picture" : "off", ...presenterVoiceMatch(id, PRESENTER_CHOICES.find((choice) => choice.id === id)?.label) } };
+}
+
+function SceneSpeakerAssignments({ project, onChange }: { project: ProjectRecord; onChange: (value: PresenterSelection) => void }) {
+  const selection = projectPresenterSelection(project);
+  if (selection.mode === "off" || !selection.presenters.length) return null;
+  return <section className="scene-speaker-assignments"><h3>Who speaks in each scene?</h3><p>Selected presenters take turns by default. Choose a different speaker here before approving the plan.</p>{project.scenes.map((scene, index) => {
+    const assigned = selection.sceneAssignments.find((entry) => entry.sceneId === scene.id)?.presenterId ?? selection.presenters[index % selection.presenters.length]!.presenterId;
+    return <label key={scene.id}><span>{scene.index}. {scene.title}</span><select aria-label={`Presenter for ${scene.title}`} value={assigned} onChange={(event) => onChange({ ...selection, sceneAssignments: [...selection.sceneAssignments.filter((entry) => entry.sceneId !== scene.id), { sceneId: scene.id, presenterId: event.target.value }] })}>{selection.presenters.map((speaker) => <option value={speaker.presenterId} key={speaker.presenterId}>{PRESENTER_CHOICES.find((choice) => choice.id === speaker.portraitAssetId)?.label ?? speaker.presenterId}</option>)}</select></label>;
+  })}</section>;
 }
 
 function PresenterPortrait({ assetId }: { assetId: string | null }) {
@@ -3376,6 +3417,7 @@ function createTemplateSceneScaffold(templateId: string, projectId: string, tota
 
 function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { environment: RuntimeState["environment"]; templateId: string | null; onClose: () => void; onCreate: (project: ProjectRecord, settings: TutorialCreationSettings) => Promise<void> }) {
   const [step, setStep] = useState(1);
+  const [presenterSelection, setPresenterSelection] = useState<PresenterSelection>({ schemaVersion: 1, mode: "off", presenters: [], sceneAssignments: [] });
   const [topic, setTopic] = useState("");
   const [audience, setAudience] = useState("Undergraduate students");
   const [duration, setDuration] = useState("10");
@@ -3393,7 +3435,6 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
   const [routingApproval, setRoutingApproval] = useState(false);
   const [routingReviewedAt, setRoutingReviewedAt] = useState<string | null>(null);
   const [dataClassification, setDataClassification] = useState<"public" | "project">("project");
-  const [hardLimitMinorUnits, setHardLimitMinorUnits] = useState("100");
   const [routingLoading, setRoutingLoading] = useState(true);
   const [providerAccountIds, setProviderAccountIds] = usePersistentState<Record<string, string>>("alystria-provider-account-ids-v1", {});
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -3425,7 +3466,6 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
     profile: selectedProfile,
     secretRefs,
     dataClassification: effectiveClassification,
-    hardLimitMinorUnits: Math.max(0, Number.parseInt(hardLimitMinorUnits, 10) || 0),
     approvalChecked: routingApproval,
     hasPrivateSources: sourceFiles.length > 0,
     groundingMode: grounding.toLowerCase() as GroundingMode,
@@ -3445,29 +3485,21 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
     const id = `project-${Date.now()}`;
     const normalizedTopic = topic.trim() || "A new idea";
     const projectTitle = projectTitleFromTopic(normalizedTopic);
-    const canonicalFixtureId = durationMinutes === 12 ? canonicalFixtureIdFromTopic(normalizedTopic) : undefined;
-    const selectedPresenterAssetId = [
-      selectedProfile?.routes.lipSync,
-      selectedProfile?.routes.portraitAnimation,
-      selectedProfile?.routes.presenter,
-    ].find((route) => route?.providerId === "local-runtime"
-      && !/^(?:off|none|disabled)\b/i.test(route.modelId.trim())
-      && route.presenterProfileId
-      && STARTER_PRESENTER_PREVIEWS[route.presenterProfileId])?.presenterProfileId;
-    const presenterCustomization = selectedPresenterAssetId ? {
+    const selectedPresenterAssetId = presenterSelection.mode === "off" ? undefined : presenterSelection.presenters[0]?.portraitAssetId;
+    const presenterCustomization: CanvasCustomization = {
       ...structuredClone(DEFAULT_CANVAS_CUSTOMIZATION),
       presenter: {
         ...DEFAULT_CANVAS_CUSTOMIZATION.presenter,
-        assetId: selectedPresenterAssetId,
-        placement: "picture-in-picture" as const,
-        ...presenterVoiceMatch(selectedPresenterAssetId, DEFAULT_CANVAS_CUSTOMIZATION.assets.find((asset) => asset.id === selectedPresenterAssetId)?.label),
+        assetId: selectedPresenterAssetId ?? null,
+        placement: selectedPresenterAssetId ? "picture-in-picture" : "off",
+        ...presenterVoiceMatch(selectedPresenterAssetId ?? null, DEFAULT_CANVAS_CUSTOMIZATION.assets.find((asset) => asset.id === selectedPresenterAssetId)?.label),
       },
-    } : undefined;
+    };
     setCreating(true);
     setCreateError(null);
     try {
       await onCreate(
-        { ...completeExampleProject, id, title: projectTitle, topic: normalizedTopic, description: `${selectedTemplate.name}: a ${grounding.toLowerCase()} ${TUTORIAL_MODE_LABELS[tutorialMode].toLowerCase()} for ${audience.toLowerCase()}.`, audience, locale, duration: durationMinutes, progress: 8, status: "Planning", updatedAt: "just now", templateId: selectedTemplate.id, tutorialMode, theme: selectedTemplate.name, scenes: createTemplateSceneScaffold(selectedTemplate.id, id, durationMinutes, tutorialMode), sources: [], ...(canonicalFixtureId ? { canonicalFixtureId } : {}), ...(presenterCustomization ? { customization: presenterCustomization } : {}) },
+        { ...completeExampleProject, id, title: projectTitle, topic: normalizedTopic, description: `${selectedTemplate.name}: a ${grounding.toLowerCase()} ${TUTORIAL_MODE_LABELS[tutorialMode].toLowerCase()} for ${audience.toLowerCase()}.`, audience, locale, duration: durationMinutes, progress: 8, status: "Planning", updatedAt: "just now", templateId: selectedTemplate.id, tutorialMode, theme: selectedTemplate.name, scenes: createTemplateSceneScaffold(selectedTemplate.id, id, durationMinutes, tutorialMode), sources: [], customization: presenterCustomization, presenterSelection: { ...presenterSelection, presenters: presenterSelection.mode === "off" ? [] : presenterSelection.presenters } },
         {
           grounding: grounding.toLowerCase() as GroundingMode,
           quality: quality.toLowerCase() as QualityPreset,
@@ -3475,7 +3507,6 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
           routingPolicy: routingReview.policy,
           approvedProviderIds: routingReview.approvedProviderIds,
           privacy: routingReview.privacy,
-          hardLimitMinorUnits: Math.max(0, Number.parseInt(hardLimitMinorUnits, 10) || 0),
         },
       );
     } catch (error) {
@@ -3485,25 +3516,26 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
   };
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="wizard-modal" role="dialog" aria-modal="true" aria-labelledby="wizard-title" tabIndex={-1} ref={dialogRef}>
     <header><div className="brand-lockup"><LogoMark /><span><strong>New tutorial</strong><small>Build the learning plan first</small></span></div><button className="icon-button" onClick={onClose} aria-label="Close"><X size={19} /></button></header>
-    <div className="wizard-steps">{["Idea", "Learner", "Grounding", "Review"].map((label, index) => <span key={label} className={step === index + 1 ? "active" : step > index + 1 ? "complete" : ""}><i>{step > index + 1 ? <Check size={12} /> : index + 1}</i>{label}</span>)}</div>
+    <div className="wizard-steps">{["Idea", "Learner", "Presenters", "Grounding", "Review"].map((label, index) => <span key={label} className={step === index + 1 ? "active" : step > index + 1 ? "complete" : ""}><i>{step > index + 1 ? <Check size={12} /> : index + 1}</i>{label}</span>)}</div>
     <div className="wizard-body">
       {step === 1 && <div className="wizard-template-selection"><img src={TEMPLATE_PREVIEWS[selectedTemplate.id]} alt="" /><span><small>Selected learning arc</small><strong>{selectedTemplate.name}</strong><em>{selectedTemplate.scenes} editable scenes · {selectedTemplate.category}</em></span></div>}
-      {step === 1 && <div className="wizard-step"><span className="section-kicker">Start with the hard part</span><h2 id="wizard-title">What should become clear?</h2><p>Describe the idea, skill, or question in plain language. You can add documents and URLs after this step.</p><label className="large-input"><WandSparkles size={21} /><textarea autoFocus rows={4} placeholder="e.g. Explain why Karatsuba multiplication needs only three recursive products…" value={topic} onChange={(event) => setTopic(event.target.value)} /></label><div className="prompt-suggestions"><button onClick={() => setTopic("Explain why Karatsuba multiplication needs only three recursive products")}>Karatsuba multiplication</button><button onClick={() => setTopic("Teach binary search through loop invariants and an execution trace")}>Binary search invariants</button><button onClick={() => setTopic("Derive the central limit theorem visually")}>Visual derivation</button></div><div className="source-drop"><Upload size={20} /><span><strong>Add source material</strong><small>{sourceFiles.length ? `${sourceFiles.length} selected · imported privately before generation` : "PDF, DOCX, EPUB, Markdown, or text · 8 MiB each · optional"}</small></span><input ref={sourceInputRef} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => setSourceFiles(Array.from(event.target.files ?? []))} /><button onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? "Change files" : "Choose files"}</button></div>{sourceFiles.length > 0 && <div className="selected-source-list" aria-label="Selected source files">{sourceFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><FileCheck2 size={14} /> {file.name} <small>{formatBytes(file.size)}</small></span>)}</div>}</div>}
+      {step === 1 && <div className="wizard-step"><span className="section-kicker">Start with the hard part</span><h2 id="wizard-title">What should become clear?</h2><p>Describe the idea, skill, or question in plain language. You can add documents and URLs after this step.</p><label className="large-input"><WandSparkles size={21} /><textarea autoFocus rows={4} placeholder="What would you like to teach? Describe your topic, question, or learning goal." value={topic} onChange={(event) => setTopic(event.target.value)} /></label><div className="source-drop"><Upload size={20} /><span><strong>Add source material</strong><small>{sourceFiles.length ? `${sourceFiles.length} selected · imported privately before generation` : "PDF, DOCX, EPUB, Markdown, or text · 8 MiB each · optional"}</small></span><input ref={sourceInputRef} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => setSourceFiles(Array.from(event.target.files ?? []))} /><button onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? "Change files" : "Choose files"}</button></div>{sourceFiles.length > 0 && <div className="selected-source-list" aria-label="Selected source files">{sourceFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><FileCheck2 size={14} /> {file.name} <small>{formatBytes(file.size)}</small></span>)}</div>}</div>}
       {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>{PRODUCT_NAME} changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="1">About 1 minute (quick draft)</option><option value="3">About 3 minutes (inspection draft)</option><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="12">About 12 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option><option value="custom">Custom length…</option></select></label>{duration === "custom" && <label><span>Exact duration in minutes</span><input aria-label="Exact duration in minutes" type="number" min="1" max="180" step="1" inputMode="numeric" value={exactDuration} onChange={(event) => setExactDuration(event.target.value)} /><small>Choose any whole number from 1 to 180 minutes.</small></label>}<label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Tutorial method</span><select aria-label="Tutorial method" value={tutorialMode} onChange={(event) => setTutorialMode(event.target.value as TutorialMode)}>{Object.entries(TUTORIAL_MODE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>Board strokes and code edits are timed to narration and remain editable.</small></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>{TUTORIAL_MODE_LABELS[tutorialMode]} · {PRODUCT_NAME} will align every visual action to narration, preserve a static accessible alternative, and surface common misconceptions.</p></div></div></div>}
-      {step === 3 && <div className="wizard-step"><span className="section-kicker">Lock the trust boundary</span><h2>How should {PRODUCT_NAME} research?</h2><p>No cloud call happens until its provider, data class, retention policy, and cost are approved.</p><div className="choice-cards">{([
+      {step === 3 && <div className="wizard-step"><span className="section-kicker">Put a face to the lesson</span><h2>Who will teach?</h2><p>Choose one presenter, build a cast that takes turns, or keep the focus on your visuals.</p><PresenterPicker choices={PRESENTER_CHOICES} value={presenterSelection} onChange={setPresenterSelection} /></div>}
+      {step === 4 && <div className="wizard-step"><span className="section-kicker">Lock the trust boundary</span><h2>How should {PRODUCT_NAME} research?</h2><p>No cloud call happens until its provider, data class, and retention policy are approved.</p><div className="choice-cards">{([
         { name: "Creative", detail: "Use the prompt as the source of truth", icon: Sparkles }, { name: "Grounded", detail: "Connect verifiable claims to reliable evidence", icon: ShieldCheck }, { name: "Strict", detail: "Block every unsupported external claim", icon: Lock },
       ] satisfies Array<{ name: string; detail: string; icon: LucideIcon }>).map(({ name, detail, icon: Icon }) => <button key={name} className={grounding === name ? "active" : ""} onClick={() => setGrounding(name)}><span><Icon size={20} /></span><strong>{name}</strong><small>{detail}</small>{grounding === name && <CheckCircle2 size={17} />}</button>)}</div><div className="privacy-selection"><Lock size={18} /><div><strong>Private sources remain local</strong><p>Imported documents start as Local only. Reclassifying them always requires an explicit decision.</p></div><span className="toggle-on"><i /></span></div></div>}
-      {step === 4 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration === "custom" ? exactDuration : duration} minutes</dd></div><div><dt>Method</dt><dd>{TUTORIAL_MODE_LABELS[tutorialMode]}</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} private file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Privacy</dt><dd>{routingReview?.privacy ?? "Pending review"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
+      {step === 5 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration === "custom" ? exactDuration : duration} minutes</dd></div><div><dt>Method</dt><dd>{TUTORIAL_MODE_LABELS[tutorialMode]}</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Presenters</dt><dd>{presenterSelection.mode === "off" ? "No on-screen presenter" : presenterSelection.presenters.map((entry) => PRESENTER_CHOICES.find((choice) => choice.id === entry.portraitAssetId)?.label ?? entry.presenterId).join(", ")}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} private file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Privacy</dt><dd>{routingReview?.privacy ?? "Pending review"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
         <section className="routing-review" aria-labelledby="routing-review-title">
           <div className="routing-review-heading"><div><span className="section-kicker">Project provider policy</span><h3 id="routing-review-title">Name every route before work starts.</h3></div><span className={`routing-readiness ${routingReview?.policy ? "ready" : "attention"}`}>{routingLoading ? "Loading" : routingReview?.policy ? <><CheckCircle2 size={13} /> Ready</> : <><CircleAlert size={13} /> Review needed</>}</span></div>
-          <div className="routing-review-controls"><label><span>Creation profile</span><select aria-label="Creation profile" value={selectedProfile?.id ?? ""} disabled={routingLoading || !setup} onChange={(event) => { setSelectedProfileId(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }}>{setup?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><label><span>Content class</span><select aria-label="Content class" value={effectiveClassification} disabled={sourceFiles.length > 0} onChange={(event) => { setDataClassification(event.target.value as "public" | "project"); setRoutingApproval(false); setRoutingReviewedAt(null); }}><option value="project">Project content</option><option value="public">Public / synthetic</option></select></label><label><span>Hard budget</span><span className="currency-input"><b>$</b><input aria-label="Hard budget in cents" type="number" min="0" max="100000" value={hardLimitMinorUnits} onChange={(event) => { setHardLimitMinorUnits(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }} /><em>cents</em></span></label>{usesCloudflare && <label><span>Cloudflare Account ID</span><input aria-label="Cloudflare Account ID" autoComplete="off" value={providerAccountIds["cloudflare-workers-ai"] ?? ""} onChange={(event) => { setProviderAccountIds((current) => ({ ...current, "cloudflare-workers-ai": event.target.value.trim() })); setRoutingApproval(false); setRoutingReviewedAt(null); }} /><small>Nonsecret account setting. The API token stays in the OS vault.</small></label>}</div>
+          <div className="routing-review-controls"><label><span>Creation profile</span><select aria-label="Creation profile" value={selectedProfile?.id ?? ""} disabled={routingLoading || !setup} onChange={(event) => { setSelectedProfileId(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }}>{setup?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><label><span>Content class</span><select aria-label="Content class" value={effectiveClassification} disabled={sourceFiles.length > 0} onChange={(event) => { setDataClassification(event.target.value as "public" | "project"); setRoutingApproval(false); setRoutingReviewedAt(null); }}><option value="project">Project content</option><option value="public">Public / synthetic</option></select></label>{usesCloudflare && <label><span>Cloudflare Account ID</span><input aria-label="Cloudflare Account ID" autoComplete="off" value={providerAccountIds["cloudflare-workers-ai"] ?? ""} onChange={(event) => { setProviderAccountIds((current) => ({ ...current, "cloudflare-workers-ai": event.target.value.trim() })); setRoutingApproval(false); setRoutingReviewedAt(null); }} /><small>Nonsecret account setting. The API token stays in the OS vault.</small></label>}</div>
           {routingReview?.routeRows.length ? <div className="routing-route-list" aria-label="Reviewed provider routes">{routingReview.routeRows.map((route) => <div key={`${route.medium}-${route.providerId}`}><span>{route.medium}</span><strong>{providerDisplayName(route.providerId)}</strong><code>{route.modelId}</code><em className={route.boundary}>{route.boundary}</em></div>)}</div> : <div className="routing-empty">Choose a saved profile with explicit writing, research, image, and narration models.</div>}
           {routingReview?.errors.length ? <div className="routing-errors" role="status">{routingReview.errors.map((error) => <span key={error}><CircleAlert size={13} /> {error}</span>)}</div> : null}
-          <label className="routing-consent"><input type="checkbox" checked={routingApproval} onChange={(event) => { setRoutingApproval(event.target.checked); setRoutingReviewedAt(event.target.checked ? new Date().toISOString() : null); }} /><span><strong>Approve this exact routing policy</strong><small>I approve the named providers, current retention and provider-managed region, the content class above, and the hard budget. No unlisted fallback is allowed.{routingReview?.routeRows.some((route) => route.providerId === "nvidia-nim") ? " This includes NVIDIA API Trial Terms and a current per-model access check." : ""}</small></span></label>
+          <label className="routing-consent"><input type="checkbox" checked={routingApproval} onChange={(event) => { setRoutingApproval(event.target.checked); setRoutingReviewedAt(event.target.checked ? new Date().toISOString() : null); }} /><span><strong>Approve this exact routing policy</strong><small>I approve the named providers, current retention and provider-managed region, and the content class above. No unlisted fallback is allowed.{routingReview?.routeRows.some((route) => route.providerId === "nvidia-nim") ? " This includes NVIDIA API Trial Terms and a current per-model access check." : ""}</small></span></label>
         </section>
-        <div className="cost-approval"><CircleDollarSign size={20} /><div><strong>Hard creation budget: ${(Math.max(0, Number.parseInt(hardLimitMinorUnits, 10) || 0) / 100).toFixed(2)}</strong><p>The approved project policy is saved as its own durable revision before generation starts.</p></div></div>{createError && <div className="create-error" role="alert"><CircleAlert size={17} /><span><strong>Project creation failed</strong><small>{createError}</small></span></div>}</div>}
+        {createError && <div className="create-error" role="alert"><CircleAlert size={17} /><span><strong>Project creation failed</strong><small>{createError}</small></span></div>}</div>}
     </div>
-    <footer><button className="secondary-button" disabled={creating} onClick={step === 1 ? onClose : () => setStep((value) => value - 1)}>{step === 1 ? "Cancel" : <><ArrowLeft size={15} /> Back</>}</button><span>Step {step} of 4</span>{step < 4 ? <button className="primary-button" disabled={step === 1 && !topic.trim()} onClick={() => setStep((value) => value + 1)}>Continue <ArrowRight size={15} /></button> : <button className="primary-button" disabled={creating || !routingReview?.policy} onClick={() => { void create(); }}>{creating ? <RefreshCw className="spin" size={16} /> : <Sparkles size={16} />}{creating ? (sourceFiles.length ? "Importing sources…" : "Creating project…") : "Create learning plan"}</button>}</footer>
+    <footer><button className="secondary-button" disabled={creating} onClick={step === 1 ? onClose : () => setStep((value) => value - 1)}>{step === 1 ? "Cancel" : <><ArrowLeft size={15} /> Back</>}</button><span>Step {step} of 5</span>{step < 5 ? <button className="primary-button" disabled={(step === 1 && !topic.trim()) || (step === 3 && presenterSelection.mode !== "off" && presenterSelection.presenters.length === 0)} onClick={() => setStep((value) => value + 1)}>Continue <ArrowRight size={15} /></button> : <button className="primary-button" disabled={creating || !routingReview?.policy} onClick={() => { void create(); }}>{creating ? <RefreshCw className="spin" size={16} /> : <Sparkles size={16} />}{creating ? (sourceFiles.length ? "Importing sources…" : "Creating project…") : "Create learning plan"}</button>}</footer>
   </div></div>;
 }
 
@@ -3511,7 +3543,7 @@ function RegenerationSheet({ scene, onClose, onRun }: { scene: Scene; onClose: (
   const [instruction, setInstruction] = useState("");
   const [preserve, setPreserve] = useState(true);
   const [alternatives, setAlternatives] = useState(1);
-  return <div className="sheet-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="regen-sheet" role="dialog" aria-modal="true" aria-labelledby="regen-title"><header><div><span className="section-kicker">Scoped regeneration</span><h2 id="regen-title">Create a new candidate</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></header><div className="regen-scene"><span>{String(scene.index).padStart(2, "0")}</span><div><strong>{scene.title}</strong><small>{scene.kind.replace("-", " ")} · {scene.duration}s</small></div></div><label className="instruction-field"><span>What should change?</span><textarea autoFocus rows={5} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Make the transition from four products to three feel inevitable. Keep the exact algebra and citations." /></label><div className="quick-instructions"><button onClick={() => setInstruction("Make the explanation more concrete without adding length.")}>More concrete</button><button onClick={() => setInstruction("Reduce narration by 20% while preserving every factual claim.")}>Tighter</button><button onClick={() => setInstruction("Try a more visual treatment using the concept thread.")}>More visual</button></div><section className="preservation-section"><span className="section-kicker">Preservation locks</span><ToggleRow checked={preserve} onChange={setPreserve} title="Keep narration and citations" detail="Regenerate only the visual treatment" /><ToggleRow checked={true} onChange={() => {}} title="Keep learning objective" detail={scene.objective} locked /><label>Alternatives<select value={alternatives} onChange={(event) => setAlternatives(Number(event.target.value))}><option value={1}>1 candidate</option><option value={2}>2 candidates</option><option value={3}>3 candidates</option><option value={4}>4 candidates</option></select></label></section><section className="impact-preview"><div><Network size={17} /><span><strong>Dependency impact</strong><small>Visual layout, scene render, visual QA, and final composition</small></span></div><div><CircleDollarSign size={17} /><span><strong>Estimated cost</strong><small>Checked against the approved route and project budget</small></span></div><div><History size={17} /><span><strong>Accepted version is safe</strong><small>This creates a candidate. Nothing is overwritten.</small></span></div></section><footer><button className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={!instruction.trim()} onClick={() => onRun(instruction, preserve, alternatives)}><WandSparkles size={16} /> Generate candidate</button></footer></aside></div>;
+  return <div className="sheet-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="regen-sheet" role="dialog" aria-modal="true" aria-labelledby="regen-title"><header><div><span className="section-kicker">Scoped regeneration</span><h2 id="regen-title">Create a new candidate</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></header><div className="regen-scene"><span>{String(scene.index).padStart(2, "0")}</span><div><strong>{scene.title}</strong><small>{scene.kind.replace("-", " ")} · {scene.duration}s</small></div></div><label className="instruction-field"><span>What should change?</span><textarea autoFocus rows={5} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe the visual, pacing, or explanation changes you want for this scene." /></label><div className="quick-instructions"><button onClick={() => setInstruction("Make the explanation more concrete without adding length.")}>More concrete</button><button onClick={() => setInstruction("Reduce narration by 20% while preserving every factual claim.")}>Tighter</button><button onClick={() => setInstruction("Try a more visual treatment using the concept thread.")}>More visual</button></div><section className="preservation-section"><span className="section-kicker">Preservation locks</span><ToggleRow checked={preserve} onChange={setPreserve} title="Keep narration and citations" detail="Regenerate only the visual treatment" /><ToggleRow checked={true} onChange={() => {}} title="Keep learning objective" detail={scene.objective} locked /><label>Alternatives<select value={alternatives} onChange={(event) => setAlternatives(Number(event.target.value))}><option value={1}>1 candidate</option><option value={2}>2 candidates</option><option value={3}>3 candidates</option><option value={4}>4 candidates</option></select></label></section><section className="impact-preview"><div><Network size={17} /><span><strong>Dependency impact</strong><small>Visual layout, scene render, visual QA, and final composition</small></span></div><div><ShieldCheck size={17} /><span><strong>Your selected provider</strong><small>Availability follows your provider’s quota. No unlisted fallback.</small></span></div><div><History size={17} /><span><strong>Accepted version is safe</strong><small>This creates a candidate. Nothing is overwritten.</small></span></div></section><footer><button className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={!instruction.trim()} onClick={() => onRun(instruction, preserve, alternatives)}><WandSparkles size={16} /> Generate candidate</button></footer></aside></div>;
 }
 
 function JobDetail({ job }: { job: JobRecord }) {

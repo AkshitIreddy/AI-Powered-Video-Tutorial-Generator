@@ -70,7 +70,6 @@ MIGRATIONS: dict[int, str] = {
         attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
         cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0,1)),
         estimated_cost_micros INTEGER NOT NULL DEFAULT 0 CHECK (estimated_cost_micros >= 0),
-        budget_micros INTEGER CHECK (budget_micros IS NULL OR budget_micros >= 0),
         available_at TEXT NOT NULL,
         lease_owner TEXT,
         lease_expires_at TEXT,

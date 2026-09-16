@@ -17,6 +17,7 @@ from alystria.project import ProjectStore
 from alystria.project_assets import (
     validate_approved_presenter_for_export,
     validate_selected_presenter_for_export,
+    validate_selected_presenters_for_export,
 )
 from alystria.service import PipelineService
 
@@ -559,6 +560,39 @@ def test_commercial_presenter_scope_requires_both_distribution_grants(
     assert policy is not None
     assert policy["profileId"] == receipt["presenterProfile"]["profileId"]
     assert approved_policy == policy
+
+
+def test_multi_presenter_export_gate_checks_every_selected_portrait(tmp_path: Path) -> None:
+    root, _, _ = _project(tmp_path)
+    snapshot = {
+        "presenterSelection": {
+            "schemaVersion": 1,
+            "mode": "on",
+            "presenters": [
+                {
+                    "presenterId": "presenter-portrait.anime-astrid-v1",
+                    "portraitAssetId": "presenter-portrait.anime-astrid-v1",
+                },
+                {
+                    "presenterId": "presenter-portrait.graphic-luca-v1",
+                    "portraitAssetId": "presenter-portrait.graphic-luca-v1",
+                },
+            ],
+            "sceneAssignments": [],
+        }
+    }
+    with ProjectStore.open(root) as store:
+        policies = validate_selected_presenters_for_export(
+            store,
+            snapshot,
+            distribution_scope="publicCommercial",
+        )
+
+    assert [policy["presenterId"] for policy in policies] == [
+        "presenter-portrait.anime-astrid-v1",
+        "presenter-portrait.graphic-luca-v1",
+    ]
+    assert all(policy["identityType"] == "synthetic" for policy in policies)
 
 
 def test_database_contains_no_absolute_import_path(tmp_path: Path) -> None:

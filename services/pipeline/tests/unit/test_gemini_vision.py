@@ -46,7 +46,7 @@ def test_inline_vision_request_preserves_guardrails_and_bills_thought_tokens():
     adapter = GeminiVisionAdapter(transport)
     request = vision_request()
     result = adapter.invoke(
-        request, RequestContext("test", "gemini", "not-a-real-key", hard_budget_micros=500_000)
+        request, RequestContext("test", "gemini", "not-a-real-key")
     )
     sent = transport.requests[0]
     assert sent.url.endswith(f"/{GEMINI_VISION_MODEL}:generateContent")
@@ -83,19 +83,14 @@ def test_invalid_preview_or_unreviewed_model_never_reaches_transport(change):
     assert not transport.requests
 
 
-def test_budget_and_provider_consent_are_checked_before_egress():
-    for context, code in [
-        (
-            RequestContext("test", "gemini", "fake", hard_budget_micros=0),
-            FailureCode.BUDGET_EXCEEDED,
-        ),
-        (RequestContext("test", "nvidia-nim", "fake"), FailureCode.ROUTING_CONSENT_REQUIRED),
-    ]:
-        transport = Transport()
-        with pytest.raises(ProviderFailure) as failure:
-            GeminiVisionAdapter(transport).invoke(vision_request(), context)
-        assert failure.value.code == code
-        assert not transport.requests
+def test_provider_consent_is_checked_before_egress():
+    transport = Transport()
+    with pytest.raises(ProviderFailure) as failure:
+        GeminiVisionAdapter(transport).invoke(
+            vision_request(), RequestContext("test", "nvidia-nim", "fake")
+        )
+    assert failure.value.code is FailureCode.ROUTING_CONSENT_REQUIRED
+    assert not transport.requests
 
 
 def test_blocked_vision_output_is_not_a_successful_review():
@@ -105,4 +100,3 @@ def test_blocked_vision_output_is_not_a_successful_review():
             vision_request(), RequestContext("test", "gemini", "fake")
         )
     assert failure.value.code == FailureCode.POLICY_BLOCKED
-

@@ -29,7 +29,7 @@ from alystria.licensed_media_workflow import (
     search_visual_candidates,
 )
 from alystria.project import ProjectStore, Revision
-from alystria.project_assets import validate_approved_presenter_for_export
+from alystria.project_assets import validate_approved_presenters_for_export
 from alystria.providers.licensed_media_selection import LicensedMediaVisionSelector
 from alystria.sources.safety import SafeHttpTransport
 from alystria.visual_candidates import (
@@ -751,7 +751,7 @@ class NativeControlCoordinator:
         generation_status = GenerationCoordinator(self.store).status(generation_id)
         if generation_status.approval_revision_id is None:
             raise ValueError("Master export requires a durable approval revision")
-        validate_approved_presenter_for_export(
+        validate_approved_presenters_for_export(
             self.store,
             generation_status.approval_revision_id,
             distribution_scope="publicCommercial",

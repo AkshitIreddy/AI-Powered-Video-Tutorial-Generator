@@ -56,6 +56,7 @@ export interface AudioMixSpec {
 
 export interface PresenterSpec {
   mode: "none" | "auto" | "avatar" | "real-person" | "illustrated"; profileId?: EntityId;
+  speakerId?: EntityId; voiceId?: string;
   usage: "none" | "hook" | "transition" | "misconception" | "recap" | "full-scene"; direction: string; gestureCues?: TickRange[];
   consentRecordId?: EntityId; disclosure: "not-required" | "visible-label" | "credits" | "visible-and-credits"; clipArtifactId?: EntityId;
 }

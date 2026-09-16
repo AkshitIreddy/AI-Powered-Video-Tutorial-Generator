@@ -30,30 +30,23 @@ from alystria.generation import (
 )
 from alystria.generation.caption_bundle import CAPTION_COMPILER_VERSION
 from alystria.generation.coordinator import _prepare_failed_media_reapproval
-from alystria.generation.education_provider import StructuredWritingEducationalProvider
 from alystria.generation.forced_alignment import AlignmentInput
 from alystria.generation.workflow import (
+    _apply_presenter_selection,
     _caption_alignment_quality_gate,
     _presenter_direction,
     _presenter_fit,
     _presenters_for_render,
     _provider_neutral_word_timings,
-    _remaining_structured_job_budget,
 )
-from alystria.jobs import JobContext, JobState
+from alystria.jobs import JobState
 from alystria.presenters import PresenterPlacement
 from alystria.project import ProjectStore
 from alystria.project.errors import RevisionConflictError
 from alystria.providers import (
-    EphemeralCredentialBroker,
     FailureCode,
-    HttpRequest,
-    HttpResponse,
     ProviderFailure,
-    ProviderRuntimeFactory,
-    parse_routing_policy,
 )
-from alystria.providers.openai_compatible_structured import GROQ_STRUCTURED_MODEL
 from alystria.qa import Finding, GateStatus, QualityGate, Severity
 from alystria.research import DeterministicOfflineProvider, GroundingMode
 from alystria.service import _configured_forced_aligner, _configured_local_presenter
@@ -103,181 +96,6 @@ class TerminalUsageEducationProvider(DeterministicOfflineProvider):
         )
 
 
-class CoverageBudgetTransport:
-    def __init__(self) -> None:
-        self.requests: list[HttpRequest] = []
-
-    def send(self, request: HttpRequest) -> HttpResponse:
-        self.requests.append(request)
-        if len(self.requests) > 1:
-            raise AssertionError("semantic correction crossed the remaining job budget")
-        sections = [
-            {
-                "title": f"Purposeful section {index + 1}",
-                "objectiveIds": ["objective-meaning"],
-                "teachingStrategy": "explain one specific step with a concrete example",
-                "estimatedSeconds": 36,
-            }
-            for index in range(5)
-        ]
-        return HttpResponse(
-            200,
-            {"content-type": "application/json"},
-            json.dumps(
-                {
-                    "id": "coverage-missing",
-                    "model": GROQ_STRUCTURED_MODEL,
-                    "choices": [{"message": {"content": json.dumps({"sections": sections})}}],
-                    "usage": {"prompt_tokens": 55_000, "completion_tokens": 100},
-                }
-            ).encode(),
-        )
-
-
-def _groq_structured_policy(hard_limit_micros: int) -> dict[str, Any]:
-    return {
-        "version": 1,
-        "privacyMode": "hybrid",
-        "dataClassification": "project",
-        "budget": {
-            "currency": "USD",
-            "hardLimitMicros": hard_limit_micros,
-            "requireKnownPricing": True,
-            "approved": True,
-        },
-        "approvals": [
-            {
-                "providerId": "groq",
-                "capabilities": ["llm.structured"],
-                "credentialRef": "keyring://alystria/groq/api_key",
-                "boundary": "cloud",
-                "retention": "provider_default",
-                "regions": ["provider-managed"],
-                "dataClasses": ["project"],
-                "privacyApproved": True,
-                "retentionApproved": True,
-                "regionApproved": True,
-                "budgetApproved": True,
-            }
-        ],
-        "routes": [
-            {
-                "capability": "llm.structured",
-                "providerIds": ["groq"],
-                "model": GROQ_STRUCTURED_MODEL,
-                "voice": None,
-            }
-        ],
-    }
-
-
-def test_semantic_outline_retry_is_blocked_before_transport_when_budget_is_spent(
-    tmp_path: Path,
-) -> None:
-    store = ProjectStore.create(tmp_path / "Semantic budget", name="Semantic budget")
-    broker = EphemeralCredentialBroker()
-    credential_ref = "keyring://alystria/groq/api_key"
-    grant = broker.issue("groq", credential_ref, "fixture-credential")
-    transport = CoverageBudgetTransport()
-    provider_runtime = ProviderRuntimeFactory(
-        transport_factory=lambda _provider: transport,
-        credential_resolver=broker,
-        credential_grants={"groq": grant},
-    ).build(parse_routing_policy(_groq_structured_policy(5_000)))
-    coordinator = GenerationCoordinator(
-        store,
-        educational_provider=StructuredWritingEducationalProvider.from_runtime(
-            provider_runtime
-        ),
-    )
-    try:
-        generation = coordinator.start(
-            replace(
-                request(),
-                hard_budget_micros=5_000,
-                objectives=(
-                    ObjectiveSpec("objective-meaning", "Explain the core meaning."),
-                    ObjectiveSpec("objective-example", "Apply one worked example."),
-                    ObjectiveSpec("objective-recall", "Recall the key recurrence."),
-                ),
-            )
-        )
-        failed = coordinator.run_pending()
-
-        assert failed is not None and failed.state is GenerationState.FAILED
-        assert len(transport.requests) == 1
-        learning = next(
-            coordinator.runtime.get_job(stage.job_id)
-            for stage in failed.stages
-            if stage.stage is GenerationStage.LEARNING_PLAN
-        )
-        assert coordinator.runtime.usage_summary(learning.job_id).total_cost_micros == 4_155
-        assert learning.error is not None
-        assert "budget" in str(learning.error["message"]).casefold()
-        assert generation.generation_id == failed.generation_id
-    finally:
-        store.close()
-
-
-def test_structured_budget_is_shared_by_stages_in_one_generation(tmp_path: Path) -> None:
-    store = ProjectStore.create(tmp_path / "Shared generation budget", name="Budget")
-    runtime = GenerationCoordinator(store).runtime
-    try:
-        first = runtime.enqueue(
-            project_id=store.manifest.project_id,
-            kind="generation.learning_plan",
-            parameters={"generationId": "generation-a"},
-            budget_micros=1_000,
-        )
-        current = runtime.enqueue(
-            project_id=store.manifest.project_id,
-            kind="generation.script",
-            parameters={"generationId": "generation-a", "stage": "script"},
-            budget_micros=1_000,
-        )
-        separate = runtime.enqueue(
-            project_id=store.manifest.project_id,
-            kind="generation.learning_plan",
-            parameters={"generationId": "generation-b"},
-            budget_micros=1_000,
-        )
-        runtime.record_usage(
-            first.job_id,
-            provider="groq",
-            model="openai/gpt-oss-20b",
-            unit="tokens",
-            quantity=100,
-            cost_micros=300,
-            idempotency_key="generation-a-plan",
-        )
-        runtime.record_usage(
-            separate.job_id,
-            provider="groq",
-            model="openai/gpt-oss-20b",
-            unit="tokens",
-            quantity=100,
-            cost_micros=400,
-            idempotency_key="generation-b-plan",
-        )
-        context = JobContext(runtime, current.job_id, "attempt", 1, current.task_key)
-
-        assert _remaining_structured_job_budget(context) == 700
-        runtime.record_usage(
-            current.job_id,
-            provider="groq",
-            model="openai/gpt-oss-20b",
-            unit="billing-status",
-            quantity=0,
-            cost_micros=0,
-            idempotency_key="generation-a-unknown-billing",
-            metadata={"usageComplete": False, "knownCostMicros": None},
-            incurred=True,
-        )
-        assert _remaining_structured_job_budget(context) == 0
-    finally:
-        store.close()
-
-
 def test_terminal_structured_repair_usage_reaches_the_learning_plan_ledger(
     tmp_path: Path,
 ) -> None:
@@ -287,9 +105,7 @@ def test_terminal_structured_repair_usage_reaches_the_learning_plan_ledger(
         educational_provider=TerminalUsageEducationProvider(),
     )
     try:
-        generation_id = coordinator.start(
-            replace(request(), hard_budget_micros=1_000)
-        ).generation_id
+        generation_id = coordinator.start(request()).generation_id
         failed = coordinator.run_pending()
         assert failed is not None and failed.state is GenerationState.FAILED
         learning = next(
@@ -1215,6 +1031,7 @@ class RecordingMediaClient(DeterministicMediaClient):
     def __init__(self) -> None:
         self.visual_scene_ids: list[str] = []
         self.narration_scenes: list[dict[str, Any]] = []
+        self.presenter_scenes: list[dict[str, Any]] = []
 
     def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
         self.visual_scene_ids.append(str(scene["id"]))
@@ -1225,6 +1042,14 @@ class RecordingMediaClient(DeterministicMediaClient):
     ) -> GeneratedMedia:
         self.narration_scenes.append(copy.deepcopy(scene))
         return super().synthesize_narration(scene, locale=locale, seed=seed)
+
+    def create_presenter(
+        self, scene: dict[str, Any], *, narration_hash: str, seed: int
+    ) -> GeneratedMedia | None:
+        self.presenter_scenes.append(copy.deepcopy(scene))
+        return super().create_presenter(
+            scene, narration_hash=narration_hash, seed=seed
+        )
 
 
 class FailingVisualMediaClient(RecordingMediaClient):
@@ -2179,6 +2004,383 @@ def test_presenter_on_generates_only_for_compatible_scene_layouts(tmp_path: Path
         store.close()
 
 
+def test_multiple_presenters_route_portraits_voices_and_profiles_per_scene(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Multi presenter", name="Multi presenter")
+    renderer = RecordingRenderer()
+    media = RecordingMediaClient()
+    portraits = ("a" * 64, "b" * 64, "c" * 64, "d" * 64)
+    configured = replace(
+        request(),
+        presenter_mode="on",
+        metadata={
+            "presenterSelection": {
+                "schemaVersion": 1,
+                "mode": "on",
+                "presenters": [
+                    {
+                        "presenterId": "presenter.alpha",
+                        "portraitAssetId": "presenter-portrait.alpha-v1",
+                        "portraitArtifactHash": portraits[0],
+                        "portraitMediaType": "image/webp",
+                        "voiceId": "voice.alpha",
+                        "profile": {"displayName": "Alpha"},
+                    },
+                    {
+                        "presenterId": "presenter.beta",
+                        "portraitAssetId": "presenter-portrait.beta-v1",
+                        "portraitArtifactHash": portraits[1],
+                        "portraitMediaType": "image/webp",
+                        "voiceId": "voice.beta",
+                        "profile": {"displayName": "Beta"},
+                    },
+                    {
+                        "presenterId": "presenter.gamma",
+                        "portraitAssetId": "presenter-portrait.gamma-v1",
+                        "portraitArtifactHash": portraits[2],
+                        "portraitMediaType": "image/webp",
+                        "voiceId": "voice.gamma",
+                        "profile": {"displayName": "Gamma"},
+                    },
+                    {
+                        "presenterId": "presenter.delta",
+                        "portraitAssetId": "presenter-portrait.delta-v1",
+                        "portraitArtifactHash": portraits[3],
+                        "portraitMediaType": "image/webp",
+                        "voiceId": "voice.delta",
+                        "profile": {"displayName": "Delta"},
+                    },
+                ],
+                "sceneAssignments": [],
+            }
+        },
+    )
+    coordinator = GenerationCoordinator(
+        store,
+        media_client=media,
+        renderer_client=renderer,
+    )
+    try:
+        generation_id = coordinator.start(configured).generation_id
+        coordinator.run_pending()
+        coordinator.approve(generation_id)
+        completed = coordinator.run_pending()
+
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        learning_plan_job = next(
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("stage") == GenerationStage.LEARNING_PLAN.value
+        )
+        assert learning_plan_job.result is not None
+        learning_plan = learning_plan_job.result["payload"]["learningPlan"]
+        assert learning_plan["presenterPlan"]["selectedCount"] == 4
+        assert learning_plan["presenterPlan"]["minimumSpeakingScenes"] == 4
+        assert len(learning_plan["outline"]) >= 4
+        assert len(media.narration_scenes) >= 2
+        assert [scene["presenterId"] for scene in media.narration_scenes] == [
+            "presenter.alpha",
+            "presenter.beta",
+            "presenter.gamma",
+            "presenter.delta",
+        ]
+        assert [scene["voiceId"] for scene in media.narration_scenes] == [
+            "voice.alpha",
+            "voice.beta",
+            "voice.gamma",
+            "voice.delta",
+        ]
+        assert [scene["presenterProfileId"] for scene in media.presenter_scenes] == [
+            "presenter.alpha",
+            "presenter.beta",
+            "presenter.gamma",
+            "presenter.delta",
+        ]
+        assert [scene["portraitArtifactHash"] for scene in media.presenter_scenes] == list(
+            portraits
+        )
+        sent = renderer.requests[0]
+        assert all(scene["type"] == "presenter-slide" for scene in sent["scenes"])
+        assert [item["presenterId"] for item in sent["presenters"]] == [
+            "presenter.alpha",
+            "presenter.beta",
+            "presenter.gamma",
+            "presenter.delta",
+        ]
+        assert [item["voiceId"] for item in sent["presenters"]] == [
+            "voice.alpha",
+            "voice.beta",
+            "voice.gamma",
+            "voice.delta",
+        ]
+    finally:
+        store.close()
+
+
+def test_presenter_off_overrides_a_persisted_roster(tmp_path: Path) -> None:
+    store = ProjectStore.create(tmp_path / "Presenter off", name="Presenter off")
+    renderer = RecordingRenderer()
+    media = RecordingMediaClient()
+    configured = replace(
+        request(),
+        presenter_mode="off",
+        metadata={
+            "presenterSelection": {
+                "schemaVersion": 1,
+                "mode": "off",
+                "presenters": [
+                    {
+                        "presenterId": "presenter.saved",
+                        "portraitAssetId": "presenter-portrait.saved-v1",
+                        "portraitArtifactHash": "a" * 64,
+                    }
+                ],
+                "sceneAssignments": [],
+            }
+        },
+    )
+    coordinator = GenerationCoordinator(
+        store,
+        media_client=media,
+        renderer_client=renderer,
+    )
+    try:
+        generation_id = coordinator.start(configured).generation_id
+        coordinator.run_pending()
+        coordinator.approve(generation_id)
+        completed = coordinator.run_pending()
+
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert media.presenter_scenes == []
+        assert renderer.requests[0]["presenters"] == []
+        assert all(
+            "presenterId" not in scene for scene in renderer.requests[0]["scenes"]
+        )
+    finally:
+        store.close()
+
+
+def test_approval_rebinds_the_exact_reviewed_cast_before_media_enqueue(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository_root = Path(__file__).resolve().parents[4]
+    monkeypatch.setenv("ALYSTRIA_STARTER_VISUAL_ROOT", str(repository_root))
+    store = ProjectStore.create(tmp_path / "Reviewed cast", name="Reviewed cast")
+    renderer = RecordingRenderer()
+    media = RecordingMediaClient()
+    coordinator = GenerationCoordinator(
+        store,
+        media_client=media,
+        renderer_client=renderer,
+    )
+    try:
+        generation_id = coordinator.start(request()).generation_id
+        coordinator.run_pending()
+        head = store.head_revision()
+        assert head is not None
+        reviewed_snapshot = copy.deepcopy(head.snapshot)
+        reviewed_snapshot["presenterSelection"] = {
+            "schemaVersion": 1,
+            "mode": "on",
+            "presenters": [
+                {
+                    "presenterId": "presenter-portrait.broadcast-elena-v1",
+                    "portraitAssetId": "presenter-portrait.broadcast-elena-v1",
+                    "voiceId": "voice.elena",
+                },
+                {
+                    "presenterId": "presenter-portrait.anime-astrid-v1",
+                    "portraitAssetId": "presenter-portrait.anime-astrid-v1",
+                    "voiceId": "voice.astrid",
+                },
+            ],
+            "sceneAssignments": [],
+        }
+        reviewed = store.create_revision(
+            snapshot=reviewed_snapshot,
+            kind="edit",
+            expected_head=head.revision_id,
+            message="Review a two-presenter cast",
+        )
+        approved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=reviewed.revision_id,
+        )
+        assert approved.approval_revision_id is not None
+        frozen = store.get_revision(approved.approval_revision_id).snapshot["payload"]
+        frozen_scenes = frozen["storyboard"]["scenes"]
+        assert [scene["presenterId"] for scene in frozen_scenes[:2]] == [
+            "presenter-portrait.broadcast-elena-v1",
+            "presenter-portrait.anime-astrid-v1",
+        ]
+        assert [scene["voiceId"] for scene in frozen_scenes[:2]] == [
+            "voice.elena",
+            "voice.astrid",
+        ]
+
+        completed = coordinator.run_pending()
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert [scene["presenterProfileId"] for scene in media.presenter_scenes[:2]] == [
+            "presenter-portrait.broadcast-elena-v1",
+            "presenter-portrait.anime-astrid-v1",
+        ]
+        assert len(renderer.requests[0]["presenters"]) == len(frozen_scenes)
+    finally:
+        store.close()
+
+
+def test_reviewed_cast_cannot_change_while_media_work_is_active(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository_root = Path(__file__).resolve().parents[4]
+    monkeypatch.setenv("ALYSTRIA_STARTER_VISUAL_ROOT", str(repository_root))
+    store, coordinator = open_coordinator(tmp_path)
+    try:
+        generation_id = coordinator.start(request()).generation_id
+        coordinator.run_pending()
+        head = store.head_revision()
+        assert head is not None
+        approved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=head.revision_id,
+        )
+        assert approved.approval_revision_id is not None
+        active_head = store.head_revision()
+        assert active_head is not None
+        reviewed_snapshot = copy.deepcopy(active_head.snapshot)
+        reviewed_snapshot["presenterSelection"] = {
+            "schemaVersion": 1,
+            "mode": "on",
+            "presenters": [
+                {
+                    "presenterId": "presenter-portrait.anime-astrid-v1",
+                    "portraitAssetId": "presenter-portrait.anime-astrid-v1",
+                }
+            ],
+            "sceneAssignments": [],
+        }
+        reviewed = store.create_revision(
+            snapshot=reviewed_snapshot,
+            kind="edit",
+            expected_head=active_head.revision_id,
+            message="Try to change cast during media work",
+        )
+
+        with pytest.raises(ApprovalNotReadyError, match="media work is active"):
+            coordinator.approve(
+                generation_id,
+                expected_head_revision_id=reviewed.revision_id,
+            )
+    finally:
+        store.close()
+
+
+def test_failed_media_branch_can_be_reapproved_with_a_reviewed_cast(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository_root = Path(__file__).resolve().parents[4]
+    monkeypatch.setenv("ALYSTRIA_MEDIA_MODE", "production")
+    monkeypatch.setenv("ALYSTRIA_STARTER_VISUAL_ROOT", str(repository_root))
+    store = ProjectStore.create(tmp_path / "Failed cast reapproval", name="Failed cast")
+    coordinator = GenerationCoordinator(store, media_client=PacingRecoveryMediaClient())
+    try:
+        generation_id = coordinator.start(pacing_recovery_request()).generation_id
+        coordinator.run_pending()
+        head = store.head_revision()
+        assert head is not None
+        first = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=head.revision_id,
+        )
+        old_approval_id = first.approval_revision_id
+        assert old_approval_id is not None
+        failed = coordinator.run_pending()
+        assert failed is not None and failed.state is GenerationState.FAILED
+
+        failed_head = store.head_revision()
+        assert failed_head is not None
+        reviewed_snapshot = copy.deepcopy(failed_head.snapshot)
+        reviewed_snapshot["presenterSelection"] = {
+            "schemaVersion": 1,
+            "mode": "on",
+            "presenters": [
+                {
+                    "presenterId": "presenter-portrait.anime-astrid-v1",
+                    "portraitAssetId": "presenter-portrait.anime-astrid-v1",
+                    "voiceId": "voice.astrid",
+                }
+            ],
+            "sceneAssignments": [],
+        }
+        reviewed = store.create_revision(
+            snapshot=reviewed_snapshot,
+            kind="edit",
+            expected_head=failed_head.revision_id,
+            message="Review a replacement presenter after media failure",
+        )
+        reapproved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=reviewed.revision_id,
+        )
+
+        assert reapproved.approval_revision_id not in {None, old_approval_id}
+        new_payload = store.get_revision(str(reapproved.approval_revision_id)).snapshot[
+            "payload"
+        ]
+        assert all(
+            scene["presenterId"] == "presenter-portrait.anime-astrid-v1"
+            for scene in new_payload["storyboard"]["scenes"]
+        )
+        old_post_jobs = [
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("approvalRevisionId") == old_approval_id
+        ]
+        assert old_post_jobs and all(job.state is JobState.STALE for job in old_post_jobs)
+    finally:
+        store.close()
+
+
+def test_presenter_on_rejects_overrides_that_leave_a_selected_speaker_unused() -> None:
+    configured = replace(
+        request(),
+        presenter_mode="on",
+        metadata={
+            "presenterSelection": {
+                "schemaVersion": 1,
+                "mode": "on",
+                "presenters": [
+                    {
+                        "presenterId": presenter_id,
+                        "portraitAssetId": f"presenter-portrait.{presenter_id}",
+                        "portraitArtifactHash": character * 64,
+                    }
+                    for presenter_id, character in (("alpha", "a"), ("beta", "b"))
+                ],
+                "sceneAssignments": [
+                    {"sceneId": "scene-one", "presenterId": "alpha"},
+                    {"sceneId": "scene-two", "presenterId": "alpha"},
+                ],
+            }
+        },
+    )
+    scenes = [
+        {"id": "scene-one", "type": "diagram"},
+        {"id": "scene-two", "type": "worked-example"},
+    ]
+
+    with pytest.raises(ValueError, match="leave selected presenters unused: beta"):
+        _apply_presenter_selection(
+            scenes,
+            request=configured,
+            presenter_customization={},
+        )
+
+
 def test_render_compatibility_ignores_only_known_non_presenter_bindings() -> None:
     scenes = [
         {"id": "intro", "type": "presenter-slide"},
@@ -2494,7 +2696,7 @@ def test_desktop_policy_request_uses_authoritative_project_snapshot(tmp_path: Pa
         assert converted.topic == "Recursion trees"
         assert converted.locale == "es-ES"
         assert converted.duration_seconds == 420
-        assert converted.hard_budget_micros == 250_000
+        assert "hardBudgetMicros" not in converted.to_dict()
         assert converted.sources[0].source_id == "source.note"
         assert converted.metadata["preservationLocks"] == ["script"]
         assert converted.metadata["sceneVisualGeneration"] == "authored-only"

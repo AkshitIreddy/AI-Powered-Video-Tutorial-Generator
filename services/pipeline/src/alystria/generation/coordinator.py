@@ -49,7 +49,7 @@ from .models import (
     StageStatus,
 )
 from .visual_customization import resolve_visual_customization
-from .workflow import ExportQualityGateError, GenerationWorkflow
+from .workflow import ExportQualityGateError, GenerationWorkflow, _apply_presenter_selection
 
 
 class GenerationNotFoundError(KeyError):
@@ -324,7 +324,7 @@ class GenerationCoordinator:
         generation_id: str,
         *,
         name: str = "Approved storyboard",
-        message: str = "Approved generation plan, storyboard, privacy, rights, and cost gate",
+        message: str = "Approved generation plan, storyboard, privacy, and rights gates",
         expected_head_revision_id: str | None = None,
     ) -> GenerationStatus:
         status = self.status(generation_id)
@@ -351,7 +351,11 @@ class GenerationCoordinator:
                     f"Expected head {expected_head_revision_id}, but current head is "
                     f"{reviewed_head.revision_id}"
                 )
-            request = _request_from_job(approval_job.parameters)
+            request = _request_with_reviewed_presenter_selection(
+                self.store,
+                _request_from_job(approval_job.parameters),
+                reviewed_head.snapshot,
+            )
             request_visual_generation_mode = _request_visual_generation_mode(request)
             image_generation_approved = _request_image_generation_approved(request)
             existing_revision = self._approval_revision(generation_id)
@@ -367,6 +371,7 @@ class GenerationCoordinator:
                     reviewed_revision_id=reviewed_head.revision_id,
                     request_visual_generation_mode=request_visual_generation_mode,
                     image_generation_approved=image_generation_approved,
+                    request=request,
                 )
                 supersedes_revision_id = None
             elif status.state is GenerationState.FAILED:
@@ -385,6 +390,7 @@ class GenerationCoordinator:
                     reviewed_revision_id=reviewed_head.revision_id,
                     request_visual_generation_mode=request_visual_generation_mode,
                     image_generation_approved=image_generation_approved,
+                    request=request,
                 )
                 previous_payload = self.store.get_revision(existing_revision).snapshot.get(
                     "payload"
@@ -418,6 +424,7 @@ class GenerationCoordinator:
                         reviewed_revision_id=reviewed_head.revision_id,
                         request_visual_generation_mode=request_visual_generation_mode,
                         image_generation_approved=image_generation_approved,
+                        request=request,
                     )
                     if _reviewed_scene_prose_changed(
                         previous_payload, reviewed_payload
@@ -425,6 +432,8 @@ class GenerationCoordinator:
                         previous_payload,
                         reviewed_payload,
                         fallback=request_visual_generation_mode,
+                    ) or _reviewed_presenter_assignments_changed(
+                        previous_payload, reviewed_payload
                     ):
                         raise ApprovalNotReadyError(
                             "Reviewed content cannot be reapproved while post-approval "
@@ -791,7 +800,6 @@ def request_from_fixture(path: Path) -> GenerationRequest:
         presenter_mode="off",
         captions_enabled=True,
         deterministic_seed=int(value.get("deterministicSeed", 0)),
-        hard_budget_micros=0,
         metadata={
             "fixtureId": value.get("id"),
             "networkRequired": False,
@@ -889,12 +897,6 @@ def request_from_desktop(
         summary.settings.get("groundingMode"),
         "grounded",
     ).lower()
-    budget_value = params.get("budget", {})
-    if not isinstance(budget_value, dict):
-        raise ValueError("Desktop generation budget must be an object")
-    minor_units = budget_value.get("hardLimitMinorUnits", 0)
-    if not isinstance(minor_units, int) or isinstance(minor_units, bool) or minor_units < 0:
-        raise ValueError("Desktop hardLimitMinorUnits must be a non-negative integer")
     sources: list[SourceSpec] = []
     source_values = snapshot.get("sources", [])
     if not isinstance(source_values, list):
@@ -954,6 +956,7 @@ def request_from_desktop(
         snapshot,
         starter_visual_root=starter_visual_root,
     )
+    presenter_selection = _desktop_presenter_selection(snapshot, visual_customization)
     font_customization = resolve_font_customization(store, snapshot)
     metadata = {
         "snapshotId": params.get("snapshotId"),
@@ -962,19 +965,16 @@ def request_from_desktop(
         "privacy": params.get("privacy", "local"),
         "approvedProviderIds": list(params.get("approvedProviderIds", [])),
         "preservationLocks": list(params.get("preservationLocks", [])),
-        "budgetCurrency": budget_value.get("currency", "USD"),
-        "requireKnownPricing": bool(budget_value.get("requireKnownPricing", True)),
         "providerRoutingPolicy": routing_policy,
         "sceneVisualGeneration": scene_visual_generation,
         "imageGenerationApproved": has_approved_image_route,
         "audioCustomization": audio_customization,
         "visualCustomization": visual_customization,
+        "presenterSelection": presenter_selection,
         "fontCustomization": font_customization,
         "customization": customization,
     }
-    presenter_mode = (
-        "auto" if bool(visual_customization.get("presenter", {}).get("enabled")) else "off"
-    )
+    presenter_mode = str(presenter_selection["mode"])
     canonical_fixture_value = snapshot.get("canonicalFixtureId")
     if canonical_fixture_value is not None and not isinstance(canonical_fixture_value, str):
         raise ValueError("canonicalFixtureId must be a string")
@@ -993,7 +993,6 @@ def request_from_desktop(
             return replace(
                 fixture,
                 presenter_mode=presenter_mode,
-                hard_budget_micros=minor_units * 10_000,
                 metadata={**fixture.metadata, **metadata},
             )
     return GenerationRequest(
@@ -1006,9 +1005,148 @@ def request_from_desktop(
         sources=tuple(sources),
         presenter_mode=presenter_mode,
         deterministic_seed=int(snapshot.get("deterministicSeed", 0)),
-        hard_budget_micros=minor_units * 10_000,
         metadata=metadata,
     )
+
+
+def _desktop_presenter_selection(
+    snapshot: dict[str, Any], visual_customization: dict[str, Any]
+) -> dict[str, Any]:
+    """Freeze a validated, hash-bound roster and optional scene overrides.
+
+    The project snapshot stores user-facing portrait asset IDs. The visual
+    customization boundary resolves those IDs into project CAS hashes before
+    this function runs. Persisting the resolved roster in GenerationRequest
+    metadata makes approval, narration, presenter synthesis, and render stages
+    consume one immutable assignment contract.
+    """
+
+    raw_value = snapshot.get("presenterSelection")
+    raw = raw_value if isinstance(raw_value, dict) else None
+    if raw_value is not None and raw is None:
+        raise ValueError("presenterSelection must be an object")
+    if raw is not None and raw.get("schemaVersion", 1) != 1:
+        raise ValueError("presenterSelection.schemaVersion must be 1")
+    if raw is not None:
+        mode = raw.get("mode", "off")
+        if mode not in {"off", "auto", "on"}:
+            raise ValueError("presenterSelection.mode must be off, auto, or on")
+    else:
+        mode = (
+            "auto"
+            if bool(visual_customization.get("presenter", {}).get("enabled"))
+            else "off"
+        )
+
+    if mode == "off":
+        return {
+            "schemaVersion": 1,
+            "mode": "off",
+            "presenters": [],
+            "sceneAssignments": [],
+        }
+
+    resolved_value = visual_customization.get("presenters", [])
+    if not isinstance(resolved_value, list):
+        raise ValueError("Resolved presenter roster must be an array")
+    resolved: list[dict[str, Any]] = [
+        dict(item) for item in resolved_value if isinstance(item, dict)
+    ]
+    if len(resolved) != len(resolved_value):
+        raise ValueError("Resolved presenter roster contains a malformed item")
+
+    # Saved projects from the single-presenter era have no presenterSelection.
+    # Preserve their exact portrait and preferred voice as a one-person roster.
+    if raw is None and not resolved:
+        presenter_value = visual_customization.get("presenter", {})
+        presenter = presenter_value if isinstance(presenter_value, dict) else {}
+        portrait_binding = next(
+            (
+                item
+                for item in visual_customization.get("assets", [])
+                if isinstance(item, dict) and item.get("role") == "presenter-portrait"
+            ),
+            None,
+        )
+        if portrait_binding is not None:
+            asset_id = str(portrait_binding["assetId"])
+            original_customization = snapshot.get("customization")
+            original_presenter = (
+                original_customization.get("presenter", {})
+                if isinstance(original_customization, dict)
+                else {}
+            )
+            preferred_voice = (
+                original_presenter.get("preferredVoiceId")
+                if isinstance(original_presenter, dict)
+                else None
+            )
+            resolved = [
+                {
+                    "presenterId": asset_id,
+                    "portraitAssetId": asset_id,
+                    "portraitArtifactHash": str(portrait_binding["artifactHash"]),
+                    "portraitMediaType": str(portrait_binding["mediaType"]),
+                    "profile": dict(presenter.get("profile", {}))
+                    if isinstance(presenter.get("profile"), dict)
+                    else {},
+                    **(
+                        {"voiceId": preferred_voice.strip()}
+                        if isinstance(preferred_voice, str) and preferred_voice.strip()
+                        else {}
+                    ),
+                }
+            ]
+
+    if not 1 <= len(resolved) <= 12:
+        raise ValueError("An enabled presenter selection needs 1 to 12 resolved portraits")
+    presenter_ids: set[str] = set()
+    normalized_presenters: list[dict[str, Any]] = []
+    for index, item in enumerate(resolved):
+        presenter_id = item.get("presenterId")
+        portrait_asset_id = item.get("portraitAssetId")
+        portrait_hash = item.get("portraitArtifactHash")
+        if not isinstance(presenter_id, str) or not presenter_id.strip():
+            raise ValueError(f"Resolved presenter {index + 1} has no presenterId")
+        if presenter_id in presenter_ids:
+            raise ValueError(f"Duplicate presenterId {presenter_id!r}")
+        presenter_ids.add(presenter_id)
+        if not isinstance(portrait_asset_id, str) or not portrait_asset_id.strip():
+            raise ValueError(f"Resolved presenter {presenter_id!r} has no portraitAssetId")
+        if (
+            not isinstance(portrait_hash, str)
+            or len(portrait_hash) != 64
+            or any(character not in "0123456789abcdef" for character in portrait_hash)
+        ):
+            raise ValueError(f"Resolved presenter {presenter_id!r} has no verified portrait hash")
+        normalized_presenters.append(dict(item))
+
+    assignments_value = [] if raw is None else raw.get("sceneAssignments", [])
+    if not isinstance(assignments_value, list):
+        raise ValueError("presenterSelection.sceneAssignments must be an array")
+    assignments: list[dict[str, str]] = []
+    assigned_scene_ids: set[str] = set()
+    for index, value in enumerate(assignments_value):
+        if not isinstance(value, dict):
+            raise ValueError(f"presenterSelection.sceneAssignments[{index}] must be an object")
+        scene_id = value.get("sceneId")
+        presenter_id = value.get("presenterId")
+        if not isinstance(scene_id, str) or not scene_id.strip():
+            raise ValueError(f"presenterSelection.sceneAssignments[{index}].sceneId is required")
+        if not isinstance(presenter_id, str) or presenter_id not in presenter_ids:
+            raise ValueError(
+                f"presenterSelection.sceneAssignments[{index}] references an unknown presenter"
+            )
+        if scene_id in assigned_scene_ids:
+            raise ValueError(f"Scene {scene_id!r} has more than one presenter assignment")
+        assigned_scene_ids.add(scene_id)
+        assignments.append({"sceneId": scene_id, "presenterId": presenter_id})
+    return {
+        "schemaVersion": 1,
+        "mode": mode,
+        "presenters": normalized_presenters,
+        "sceneAssignments": assignments,
+    }
 
 
 def _source_from_desktop_record(
@@ -1291,7 +1429,9 @@ def _prepare_failed_media_reapproval(
         and reviewed_visual_mode == "authored-only"
         and not _reviewed_scene_prose_changed(previous_payload, reviewed_payload)
     )
-    if is_designed_asset_recovery:
+    if _reviewed_presenter_assignments_changed(previous_payload, reviewed_payload):
+        stale_reason = "superseded_by_reviewed_presenters"
+    elif is_designed_asset_recovery:
         stale_reason = "superseded_by_reviewed_visual_mode"
     else:
         _validate_narration_pacing_reapproval(
@@ -1363,6 +1503,28 @@ def _reviewed_scene_prose_changed(
     )
 
 
+def _reviewed_presenter_assignments_changed(
+    previous_payload: dict[str, Any], reviewed_payload: dict[str, Any]
+) -> bool:
+    previous_scenes, reviewed_scenes = _approval_scene_pairs(
+        previous_payload, reviewed_payload
+    )
+    fields = (
+        "type",
+        "presenterBaseType",
+        "presenterId",
+        "presenterProfileId",
+        "speakerId",
+        "portraitAssetId",
+        "portraitArtifactHash",
+        "voiceId",
+        "presenterPlacement",
+        "presenterFit",
+    )
+    return any(
+        any(previous.get(field) != reviewed.get(field) for field in fields)
+        for previous, reviewed in zip(previous_scenes, reviewed_scenes, strict=True)
+    )
 def _approval_scene_pairs(
     previous_payload: dict[str, Any], reviewed_payload: dict[str, Any]
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -1389,6 +1551,42 @@ _REVIEWABLE_SCENE_LIMITS = {
 }
 
 
+def _request_with_reviewed_presenter_selection(
+    store: ProjectStore,
+    request: GenerationRequest,
+    reviewed_snapshot: dict[str, Any],
+) -> GenerationRequest:
+    """Bind the exact cast saved by the review UI before media jobs are queued."""
+
+    if "presenterSelection" not in reviewed_snapshot:
+        return request
+    configured_visual_root = os.environ.get("ALYSTRIA_STARTER_VISUAL_ROOT")
+    try:
+        visual_customization = resolve_visual_customization(
+            store,
+            reviewed_snapshot,
+            starter_visual_root=(
+                None if configured_visual_root is None else Path(configured_visual_root)
+            ),
+        )
+        presenter_selection = _desktop_presenter_selection(
+            reviewed_snapshot, visual_customization
+        )
+    except ValueError as error:
+        raise ApprovalNotReadyError(
+            f"Reviewed presenter selection is invalid: {error}"
+        ) from error
+    return replace(
+        request,
+        presenter_mode=str(presenter_selection["mode"]),
+        metadata={
+            **request.metadata,
+            "visualCustomization": visual_customization,
+            "presenterSelection": presenter_selection,
+        },
+    )
+
+
 def _freeze_reviewed_approval_payload(
     approval_payload: dict[str, Any],
     reviewed_snapshot: dict[str, Any],
@@ -1397,6 +1595,7 @@ def _freeze_reviewed_approval_payload(
     reviewed_revision_id: str,
     request_visual_generation_mode: str,
     image_generation_approved: bool,
+    request: GenerationRequest,
 ) -> dict[str, Any]:
     """Copy reviewed prose and the explicit slide mode into the approval payload.
 
@@ -1481,6 +1680,18 @@ def _freeze_reviewed_approval_payload(
         frozen_scenes.append(frozen_scene)
 
     frozen = copy.deepcopy(approval_payload)
+    _apply_presenter_selection(
+        frozen_scenes,
+        request=request,
+        presenter_customization=(
+            dict(request.metadata.get("visualCustomization", {}).get("presenter", {}))
+            if isinstance(request.metadata.get("visualCustomization"), dict)
+            and isinstance(
+                request.metadata.get("visualCustomization", {}).get("presenter"), dict
+            )
+            else {}
+        ),
+    )
     frozen["storyboard"] = {**copy.deepcopy(baseline_storyboard), "scenes": frozen_scenes}
     if "creative" in reviewed_snapshot:
         try:

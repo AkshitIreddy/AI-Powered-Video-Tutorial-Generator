@@ -65,6 +65,7 @@
       }
     },
     "BudgetPolicy": {
+      "description": "Legacy compatibility only; new generation runs do not use monetary budget gates.",
       "type": "object", "additionalProperties": false, "required": ["mode", "limit", "onUnknownPrice", "approvalThreshold"],
       "properties": {
         "mode": { "enum": ["off", "warn", "hard"] }, "limit": { "$ref": "common.schema.json#/$defs/Money" }, "approvalThreshold": { "$ref": "common.schema.json#/$defs/Money" },
@@ -96,7 +97,7 @@
       }
     },
     "GenerationRun": {
-      "type": "object", "additionalProperties": false, "required": ["id", "projectId", "revisionId", "status", "mode", "taskIds", "budget", "privacyApproval", "createdAt"],
+      "type": "object", "additionalProperties": false, "required": ["id", "projectId", "revisionId", "status", "mode", "taskIds", "privacyApproval", "createdAt"],
       "properties": {
         "id": { "$ref": "common.schema.json#/$defs/Id" }, "projectId": { "$ref": "common.schema.json#/$defs/Id" }, "revisionId": { "$ref": "common.schema.json#/$defs/Id" },
         "status": { "enum": ["draft", "awaiting-approval", "queued", "running", "paused", "succeeded", "partially-succeeded", "failed", "cancelled"] },

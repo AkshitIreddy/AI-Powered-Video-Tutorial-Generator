@@ -375,11 +375,6 @@ def test_real_worker_initializes_project_and_persists_generation_lifecycle(
                 "scope": {"kind": "project"},
                 "quality": "standard",
                 "privacy": "local",
-                "budget": {
-                    "currency": "USD",
-                    "hardLimitMinorUnits": 0,
-                    "requireKnownPricing": True,
-                },
                 "approvedProviderIds": [],
                 "preservationLocks": [],
             },
@@ -470,11 +465,6 @@ def test_acceptance_desktop_worker_creates_approves_generates_and_exports(
                 "scope": {"kind": "project"},
                 "quality": "standard",
                 "privacy": "local",
-                "budget": {
-                    "currency": "USD",
-                    "hardLimitMinorUnits": 0,
-                    "requireKnownPricing": True,
-                },
                 "approvedProviderIds": [],
                 "preservationLocks": [],
             },

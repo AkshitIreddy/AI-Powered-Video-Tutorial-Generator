@@ -31,7 +31,6 @@ MAX_MANIFEST_BYTES = 1024 * 1024
 DEFAULT_PROJECT_SETTINGS: dict[str, Any] = {
     "groundingMode": "grounded",
     "quality": "standard",
-    "budgetProfile": "balanced",
     "executionMode": "hybrid",
     "captionsEnabled": True,
     "musicEnabled": False,

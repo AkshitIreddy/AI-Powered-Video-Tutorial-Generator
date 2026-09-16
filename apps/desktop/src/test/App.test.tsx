@@ -290,8 +290,11 @@ describe("Alystria desktop shell", () => {
     await configureCloudProfile();
     render(<App />);
     await user.click(screen.getByRole("button", { name: /create a tutorial/i }));
-    const prompt = screen.getByPlaceholderText(/explain why karatsuba/i);
+    const prompt = screen.getByPlaceholderText(/what would you like to teach/i);
+    expect(screen.queryByRole("button", { name: "Karatsuba multiplication" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Binary search invariants" })).not.toBeInTheDocument();
     await user.type(prompt, "Teach recursion with a visual call tree");
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^strict/i }));
@@ -311,6 +314,8 @@ describe("Alystria desktop shell", () => {
     expect(created?.nativeProjectDirectory).toContain("/browser-demo/alystria/projects/");
     expect(created?.nativeProjectId).toBeTruthy();
     expect(created?.providerRoutingPolicy).toMatchObject({ privacyMode: "cloud" });
+    expect(created?.providerRoutingPolicy).not.toHaveProperty("budget");
+    expect(created?.presenterSelection).toMatchObject({ mode: "off", presenters: [] });
     const creationJob = persisted.jobs.find((job) => job.projectId === created?.nativeProjectId);
     expect(creationJob?.projectDirectory).toBe(created?.nativeProjectDirectory);
   });
@@ -324,11 +329,12 @@ describe("Alystria desktop shell", () => {
 
     render(<App />);
     await user.click(screen.getByRole("button", { name: /create a tutorial/i }));
-    await user.type(screen.getByPlaceholderText(/explain why karatsuba/i), "Explain a simple workbench circuit");
+    await user.type(screen.getByPlaceholderText(/what would you like to teach/i), "Explain a simple workbench circuit");
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
 
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
     expect(await screen.findByLabelText("Cloudflare Account ID")).toHaveValue("0123456789abcdef0123456789abcdef");
     expect(screen.getByText(/nonsecret account setting/i)).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: /approve this exact routing policy/i }));
@@ -353,7 +359,7 @@ describe("Alystria desktop shell", () => {
     await configureCloudProfile();
     render(<App />);
     await user.click(screen.getByRole("button", { name: /create a tutorial/i }));
-    await user.type(screen.getByPlaceholderText(/explain why karatsuba/i), "Create the canonical 12-minute Karatsuba multiplication tutorial");
+    await user.type(screen.getByPlaceholderText(/what would you like to teach/i), "Create the canonical 12-minute Karatsuba multiplication tutorial");
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     expect(screen.getByRole("option", { name: "About 1 minute (quick draft)" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "About 3 minutes (inspection draft)" })).toBeInTheDocument();
@@ -362,6 +368,7 @@ describe("Alystria desktop shell", () => {
     const exactDuration = screen.getByLabelText("Exact duration in minutes");
     await user.clear(exactDuration);
     await user.type(exactDuration, "3");
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^creative/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
@@ -377,13 +384,21 @@ describe("Alystria desktop shell", () => {
     });
   });
 
-  it("carries an approved local starter presenter into the initial project snapshot", async () => {
+  it("asks for an explicit cast and persists multiple presenters instead of inheriting the profile", async () => {
     const user = userEvent.setup();
     await configureStarterPresenterProfile();
     render(<App />);
     await user.click(screen.getByRole("button", { name: /create a tutorial/i }));
-    await user.type(screen.getByPlaceholderText(/explain why karatsuba/i), "Teach a visual multiplication proof");
+    await user.type(screen.getByPlaceholderText(/what would you like to teach/i), "Teach a visual multiplication proof");
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    await user.click(screen.getByRole("button", { name: /^continue$/i }));
+    expect(screen.getByRole("heading", { name: "Who will teach?" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /just the lesson/i })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: /choose a cast/i }));
+    expect(screen.getByRole("button", { name: /^continue$/i })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Select Daniel · software instructor" }));
+    await user.click(screen.getByRole("button", { name: "Select Sofia · language tutor" }));
+    await user.type(screen.getByRole("textbox", { name: "Voice for Sofia · language tutor" }), "voice-sofia");
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^creative/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
@@ -394,9 +409,23 @@ describe("Alystria desktop shell", () => {
       const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
       const created = persisted.projects.find((project) => project.title === "Teach a visual multiplication proof");
       expect(created?.customization?.presenter).toMatchObject({
-        assetId: "presenter-portrait.mathematics-arjun-v1",
+        assetId: "presenter-portrait.software-daniel-v1",
         placement: "picture-in-picture",
       });
+      expect(created?.presenterSelection).toMatchObject({ mode: "on", presenters: [
+        { presenterId: "presenter-portrait.software-daniel-v1", portraitAssetId: "presenter-portrait.software-daniel-v1" },
+        { presenterId: "presenter-portrait.language-sofia-v1", portraitAssetId: "presenter-portrait.language-sofia-v1", voiceId: "voice-sofia" },
+      ] });
+    });
+    await user.click(await screen.findByRole("button", { name: /presenters$/i }));
+    const speakerControls = screen.getAllByRole("combobox", { name: /^presenter for /i });
+    expect(speakerControls[0]).toHaveValue("presenter-portrait.software-daniel-v1");
+    expect(speakerControls[1]).toHaveValue("presenter-portrait.language-sofia-v1");
+    await user.selectOptions(speakerControls[0]!, "presenter-portrait.language-sofia-v1");
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
+      const created = persisted.projects.find((project) => project.title === "Teach a visual multiplication proof");
+      expect(created?.presenterSelection?.sceneAssignments).toContainEqual({ sceneId: created?.scenes[0]?.id, presenterId: "presenter-portrait.language-sofia-v1" });
     });
   });
 
@@ -408,7 +437,7 @@ describe("Alystria desktop shell", () => {
     const regenerateButtons = screen.getAllByRole("button", { name: /^regenerate$/i });
     await user.click(regenerateButtons[0]!);
     expect(screen.getByRole("heading", { name: /create a new candidate/i })).toBeInTheDocument();
-    await user.type(screen.getByPlaceholderText(/make the transition/i), "Try a stronger opening contrast");
+    await user.type(screen.getByPlaceholderText(/describe the visual/i), "Try a stronger opening contrast");
     await user.click(screen.getByRole("button", { name: /generate candidate/i }));
     expect(screen.getByRole("heading", { name: /^jobs$/i })).toBeInTheDocument();
     expect(screen.getByText(/regenerating scene/i)).toBeInTheDocument();

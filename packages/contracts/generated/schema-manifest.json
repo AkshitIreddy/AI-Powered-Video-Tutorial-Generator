@@ -1,7 +1,7 @@
 {
   "generatorVersion": 1,
   "draft": "https://json-schema.org/draft/2020-12/schema",
-  "contractSetSha256": "0b5d33e2729e9508e0d35398c7c6c0edf562c0e8135944603acb51a069d54add",
+  "contractSetSha256": "e2a0a3cf18dd55aa0ffb898e3438639c99f7cb320d3b22530007f5ce21efd01d",
   "schemas": [
     {
       "key": "common",
@@ -267,7 +267,7 @@
       "file": "execution.schema.json",
       "id": "https://schemas.alystria.studio/v2/execution.schema.json",
       "title": "Alystria artifacts, providers, jobs, QA, export, and plugins",
-      "sha256": "fb26302c1e92dfddb9c20f48f6409f1106c186917f734f40c97a67a3be4d54d6",
+      "sha256": "4f456014e0221c770ca3d8331eb549ef5f18a99447e8811a4154a940fa5047cb",
       "root": {
         "name": "$root",
         "types": [
@@ -403,7 +403,6 @@
             "object"
           ],
           "required": [
-            "budget",
             "createdAt",
             "id",
             "mode",
@@ -856,7 +855,7 @@
       "file": "media.schema.json",
       "id": "https://schemas.alystria.studio/v2/media.schema.json",
       "title": "Alystria media, narration, rights, and provenance",
-      "sha256": "076a6757d1863f2d830afb644de5604a3610e0024db089c1b1d65f47bc8df61d",
+      "sha256": "25a341d484287e9296ac3d6e16e5bb49415fa4fd5a3efc7e66bba017ccc990ae",
       "root": {
         "name": "$root",
         "types": [
@@ -1137,7 +1136,9 @@
             "gestureCues",
             "mode",
             "profileId",
-            "usage"
+            "speakerId",
+            "usage",
+            "voiceId"
           ],
           "refs": [
             "common.schema.json#/$defs/Id",
@@ -1246,7 +1247,7 @@
       "file": "project.schema.json",
       "id": "https://schemas.alystria.studio/v2/project.schema.json",
       "title": "Alystria project and course hierarchy",
-      "sha256": "cc02ece826d899ca182518889cec90c7793bcb39820bfa63b6bdc345e7668438",
+      "sha256": "4a06d330558e469daf383950661f1df86b9c6b0903dec6bb84e2ce9d24de0ff0",
       "root": {
         "name": "$root",
         "types": [
@@ -1648,7 +1649,6 @@
             "object"
           ],
           "required": [
-            "budgetProfile",
             "captionsEnabled",
             "executionMode",
             "groundingMode",
@@ -2360,7 +2360,7 @@
       "file": "storyboard.schema.json",
       "id": "https://schemas.alystria.studio/v2/storyboard.schema.json",
       "title": "Alystria storyboard, scenes, and visual system",
-      "sha256": "f56095b9b1f2eadf6375ae68e308fa4417aadf701e7e0723730804c8b2943e3e",
+      "sha256": "4dd9ef0f057bb0ee675eeb7102f584d731fcb489eeabbc42fa6817a4a3d8cdd2",
       "root": {
         "name": "$root",
         "types": [
@@ -2390,6 +2390,7 @@
           "#/$defs/TypographyToken",
           "#/$defs/VisualBible",
           "#/$defs/VisualContent",
+          "#/$defs/WhiteboardVisual",
           "common.schema.json#/$defs/BoundingBox",
           "common.schema.json#/$defs/Dimensions",
           "common.schema.json#/$defs/Id",
@@ -3030,7 +3031,30 @@
             "#/$defs/SimulationVisual",
             "#/$defs/SourcesVisual",
             "#/$defs/TextVisual",
-            "#/$defs/TimelineVisual"
+            "#/$defs/TimelineVisual",
+            "#/$defs/WhiteboardVisual"
+          ]
+        },
+        {
+          "name": "WhiteboardVisual",
+          "types": [
+            "object"
+          ],
+          "required": [
+            "boardStyle",
+            "finalBoardDescription",
+            "kind",
+            "strokeTimeline"
+          ],
+          "properties": [
+            "boardStyle",
+            "finalBoardDescription",
+            "kind",
+            "strokeTimeline"
+          ],
+          "refs": [
+            "common.schema.json#/$defs/JsonValue",
+            "common.schema.json#/$defs/NonEmptyText"
           ]
         }
       ]

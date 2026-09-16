@@ -781,6 +781,70 @@ def validate_selected_presenter_for_export(
     }
 
 
+def validate_selected_presenters_for_export(
+    store: ProjectStore,
+    snapshot: dict[str, Any],
+    *,
+    distribution_scope: str,
+) -> list[dict[str, Any]]:
+    """Validate every selected scene presenter against provenance and consent.
+
+    Legacy snapshots continue through the original singular selection path.
+    A roster snapshot is expanded into the same audited singular view for each
+    portrait, so adding speakers cannot bypass the existing real-person gates.
+    """
+
+    selection = snapshot.get("presenterSelection")
+    if not isinstance(selection, dict):
+        legacy = validate_selected_presenter_for_export(
+            store, snapshot, distribution_scope=distribution_scope
+        )
+        return [] if legacy is None else [legacy]
+    mode = selection.get("mode", "off")
+    if mode == "off":
+        return []
+    if mode not in {"auto", "on"}:
+        raise ValueError("presenterSelection.mode is unsupported")
+    presenters = selection.get("presenters")
+    if not isinstance(presenters, list) or not presenters:
+        raise ValueError("enabled presenterSelection has no presenters")
+    validated: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, item in enumerate(presenters):
+        if not isinstance(item, dict):
+            raise ValueError(f"presenterSelection.presenters[{index}] must be an object")
+        presenter_id = item.get("presenterId")
+        portrait_asset_id = item.get("portraitAssetId")
+        if not isinstance(presenter_id, str) or not presenter_id.strip():
+            raise ValueError(f"presenterSelection.presenters[{index}] has no presenterId")
+        if presenter_id in seen:
+            raise ValueError(f"presenterSelection duplicates {presenter_id!r}")
+        seen.add(presenter_id)
+        if not isinstance(portrait_asset_id, str) or not portrait_asset_id.strip():
+            raise ValueError(
+                f"presenterSelection.presenters[{index}] has no portraitAssetId"
+            )
+        candidate = copy.deepcopy(snapshot)
+        customization = candidate.get("customization")
+        if not isinstance(customization, dict):
+            customization = {}
+            candidate["customization"] = customization
+        presenter_customization = customization.get("presenter")
+        if not isinstance(presenter_customization, dict):
+            presenter_customization = {}
+            customization["presenter"] = presenter_customization
+        presenter_customization["placement"] = "picture-in-picture"
+        presenter_customization["assetId"] = portrait_asset_id
+        candidate["selectedPresenterProfileId"] = presenter_id
+        policy = validate_selected_presenter_for_export(
+            store, candidate, distribution_scope=distribution_scope
+        )
+        if policy is None:  # pragma: no cover - placement is forced above
+            raise ValueError(f"presenterSelection presenter {presenter_id!r} was not validated")
+        validated.append({**policy, "presenterId": presenter_id})
+    return validated
+
+
 def validate_approved_presenter_for_export(
     store: ProjectStore,
     approval_revision_id: str,
@@ -830,6 +894,42 @@ def validate_approved_presenter_for_export(
         approved_project.snapshot,
         distribution_scope=distribution_scope,
     )
+
+
+def validate_approved_presenters_for_export(
+    store: ProjectStore,
+    approval_revision_id: str,
+    *,
+    distribution_scope: str,
+) -> list[dict[str, Any]]:
+    """Plural counterpart used by generation and editor export gates."""
+
+    try:
+        approval = store.get_revision(approval_revision_id)
+    except KeyError as error:
+        raise ValueError("presenter export approval revision is missing") from error
+    if approval.kind != "approval" or approval.parent_revision_id is None:
+        raise ValueError("presenter export requires a durable approval revision")
+    generation_id = approval.snapshot.get("generationId")
+    cursor_id: str | None = approval.parent_revision_id
+    while cursor_id is not None:
+        try:
+            candidate = store.get_revision(cursor_id)
+        except KeyError as error:
+            raise ValueError("approved presenter project revision is missing") from error
+        if (
+            isinstance(generation_id, str)
+            and candidate.snapshot.get("generationId") == generation_id
+            and isinstance(candidate.snapshot.get("stage"), str)
+        ):
+            cursor_id = candidate.parent_revision_id
+            continue
+        return validate_selected_presenters_for_export(
+            store,
+            candidate.snapshot,
+            distribution_scope=distribution_scope,
+        )
+    raise ValueError("approved presenter project revision is missing")
 
 
 def _verify_immutable_consent_proof(

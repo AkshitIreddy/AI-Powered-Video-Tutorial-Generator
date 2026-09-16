@@ -243,22 +243,6 @@ class OpenAICompatibleStructuredAdapter(BaseLLMAdapter):
         providers, and a second invalid response remain terminal.
         """
 
-        if (
-            isinstance(request, TextRequest)
-            and self.spec.provider_id == "groq"
-            and request.json_schema is not None
-            and _schema_contains_local_bounds(request.json_schema)
-            and request.max_correction_attempts > 0
-        ):
-            # Validate the reviewed request shape before cost precedence can
-            # hide a schema/model error, then reserve the worst bounded path
-            # for the one correction that this adapter may perform.
-            self.build_request(request, context)
-            _combined_estimate(
-                self.estimate(request),
-                self.estimate(_groq_bounds_repair_reserve_request(request)),
-            ).require_within(context.hard_budget_micros)
-
         try:
             return super().invoke(request, context)
         except ProviderFailure as first_failure:
@@ -269,22 +253,6 @@ class OpenAICompatibleStructuredAdapter(BaseLLMAdapter):
 
             repair_request = _groq_bounds_repair_request(request, first_failure)
             first_usage = _usage_from_failure(first_failure)
-            first_estimate = self.estimate(request)
-            repair_estimate = self.estimate(repair_request)
-            try:
-                _combined_estimate(
-                    first_estimate,
-                    repair_estimate,
-                    first_actual_cost_micros=first_usage.actual_cost_micros,
-                ).require_within(context.hard_budget_micros)
-            except ProviderFailure as budget_failure:
-                budget_failure.provider_id = self.spec.provider_id
-                budget_failure.details = {
-                    "repairAttempted": False,
-                    "attemptCount": 1,
-                    "billableUsage": _usage_details(first_usage),
-                }
-                raise
             repair_context = replace(
                 context,
                 idempotency_key=f"{context.idempotency_key}:schema-repair-1",
@@ -569,56 +537,6 @@ def _groq_bounds_repair_request(
         system=(request.system or "") + system_suffix,
         temperature=0.1,
         max_correction_attempts=0,
-    )
-
-
-def _groq_bounds_repair_reserve_request(request: TextRequest) -> TextRequest:
-    """Build the largest trusted diagnostic admitted by the repair gate."""
-
-    return _groq_bounds_repair_request(
-        request,
-        ProviderFailure(
-            FailureCode.MALFORMED_RESPONSE,
-            "schema-bound reserve",
-            provider_id="groq",
-            details={
-                "schemaPath": "$" + ("x" * 255),
-                "schemaKeyword": max(
-                    _ALYSTRIA_LOCALLY_ENFORCED_SCHEMA_KEYS,
-                    key=len,
-                ),
-            },
-        ),
-    )
-
-
-def _combined_estimate(
-    first: CostEstimate,
-    repair: CostEstimate,
-    *,
-    first_actual_cost_micros: int | None = None,
-) -> CostEstimate:
-    can_sum = (
-        first.bounded
-        and repair.bounded
-        and first.micros is not None
-        and repair.micros is not None
-        and first.currency == repair.currency
-    )
-    micros: int | None = None
-    if can_sum and first.micros is not None and repair.micros is not None:
-        first_reserve = (
-            max(first.micros, first_actual_cost_micros)
-            if first_actual_cost_micros is not None
-            else first.micros
-        )
-        micros = first_reserve + repair.micros
-    return CostEstimate(
-        micros,
-        first.currency,
-        can_sum,
-        "Original structured request plus at most one schema-bound correction",
-        first.catalog_version,
     )
 
 

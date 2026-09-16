@@ -59,12 +59,7 @@ export function validateCatalogs() {
     if (provider.execution === "cloud" && provider.credentialKind === "none" && provider.id !== "openverse") {
       warnings.push(`${prefix}: cloud provider has no credential reference`);
     }
-    if (!provider.pricing?.status || typeof provider.pricing?.hardBudgetEligible !== "boolean") {
-      errors.push(`${prefix}: explicit pricing status and hardBudgetEligible are required`);
-    }
-    if (provider.pricing?.hardBudgetEligible && provider.pricing?.status === "runtime-catalog-required") {
-      errors.push(`${prefix}: unpriced provider cannot be hard-budget eligible`);
-    }
+    if (!provider.pricing?.status) errors.push(`${prefix}: explicit pricing status is required`);
   }
 
   const aliases = providers.aliases ?? {};
@@ -92,7 +87,6 @@ export function validateCatalogs() {
     if (!ALLOWED_EXECUTION.has(model.execution)) errors.push(`${prefix}: execution must be local or cloud`);
     if (!Array.isArray(model.capabilities) || model.capabilities.length === 0) errors.push(`${prefix}: capabilities are required`);
     if (!model.launchStatus) errors.push(`${prefix}: launchStatus is required`);
-    if (typeof model.hardBudgetEligible !== "boolean") errors.push(`${prefix}: hardBudgetEligible is required`);
     if (model.execution === "local" && model.providerId !== "mock") {
       if (model.artifactPolicy?.trustRemoteCode !== false) errors.push(`${prefix}: local artifacts must disable trustRemoteCode`);
       if (model.artifactPolicy?.sha256Required !== true) errors.push(`${prefix}: local artifacts must require SHA-256`);

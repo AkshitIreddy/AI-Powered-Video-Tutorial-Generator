@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -73,7 +72,6 @@ def context(provider_id: str) -> RequestContext:
         idempotency_key=f"{provider_id}-structured-1",
         approved_provider_id=provider_id,
         credential="fixture-secret",
-        hard_budget_micros=5_000,
         approved_boundary=DataBoundary.CLOUD,
         approved_region="provider-managed",
         approved_retention=RetentionMode.PROVIDER_DEFAULT,
@@ -609,98 +607,6 @@ def test_groq_schema_repair_never_treats_one_missing_usage_receipt_as_complete()
         "actualCostMicros": 2,
         "usageComplete": False,
     }
-
-
-def test_groq_schema_repair_reserves_the_combined_request_budget_before_transport() -> None:
-    schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["labels"],
-        "properties": {
-            "labels": {
-                "type": "array",
-                "minItems": 1,
-                "items": {"type": "string"},
-            }
-        },
-    }
-    transport = SequenceTransport(
-        [
-            {
-                "id": "invalid",
-                "choices": [{"message": {"content": '{"labels":[]}'}}],
-                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
-            }
-        ]
-    )
-    adapter = launch_structured_cloud_adapter("groq", transport)
-    request = TextRequest(
-        "Labels",
-        GROQ_STRUCTURED_MODEL,
-        max_output_tokens=256,
-        json_schema=schema,
-    )
-    first_estimate = adapter.estimate(request)
-    assert first_estimate.micros is not None
-    constrained = replace(context("groq"), hard_budget_micros=first_estimate.micros)
-
-    with pytest.raises(ProviderFailure) as raised:
-        adapter.invoke(request, constrained)
-    assert raised.value.code is FailureCode.BUDGET_EXCEEDED
-    assert raised.value.details == {}
-    assert len(transport.requests) == 0
-
-
-def test_groq_schema_repair_uses_first_actual_cost_when_it_exceeds_estimate() -> None:
-    schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["labels"],
-        "properties": {
-            "labels": {
-                "type": "array",
-                "minItems": 1,
-                "items": {"type": "string"},
-            }
-        },
-    }
-    transport = SequenceTransport(
-        [
-            {
-                "id": "invalid-expensive",
-                "model": GROQ_STRUCTURED_MODEL,
-                "choices": [{"message": {"content": '{"labels":[]}'}}],
-                "usage": {"prompt_tokens": 100_000, "completion_tokens": 2},
-            }
-        ]
-    )
-    adapter = launch_structured_cloud_adapter("groq", transport)
-    request = TextRequest(
-        "Labels",
-        GROQ_STRUCTURED_MODEL,
-        max_output_tokens=64,
-        json_schema=schema,
-    )
-
-    with pytest.raises(ProviderFailure) as raised:
-        adapter.invoke(
-            request,
-            replace(context("groq"), hard_budget_micros=5_000),
-        )
-
-    assert raised.value.code is FailureCode.BUDGET_EXCEEDED
-    assert raised.value.details == {
-        "repairAttempted": False,
-        "attemptCount": 1,
-        "billableUsage": {
-            "model": GROQ_STRUCTURED_MODEL,
-            "inputTokens": 100_000,
-            "outputTokens": 2,
-            "actualCostMicros": 7_501,
-            "usageComplete": True,
-        },
-    }
-    assert len(transport.requests) == 1
 
 
 def test_groq_error_keeps_only_sanitized_machine_diagnostics() -> None:

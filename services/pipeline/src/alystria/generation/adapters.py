@@ -212,16 +212,28 @@ class WindowsFallbackMediaClient:
     ) -> GeneratedMedia:
         scene_id = str(scene["id"])
         narration = str(scene["narration"])
+        selected_voice = scene.get("voiceId")
+        if selected_voice is not None and (
+            not isinstance(selected_voice, str) or not selected_voice.strip()
+        ):
+            raise ValueError("Scene voiceId must be a non-empty string when supplied")
         try:
             audio = self.windows_speech.synthesize(
                 AudioSpeechRequest(
                     request_id=scene_id,
                     text=narration,
                     locale=locale,
+                    voice_id=(
+                        selected_voice.strip() if isinstance(selected_voice, str) else None
+                    ),
                     deterministic_seed=seed,
                 )
             )
         except WindowsSpeechUnavailableError as error:
+            if isinstance(selected_voice, str):
+                # An explicit speaker assignment is part of the approved scene
+                # identity. Do not silently replace that person's voice.
+                raise
             fallback = self.deterministic.synthesize_narration(scene, locale=locale, seed=seed)
             return GeneratedMedia(
                 fallback.content,
@@ -399,7 +411,7 @@ class RouterMediaClient:
             ProviderSpeechRequest(
                 text=str(scene["narration"]),
                 model=self.speech_model,
-                voice=self.voice,
+                voice=_scene_voice_id(scene, self.voice),
                 locale=locale,
             ),
             self.context,
@@ -843,12 +855,13 @@ class RuntimeGenerationMediaClient:
             return self._local_fallback.synthesize_narration(scene, locale=locale, seed=seed)
         if self._local_narration is not None:
             narration = str(scene["narration"])
+            selected_voice = _scene_voice_id(scene, self._voice)
             audio = self._local_narration.synthesize(
                 AudioSpeechRequest(
                     request_id=str(scene["id"]),
                     text=narration,
                     locale=locale,
-                    voice_id=None if self._voice == "default" else self._voice,
+                    voice_id=None if selected_voice == "default" else selected_voice,
                     deterministic_seed=seed,
                 )
             )
@@ -877,7 +890,7 @@ class RuntimeGenerationMediaClient:
             ProviderSpeechRequest(
                 text=str(scene["narration"]),
                 model=self._speech_model,
-                voice=self._voice,
+                voice=_scene_voice_id(scene, self._voice),
                 locale=locale,
                 speed=0.86 if self._speech_provider_ids == ("elevenlabs",) else 1.0,
             ),
@@ -910,8 +923,23 @@ class RuntimeGenerationMediaClient:
     @staticmethod
     def _idempotency(kind: str, scene: dict[str, Any], seed: int) -> str:
         canonical = json.dumps(
-            {"kind": kind, "sceneId": scene["id"], "seed": seed},
+            {
+                "kind": kind,
+                "sceneId": scene["id"],
+                "seed": seed,
+                "voiceId": scene.get("voiceId"),
+                "presenterProfileId": scene.get("presenterProfileId"),
+            },
             sort_keys=True,
             separators=(",", ":"),
         )
         return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _scene_voice_id(scene: dict[str, Any], fallback: str) -> str:
+    value = scene.get("voiceId", fallback)
+    if not isinstance(value, str) or not value.strip() or len(value) > 256:
+        raise ValueError("Scene voiceId must be a bounded non-empty string")
+    if not value.isprintable():
+        raise ValueError("Scene voiceId contains control characters")
+    return value.strip()

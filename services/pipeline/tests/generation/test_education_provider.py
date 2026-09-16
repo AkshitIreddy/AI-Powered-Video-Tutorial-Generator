@@ -111,7 +111,6 @@ class GroqEducationTextClient:
                 idempotency_key=idempotency_key,
                 approved_provider_id="groq",
                 credential="fixture-secret",
-                hard_budget_micros=1_000_000,
                 approved_boundary=DataBoundary.CLOUD,
                 approved_region="provider-managed",
                 approved_retention=RetentionMode.PROVIDER_DEFAULT,

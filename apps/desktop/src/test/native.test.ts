@@ -249,7 +249,6 @@ describe("native desktop bridge", () => {
       version: 1 as const,
       privacyMode: "cloud" as const,
       dataClassification: "project" as const,
-      budget: { currency: "USD", hardLimitMicros: 1_000_000, requireKnownPricing: true, approved: true },
       approvals: [],
       routes: [],
     };
@@ -316,7 +315,6 @@ describe("native desktop bridge", () => {
       version: 1 as const,
       privacyMode: "local" as const,
       dataClassification: "project" as const,
-      budget: { currency: "USD", hardLimitMicros: 0, requireKnownPricing: true, approved: true },
       approvals: [],
       routes: [],
     };

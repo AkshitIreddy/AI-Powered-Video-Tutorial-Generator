@@ -21,20 +21,6 @@ _CREDENTIAL_REFERENCE = re.compile(
 
 
 @dataclass(frozen=True, slots=True)
-class BudgetApproval:
-    currency: str
-    hard_limit_micros: int | None
-    require_known_pricing: bool
-    approved: bool
-
-    def __post_init__(self) -> None:
-        if not re.fullmatch(r"[A-Z]{3}", self.currency):
-            raise ValueError("budget currency must be an uppercase ISO-4217 code")
-        if self.hard_limit_micros is not None and self.hard_limit_micros < 0:
-            raise ValueError("hard budget cannot be negative")
-
-
-@dataclass(frozen=True, slots=True)
 class ProviderApproval:
     provider_id: str
     capabilities: tuple[Capability, ...]
@@ -46,7 +32,6 @@ class ProviderApproval:
     privacy_approved: bool
     retention_approved: bool
     region_approved: bool
-    budget_approved: bool
     terms_approved: bool = False
     model_access_checked_at: str | None = None
     account_id: str | None = None
@@ -65,7 +50,6 @@ class TutorialRoutingPolicy:
     version: int
     privacy_mode: PrivacyMode
     data_classification: DataClassification
-    budget: BudgetApproval
     approvals: tuple[ProviderApproval, ...]
     routes: tuple[CapabilityRoute, ...]
 
@@ -90,12 +74,6 @@ class TutorialRoutingPolicy:
             "version": self.version,
             "privacyMode": self.privacy_mode.value,
             "dataClassification": self.data_classification.value,
-            "budget": {
-                "currency": self.budget.currency,
-                "hardLimitMicros": self.budget.hard_limit_micros,
-                "requireKnownPricing": self.budget.require_known_pricing,
-                "approved": self.budget.approved,
-            },
             "approvals": [
                 {
                     "providerId": approval.provider_id,
@@ -108,7 +86,6 @@ class TutorialRoutingPolicy:
                     "privacyApproved": approval.privacy_approved,
                     "retentionApproved": approval.retention_approved,
                     "regionApproved": approval.region_approved,
-                    "budgetApproved": approval.budget_approved,
                     "termsApproved": approval.terms_approved,
                     "modelAccessCheckedAt": approval.model_access_checked_at,
                     **(
@@ -142,18 +119,22 @@ def parse_routing_policy(
         {"version", "privacyMode", "dataClassification", "budget", "approvals", "routes"},
         "provider routing policy",
     )
-    budget_value = _object(value, "budget")
-    _closed(
-        budget_value,
-        {"currency", "hardLimitMicros", "requireKnownPricing", "approved"},
-        "provider budget approval",
-    )
-    budget = BudgetApproval(
-        _string(budget_value, "currency").upper(),
-        _optional_int(budget_value, "hardLimitMicros"),
-        _bool(budget_value, "requireKnownPricing"),
-        _bool(budget_value, "approved"),
-    )
+    # Policies saved by builds before 2.0 included a monetary budget object.
+    # Accept and validate that legacy shape so existing projects still open, but
+    # deliberately drop it from the active policy and canonical serialization.
+    budget_value = value.get("budget")
+    if budget_value is not None:
+        if not isinstance(budget_value, dict):
+            raise ValueError("budget must be an object")
+        _closed(
+            budget_value,
+            {"currency", "hardLimitMicros", "requireKnownPricing", "approved"},
+            "legacy provider budget approval",
+        )
+        _string(budget_value, "currency")
+        _optional_int(budget_value, "hardLimitMicros")
+        _bool(budget_value, "requireKnownPricing")
+        _bool(budget_value, "approved")
     privacy_mode = PrivacyMode(_string(value, "privacyMode"))
     classification = DataClassification(_string(value, "dataClassification"))
 
@@ -222,12 +203,13 @@ def parse_routing_policy(
             _bool(item, "privacyApproved"),
             _bool(item, "retentionApproved"),
             _bool(item, "regionApproved"),
-            _bool(item, "budgetApproved"),
             _optional_bool(item, "termsApproved") or False,
             _optional_string(item, "modelAccessCheckedAt"),
             _optional_string(item, "accountId"),
         )
-        _validate_approval(approval, privacy_mode, classification, budget)
+        if "budgetApproved" in item:
+            _bool(item, "budgetApproved")
+        _validate_approval(approval, privacy_mode, classification)
         approvals.append(approval)
 
     routes: list[CapabilityRoute] = []
@@ -265,7 +247,6 @@ def parse_routing_policy(
         int(value.get("version", 0)),
         privacy_mode,
         classification,
-        budget,
         tuple(approvals),
         tuple(routes),
     )
@@ -275,14 +256,11 @@ def _validate_approval(
     approval: ProviderApproval,
     privacy_mode: PrivacyMode,
     classification: DataClassification,
-    budget: BudgetApproval,
 ) -> None:
     if classification not in approval.data_classes:
         raise ValueError(f"provider {approval.provider_id!r} is not approved for project data")
     if not approval.privacy_approved:
         raise ValueError(f"provider {approval.provider_id!r} privacy is not approved")
-    if not approval.budget_approved or not budget.approved:
-        raise ValueError(f"provider {approval.provider_id!r} budget is not approved")
     if approval.provider_id == "nvidia-nim":
         if classification is not DataClassification.PUBLIC or approval.data_classes != (
             DataClassification.PUBLIC,

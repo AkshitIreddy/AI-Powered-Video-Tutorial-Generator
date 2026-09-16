@@ -55,7 +55,6 @@ class Job:
     attempt_count: int
     cancel_requested: bool
     estimated_cost_micros: int
-    budget_micros: int | None
     available_at: str
     lease_owner: str | None
     lease_expires_at: str | None
@@ -111,7 +110,6 @@ class Job:
             attempt_count=int(row["attempt_count"]),
             cancel_requested=bool(row["cancel_requested"]),
             estimated_cost_micros=int(row["estimated_cost_micros"]),
-            budget_micros=None if row["budget_micros"] is None else int(row["budget_micros"]),
             available_at=row["available_at"],
             lease_owner=row["lease_owner"],
             lease_expires_at=row["lease_expires_at"],

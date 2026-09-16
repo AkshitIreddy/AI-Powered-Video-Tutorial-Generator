@@ -100,23 +100,6 @@ class CostEstimate:
     basis: str
     catalog_version: str
 
-    def require_within(self, budget_micros: int | None) -> None:
-        from .errors import FailureCode, ProviderFailure
-
-        if budget_micros is None:
-            return
-        if self.micros is None or not self.bounded:
-            raise ProviderFailure(
-                FailureCode.BUDGET_EXCEEDED,
-                "The request price cannot be bounded under the selected hard budget",
-            )
-        if self.micros > budget_micros:
-            raise ProviderFailure(
-                FailureCode.BUDGET_EXCEEDED,
-                f"Estimated cost {self.micros} micros exceeds the hard budget",
-            )
-
-
 @dataclass(frozen=True, slots=True)
 class Usage:
     provider_id: str
@@ -140,7 +123,6 @@ class RequestContext:
     idempotency_key: str
     approved_provider_id: str
     credential: str | None = field(default=None, repr=False)
-    hard_budget_micros: int | None = None
     approved_boundary: DataBoundary | None = None
     approved_region: str | None = None
     approved_retention: RetentionMode | None = None

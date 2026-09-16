@@ -536,7 +536,6 @@ class ComfyUiLocalAdapter:
             raise ProviderFailure(FailureCode.INVALID_REQUEST, "The reviewed local image output is PNG")
         if request.seed is not None and request.seed < 0:
             raise ProviderFailure(FailureCode.INVALID_REQUEST, "Local image seed must be non-negative")
-        self.estimate(request).require_within(context.hard_budget_micros)
 
     def _wait(self, prompt_id: str) -> dict[str, Any]:
         deadline = time.monotonic() + self.generation_timeout_seconds

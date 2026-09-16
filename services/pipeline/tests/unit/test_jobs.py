@@ -10,7 +10,6 @@ import pytest
 
 from alystria.jobs import (
     ActionKey,
-    BudgetExceededError,
     JobContext,
     JobState,
     RetryableTaskError,
@@ -94,7 +93,7 @@ def test_queued_cancellation_never_invokes_handler(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "error",
-    [RuntimeError("renderer stopped"), RetryableTaskError("transport stopped"), BudgetExceededError("budget stopped")],
+    [RuntimeError("renderer stopped"), RetryableTaskError("transport stopped")],
 )
 def test_running_cancellation_takes_precedence_over_handler_error(
     tmp_path: Path, error: Exception
@@ -188,22 +187,14 @@ def test_long_handler_renews_lease_until_it_finishes(tmp_path: Path) -> None:
     assert outcome == [JobState.SUCCEEDED]
 
 
-def test_budget_preflight_and_idempotent_usage_accounting(tmp_path: Path) -> None:
-    with ProjectStore.create(tmp_path / "project", name="Budget") as store:
+def test_estimates_do_not_block_idempotent_usage_accounting(tmp_path: Path) -> None:
+    with ProjectStore.create(tmp_path / "project", name="Usage receipts") as store:
         runtime = SQLiteWorkflowRuntime(store.connection)
-        with pytest.raises(BudgetExceededError):
-            runtime.enqueue(
-                project_id=store.manifest.project_id,
-                kind="expensive",
-                parameters={},
-                estimated_cost_micros=101,
-                budget_micros=100,
-            )
         job = runtime.enqueue(
             project_id=store.manifest.project_id,
             kind="metered",
             parameters={},
-            budget_micros=100,
+            estimated_cost_micros=101,
         )
 
         def metered(context, parameters):
@@ -224,14 +215,13 @@ def test_budget_preflight_and_idempotent_usage_accounting(tmp_path: Path) -> Non
         assert summary.records == 1
 
 
-def test_usage_over_budget_fails_job(tmp_path: Path) -> None:
-    with ProjectStore.create(tmp_path / "project", name="Budget failure") as store:
+def test_recorded_usage_does_not_block_a_job(tmp_path: Path) -> None:
+    with ProjectStore.create(tmp_path / "project", name="Usage telemetry") as store:
         runtime = SQLiteWorkflowRuntime(store.connection)
         job = runtime.enqueue(
             project_id=store.manifest.project_id,
             kind="metered",
             parameters={},
-            budget_micros=10,
         )
 
         def metered(context, parameters):
@@ -245,11 +235,11 @@ def test_usage_over_budget_fails_job(tmp_path: Path) -> None:
             )
             return {"ok": True}
 
-        assert runtime.run_once({"metered": metered}).state == JobState.FAILED
-        assert runtime.get_job(job.job_id).error["code"] == "BUDGET_EXCEEDED"
+        assert runtime.run_once({"metered": metered}).state == JobState.SUCCEEDED
+        assert runtime.usage_summary(job.job_id).total_cost_micros == 11
 
 
-def test_incurred_provider_usage_is_retained_when_actual_cost_exceeds_budget(
+def test_incurred_provider_usage_is_retained_when_a_later_step_fails(
     tmp_path: Path,
 ) -> None:
     with ProjectStore.create(tmp_path / "project", name="Incurred overage") as store:
@@ -258,7 +248,6 @@ def test_incurred_provider_usage_is_retained_when_actual_cost_exceeds_budget(
             project_id=store.manifest.project_id,
             kind="metered",
             parameters={},
-            budget_micros=10,
         )
 
         def metered(context, parameters):
@@ -271,7 +260,7 @@ def test_incurred_provider_usage_is_retained_when_actual_cost_exceeds_budget(
                 idempotency_key="incurred-overage",
                 incurred=True,
             )
-            raise RuntimeError("provider result cannot be accepted after the overage")
+            raise RuntimeError("provider result failed validation after usage was incurred")
 
         assert runtime.run_once({"metered": metered}).state == JobState.FAILED
         summary = runtime.usage_summary(job.job_id)
@@ -280,10 +269,7 @@ def test_incurred_provider_usage_is_retained_when_actual_cost_exceeds_budget(
             "SELECT metadata_json FROM usage_records WHERE job_id=?",
             (job.job_id,),
         ).fetchone()
-        assert json.loads(row["metadata_json"]) == {
-            "budgetOverageMicros": 1,
-            "incurred": True,
-        }
+        assert json.loads(row["metadata_json"]) == {"incurred": True}
 
 
 def test_recovery_reuses_accepted_provider_checkpoint_without_duplicate_charge(
@@ -297,7 +283,6 @@ def test_recovery_reuses_accepted_provider_checkpoint_without_duplicate_charge(
             project_id=store.manifest.project_id,
             kind="provider-task",
             parameters={},
-            budget_micros=100,
         )
         claim = runtime._claim_next()
         assert claim is not None

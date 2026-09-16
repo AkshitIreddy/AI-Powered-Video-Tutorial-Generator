@@ -28,8 +28,6 @@ export interface ModelDescriptor {
 export type UsageMeter = "input-token" | "output-token" | "character" | "second" | "image" | "video-second" | "request" | "compute-second" | "storage-byte-month";
 export interface PricingRule { id: EntityId; providerId: EntityId; modelId: EntityId; meter: UsageMeter; unitSize: number; price: Money; effectiveAt: IsoDateTime; expiresAt?: IsoDateTime; lastVerifiedAt: IsoDateTime }
 export interface UsageRecord { id: EntityId; taskAttemptId: EntityId; providerId: EntityId; modelId: EntityId; meter: UsageMeter; quantity: number; estimated: boolean; cost: Money; providerRequestId?: string; recordedAt: IsoDateTime }
-export interface BudgetPolicy { mode: "off" | "warn" | "hard"; limit: Money; approvalThreshold: Money; onUnknownPrice: "allow" | "warn" | "block"; spent?: Money; reserved?: Money }
-
 export type TaskState = "BLOCKED" | "READY" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "RETRY_WAIT" | "FAILED" | "CANCELLED" | "STALE";
 export interface TaskRun {
   id: EntityId; jobId: EntityId; kind: string; taskKey: Sha256; implementationVersion: string; state: TaskState; parameters: JsonValue;
@@ -43,7 +41,7 @@ export interface TaskAttempt {
 }
 export interface GenerationRun {
   id: EntityId; projectId: EntityId; revisionId: EntityId; status: "draft" | "awaiting-approval" | "queued" | "running" | "paused" | "succeeded" | "partially-succeeded" | "failed" | "cancelled";
-  mode: "cloud" | "local" | "hybrid"; taskIds: EntityId[]; budget: BudgetPolicy; privacyApproval: "not-required" | "pending" | "approved" | "rejected" | "expired";
+  mode: "cloud" | "local" | "hybrid"; taskIds: EntityId[]; privacyApproval: "not-required" | "pending" | "approved" | "rejected" | "expired";
   createdAt: IsoDateTime; completedAt?: IsoDateTime;
 }
 export interface JobRun {

@@ -57,7 +57,6 @@ from .openai_compatible_structured import (
     launch_structured_cloud_adapter,
 )
 from .policy import (
-    BudgetApproval,
     CapabilityRoute,
     ProviderApproval,
     TutorialRoutingPolicy,
@@ -136,7 +135,6 @@ __all__ = [
     "AssetInput",
     "AsyncHandle",
     "AsyncProviderAdapter",
-    "BudgetApproval",
     "Capability",
     "CapabilityRoute",
     "CloudflareWorkersAIAdapter",

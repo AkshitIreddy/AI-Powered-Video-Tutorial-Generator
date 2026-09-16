@@ -13,7 +13,6 @@ from PIL import Image
 from alystria.project import ProjectStore
 from alystria.providers.errors import FailureCode, ProviderFailure
 from alystria.providers.policy import (
-    BudgetApproval,
     CapabilityRoute,
     ProviderApproval,
     TutorialRoutingPolicy,
@@ -125,7 +124,6 @@ def _policy(classification: DataClassification) -> TutorialRoutingPolicy:
         version=1,
         privacy_mode=PrivacyMode.HYBRID,
         data_classification=classification,
-        budget=BudgetApproval("USD", 1_000, True, True),
         approvals=(
             ProviderApproval(
                 "vision-provider",
@@ -135,7 +133,6 @@ def _policy(classification: DataClassification) -> TutorialRoutingPolicy:
                 RetentionMode.ZERO_DATA_RETENTION,
                 ("us",),
                 (classification,),
-                True,
                 True,
                 True,
                 True,

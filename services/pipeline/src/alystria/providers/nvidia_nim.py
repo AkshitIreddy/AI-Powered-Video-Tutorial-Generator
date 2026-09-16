@@ -2,7 +2,7 @@
 
 The hosted catalog is a development and testing service, not a production
 entitlement. Alystria therefore uses one keyring credential, fixed NVIDIA
-hosts, exact visual endpoint allowlists, zero-dollar preview budgeting, and no
+hosts, exact visual endpoint allowlists, zero-dollar usage receipts, and no
 fallback. Model access and current per-model rate limits still have to be
 confirmed in build.nvidia.com when a model is selected.
 """
@@ -197,7 +197,6 @@ class NvidiaNimAdapter(GuardedAdapter):
     def build_request(self, request: ProviderRequest, context: RequestContext) -> HttpRequest:
         self._guard(request.capability, context)
         self._guard_hosted_preview(context)
-        self._guard_budget(request, context)
         headers = {
             "Authorization": f"Bearer {context.credential}",
             "Content-Type": "application/json",

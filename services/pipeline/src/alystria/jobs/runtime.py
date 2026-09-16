@@ -42,10 +42,6 @@ class RetryableTaskError(JobRuntimeError):
         self.retry_after_seconds = max(0, retry_after_seconds)
 
 
-class BudgetExceededError(JobRuntimeError):
-    pass
-
-
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
@@ -69,7 +65,6 @@ class WorkflowRuntime(Protocol):
         priority: int = 0,
         max_attempts: int = 3,
         estimated_cost_micros: int = 0,
-        budget_micros: int | None = None,
     ) -> Job: ...
 
     def run_once(self, handlers: Mapping[str, TaskHandler]) -> Job | None: ...
@@ -194,18 +189,13 @@ class SQLiteWorkflowRuntime:
         priority: int = 0,
         max_attempts: int = 3,
         estimated_cost_micros: int = 0,
-        budget_micros: int | None = None,
     ) -> Job:
         if not kind:
             raise ValueError("Job kind cannot be blank")
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least one")
-        if estimated_cost_micros < 0 or (budget_micros is not None and budget_micros < 0):
-            raise ValueError("Costs and budgets cannot be negative")
-        if budget_micros is not None and estimated_cost_micros > budget_micros:
-            raise BudgetExceededError(
-                f"Estimated cost {estimated_cost_micros} exceeds budget {budget_micros} micros"
-            )
+        if estimated_cost_micros < 0:
+            raise ValueError("Estimated cost cannot be negative")
         dependencies = list(dict.fromkeys(dependency_ids or []))
         key = action_key or ActionKey(kind, "1", parameters)
         now = utc_now()
@@ -228,8 +218,8 @@ class SQLiteWorkflowRuntime:
                 """INSERT INTO jobs(
                     job_id,project_id,kind,task_key,implementation_version,state,
                     parameters_json,priority,max_attempts,
-                    estimated_cost_micros,budget_micros,available_at,created_at,updated_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    estimated_cost_micros,available_at,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     requested_job_id,
                     project_id,
@@ -241,7 +231,6 @@ class SQLiteWorkflowRuntime:
                     priority,
                     max_attempts,
                     estimated_cost_micros,
-                    budget_micros,
                     now,
                     now,
                     now,
@@ -394,10 +383,6 @@ class SQLiteWorkflowRuntime:
                 self._finish_cancelled(job, attempt_id, str(error))
             elif isinstance(error, RetryableTaskError):
                 self._finish_retryable(job, attempt_id, error)
-            elif isinstance(error, BudgetExceededError):
-                self._finish_failed(
-                    job, attempt_id, {"code": "BUDGET_EXCEEDED", "message": str(error)}
-                )
             else:
                 self._finish_failed(
                     job,
@@ -526,32 +511,15 @@ class SQLiteWorkflowRuntime:
             f"{job_id}:{idempotency_key}".encode()
         ).hexdigest()[:32]
         with transaction(self.connection):
-            job = self.get_job(job_id)
+            self.get_job(job_id)
             existing = self.connection.execute(
                 "SELECT 1 FROM usage_records WHERE usage_id=?", (usage_id,)
             ).fetchone()
             if existing is not None:
                 return
-            spent = int(
-                self.connection.execute(
-                    "SELECT COALESCE(SUM(cost_micros),0) FROM usage_records WHERE job_id=?",
-                    (job_id,),
-                ).fetchone()[0]
-            )
-            overage_micros = (
-                max(0, spent + cost_micros - job.budget_micros)
-                if job.budget_micros is not None
-                else 0
-            )
-            if overage_micros and not incurred:
-                raise BudgetExceededError(
-                    f"Usage would exceed the job budget of {job.budget_micros} micros"
-                )
             stored_metadata = dict(metadata or {})
             if incurred:
                 stored_metadata["incurred"] = True
-            if overage_micros:
-                stored_metadata["budgetOverageMicros"] = overage_micros
             self.connection.execute(
                 """INSERT INTO usage_records(
                     usage_id,job_id,provider,model,unit,quantity,cost_micros,metadata_json,created_at

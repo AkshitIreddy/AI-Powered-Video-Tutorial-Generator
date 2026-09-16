@@ -11,7 +11,6 @@ import socket
 import uuid
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager, nullcontext
-from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from threading import RLock
 from typing import Any, Protocol, cast
@@ -56,36 +55,6 @@ from .types import (
 )
 
 CREDENTIAL_BROKER_TIMEOUT_SECONDS = 15.0
-
-_ProviderBudgetResolver = Callable[[], int | None]
-_provider_budget_resolver: ContextVar[_ProviderBudgetResolver | None] = ContextVar(
-    "alystria_provider_budget_resolver",
-    default=None,
-)
-
-
-@contextmanager
-def provider_job_budget_scope(resolver: _ProviderBudgetResolver) -> Iterator[None]:
-    """Limit each routed call to the durable job's current remaining budget."""
-
-    token = _provider_budget_resolver.set(resolver)
-    try:
-        yield
-    finally:
-        _provider_budget_resolver.reset(token)
-
-
-def _effective_hard_budget(policy_budget: int | None) -> int | None:
-    resolver = _provider_budget_resolver.get()
-    job_budget = resolver() if resolver is not None else None
-    if job_budget is not None and job_budget < 0:
-        raise ValueError("remaining provider job budget cannot be negative")
-    if policy_budget is None:
-        return job_budget
-    if job_budget is None:
-        return policy_budget
-    return min(policy_budget, job_budget)
-
 
 # The explicit class body keeps dataclass repr from ever exposing a bearer token.
 @dataclass(frozen=True, slots=True, repr=False)
@@ -430,9 +399,6 @@ class ProviderRuntime:
                 idempotency_key=idempotency_key,
                 approved_provider_id=provider_id,
                 credential=credential,
-                hard_budget_micros=_effective_hard_budget(
-                    self.policy.budget.hard_limit_micros
-                ),
                 approved_boundary=approval.boundary,
                 approved_region=approval.regions[0] if approval.regions else None,
                 approved_retention=approval.retention,

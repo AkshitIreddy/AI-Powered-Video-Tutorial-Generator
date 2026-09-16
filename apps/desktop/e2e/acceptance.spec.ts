@@ -66,8 +66,8 @@ test("@ui-contract drives create, approve, review boundary, and export through t
 
   await page.getByRole("button", { name: /new tutorial/i }).click();
   const wizard = page.locator(".wizard-modal");
-  await page.getByPlaceholder(/explain why karatsuba/i).fill(
-    "Explain why Karatsuba multiplication needs only three recursive products",
+  await page.getByPlaceholder("What would you like to teach? Describe your topic, question, or learning goal.").fill(
+    "Explain how ocean tides change over a day",
   );
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await wizard.getByLabel("Audience").fill("Undergraduate computer science students");
@@ -77,12 +77,16 @@ test("@ui-contract drives create, approve, review boundary, and export through t
   await wizard.locator(".form-grid").screenshot({ path: testInfo.outputPath("custom-duration-three-minutes.png") });
   await wizard.getByLabel("Language").selectOption("English");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(wizard.getByRole("heading", { name: "Who will teach?" })).toBeVisible();
+  await expect(wizard.getByRole("button", { name: "Just the lesson" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: /^creative/i }).click();
   await expect(page.getByText(/no cloud call happens/i)).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(wizard.getByText("About 3 minutes")).toBeVisible();
   await page.getByRole("button", { name: "Maximum", exact: true }).click();
-  await expect(page.getByText(/hard creation budget/i)).toBeVisible();
+  await expect(wizard.getByLabel(/hard budget/i)).toHaveCount(0);
+  await expect(wizard.getByText(/hard creation budget/i)).toHaveCount(0);
   await wizard.getByLabel("Creation profile").selectOption({ label: "UI contract cloud" });
   await expect(wizard.getByLabel("Creation profile")).toHaveValue("custom-profile-2");
   await page.getByLabel("Content class", { exact: true }).selectOption("public");
@@ -131,7 +135,6 @@ test("@ui-contract drives create, approve, review boundary, and export through t
   await page.locator(".toast").filter({ hasText: "Portable project archived" }).locator("button").click();
 
   await page.getByRole("button", { name: /render 1080p master/i }).click();
-  await expect(page.getByText(/export queued/i)).toBeVisible();
   await expect(page.getByRole("complementary", { name: /background jobs/i })).toHaveClass(/open/);
   await expect(page.locator(".jobs-list")).toContainText("UI contract only: 24 fps AV1 export simulated");
   await expect(page.locator(".jobs-list")).toContainText("1080p");
@@ -139,7 +142,7 @@ test("@ui-contract drives create, approve, review boundary, and export through t
 
   const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}"));
   expect(persisted.projects[0].title).toBe(
-    "Explain why Karatsuba multiplication needs only three recursive products",
+    "Explain how ocean tides change over a day",
   );
   expect(persisted.projects[0].duration).toBe(3);
   const exportJob = persisted.jobs.find((job: { operation?: string }) => job.operation === "export_master");
@@ -156,6 +159,105 @@ test("@ui-contract drives create, approve, review boundary, and export through t
 
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+test("@ui-contract creates a cast and persists a scene speaker assignment without presets or budgets", async ({ page }, testInfo) => {
+  await configureLocalRouting(page);
+  await page.getByRole("button", { name: /new tutorial/i }).click();
+  const wizard = page.locator(".wizard-modal");
+  const topic = "Show how coastal dunes soften storm waves";
+  const topicInput = wizard.getByPlaceholder("What would you like to teach? Describe your topic, question, or learning goal.");
+
+  await expect(topicInput).toBeVisible();
+  await expect(wizard).not.toContainText(/karatsuba|binary search/i);
+  await topicInput.fill(topic);
+  await wizard.getByRole("button", { name: "Continue", exact: true }).click();
+  await wizard.getByRole("button", { name: "Continue", exact: true }).click();
+
+  await expect(wizard.getByRole("heading", { name: "Who will teach?" })).toBeVisible();
+  await expect(wizard.getByRole("button", { name: "Just the lesson" })).toHaveAttribute("aria-pressed", "true");
+  await wizard.getByRole("button", { name: "Choose a cast" }).click();
+  await wizard.getByLabel("Presenter visual style").selectOption("Anime");
+  const animeGallery = wizard.locator(".presenter-picker__gallery");
+  await expect.poll(() => animeGallery.getByRole("button").count()).toBeGreaterThanOrEqual(5);
+  await expect.poll(() => animeGallery.locator("img").evaluateAll((images: HTMLImageElement[]) => images.every((image) => image.complete && image.naturalWidth > 0))).toBe(true);
+  const cardLayout = await animeGallery.getByRole("button").evaluateAll((cards) => cards.map((card) => {
+    const cardBox = card.getBoundingClientRect();
+    const portrait = card.querySelector("img")?.getBoundingClientRect();
+    const name = card.querySelector(".presenter-picker__identity strong")?.getBoundingClientRect();
+    const detail = card.querySelector(".presenter-picker__identity small")?.getBoundingClientRect();
+    return {
+      cardHeight: cardBox.height,
+      cardLeft: Math.round(cardBox.left),
+      portraitHeight: portrait?.height ?? 0,
+      portraitWidth: portrait?.width ?? 0,
+      nameHeight: name?.height ?? 0,
+      detailHeight: detail?.height ?? 0,
+    };
+  }));
+  expect(new Set(cardLayout.map((card) => card.cardLeft)).size).toBeLessThanOrEqual(4);
+  for (const card of cardLayout) {
+    expect(card.portraitWidth / card.portraitHeight).toBeGreaterThan(0.98);
+    expect(card.portraitWidth / card.portraitHeight).toBeLessThan(1.02);
+    expect(card.cardHeight - card.portraitHeight).toBeGreaterThanOrEqual(58);
+    expect(card.nameHeight).toBeGreaterThan(0);
+    expect(card.detailHeight).toBeGreaterThan(0);
+  }
+  for (let index = 0; index < cardLayout.length; index += 1) {
+    await animeGallery.locator("img").nth(index).scrollIntoViewIfNeeded();
+  }
+  await animeGallery.evaluate((gallery) => { gallery.scrollTop = 0; });
+  await wizard.locator(".wizard-body").evaluate((body) => { body.scrollTop = 0; });
+  await page.screenshot({ path: testInfo.outputPath("anime-presenter-gallery-page.png"), fullPage: true });
+  await wizard.getByLabel("Presenter visual style").selectOption("All styles");
+  await wizard.getByRole("button", { name: "Select Daniel · software instructor" }).click();
+  await wizard.getByRole("button", { name: "Select Astrid · anime editorial" }).click();
+  await expect(wizard.getByText("2 presenters selected", { exact: true })).toBeVisible();
+  await wizard.locator(".wizard-body").evaluate((body) => { body.scrollTop = 0; });
+  await page.screenshot({ path: testInfo.outputPath("selected-two-presenter-cast-page.png"), fullPage: true });
+  await wizard.getByRole("button", { name: "Continue", exact: true }).click();
+
+  await wizard.getByRole("button", { name: /^creative/i }).click();
+  await wizard.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(wizard.getByText("Daniel · software instructor, Astrid · anime editorial", { exact: true })).toBeVisible();
+  await expect(wizard.getByLabel(/hard budget/i)).toHaveCount(0);
+  await expect(wizard.getByText(/hard creation budget/i)).toHaveCount(0);
+  await wizard.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
+  await wizard.getByRole("button", { name: /create learning plan/i }).click();
+
+  await expect(page.getByRole("heading", { name: /shape the learning journey/i })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: /background jobs/i })).toHaveClass(/open/);
+  await page.locator(".jobs-drawer > header .icon-button").click();
+  await page.locator(".plan-progress button").filter({ hasText: "Presenters" }).click();
+  await expect(page.getByRole("heading", { name: "Who speaks in each scene?" })).toBeVisible();
+  const assignments = page.locator(".scene-speaker-assignments select");
+  const expectedSceneCount = await page.evaluate((projectTopic) => {
+    const snapshot = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+    return snapshot.projects.find((candidate: { topic?: string }) => candidate.topic === projectTopic)?.scenes.length ?? 0;
+  }, topic);
+  expect(expectedSceneCount).toBeGreaterThan(1);
+  await expect(assignments).toHaveCount(expectedSceneCount);
+  await assignments.first().selectOption("presenter-portrait.anime-astrid-v1");
+
+  await expect.poll(async () => page.evaluate((projectTopic) => {
+    const snapshot = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+    const project = snapshot.projects?.find((candidate: { topic?: string }) => candidate.topic === projectTopic);
+    return project?.presenterSelection;
+  }, topic)).toMatchObject({
+    mode: "on",
+    presenters: [
+      { presenterId: "presenter-portrait.software-daniel-v1", portraitAssetId: "presenter-portrait.software-daniel-v1" },
+      { presenterId: "presenter-portrait.anime-astrid-v1", portraitAssetId: "presenter-portrait.anime-astrid-v1" },
+    ],
+    sceneAssignments: [{ presenterId: "presenter-portrait.anime-astrid-v1" }],
+  });
+
+  const persisted = await page.evaluate((projectTopic) => {
+    const snapshot = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");
+    return snapshot.projects.find((candidate: { topic?: string }) => candidate.topic === projectTopic);
+  }, topic);
+  expect(persisted.providerRoutingPolicy).not.toHaveProperty("budget");
+  expect(persisted.presenterSelection.sceneAssignments[0].sceneId).toBe(persisted.scenes[0].id);
 });
 
 test("@ui-contract exposes retry and cancel only for eligible durable job states", async ({ page }) => {
@@ -194,3 +296,19 @@ test("@ui-contract exposes retry and cancel only for eligible durable job states
   await expect(running.getByRole("button", { name: /retry active render/i })).toHaveCount(0);
   await expect(running.getByRole("button", { name: /cancel active render/i })).toBeVisible();
 });
+
+async function configureLocalRouting(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: /models & providers/i }).click();
+  await expect(page.getByRole("heading", { name: /provider & model profiles/i })).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill("Local UI contract");
+  const routes = page.locator(".profile-route-grid");
+  for (const label of ["Writing & review", "Images", "Narration"]) {
+    await routes.locator("label", { hasText: label }).locator("select").selectOption("local-runtime");
+  }
+  await page.getByLabel("Writing & review model", { exact: true }).fill("local/qwen3.5-9b-gguf");
+  await page.getByLabel("Images model", { exact: true }).fill("local/flux.2-klein-4b-fp8");
+  await page.getByLabel("Narration model", { exact: true }).fill("local/kokoro");
+  await page.getByRole("button", { name: /save setup & active profile/i }).click();
+  await expect(page.getByText(/setup saved locally/i)).toBeVisible();
+  await page.getByRole("button", { name: /^home$/i }).click();
+}

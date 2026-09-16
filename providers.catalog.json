@@ -16,7 +16,7 @@
       "approvedByDefault": true,
       "capabilities": ["llm", "image", "tts", "presenter", "alignment"],
       "dataBoundary": "local-only",
-      "pricing": { "status": "free", "hardBudgetEligible": true }
+      "pricing": { "status": "free" }
     },
     {
       "id": "local-runtime",
@@ -26,7 +26,7 @@
       "approvedByDefault": false,
       "capabilities": ["llm", "embedding", "reranking", "image", "tts", "asr", "alignment", "presenter", "portrait-animation", "lip-sync"],
       "dataBoundary": "local-only",
-      "pricing": { "status": "free", "hardBudgetEligible": true }
+      "pricing": { "status": "free" }
     },
     {
       "id": "openai-compatible-local",
@@ -36,7 +36,7 @@
       "approvedByDefault": false,
       "capabilities": ["llm", "embedding"],
       "dataBoundary": "user-configured",
-      "pricing": { "status": "user-configured", "hardBudgetEligible": false }
+      "pricing": { "status": "user-configured" }
     },
     {
       "id": "openai",
@@ -46,7 +46,7 @@
       "approvedByDefault": false,
       "capabilities": ["llm", "image", "tts", "asr"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "anthropic",
@@ -56,7 +56,7 @@
       "approvedByDefault": false,
       "capabilities": ["llm"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "gemini",
@@ -67,7 +67,7 @@
       "capabilities": ["llm", "vlm", "image", "video", "tts", "asr"],
       "models": ["gemini-2.5-flash", "gemini-3.7-flash"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "reviewed-model-snapshot", "hardBudgetEligible": true }
+      "pricing": { "status": "reviewed-model-snapshot" }
     },
     {
       "id": "groq",
@@ -78,7 +78,7 @@
       "capabilities": ["llm"],
       "models": ["openai/gpt-oss-20b", "openai/gpt-oss-120b"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "reviewed-model-snapshot", "hardBudgetEligible": true }
+      "pricing": { "status": "reviewed-model-snapshot" }
     },
     {
       "id": "mistral",
@@ -89,7 +89,7 @@
       "capabilities": ["llm"],
       "models": ["mistral-small-2603"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "reviewed-model-snapshot", "hardBudgetEligible": true }
+      "pricing": { "status": "reviewed-model-snapshot" }
     },
     {
       "id": "openrouter",
@@ -100,7 +100,7 @@
       "capabilities": ["llm"],
       "models": ["z-ai/glm-5.2:free"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "reviewed-free-model-snapshot", "hardBudgetEligible": true }
+      "pricing": { "status": "reviewed-free-model-snapshot" }
     },
     {
       "id": "cohere",
@@ -110,7 +110,7 @@
       "approvedByDefault": false,
       "capabilities": ["llm", "embedding", "reranking"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "nvidia-nim",
@@ -120,7 +120,7 @@
       "approvedByDefault": false,
       "capabilities": ["llm", "vlm", "embedding", "image", "tts"],
       "dataBoundary": "nvidia-hosted-preview-public-synthetic-only",
-      "pricing": { "status": "free-preview-model-limit-check-required", "hardBudgetEligible": true },
+      "pricing": { "status": "free-preview-model-limit-check-required" },
       "usagePolicy": {
         "productionEligible": false,
         "acceptedDataClasses": ["public"],
@@ -149,7 +149,7 @@
       "dataBoundary": "provider-cloud",
       "pricing": {
         "status": "reviewed-unit-price-with-free-daily-allocation",
-        "hardBudgetEligible": true,
+
         "verifiedAt": "2026-08-28"
       }
     },
@@ -161,7 +161,7 @@
       "approvedByDefault": false,
       "capabilities": ["image"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "recraft",
@@ -171,7 +171,7 @@
       "approvedByDefault": false,
       "capabilities": ["image"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "runway",
@@ -181,7 +181,7 @@
       "approvedByDefault": false,
       "capabilities": ["video"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "elevenlabs",
@@ -191,7 +191,7 @@
       "approvedByDefault": false,
       "capabilities": ["tts", "voice-clone"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "azure-speech",
@@ -201,7 +201,7 @@
       "approvedByDefault": false,
       "capabilities": ["tts", "asr"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "heygen",
@@ -211,7 +211,7 @@
       "approvedByDefault": false,
       "capabilities": ["presenter"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "tavus",
@@ -221,7 +221,7 @@
       "approvedByDefault": false,
       "capabilities": ["presenter"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "openverse",
@@ -231,7 +231,7 @@
       "approvedByDefault": false,
       "capabilities": ["licensed-media-search"],
       "dataBoundary": "public-query-only",
-      "pricing": { "status": "free", "hardBudgetEligible": true }
+      "pricing": { "status": "free" }
     },
     {
       "id": "pexels",
@@ -241,7 +241,7 @@
       "approvedByDefault": false,
       "capabilities": ["licensed-media-search"],
       "dataBoundary": "public-query-only",
-      "pricing": { "status": "free", "hardBudgetEligible": true }
+      "pricing": { "status": "free" }
     },
     {
       "id": "google-cloud-speech",
@@ -251,7 +251,7 @@
       "approvedByDefault": false,
       "capabilities": ["tts", "asr"],
       "dataBoundary": "provider-cloud",
-      "pricing": { "status": "runtime-catalog-required", "hardBudgetEligible": false }
+      "pricing": { "status": "runtime-catalog-required" }
     },
     {
       "id": "qwen3-tts-local",
@@ -261,7 +261,7 @@
       "approvedByDefault": false,
       "capabilities": ["tts"],
       "dataBoundary": "local-only",
-      "pricing": { "status": "free", "hardBudgetEligible": true }
+      "pricing": { "status": "free" }
     },
     {
       "id": "kokoro-local",
@@ -271,7 +271,7 @@
       "approvedByDefault": false,
       "capabilities": ["tts"],
       "dataBoundary": "local-only",
-      "pricing": { "status": "free", "hardBudgetEligible": true }
+      "pricing": { "status": "free" }
     },
     {
       "id": "whisperx-local",
@@ -281,7 +281,7 @@
       "approvedByDefault": false,
       "capabilities": ["asr", "alignment"],
       "dataBoundary": "local-only",
-      "pricing": { "status": "free", "hardBudgetEligible": true }
+      "pricing": { "status": "free" }
     },
     {
       "id": "mfa-local",
@@ -291,7 +291,7 @@
       "approvedByDefault": false,
       "capabilities": ["alignment"],
       "dataBoundary": "local-only",
-      "pricing": { "status": "free", "hardBudgetEligible": true }
+      "pricing": { "status": "free" }
     },
     {
       "id": "presenter-local",
@@ -301,7 +301,7 @@
       "approvedByDefault": false,
       "capabilities": ["presenter", "portrait-animation", "lip-sync"],
       "dataBoundary": "local-only",
-      "pricing": { "status": "free", "hardBudgetEligible": true }
+      "pricing": { "status": "free" }
     }
   ]
 }

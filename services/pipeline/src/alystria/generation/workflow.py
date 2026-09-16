@@ -22,9 +22,8 @@ from alystria.jobs import ActionKey, DependencyGraph, JobContext, SQLiteWorkflow
 from alystria.jobs.runtime import TaskHandler
 from alystria.presenters import PresenterDirection, PresenterPlacement
 from alystria.project import ProjectStore
-from alystria.project_assets import validate_approved_presenter_for_export
+from alystria.project_assets import validate_approved_presenters_for_export
 from alystria.providers import FailureCode, ProviderFailure, ProviderResult, TextOutput
-from alystria.providers.runtime import provider_job_budget_scope
 from alystria.qa import Finding, GateStatus, QualityGate, Severity
 from alystria.qa.content import (
     Citation,
@@ -199,7 +198,6 @@ def _record_structured_provider_usage(
             provider_id=result.provider_id,
             request_id=result.raw_id,
         )
-    remaining_budget = _remaining_structured_job_budget(context)
     assert isinstance(input_tokens, int | float)
     assert isinstance(output_tokens, int | float)
     context.record_usage(
@@ -218,14 +216,6 @@ def _record_structured_provider_usage(
         },
         incurred=True,
     )
-    if remaining_budget is not None and usage.actual_cost_micros > remaining_budget:
-        raise ProviderFailure(
-            FailureCode.BUDGET_EXCEEDED,
-            "Structured-writing provider usage exceeded the durable job budget",
-            provider_id=result.provider_id,
-            request_id=result.raw_id,
-            details={"usageAlreadyRecorded": True},
-        )
 
 
 def _record_terminal_structured_failure_usage(
@@ -307,36 +297,6 @@ def _record_terminal_structured_failure_usage(
         },
         incurred=True,
     )
-
-
-def _remaining_structured_job_budget(context: JobContext) -> int | None:
-    job = context.runtime.get_job(context.job_id)
-    if job.budget_micros is None:
-        return None
-    generation_id = job.parameters.get("generationId")
-    if not isinstance(generation_id, str) or not generation_id:
-        spent = context.runtime.usage_summary(context.job_id).total_cost_micros
-        return max(0, job.budget_micros - spent)
-    rows = context.runtime.connection.execute(
-        "SELECT job_id FROM jobs WHERE project_id=?",
-        (job.project_id,),
-    ).fetchall()
-    spent = 0
-    for row in rows:
-        candidate = context.runtime.get_job(str(row["job_id"]))
-        if candidate.parameters.get("generationId") == generation_id:
-            usage_rows = context.runtime.connection.execute(
-                "SELECT metadata_json FROM usage_records WHERE job_id=?",
-                (candidate.job_id,),
-            ).fetchall()
-            if any(
-                json.loads(str(usage_row["metadata_json"])).get("usageComplete")
-                is False
-                for usage_row in usage_rows
-            ):
-                return 0
-            spent += context.runtime.usage_summary(candidate.job_id).total_cost_micros
-    return max(0, job.budget_micros - spent)
 
 
 def _render_scene_windows(scenes: object) -> list[dict[str, Any]]:
@@ -620,7 +580,6 @@ class GenerationWorkflow:
             dependency_ids=dependency_ids,
             max_attempts=3,
             estimated_cost_micros=0,
-            budget_micros=request.hard_budget_micros,
         ).job_id
 
     def _input_payload(self, parameters: dict[str, Any], name: str = "previous") -> dict[str, Any]:
@@ -911,10 +870,9 @@ class GenerationWorkflow:
             Prerequisite.create(label, assumed=True) for label in request.prerequisites
         )
         workflow = EducationalWorkflow(self.educational_provider)
+        presenter_plan = _presenter_plan(request)
         try:
-            with provider_job_budget_scope(
-                lambda: _remaining_structured_job_budget(context)
-            ), capture_structured_writing_usage(
+            with capture_structured_writing_usage(
                 lambda key, result: _record_structured_provider_usage(
                     context, key, result
                 )
@@ -932,11 +890,23 @@ class GenerationWorkflow:
                         ),
                     ),
                     target_duration_seconds=request.duration_seconds,
+                    minimum_outline_sections=(
+                        int(presenter_plan["selectedCount"])
+                        if presenter_plan["mode"] == "on"
+                        else 1
+                    ),
+                    presenter_count=int(presenter_plan["selectedCount"]),
                 )
         except ProviderFailure as failure:
             _record_terminal_structured_failure_usage(context, failure)
             raise
-        payload = {**previous, "learningPlan": _plan_to_dict(plan)}
+        payload = {
+            **previous,
+            "learningPlan": {
+                **_plan_to_dict(plan),
+                "presenterPlan": presenter_plan,
+            },
+        }
         return self._persist_stage(
             context,
             parameters,
@@ -950,9 +920,7 @@ class GenerationWorkflow:
         context.set_progress(0.12, message="Drafting and reviewing script")
         plan = _plan_from_dict(previous["learningPlan"])
         try:
-            with provider_job_budget_scope(
-                lambda: _remaining_structured_job_budget(context)
-            ), capture_structured_writing_usage(
+            with capture_structured_writing_usage(
                 lambda key, provider_result: _record_structured_provider_usage(
                     context, key, provider_result
                 )
@@ -1125,6 +1093,15 @@ class GenerationWorkflow:
                     if isinstance(profile, dict) and isinstance(profile.get("displayName"), str):
                         scene["presenterName"] = profile["displayName"]
                 scenes.append(scene)
+        _apply_presenter_selection(
+            scenes,
+            request=request,
+            presenter_customization=(
+                presenter_customization
+                if isinstance(presenter_customization, dict)
+                else {}
+            ),
+        )
         storyboard = {
             "id": _stable_id("storyboard", _canonical(scenes), request.deterministic_seed),
             "timebase": TICKS_PER_SECOND,
@@ -1143,7 +1120,6 @@ class GenerationWorkflow:
 
     def _approval_gate(self, context: JobContext, parameters: dict[str, Any]) -> dict[str, Any]:
         previous = self._input_payload(parameters)
-        request = _request(parameters)
         payload = {
             **previous,
             "approval": {
@@ -1153,7 +1129,6 @@ class GenerationWorkflow:
                 "provider": self.media_client.provider_id,
                 "modelRevision": self.media_client.model_revision,
                 "estimatedCostMicros": 0,
-                "hardBudgetMicros": request.hard_budget_micros,
                 "localOnly": self.media_client.provider_id.startswith("local-"),
             },
         }
@@ -1367,6 +1342,11 @@ class GenerationWorkflow:
                     seed=request.deterministic_seed + index,
                     synthesis_runtime=synthesis_runtime,
                     alignment_runtime=alignment_runtime,
+                    voice_id=(
+                        str(scene["voiceId"])
+                        if isinstance(scene.get("voiceId"), str)
+                        else None
+                    ),
                 )
                 if synthesis_runtime is not None and alignment_runtime is not None
                 else None
@@ -1636,7 +1616,16 @@ class GenerationWorkflow:
         links: list[dict[str, str]] = []
         scenes = narration_payload["storyboard"]["scenes"]
         presenter_scenes = [scene for scene in scenes if _is_presenter_scene(scene)]
-        selected = presenter_scenes if request.presenter_mode == "on" else presenter_scenes[:1]
+        # Explicit roster assignments are already frozen into storyboard
+        # scenes. Auto mode keeps its legacy sparse opening when no assignment
+        # metadata exists, while authored overrides may intentionally add more
+        # presenter scenes.
+        selected = (
+            presenter_scenes
+            if request.presenter_mode == "on"
+            or any(isinstance(scene.get("presenterId"), str) for scene in presenter_scenes)
+            else presenter_scenes[:1]
+        )
         for index, scene in enumerate(selected):
             item = narration_by_scene[scene["id"]]
             # The authored scene may intentionally hold after speech for a
@@ -1671,7 +1660,20 @@ class GenerationWorkflow:
                 media.content,
                 media_type=media.media_type,
                 original_name=media.original_name,
-                metadata={**media.metadata, "sceneId": scene["id"]},
+                metadata={
+                    **media.metadata,
+                    "sceneId": scene["id"],
+                    **(
+                        {"presenterId": scene["presenterId"]}
+                        if isinstance(scene.get("presenterId"), str)
+                        else {}
+                    ),
+                    **(
+                        {"portraitArtifactHash": scene["portraitArtifactHash"]}
+                        if isinstance(scene.get("portraitArtifactHash"), str)
+                        else {}
+                    ),
+                },
             )
             presenters.append(
                 {
@@ -1682,6 +1684,26 @@ class GenerationWorkflow:
                     "direction": asdict(direction),
                     "fit": _presenter_fit(scene),
                     "motionProfile": str(media.metadata.get("motionProfile", "native-idle")),
+                    **(
+                        {"presenterId": scene["presenterId"]}
+                        if isinstance(scene.get("presenterId"), str)
+                        else {}
+                    ),
+                    **(
+                        {"presenterProfileId": scene["presenterProfileId"]}
+                        if isinstance(scene.get("presenterProfileId"), str)
+                        else {}
+                    ),
+                    **(
+                        {"portraitArtifactHash": scene["portraitArtifactHash"]}
+                        if isinstance(scene.get("portraitArtifactHash"), str)
+                        else {}
+                    ),
+                    **(
+                        {"voiceId": scene["voiceId"]}
+                        if isinstance(scene.get("voiceId"), str)
+                        else {}
+                    ),
                 }
             )
             links.append(
@@ -1990,7 +2012,7 @@ class GenerationWorkflow:
 
     def _export(self, context: JobContext, parameters: dict[str, Any]) -> dict[str, Any]:
         distribution_purpose = _distribution_purpose(_request(parameters))
-        validate_approved_presenter_for_export(
+        validate_approved_presenters_for_export(
             self.store,
             str(parameters["approvalRevisionId"]),
             distribution_scope={
@@ -2968,9 +2990,6 @@ def _request(parameters: dict[str, Any]) -> GenerationRequest:
         presenter_mode=str(value.get("presenterMode", "auto")),
         captions_enabled=bool(value.get("captionsEnabled", True)),
         deterministic_seed=int(value.get("deterministicSeed", 0)),
-        hard_budget_micros=(
-            None if value.get("hardBudgetMicros") is None else int(value["hardBudgetMicros"])
-        ),
         repairable_faults=int(value.get("repairableFaults", 0)),
         metadata=dict(value.get("metadata", {})),
     )
@@ -3176,6 +3195,189 @@ def _paced_scene_ticks(sections: list[dict[str, Any]], total_ticks: int) -> list
 def _is_presenter_scene(scene: dict[str, Any]) -> bool:
     scene_type = str(scene.get("type", "")).strip().casefold().replace("_", "-")
     return scene_type in PRESENTER_SCENE_TYPES
+
+
+def _presenter_plan(request: GenerationRequest) -> dict[str, Any]:
+    selection = request.metadata.get("presenterSelection")
+    if request.presenter_mode == "off" or not isinstance(selection, dict):
+        return {
+            "schemaVersion": 1,
+            "mode": request.presenter_mode,
+            "selectedCount": 0,
+            "presenterIds": [],
+            "minimumSpeakingScenes": 0,
+        }
+    values = selection.get("presenters", [])
+    if not isinstance(values, list):
+        raise ValueError("Presenter selection metadata has no presenter roster")
+    presenter_ids = [
+        str(item["presenterId"])
+        for item in values
+        if isinstance(item, dict) and isinstance(item.get("presenterId"), str)
+    ]
+    if len(presenter_ids) != len(values):
+        raise ValueError("Presenter selection metadata contains a malformed presenter")
+    return {
+        "schemaVersion": 1,
+        "mode": request.presenter_mode,
+        "selectedCount": len(presenter_ids),
+        "presenterIds": presenter_ids,
+        "minimumSpeakingScenes": len(presenter_ids) if request.presenter_mode == "on" else 1,
+    }
+
+
+def _apply_presenter_selection(
+    scenes: list[dict[str, Any]],
+    *,
+    request: GenerationRequest,
+    presenter_customization: dict[str, Any],
+) -> None:
+    """Bind one selected speaker to each presenter scene in timeline order.
+
+    One presenter is active in a scene. Multiple presenters in a video are
+    represented by different scene bindings, which matches the renderer's
+    existing one-clip-per-scene invariant and avoids pretending that
+    simultaneous avatars are supported.
+    """
+
+    selection_value = request.metadata.get("presenterSelection")
+    if selection_value is None:
+        return
+    for scene in scenes:
+        base_type = scene.pop("presenterBaseType", None)
+        if isinstance(base_type, str) and base_type:
+            scene["type"] = base_type
+        for field in (
+            "presenterId",
+            "presenterProfileId",
+            "speakerId",
+            "portraitAssetId",
+            "portraitArtifactHash",
+            "voiceId",
+            "presenterPlacement",
+            "presenterFit",
+            "presenterName",
+            "presenterIdentityType",
+            "presenterModelInputAllowed",
+            "presenterConsentId",
+            "presenterSubjectId",
+        ):
+            scene.pop(field, None)
+    if request.presenter_mode == "off":
+        return
+    if not isinstance(selection_value, dict) or selection_value.get("schemaVersion") != 1:
+        raise ValueError("Presenter selection metadata requires schemaVersion 1")
+    mode = selection_value.get("mode")
+    if mode != request.presenter_mode or mode not in {"auto", "on"}:
+        raise ValueError("Presenter selection mode does not match the generation request")
+    presenters_value = selection_value.get("presenters")
+    if not isinstance(presenters_value, list) or not presenters_value:
+        raise ValueError("Enabled presenter selection has no presenters")
+    presenters: list[dict[str, Any]] = []
+    by_id: dict[str, dict[str, Any]] = {}
+    for index, value in enumerate(presenters_value):
+        if not isinstance(value, dict):
+            raise ValueError(f"Presenter selection item {index} must be an object")
+        presenter_id = value.get("presenterId")
+        portrait_hash = value.get("portraitArtifactHash")
+        if not isinstance(presenter_id, str) or not presenter_id.strip():
+            raise ValueError(f"Presenter selection item {index} has no presenterId")
+        if presenter_id in by_id:
+            raise ValueError(f"Presenter selection duplicates {presenter_id!r}")
+        if (
+            not isinstance(portrait_hash, str)
+            or len(portrait_hash) != 64
+            or any(character not in "0123456789abcdef" for character in portrait_hash)
+        ):
+            raise ValueError(f"Presenter {presenter_id!r} has no verified portrait hash")
+        record = dict(value)
+        presenters.append(record)
+        by_id[presenter_id] = record
+
+    scene_by_id = {str(scene.get("id", "")): scene for scene in scenes}
+    assignments_value = selection_value.get("sceneAssignments", [])
+    if not isinstance(assignments_value, list):
+        raise ValueError("Presenter scene assignments must be an array")
+    explicit: dict[str, str] = {}
+    for index, value in enumerate(assignments_value):
+        if not isinstance(value, dict):
+            raise ValueError(f"Presenter scene assignment {index} must be an object")
+        scene_id = value.get("sceneId")
+        presenter_id = value.get("presenterId")
+        if not isinstance(scene_id, str) or scene_id not in scene_by_id:
+            raise ValueError(f"Presenter scene assignment {index} references an unknown scene")
+        if not isinstance(presenter_id, str) or presenter_id not in by_id:
+            raise ValueError(f"Presenter scene assignment {index} references an unknown presenter")
+        if scene_id in explicit:
+            raise ValueError(f"Scene {scene_id!r} has more than one presenter assignment")
+        explicit[scene_id] = presenter_id
+
+    if mode == "on":
+        targets = list(scenes)
+        if len(presenters) > len(targets):
+            raise ValueError(
+                "Always-on presenter mode needs at least one scene per selected presenter"
+            )
+    else:
+        target_ids = {
+            str(scene.get("id", "")) for scene in scenes if _is_presenter_scene(scene)
+        }
+        target_ids.update(explicit)
+        targets = [scene for scene in scenes if str(scene.get("id", "")) in target_ids]
+
+    used = {presenter_id for presenter_id in explicit.values()}
+    unused = [
+        str(presenter["presenterId"])
+        for presenter in presenters
+        if presenter["presenterId"] not in used
+    ]
+    cycle_index = 0
+    assigned_presenter_ids: set[str] = set()
+    for scene in targets:
+        scene_id = str(scene["id"])
+        presenter_id = explicit.get(scene_id)
+        if presenter_id is None and unused:
+            presenter_id = unused.pop(0)
+        if presenter_id is None:
+            presenter_id = str(presenters[cycle_index % len(presenters)]["presenterId"])
+            cycle_index += 1
+        presenter = by_id[presenter_id]
+        assigned_presenter_ids.add(presenter_id)
+        if not _is_presenter_scene(scene):
+            # presenter-slide retains the authored educational content while
+            # adding a compositing region for one speaker.
+            scene["presenterBaseType"] = scene["type"]
+            scene["type"] = "presenter-slide"
+        scene["presenterId"] = presenter_id
+        scene["presenterProfileId"] = presenter_id
+        scene["speakerId"] = presenter_id
+        scene["portraitAssetId"] = str(presenter["portraitAssetId"])
+        scene["portraitArtifactHash"] = str(presenter["portraitArtifactHash"])
+        voice_id = presenter.get("voiceId")
+        if isinstance(voice_id, str) and voice_id.strip():
+            scene["voiceId"] = voice_id.strip()
+        scene["presenterPlacement"] = str(
+            presenter_customization.get("placement", "picture-in-picture")
+        )
+        scene["presenterFit"] = str(presenter_customization.get("fit", "cover"))
+        profile = presenter.get("profile")
+        if isinstance(profile, dict):
+            if isinstance(profile.get("displayName"), str):
+                scene["presenterName"] = profile["displayName"]
+            if profile.get("identityType") in {"synthetic", "realPerson"}:
+                scene["presenterIdentityType"] = profile["identityType"]
+            if profile.get("modelInputAllowed") is True:
+                scene["presenterModelInputAllowed"] = True
+            if isinstance(profile.get("consentRecordId"), str):
+                scene["presenterConsentId"] = profile["consentRecordId"]
+            if isinstance(profile.get("subjectId"), str):
+                scene["presenterSubjectId"] = profile["subjectId"]
+    if mode == "on" and assigned_presenter_ids != set(by_id):
+        missing = sorted(set(by_id) - assigned_presenter_ids)
+        raise ValueError(
+            "Always-on presenter assignments leave selected presenters unused: "
+            + ", ".join(missing)
+        )
 
 
 def _presenters_for_render(

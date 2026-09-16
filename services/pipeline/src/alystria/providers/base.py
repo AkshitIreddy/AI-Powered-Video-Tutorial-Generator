@@ -94,11 +94,6 @@ class GuardedAdapter:
                 provider_id=self.descriptor.provider_id,
             )
 
-    def _guard_budget(self, request: ProviderRequest, context: RequestContext) -> CostEstimate:
-        estimate = self.estimate(request)
-        estimate.require_within(context.hard_budget_micros)
-        return estimate
-
     def _send(self, request: HttpRequest, context: RequestContext) -> HttpResponse:
         """Run a transport call inside policy context derived from approved call data."""
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime, timedelta
 
-from alystria.security.errors import PolicyViolation, ValidationError
+from alystria.security.errors import ValidationError
 from alystria.security.gates import (
     ExportGateInput,
     GateDecision,
@@ -217,7 +217,7 @@ class LicensingTests(unittest.TestCase):
 
 
 class GateTests(unittest.TestCase):
-    def test_import_model_and_provider_gates_fail_closed(self) -> None:
+    def test_import_and_model_gates_fail_closed_while_approved_provider_route_passes(self) -> None:
         import_decision = SecurityGates.import_gate(
             ImportGateInput("file", True, True, False, True)
         )
@@ -233,21 +233,18 @@ class GateTests(unittest.TestCase):
                 RouteDecision(True, (), "provider"),
                 True,
                 True,
-                estimated_cost_micros=None,
-                hard_budget_micros=10,
             )
         )
-        self.assertFalse(provider_decision.allowed)
-        with self.assertRaises(PolicyViolation):
-            provider_decision.require_allowed()
+        self.assertTrue(provider_decision.allowed)
+        provider_decision.require_allowed()
 
     def test_strict_storyboard_requires_full_support_and_approvals(self) -> None:
         blocked = SecurityGates.storyboard_gate(
-            StoryboardGateInput("storyboard", True, True, 10, 9, 0, True, True, True)
+            StoryboardGateInput("storyboard", True, True, 10, 9, 0, True, True)
         )
         self.assertFalse(blocked.allowed)
         allowed = SecurityGates.storyboard_gate(
-            StoryboardGateInput("storyboard", True, True, 10, 10, 0, True, True, True)
+            StoryboardGateInput("storyboard", True, True, 10, 10, 0, True, True)
         )
         self.assertTrue(allowed.allowed)
 

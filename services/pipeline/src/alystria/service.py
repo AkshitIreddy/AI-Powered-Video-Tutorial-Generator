@@ -592,9 +592,6 @@ class PipelineService:
                 priority=int(params.get("priority", 0)),
                 max_attempts=int(params.get("maxAttempts", 3)),
                 estimated_cost_micros=int(params.get("estimatedCostMicros", 0)),
-                budget_micros=None
-                if params.get("budgetMicros") is None
-                else int(params["budgetMicros"]),
             ).to_dict()
 
     def job_enqueue_mock_generation(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -606,9 +603,6 @@ class PipelineService:
                 language=str(params.get("language", "en")),
                 duration_minutes=int(params.get("durationMinutes", 5)),
                 seed=int(params.get("seed", 0)),
-                budget_micros=None
-                if params.get("budgetMicros") is None
-                else int(params["budgetMicros"]),
             )
 
     def job_get(self, params: dict[str, Any]) -> dict[str, Any]:

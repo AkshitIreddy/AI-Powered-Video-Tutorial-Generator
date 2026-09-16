@@ -28,8 +28,8 @@ from .types import (
 )
 
 GEMINI_VISION_MODEL = "gemini-3.7-flash"
-# Standard paid prices after the introductory discount expires; free quota is
-# account-dependent and must never be assumed by the hard-budget guard.
+# Standard paid prices after the introductory discount expires. Free quota is
+# account-dependent, so usage receipts retain the conservative paid estimate.
 VISION_PRICES = TokenPrices("2026-09-08-gemini-3.7-standard-ceiling", 1_500_000, 7_500_000)
 
 
@@ -75,7 +75,6 @@ class GeminiVisionAdapter(GuardedAdapter):
                 provider_id="gemini",
             )
         self._guard(request.capability, context)
-        self._guard_budget(request, context)
         body: dict[str, Any] = {
             "contents": [{"role": "user", "parts": self._parts(request)}],
             "generationConfig": {

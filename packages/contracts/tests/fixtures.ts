@@ -16,7 +16,9 @@ export function visualFor(kind: VisualContent["kind"]): VisualContent {
       return { kind, orientation: "horizontal", events: [{ id: "event.start", label: "Split", dateLabel: "Step 1" }] };
     case "formula": case "derivation": case "graph":
       return { kind, expressions: [{ id: "expression.one", latex: "z_1=(a+b)(c+d)-z_2-z_0", verified: true }] };
-    case "code": case "code-walkthrough": case "diff": case "file-tree": case "terminal": case "execution-trace": case "variable-state":
+    case "whiteboard":
+      return { kind, boardStyle: "whiteboard", strokeTimeline: [], finalBoardDescription: "A worked multiplication example." };
+    case "code": case "live-code": case "code-walkthrough": case "diff": case "file-tree": case "terminal": case "execution-trace": case "variable-state":
       return { kind, language: "python", content: "def karatsuba(x, y): return x * y", executionAllowed: false };
     case "chart": case "table": case "map":
       return { kind, title: "Complexity", data: [{ n: 2, operations: 3 }], encoding: { x: "n", y: "operations" } };
@@ -25,7 +27,7 @@ export function visualFor(kind: VisualContent["kind"]): VisualContent {
     case "simulation":
       return { kind, simulationId: "simulation.karatsuba", parameters: { digits: 4 }, capturePolicy: "deterministic-frames", seed: 42 };
     case "presenter": case "presenter-with-slide":
-      return { kind, presenter: { mode: "avatar", profileId: "presenter.ava", usage: "hook", direction: "Warm and concise", disclosure: "visible-and-credits" }, layout: "picture-in-picture" };
+      return { kind, presenter: { mode: "avatar", profileId: "presenter.ava", speakerId: "speaker.ava", voiceId: "voice.ava", usage: "hook", direction: "Warm and concise", disclosure: "visible-and-credits" }, layout: "picture-in-picture" };
     case "worked-example": case "quiz":
       return { kind, prompt: "Compute 1234 × 5678", steps: ["Split", "Compute three products", "Recombine"], answer: "7006652" };
     case "sources":
@@ -51,7 +53,7 @@ export function validProjectBundle(): ProjectBundle {
   const scene = sceneFor();
   return {
     manifest: { format: "alystria-project", schemaVersion: "2.0.0", projectId: "project.karatsuba", databasePath: "project.sqlite3", objectsPath: "objects/sha256", sourcesPath: "sources/original", stagingPath: "staging", exportsPath: "exports", createdAt: NOW, minimumAppVersion: "2.0.0" },
-    project: { id: "project.karatsuba", schemaVersion: "2.0.0", name: "Karatsuba", status: "active", createdAt: NOW, updatedAt: NOW, headRevisionId: "revision.one", courseIds: ["course.main"], settings: { groundingMode: "strict", quality: "standard", budgetProfile: "balanced", executionMode: "local", captionsEnabled: true, musicEnabled: false, presenterMode: "auto", repairLimit: 2, privacyClassification: "private", crossProviderCritique: false, modelProfileSnapshot: { schemaVersion: 1, profileId: "profile.local-presenter", profileName: "Local presenter", capturedAt: NOW, routes: [{ medium: "lipSync", capability: "lipsync.generate", providerId: "local-runtime", modelId: "local/musetalk-1.5", modelRevision: "musetalk-hf-3ef28bc5+code-0a89dec4", installFingerprint: HASH_B, presenterProfileId: "presenter.ava", boundary: "local", retention: "local_only", regions: ["local"], estimatedCostMicros: 0, fallbackConsent: false }] } }, defaultThemeId: "theme.precision" },
+    project: { id: "project.karatsuba", schemaVersion: "2.0.0", name: "Karatsuba", status: "active", createdAt: NOW, updatedAt: NOW, headRevisionId: "revision.one", courseIds: ["course.main"], settings: { groundingMode: "strict", quality: "standard", executionMode: "local", captionsEnabled: true, musicEnabled: false, presenterMode: "auto", repairLimit: 2, privacyClassification: "private", crossProviderCritique: false, modelProfileSnapshot: { schemaVersion: 1, profileId: "profile.local-presenter", profileName: "Local presenter", capturedAt: NOW, routes: [{ medium: "lipSync", capability: "lipsync.generate", providerId: "local-runtime", modelId: "local/musetalk-1.5", modelRevision: "musetalk-hf-3ef28bc5+code-0a89dec4", installFingerprint: HASH_B, presenterProfileId: "presenter.ava", boundary: "local", retention: "local_only", regions: ["local"], fallbackConsent: false }] } }, defaultThemeId: "theme.precision" },
     courses: [{ id: "course.main", projectId: "project.karatsuba", title: "Fast Multiplication", description: "An introduction to divide-and-conquer multiplication.", locale: "en-US", moduleIds: ["module.main"], learnerProfileId: "learner.main" }],
     modules: [{ id: "module.main", courseId: "course.main", title: "Karatsuba", position: 0, lessonIds: ["lesson.main"] }],
     lessons: [{ id: "lesson.main", moduleId: "module.main", title: "Three multiplications", position: 0, locale: "en-US", sectionIds: ["section.main"], objectiveIds: ["objective.main"], estimatedDurationSeconds: 720 }],

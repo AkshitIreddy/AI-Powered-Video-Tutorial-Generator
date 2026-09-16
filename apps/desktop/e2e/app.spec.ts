@@ -39,7 +39,8 @@ test("a new teaching moment opens in Studio and survives a browser reload", asyn
   })).toBe("A learner checks the pattern");
   await page.locator(".studio-workspace").screenshot({ path: "E:/temp/avt-audit-2026-09-05/new-teaching-moment-studio.png" });
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator(".app-shell").waitFor();
   await page.getByRole("button", { name: /^open project$/i }).click();
   await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /studio/i }).click();
   await page.getByRole("button", { name: /a learner checks the pattern/i }).last().click();
@@ -145,7 +146,8 @@ test("included artwork reaches the shared scene renderer and merges into a saved
     if (underline) underline.kind = "background";
     localStorage.setItem("alystria-studio-v2", JSON.stringify(snapshot));
   });
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator(".app-shell").waitFor();
   await page.getByRole("button", { name: /^open project$/i }).click();
   await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: "Studio", exact: true }).click();
   await page.getByRole("button", { name: "Design", exact: true }).click();
@@ -228,7 +230,8 @@ test("stock photo search exposes only approved routes and keeps durable credits 
     }];
     localStorage.setItem("alystria-studio-v2", JSON.stringify(snapshot));
   });
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator(".app-shell").waitFor();
   await page.getByRole("button", { name: /^open project$/i }).click();
   await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: "Studio", exact: true }).click();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
@@ -256,16 +259,18 @@ test("stock photo search exposes only approved routes and keeps durable credits 
   await credits.locator("details").screenshot({ path: testInfo.outputPath("stock-image-review-scores.png") });
 });
 
-test("new tutorial wizard exposes privacy and cost before creation", async ({ page }, testInfo) => {
+test("new tutorial wizard exposes presenter and privacy choices before creation", async ({ page }, testInfo) => {
   await configureLocalRouting(page);
   await page.getByRole("button", { name: /create a tutorial/i }).click();
-  await page.getByPlaceholder(/explain why karatsuba/i).fill("Explain stable sorting visually");
+  await page.getByPlaceholder("What would you like to teach? Describe your topic, question, or learning goal.").fill("Explain stable sorting visually");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Who will teach?" })).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByText(/no cloud call happens/i)).toBeVisible();
   await page.getByRole("button", { name: /^creative/i }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByText(/hard creation budget/i)).toBeVisible();
+  await expect(page.getByLabel(/hard budget/i)).toHaveCount(0);
   await page.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
   await expect(page.locator(".routing-readiness")).toContainText("Ready");
   await page.locator(".routing-review").screenshot({ path: testInfo.outputPath("routing-review-approved.png") });
@@ -276,7 +281,7 @@ test("new tutorial wizard exposes privacy and cost before creation", async ({ pa
 test("selected sources remain visible through review and portable export is wired", async ({ page }, testInfo) => {
   await configureLocalRouting(page);
   await page.getByRole("button", { name: /create a tutorial/i }).click();
-  await page.getByPlaceholder(/explain why karatsuba/i).fill("Explain source-backed recursion trees");
+  await page.getByPlaceholder("What would you like to teach? Describe your topic, question, or learning goal.").fill("Explain source-backed recursion trees");
   await page.locator(".source-drop input[type=file]").setInputFiles({
     name: "recursion-notes.md",
     mimeType: "text/markdown",
@@ -286,6 +291,7 @@ test("selected sources remain visible through review and portable export is wire
   await page.screenshot({ path: testInfo.outputPath("wizard-source-selection.png"), fullPage: true });
   await page.locator(".wizard-modal").screenshot({ path: testInfo.outputPath("wizard-source-selection-detail.png") });
 
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: /^creative/i }).click();
@@ -327,6 +333,8 @@ test("local model and provider profiles remain explicit and saveable", async ({ 
   await expect(page.getByRole("radio", { name: /flux.2 klein 4b fp8/i })).toBeVisible();
   await expect(page.getByRole("radio", { name: /z-image turbo int8/i })).toBeVisible();
   await page.locator(".lipsync-chooser").first().screenshot({ path: testInfo.outputPath("local-image-model-setup.png") });
+  await expect(page.getByRole("radio", { name: /liveportrait/i })).not.toBeChecked();
+  await page.getByRole("radio", { name: /liveportrait/i }).click();
   await expect(page.getByRole("radio", { name: /liveportrait/i })).toBeChecked();
   await page.getByRole("radio", { name: /musetalk 1.5/i }).click();
   await expect(page.getByRole("radio", { name: /musetalk 1.5/i })).toBeChecked();

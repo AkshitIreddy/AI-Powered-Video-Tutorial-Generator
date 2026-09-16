@@ -41,7 +41,6 @@ class MockGenerationWorkflow:
         language: str = "en",
         duration_minutes: int = 5,
         seed: int = 0,
-        budget_micros: int | None = 0,
     ) -> dict[str, Any]:
         topic = " ".join(topic.split())
         if not topic:
@@ -78,7 +77,6 @@ class MockGenerationWorkflow:
                 dependency_ids=[] if previous is None else [previous],
                 max_attempts=2,
                 estimated_cost_micros=0,
-                budget_micros=budget_micros,
             )
             jobs.append(job)
             previous = job.job_id

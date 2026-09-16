@@ -331,6 +331,60 @@ def _client(
     )
 
 
+def test_hash_bound_reviewed_portrait_can_materialize_a_runtime_profile(
+    tmp_path: Path,
+) -> None:
+    store, configured_hash, narration_hash = _store_with_inputs(tmp_path)
+    selected = store.add_artifact_bytes(
+        b"\x89PNG\r\n\x1a\n" + bytes([7]) * 128,
+        media_type="image/png",
+        original_name="selected-presenter.png",
+        metadata={"rightsStatus": "owned"},
+    )
+    runtime, worker, ffprobe = _runtime(tmp_path / "runtime")
+    client = _client(
+        store,
+        runtime,
+        configured_hash,
+        FakePresenterRunner(worker, ffprobe),
+    )
+    try:
+        profile = client._profile_for_scene(
+            {
+                "presenterProfileId": "presenter-portrait.selected-v1",
+                "portraitArtifactHash": selected.hash,
+                "presenterIdentityType": "synthetic",
+                "presenterModelInputAllowed": True,
+            }
+        )
+        assert profile.profile_id == "presenter-portrait.selected-v1"
+        assert profile.portrait_artifact_hash == selected.hash
+        generated = client.create_presenter(
+            {
+                "id": "scene-selected",
+                "presenterProfileId": "presenter-portrait.selected-v1",
+                "portraitArtifactHash": selected.hash,
+                "presenterIdentityType": "synthetic",
+                "presenterModelInputAllowed": True,
+            },
+            narration_hash=narration_hash,
+            seed=19,
+        )
+        assert generated.metadata["presenterProfileId"] == "presenter-portrait.selected-v1"
+        assert generated.metadata["portraitArtifactHash"] == selected.hash
+
+        with pytest.raises(LocalPresenterPolicyError, match="not configured"):
+            client._profile_for_scene(
+                {
+                    "presenterProfileId": "presenter-portrait.unreviewed-v1",
+                    "portraitArtifactHash": selected.hash,
+                    "presenterIdentityType": "synthetic",
+                }
+            )
+    finally:
+        store.close()
+
+
 def test_presenter_environment_uses_project_contained_home_roots(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

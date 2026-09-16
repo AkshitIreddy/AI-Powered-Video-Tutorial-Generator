@@ -524,16 +524,22 @@ def test_provider_http_failures_are_typed_and_do_not_echo_remote_body_or_key() -
     assert "private prompt" not in serialised
 
 
-def test_hard_budget_fails_closed_when_price_is_unbounded() -> None:
-    transport = FakeTransport()
-    adapter = OpenAIResponsesAdapter(transport)
-    with pytest.raises(ProviderFailure) as caught:
-        adapter.invoke(
-            TextRequest("Answer", "gpt-test"),
-            context("openai", hard_budget_micros=100),
+def test_unknown_price_does_not_block_an_approved_provider() -> None:
+    transport = FakeTransport(
+        response(
+            {
+                "id": "resp_no_cost_gate",
+                "status": "completed",
+                "model": "gpt-test",
+                "output_text": "approved",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
         )
-    assert caught.value.code is FailureCode.BUDGET_EXCEEDED
-    assert transport.requests == []
+    )
+    adapter = OpenAIResponsesAdapter(transport)
+    result = adapter.invoke(TextRequest("Answer", "gpt-test"), context("openai"))
+    assert result.provider_id == "openai"
+    assert len(transport.requests) == 1
 
 
 def test_versioned_catalog_covers_every_launch_modality_and_is_conservative() -> None:
@@ -751,7 +757,7 @@ def test_unit_cost_estimate_and_provider_actual_cost_are_separate() -> None:
     request = SpeechRequest("hello", "eleven", "voice", "en-US")
     estimate = adapter.estimate(request)
     assert estimate.micros == 50 and estimate.bounded
-    result = adapter.invoke(request, context("elevenlabs", hard_budget_micros=50))
+    result = adapter.invoke(request, context("elevenlabs"))
     assert result.usage.actual_cost_micros is None
     asset = result.value.assets[0]
     assert asset.data_base64 is not None
@@ -787,7 +793,7 @@ def test_licensed_media_routes_are_bounded_as_no_charge_api_requests(
     assert estimate.basis == "1 requests at catalog unit price"
     built = adapter.build_request(
         MediaSearchRequest("ocean currents"),
-        context(provider_id, hard_budget_micros=0),
+        context(provider_id),
     )
     assert built.method == "GET"
 

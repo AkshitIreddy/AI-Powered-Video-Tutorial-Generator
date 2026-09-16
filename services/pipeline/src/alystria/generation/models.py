@@ -134,7 +134,6 @@ class GenerationRequest:
     presenter_mode: str = "auto"
     captions_enabled: bool = True
     deterministic_seed: int = 0
-    hard_budget_micros: int | None = 0
     repairable_faults: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -143,8 +142,6 @@ class GenerationRequest:
             raise ValueError("Generation topic and audience are required")
         if not 30 <= self.duration_seconds <= 10_800:
             raise ValueError("Generation duration must be between 30 seconds and 180 minutes")
-        if self.hard_budget_micros is not None and self.hard_budget_micros < 0:
-            raise ValueError("Generation budget cannot be negative")
         if self.repairable_faults < 0:
             raise ValueError("repairable_faults cannot be negative")
         if self.repairable_faults and self.metadata.get("testOnlyInjectQaFaults") is not True:
@@ -174,7 +171,6 @@ class GenerationRequest:
         value["presenterMode"] = value.pop("presenter_mode")
         value["captionsEnabled"] = value.pop("captions_enabled")
         value["deterministicSeed"] = value.pop("deterministic_seed")
-        value["hardBudgetMicros"] = value.pop("hard_budget_micros")
         value["repairableFaults"] = value.pop("repairable_faults")
         return value
 

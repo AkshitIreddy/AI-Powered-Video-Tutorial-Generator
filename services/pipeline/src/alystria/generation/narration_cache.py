@@ -68,6 +68,7 @@ def narration_request_identity(
     seed: int,
     synthesis_runtime: Mapping[str, Any],
     alignment_runtime: Mapping[str, Any],
+    voice_id: str | None = None,
 ) -> dict[str, Any]:
     """Create the exact, closed identity used before a provider invocation."""
 
@@ -85,6 +86,7 @@ def narration_request_identity(
         "seed": seed,
         "synthesisRuntime": checked_synthesis,
         "alignmentRuntime": checked_alignment,
+        **({"voiceId": voice_id.strip()} if isinstance(voice_id, str) and voice_id.strip() else {}),
     }
     # Round-trip through canonical JSON both proves serializability and strips
     # custom Mapping implementations from the durable contract.
@@ -385,6 +387,10 @@ def load_cached_narration(
         or audio_metadata.get("sceneId") != identity.get("sceneId")
         or audio_metadata.get("textSha256") != identity.get("spokenTextSha256")
         or audio_metadata.get("authoredTextSha256") != identity.get("authoredTextSha256")
+        or (
+            identity.get("voiceId") is not None
+            and audio_metadata.get("voiceId") != identity.get("voiceId")
+        )
         or record_metadata.get("audioArtifactHash") != audio_hash
     ):
         return None
@@ -540,6 +546,15 @@ def _valid_request_identity(value: dict[str, Any]) -> bool:
         or not _SHA256.fullmatch(str(value["authoredTextSha256"]))
         or not isinstance(value.get("spokenTextSha256"), str)
         or not _SHA256.fullmatch(str(value["spokenTextSha256"]))
+        or (
+            value.get("voiceId") is not None
+            and (
+                not isinstance(value.get("voiceId"), str)
+                or not str(value["voiceId"]).strip()
+                or len(str(value["voiceId"])) > 256
+                or not str(value["voiceId"]).isprintable()
+            )
+        )
     ):
         return False
     try:

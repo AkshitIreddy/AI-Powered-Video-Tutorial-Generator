@@ -327,6 +327,16 @@ def test_windows_client_returns_measured_local_narration_metadata() -> None:
     assert not measured.is_digital_silence
 
 
+def test_windows_client_honors_an_explicit_scene_speaker_voice() -> None:
+    speech = FakeWindowsSpeech()
+    client = WindowsFallbackMediaClient(speech)
+    scene = {**_scene(), "voiceId": "Microsoft David Desktop"}
+
+    client.synthesize_narration(scene, locale="en-US", seed=42)
+
+    assert speech.requests[0].voice_id == "Microsoft David Desktop"
+
+
 def test_runtime_unavailability_falls_back_but_cancellation_is_not_hidden() -> None:
     unavailable = WindowsFallbackMediaClient(
         FakeWindowsSpeech(failure=WindowsSpeechUnavailableError("voice removed"))
@@ -361,6 +371,21 @@ def test_runtime_client_composes_only_explicit_local_narration_route() -> None:
     assert narration.metadata["localOnly"] is True
     assert speech.requests[0].voice_id == "Microsoft Zira Desktop"
     assert client.provider_id == "approved:mock+local-runtime"
+
+
+def test_runtime_client_routes_each_scene_voice_without_changing_the_approved_model() -> None:
+    runtime, _ = _hybrid_runtime(_hybrid_media_policy())
+    speech = FakeWindowsSpeech()
+    client = RuntimeGenerationMediaClient(runtime, windows_speech=speech)
+
+    client.synthesize_narration(
+        {**_scene(), "voiceId": "Microsoft David Desktop"},
+        locale="en-US",
+        seed=13,
+    )
+
+    assert speech.requests[0].voice_id == "Microsoft David Desktop"
+    assert speech.requests[0].request_id == "scene-introduction"
 
 
 def test_runtime_client_routes_each_local_capability_to_installed_fallback() -> None:
