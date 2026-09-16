@@ -4,8 +4,12 @@ import sqlite3
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
+
+import alystria.generation.adapters as adapters_module
 from alystria.background import DesktopJobSupervisor
 from alystria.generation import (
     GenerationCoordinator,
@@ -90,6 +94,54 @@ def test_generation_rpc_returns_before_slow_background_stage_finishes(tmp_path: 
     finally:
         release_stage.set()
         supervisor.stop(timeout_seconds=3)
+
+
+def test_generation_start_and_status_do_not_probe_optional_windows_speech(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe_entered = threading.Event()
+    release_probe = threading.Event()
+
+    class BlockingWindowsSpeech:
+        def capabilities(self):
+            probe_entered.set()
+            assert release_probe.wait(2)
+            raise AssertionError("System.Speech capability discovery must be lazy")
+
+    monkeypatch.delenv("ALYSTRIA_MEDIA_MODE", raising=False)
+    monkeypatch.setattr(adapters_module.sys, "platform", "win32")
+    monkeypatch.setattr(
+        adapters_module,
+        "WindowsSpeechAdapter",
+        lambda **_kwargs: BlockingWindowsSpeech(),
+    )
+    adapters_module._cached_default_local_media_client.cache_clear()
+    project = tmp_path / "lazy-windows-speech"
+    try:
+        with ProjectStore.create(
+            project, name="Lazy Windows speech", project_id=str(uuid.uuid4())
+        ) as store:
+            params = _desktop_params(store)
+            project_id = store.manifest.project_id
+
+        service = PipelineService()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            receipt = executor.submit(service.generation_start, params).result(timeout=0.5)
+            status = executor.submit(
+                service.desktop_job_status,
+                {
+                    "projectId": project_id,
+                    "projectDirectory": str(project),
+                    "jobId": receipt["jobId"],
+                },
+            ).result(timeout=0.5)
+
+        assert status["jobId"] == receipt["jobId"]
+        assert not probe_entered.is_set()
+    finally:
+        release_probe.set()
+        adapters_module._cached_default_local_media_client.cache_clear()
 
 
 def test_supervisor_recovers_expired_lease_after_process_restart(tmp_path: Path) -> None:

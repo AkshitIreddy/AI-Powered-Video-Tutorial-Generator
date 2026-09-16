@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from typing import Any, BinaryIO, NoReturn, TextIO
 
 from .background import DesktopJobSupervisor
-from .generation import default_local_media_client
 from .ipc import handle_request
 from .providers import (
     DesktopCredentialBrokerResolver,
@@ -214,9 +213,6 @@ def run_desktop_worker(
         return 2
 
     server = _bind_loopback(startup)
-    # Probe/cache native narration before readiness so the first generation
-    # receipt performs only validation and transactional queue insertion.
-    default_local_media_client()
     provider_runtime_factory = _provider_runtime_factory(startup)
 
     def executor(store: Any, runtime: Any) -> Any:

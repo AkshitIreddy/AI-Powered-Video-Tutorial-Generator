@@ -300,7 +300,16 @@ def default_local_media_client(
 
 @lru_cache(maxsize=1)
 def _cached_default_local_media_client() -> GenerationMediaClient:
-    return _select_default_local_media_client()
+    if os.environ.get("ALYSTRIA_MEDIA_MODE") == "fixture":
+        return DeterministicMediaClient()
+    current_platform = sys.platform
+    if not current_platform.casefold().startswith("win"):
+        return DeterministicMediaClient()
+    # System.Speech is optional and may require a cold PowerShell/.NET start.
+    # Keep that probe out of worker readiness and queue-insertion requests. The
+    # Windows client already falls back deterministically if synthesis later
+    # discovers that the local speech stack is unavailable.
+    return WindowsFallbackMediaClient(WindowsSpeechAdapter(platform_name=current_platform))
 
 
 def _select_default_local_media_client(

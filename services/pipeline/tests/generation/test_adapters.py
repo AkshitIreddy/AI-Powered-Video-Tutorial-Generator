@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
+import alystria.generation.adapters as adapters_module
 from alystria.audio import (
     WINDOWS_SPEECH_MODEL,
     WINDOWS_SPEECH_PROVIDER_ID,
@@ -279,6 +280,27 @@ def test_factory_selects_windows_only_after_successful_capability_probe() -> Non
     )
     assert type(unavailable) is DeterministicMediaClient
     assert isinstance(available, WindowsFallbackMediaClient)
+
+
+def test_default_factory_defers_optional_windows_capability_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    class NeverProbeWindowsSpeech(FakeWindowsSpeech):
+        def capabilities(self) -> WindowsSpeechCapabilities:
+            raise AssertionError("worker startup and queue insertion must not probe System.Speech")
+
+    monkeypatch.delenv("ALYSTRIA_MEDIA_MODE", raising=False)
+    monkeypatch.setattr(adapters_module.sys, "platform", "win32")
+    monkeypatch.setattr(
+        adapters_module,
+        "WindowsSpeechAdapter",
+        lambda **_kwargs: NeverProbeWindowsSpeech(),
+    )
+    adapters_module._cached_default_local_media_client.cache_clear()
+    try:
+        client = default_local_media_client()
+    finally:
+        adapters_module._cached_default_local_media_client.cache_clear()
+
+    assert isinstance(client, WindowsFallbackMediaClient)
 
 
 def test_windows_client_keeps_visuals_and_presenters_deterministic() -> None:

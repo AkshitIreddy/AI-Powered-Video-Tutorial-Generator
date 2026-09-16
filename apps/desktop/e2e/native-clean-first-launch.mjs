@@ -235,11 +235,11 @@ async function preserveIsolatedAppDataAndRestoreOwner() {
   const cleanDetails = await lstat(appDataPath);
   if (cleanDetails.isSymbolicLink()) throw new Error(`Isolated App Data became a symbolic link or junction: ${appDataPath}`);
   isolatedAppDataEvidencePath = path.join(evidenceRoot, "isolated-app-data");
-  await rename(appDataPath, isolatedAppDataEvidencePath);
+  await renameWithRetry(appDataPath, isolatedAppDataEvidencePath, 15_000);
   if (ownerAppDataBackup) {
     const ownerDetails = await lstat(ownerAppDataBackup);
     if (ownerDetails.isSymbolicLink()) throw new Error(`Preserved owner App Data became a symbolic link or junction: ${ownerAppDataBackup}`);
-    await rename(ownerAppDataBackup, appDataPath);
+    await renameWithRetry(ownerAppDataBackup, appDataPath, 15_000);
   } else {
     await mkdir(appDataPath, { recursive: false });
   }
@@ -290,15 +290,14 @@ async function startBootstrapNative() {
     windowsHide: true,
     stdio: ["ignore", stdout.fd, stderr.fd],
   });
-  let workerPid;
+  const current = { child, workerPid: undefined, stdout, stderr };
+  bootstrapLaunch = current;
   try {
     const ready = await waitForJson(readyPath, 120_000, child);
-    workerPid = validatedReadyWorkerPid(ready, child.pid);
-    return { child, workerPid, stdout, stderr };
+    current.workerPid = validatedReadyWorkerPid(ready, child.pid);
+    return current;
   } catch (error) {
-    workerPid ||= await readReadyWorkerPid(child.pid);
-    const cleanupErrors = await cleanupFailedNativeStart({ child, browser: null, workerPid, stdout, stderr });
-    if (cleanupErrors.length) throw new AggregateError([error, ...cleanupErrors], "Native onboarding bootstrap and startup cleanup both failed");
+    current.workerPid ||= await readReadyWorkerPid(child.pid);
     throw error;
   }
 }
@@ -353,7 +352,7 @@ async function closeBootstrapNative(current) {
       throw new Error("Bootstrap native app did not exit within 15 seconds of WM_CLOSE");
     }
     if (current.child.exitCode !== 0) throw new Error(`Bootstrap native app exited with code ${current.child.exitCode}`);
-    if (!await waitForProcessExit(current.workerPid, 10_000)) {
+    if (current.workerPid && !await waitForProcessExit(current.workerPid, 10_000)) {
       throw new Error(`Bootstrap native worker ${current.workerPid} remained alive after WM_CLOSE`);
     }
     await waitForPortableWebViewExit(30_000);
@@ -399,6 +398,22 @@ async function rotateExistingPath(target, label = "previous") {
   const destination = path.join(parsed.dir, `${parsed.name}.${label}-${stamp}-${process.pid}-${rotationSequence}${parsed.ext}`);
   await rename(target, destination);
   return destination;
+}
+
+async function renameWithRetry(source, destination, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (error) {
+      if (!["EACCES", "EBUSY", "EPERM"].includes(error?.code)) throw error;
+      lastError = error;
+      await delay(200);
+    }
+  }
+  throw lastError ?? new Error(`Timed out moving ${source} to ${destination}`);
 }
 
 async function reservePort() {
