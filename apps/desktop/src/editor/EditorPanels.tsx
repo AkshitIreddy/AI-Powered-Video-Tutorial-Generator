@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch } from "react";
+import { Check, Crosshair, Grid3x3, Pencil, Scan, Type, Upload, User, UserPlus, X } from "lucide-react";
 import { clipCarriesProgrammeAudio, isClipAudible } from "./audioPolicy";
 import { selectedClips } from "./model";
 import { describeEditProposal } from "./proposals";
 import { previewCanvasScale, previewMediaShouldSeek, previewStyleAtFrame, resolvedTextStyle, textPreviewStyleAtFrame, volumeAtFrame, type PreviewCanvasScale } from "./preview";
 import { formatTimecode, framesToSeconds } from "./timecode";
+import { EditorIconButton, EditorTooltip } from "./EditorTooltip";
 import type { EditProposal, EditorAction, EditorClip, EditorImportBatch, EditorMediaAsset, EditorState, ImportReceipt, InspectorProperty } from "./types";
 
 export interface MediaBinProps {
@@ -56,7 +58,7 @@ export function MediaBin({ state, dispatch, onImportFiles, onCreateClipFromAsset
         {onImportFiles ? (
           <>
             <input ref={inputRef} className="aly-editor-media-bin__file-input" type="file" multiple aria-label="Import media files" disabled={busy} onChange={(event) => void importFiles(event.target.files)} />
-            <button type="button" className="aly-editor-media-bin__import" disabled={busy} onClick={() => inputRef.current?.click()}>{busy ? "Importing…" : "Import media"}</button>
+            <button type="button" className="aly-editor-media-bin__import" disabled={busy} onClick={() => inputRef.current?.click()}><Upload size={13} aria-hidden="true" />{busy ? "Importing…" : "Import media"}</button>
           </>
         ) : null}
       </header>
@@ -178,7 +180,10 @@ export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch
       <div className="aly-editor-canvas-toolbar">
         <span>{state.project.canvas.width} × {state.project.canvas.height}</span>
         <div role="group" aria-label="Canvas guides">
-          {(["safe-action", "safe-title", "thirds", "center"] as const).map((guide) => <button key={guide} type="button" aria-pressed={state.view.guides.includes(guide)} onClick={() => dispatch({ type: "TOGGLE_GUIDE", guide })}>{guide.replace("-", " ")}</button>)}
+          <EditorIconButton icon={Scan} label="Safe action" tooltip="Outline the safe-action area. Keep essential motion inside it for small players." pressed={state.view.guides.includes("safe-action")} onClick={() => dispatch({ type: "TOGGLE_GUIDE", guide: "safe-action" })} iconSize={14} />
+          <EditorIconButton icon={Type} label="Safe title" tooltip="Outline the safe-title area. Keep text inside it so nothing is cropped." pressed={state.view.guides.includes("safe-title")} onClick={() => dispatch({ type: "TOGGLE_GUIDE", guide: "safe-title" })} iconSize={14} />
+          <EditorIconButton icon={Grid3x3} label="Thirds" tooltip="Overlay a rule-of-thirds grid to balance the composition." pressed={state.view.guides.includes("thirds")} onClick={() => dispatch({ type: "TOGGLE_GUIDE", guide: "thirds" })} iconSize={14} />
+          <EditorIconButton icon={Crosshair} label="Center" tooltip="Mark the canvas center for alignment checks." pressed={state.view.guides.includes("center")} onClick={() => dispatch({ type: "TOGGLE_GUIDE", guide: "center" })} iconSize={14} />
         </div>
       </div>
       <div ref={stageRef} className="aly-editor-canvas-stage" style={{ aspectRatio: `${state.project.canvas.width} / ${state.project.canvas.height}`, backgroundColor: state.project.canvas.backgroundColor }} data-media-status={slideAsset?.status ?? "none"}>
@@ -280,13 +285,76 @@ export function EditorInspector({ state, dispatch }: { state: EditorState; dispa
 function TranscriptCue({ clip, state, dispatch }: { clip: EditorClip; state: EditorState; dispatch: Dispatch<EditorAction> }) {
   const [text, setText] = useState(clip.text ?? "");
   const [speaker, setSpeaker] = useState(clip.speaker ?? "");
-  useEffect(() => { setText(clip.text ?? ""); setSpeaker(clip.speaker ?? ""); }, [clip.id, clip.speaker, clip.text]);
+  const [editingSpeaker, setEditingSpeaker] = useState(false);
+  useEffect(() => { setText(clip.text ?? ""); setSpeaker(clip.speaker ?? ""); setEditingSpeaker(false); }, [clip.id, clip.speaker, clip.text]);
+  const startTimecode = formatTimecode(clip.timelineRange.startFrame, state.project.frameRate);
+  const endTimecode = formatTimecode(clip.timelineRange.startFrame + clip.timelineRange.durationFrames, state.project.frameRate);
+  const durationSeconds = framesToSeconds(clip.timelineRange.durationFrames, state.project.frameRate);
+  const speakerDirty = speaker !== (clip.speaker ?? "");
+  const dirty = text !== (clip.text ?? "") || speakerDirty;
+  const revert = () => { setText(clip.text ?? ""); setSpeaker(clip.speaker ?? ""); setEditingSpeaker(false); };
+  const save = () => {
+    dispatch(speakerDirty
+      ? { type: "SET_TRANSCRIPT", clipId: clip.id, text, speaker }
+      : { type: "SET_TRANSCRIPT", clipId: clip.id, text });
+  };
+  const seek = () => { dispatch({ type: "SET_PLAYHEAD", frame: clip.timelineRange.startFrame }); dispatch({ type: "SELECT_CLIP", clipId: clip.id }); };
   return (
     <li className="aly-editor-transcript__cue">
-      <button type="button" className="aly-editor-transcript__time" onClick={() => { dispatch({ type: "SET_PLAYHEAD", frame: clip.timelineRange.startFrame }); dispatch({ type: "SELECT_CLIP", clipId: clip.id }); }}>{formatTimecode(clip.timelineRange.startFrame, state.project.frameRate)}</button>
-      <label><span>Speaker</span><input value={speaker} onChange={(event) => setSpeaker(event.target.value)} /></label>
-      <label><span>Transcript</span><textarea value={text} onChange={(event) => setText(event.target.value)} /></label>
-      <button type="button" disabled={text === (clip.text ?? "") && speaker === (clip.speaker ?? "")} onClick={() => dispatch({ type: "SET_TRANSCRIPT", clipId: clip.id, text, speaker })}>Save cue</button>
+      <div className="aly-editor-transcript__cue-head">
+        <EditorTooltip description={`Seek to ${startTimecode} and select “${clip.name}”. The cue runs to ${endTimecode}.`}>
+          {({ ref, describedBy, handlers }) => (
+            <button
+              type="button"
+              ref={ref as (element: HTMLButtonElement | null) => void}
+              className="aly-editor-transcript__time"
+              aria-label={`Seek to ${startTimecode} and select ${clip.name}`}
+              aria-describedby={describedBy}
+              onMouseEnter={handlers.onMouseEnter}
+              onMouseLeave={handlers.onMouseLeave}
+              onFocus={handlers.onFocus}
+              onBlur={handlers.onBlur}
+              onKeyDown={handlers.onKeyDown}
+              onClick={seek}
+            >
+              {startTimecode}
+            </button>
+          )}
+        </EditorTooltip>
+        <span className="aly-editor-transcript__duration" title={`Cue length ${durationSeconds.toFixed(1)} seconds`}>{durationSeconds.toFixed(1)}s</span>
+        {clip.speaker || editingSpeaker ? (
+          editingSpeaker || !clip.speaker ? (
+            <span className="aly-editor-transcript__speaker-edit">
+              <User size={12} aria-hidden="true" />
+              <input aria-label="Speaker" placeholder="Speaker name (optional)" value={speaker} onChange={(event) => setSpeaker(event.target.value)} />
+              <EditorIconButton icon={Check} label="Done editing speaker" tooltip="Finish editing the speaker name. Save the cue to keep it." iconSize={13} onClick={() => setEditingSpeaker(false)} />
+            </span>
+          ) : (
+            <span className="aly-editor-transcript__speaker">
+              <User size={12} aria-hidden="true" />
+              <strong>{clip.speaker}</strong>
+              <EditorIconButton icon={Pencil} label={`Edit speaker ${clip.speaker}`} tooltip="Change who is credited for this cue. No speaker is ever filled in automatically." iconSize={12} onClick={() => { setSpeaker(clip.speaker ?? ""); setEditingSpeaker(true); }} />
+            </span>
+          )
+        ) : (
+          <button type="button" className="aly-editor-transcript__speaker-add" onClick={() => setEditingSpeaker(true)}>
+            <UserPlus size={12} aria-hidden="true" /> Add speaker
+          </button>
+        )}
+      </div>
+      <label className="aly-editor-transcript__cue-text"><span className="aly-editor-sr-only">Transcript</span><textarea value={text} rows={3} onChange={(event) => setText(event.target.value)} /></label>
+      <div className="aly-editor-transcript__cue-foot">
+        <span className={`aly-editor-transcript__draft${dirty ? " is-dirty" : ""}`}>{dirty ? "Unsaved changes" : "Saved"}</span>
+        <button
+          type="button"
+          className="aly-editor-transcript__revert"
+          disabled={!dirty}
+          onClick={revert}
+        >
+          <X size={12} aria-hidden="true" /> Revert
+        </button>
+        <button type="button" className="aly-editor-transcript__save" disabled={!dirty} onClick={save}>Save cue</button>
+      </div>
     </li>
   );
 }

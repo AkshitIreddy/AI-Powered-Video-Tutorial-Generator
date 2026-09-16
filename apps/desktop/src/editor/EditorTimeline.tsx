@@ -1,6 +1,28 @@
 import { formatTimecode, framesToSeconds } from "./timecode";
 import { defaultClipValues } from "./model";
-import type { CSSProperties, Dispatch } from "react";
+import type { CSSProperties, Dispatch, ReactNode } from "react";
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Captions,
+  Ear,
+  EarOff,
+  Eye,
+  EyeOff,
+  Focus,
+  ListFilter,
+  Lock,
+  LockOpen,
+  Magnet,
+  RotateCcw,
+  Scissors,
+  Slice,
+  Trash2,
+  Type,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
+import { EditorIconButton } from "./EditorTooltip";
 import type { EditorAction, EditorClip, EditorState, EditorTrack } from "./types";
 import type { EditorWaveformPreview } from "./waveform";
 
@@ -8,6 +30,12 @@ export interface EditorTimelineProps {
   state: EditorState;
   dispatch: Dispatch<EditorAction>;
   waveforms?: Readonly<Record<string, EditorWaveformPreview>>;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+  hideEmptyTracks?: boolean;
+  onToggleEmptyTracks?: () => void;
+  onResetLayout?: () => void;
+  collapseControl?: ReactNode;
 }
 
 type TimelineScrollStyle = CSSProperties & { "--aly-editor-timeline-width": string };
@@ -22,12 +50,44 @@ function TrackControls({ track, dispatch }: { track: EditorTrack; dispatch: Disp
   const canCarryAudio = track.kind !== "titles" && track.kind !== "captions";
   return (
     <div className="aly-editor-track__controls">
-      <button type="button" className="aly-editor-track__select" onClick={() => dispatch({ type: "SELECT_TRACK", trackId: track.id })}>{track.name}</button>
+      <button type="button" className="aly-editor-track__select" title={`Select the ${track.name} track`} onClick={() => dispatch({ type: "SELECT_TRACK", trackId: track.id })}>{track.name}</button>
       <div className="aly-editor-track__toggles">
-        <button type="button" className={`aly-editor-track__toggle${track.locked ? " aly-editor-track__toggle--active" : ""}`} aria-pressed={track.locked} aria-label={`${track.locked ? "Unlock" : "Lock"} ${track.name}`} onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { locked: !track.locked } })}>L</button>
-        <button type="button" className={`aly-editor-track__toggle${track.hidden ? " aly-editor-track__toggle--active" : ""}`} aria-pressed={track.hidden} aria-label={`${track.hidden ? "Show" : "Hide"} ${track.name}`} onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { hidden: !track.hidden } })}>H</button>
-        {canCarryAudio ? <button type="button" className={`aly-editor-track__toggle${track.muted ? " aly-editor-track__toggle--active" : ""}`} aria-pressed={track.muted} aria-label={`${track.muted ? "Unmute" : "Mute"} ${track.name}`} onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { muted: !track.muted } })}>M</button> : null}
-        {canCarryAudio ? <button type="button" className={`aly-editor-track__toggle${track.solo ? " aly-editor-track__toggle--active" : ""}`} aria-pressed={track.solo} aria-label={`${track.solo ? "Unsolo" : "Solo"} ${track.name}`} onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { solo: !track.solo } })}>S</button> : null}
+        <EditorIconButton
+          icon={track.locked ? Lock : LockOpen}
+          label={`${track.locked ? "Unlock" : "Lock"} ${track.name}`}
+          tooltip={track.locked ? `Unlock the ${track.name} track so its clips can be edited again.` : `Lock the ${track.name} track to protect its clips from edits.`}
+          pressed={track.locked}
+          iconSize={13}
+          onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { locked: !track.locked } })}
+        />
+        <EditorIconButton
+          icon={track.hidden ? EyeOff : Eye}
+          label={`${track.hidden ? "Show" : "Hide"} ${track.name}`}
+          tooltip={track.hidden ? `Show the ${track.name} track in the preview and renders.` : `Hide the ${track.name} track from the preview and renders. Clips are kept.`}
+          pressed={track.hidden}
+          iconSize={13}
+          onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { hidden: !track.hidden } })}
+        />
+        {canCarryAudio ? (
+          <EditorIconButton
+            icon={track.muted ? VolumeX : Volume2}
+            label={`${track.muted ? "Unmute" : "Mute"} ${track.name}`}
+            tooltip={track.muted ? `Unmute the ${track.name} track.` : `Mute the ${track.name} track in preview and renders. Clips are kept.`}
+            pressed={track.muted}
+            iconSize={13}
+            onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { muted: !track.muted } })}
+          />
+        ) : null}
+        {canCarryAudio ? (
+          <EditorIconButton
+            icon={track.solo ? Ear : EarOff}
+            label={`${track.solo ? "Unsolo" : "Solo"} ${track.name}`}
+            tooltip={track.solo ? `Stop soloing the ${track.name} track; other audible tracks return.` : `Solo the ${track.name} track to hear only it in preview and renders.`}
+            pressed={track.solo}
+            iconSize={13}
+            onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { solo: !track.solo } })}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -66,7 +126,7 @@ function TimelineClip({ clip, state, dispatch, waveform }: { clip: EditorClip; s
   );
 }
 
-export function EditorTimeline({ state, dispatch, waveforms = {} }: EditorTimelineProps) {
+export function EditorTimeline({ state, dispatch, waveforms = {}, collapsed = false, hideEmptyTracks = false, onToggleEmptyTracks, onResetLayout, collapseControl }: EditorTimelineProps) {
   const duration = Math.max(1, state.project.durationFrames);
   const fps = state.project.frameRate.numerator / state.project.frameRate.denominator;
   const seconds = Math.max(1, Math.ceil(duration / fps));
@@ -99,28 +159,41 @@ export function EditorTimeline({ state, dispatch, waveforms = {} }: EditorTimeli
     };
     dispatch({ type: "INSERT_CLIP", trackId: space.track.id, clip });
     dispatch({ type: "SELECT_CLIP", clipId: clip.id });
+    dispatch({ type: "SET_ACTIVE_PANEL", panel: "inspector" });
   };
+  const canReorder = state.selection.clipIds.length === 1;
+  const reorderReason = canReorder ? undefined : state.selection.clipIds.length === 0 ? "Select a clip in the timeline first." : "Select exactly one clip to reorder it.";
+  const emptyTracks = state.project.tracks.filter((track) => track.clips.length === 0);
+  const visibleTracks = hideEmptyTracks ? state.project.tracks.filter((track) => track.clips.length > 0) : state.project.tracks;
 
   return (
     <section className="aly-editor-timeline" aria-label="Multitrack timeline">
       <div className="aly-editor-timeline__toolbar">
         <div className="aly-editor-timeline__edit-tools" role="group" aria-label="Timeline edit tools">
-          <button type="button" disabled={!textSpace("titles")} title="Add a title in an empty space at the playhead" onClick={() => addText("titles")}>Add title</button>
-          <button type="button" disabled={!textSpace("captions")} title="Add a caption in an empty space at the playhead" onClick={() => addText("captions")}>Add caption</button>
-          <button type="button" onClick={() => dispatch({ type: "SPLIT_SELECTED" })}>Split</button>
-          <button type="button" disabled={state.selection.clipIds.length !== 1} onClick={() => dispatch({ type: "REORDER_CLIP", clipId: state.selection.clipIds[0]!, direction: "previous" })}>Earlier</button>
-          <button type="button" disabled={state.selection.clipIds.length !== 1} onClick={() => dispatch({ type: "REORDER_CLIP", clipId: state.selection.clipIds[0]!, direction: "next" })}>Later</button>
-          <button type="button" onClick={() => dispatch({ type: "LIFT_SELECTED" })}>Lift</button>
-          <button type="button" onClick={() => dispatch({ type: "RIPPLE_DELETE_SELECTED" })}>Ripple delete</button>
-          <button type="button" onClick={() => dispatch({ type: "EXTRACT_SELECTED_RANGE" })}>Extract range</button>
+          <EditorIconButton icon={Type} label="Add title" tooltip="Add a title in the empty space at the playhead, then edit it in the inspector." disabled={!textSpace("titles")} disabledReason="No empty title space at the playhead." onClick={() => addText("titles")} />
+          <EditorIconButton icon={Captions} label="Add caption" tooltip="Add a caption in the empty space at the playhead." disabled={!textSpace("captions")} disabledReason="No empty caption space at the playhead." onClick={() => addText("captions")} />
+          <EditorIconButton icon={Scissors} label="Split" tooltip="Split every selected clip at the playhead. Clips that do not cross the playhead are left alone." shortcut="S" onClick={() => dispatch({ type: "SPLIT_SELECTED" })} />
+          <EditorIconButton icon={ArrowUpFromLine} label="Earlier" tooltip="Move the selected clip earlier in its track." disabled={!canReorder} disabledReason={reorderReason} onClick={() => { const id = state.selection.clipIds[0]; if (id) dispatch({ type: "REORDER_CLIP", clipId: id, direction: "previous" }); }} />
+          <EditorIconButton icon={ArrowDownToLine} label="Later" tooltip="Move the selected clip later in its track." disabled={!canReorder} disabledReason={reorderReason} onClick={() => { const id = state.selection.clipIds[0]; if (id) dispatch({ type: "REORDER_CLIP", clipId: id, direction: "next" }); }} />
+          <EditorIconButton icon={Slice} label="Lift" tooltip="Lift the selected clips, leaving a gap. The timeline does not close up." shortcut="Delete" onClick={() => dispatch({ type: "LIFT_SELECTED" })} />
+          <EditorIconButton icon={Trash2} label="Ripple delete" tooltip="Delete the selected clips and close the gap. Later clips shift earlier; this cannot be undone except with Undo." shortcut="Shift+Delete" onClick={() => dispatch({ type: "RIPPLE_DELETE_SELECTED" })} />
+          <EditorIconButton icon={Focus} label="Extract range" tooltip="Remove everything between the first and last selected clip across all tracks and close the gap." onClick={() => dispatch({ type: "EXTRACT_SELECTED_RANGE" })} />
         </div>
         <div className="aly-editor-timeline__mode-tools" role="group" aria-label="Timeline modes">
-          <button type="button" aria-pressed={state.view.snappingEnabled} onClick={() => dispatch({ type: "TOGGLE_SNAPPING" })}>Snap</button>
+          <EditorIconButton icon={Magnet} label="Snap" tooltip="Snap edits to clip edges and the playhead." pressed={state.view.snappingEnabled} onClick={() => dispatch({ type: "TOGGLE_SNAPPING" })} />
+          {onToggleEmptyTracks ? (
+            <EditorIconButton icon={ListFilter} label={hideEmptyTracks ? `Show empty tracks (${emptyTracks.length} hidden)` : "Hide empty tracks"} tooltip={hideEmptyTracks ? `Bring back the ${emptyTracks.length} hidden empty tracks. No track data was deleted.` : "Hide tracks that have no clips to give the timeline room. Tracks and their settings are kept."} pressed={hideEmptyTracks} onClick={onToggleEmptyTracks} />
+          ) : null}
           <label className="aly-editor-timeline__zoom">Zoom
-            <input type="range" min="12" max="240" value={state.view.pixelsPerSecond} onChange={(event) => dispatch({ type: "SET_ZOOM", pixelsPerSecond: Number(event.target.value) })} />
+            <input type="range" min="12" max="240" value={state.view.pixelsPerSecond} aria-label="Timeline zoom" onChange={(event) => dispatch({ type: "SET_ZOOM", pixelsPerSecond: Number(event.target.value) })} />
           </label>
+          {onResetLayout ? (
+            <EditorIconButton icon={RotateCcw} label="Reset panel layout" tooltip="Restore the default side-panel width and timeline height." onClick={onResetLayout} />
+          ) : null}
+          {collapseControl}
         </div>
       </div>
+      {collapsed ? null : (
       <div className="aly-editor-timeline__scroll" style={{ "--aly-editor-timeline-width": `${Math.max(900, seconds * state.view.pixelsPerSecond)}px` } as TimelineScrollStyle}>
         <div className="aly-editor-timeline__labels-spacer" aria-hidden="true" />
         <div className="aly-editor-ruler" aria-label="Time ruler">
@@ -130,9 +203,9 @@ export function EditorTimeline({ state, dispatch, waveforms = {} }: EditorTimeli
           })}
         </div>
         <div className="aly-editor-timeline__tracks">
-          <div className="aly-editor-playhead" style={{ left: `calc(var(--aly-editor-track-label-width, 168px) + (100% - var(--aly-editor-track-label-width, 168px)) * ${playheadLeft / 100})` }} aria-hidden="true"><span /></div>
-          {state.project.tracks.map((track) => (
-            <div key={track.id} className={`aly-editor-track aly-editor-track--${track.kind}${track.hidden ? " aly-editor-track--hidden" : ""}`} data-track-id={track.id}>
+          <div className="aly-editor-playhead" style={{ left: `calc(var(--aly-editor-track-label-width, 216px) + (100% - var(--aly-editor-track-label-width, 216px)) * ${playheadLeft / 100})` }} aria-hidden="true"><span /></div>
+          {visibleTracks.map((track) => (
+            <div key={track.id} className={`aly-editor-track aly-editor-track--${track.kind}${track.hidden ? " aly-editor-track--hidden" : ""}${track.clips.length === 0 ? " aly-editor-track--empty" : ""}`} data-track-id={track.id}>
               <TrackControls track={track} dispatch={dispatch} />
               <div className="aly-editor-track__lane" role="group" aria-label={`${track.name} track`} onDoubleClick={(event) => {
                 if (event.target !== event.currentTarget) return;
@@ -140,12 +213,19 @@ export function EditorTimeline({ state, dispatch, waveforms = {} }: EditorTimeli
                 dispatch({ type: "SET_PLAYHEAD", frame: Math.round((event.clientX - rect.left) / rect.width * duration), snap: true });
               }}>
                 {!track.hidden ? track.clips.map((clip) => <TimelineClip key={clip.id} clip={clip} state={state} dispatch={dispatch} {...(clip.assetId && waveforms[clip.assetId] ? { waveform: waveforms[clip.assetId] } : {})} />) : null}
-                {!track.clips.length ? <span className="aly-editor-track__empty">Empty {track.name.toLowerCase()} track</span> : null}
+                {!track.clips.length ? <span className="aly-editor-track__empty">Empty · clips placed at the playhead land here</span> : null}
               </div>
             </div>
           ))}
         </div>
+        {hideEmptyTracks && emptyTracks.length ? (
+          <p className="aly-editor-timeline__hidden-note" role="status">
+            {emptyTracks.length} empty {emptyTracks.length === 1 ? "track" : "tracks"} hidden ({emptyTracks.map((track) => track.name).join(", ")}).
+            {onToggleEmptyTracks ? <button type="button" onClick={onToggleEmptyTracks}>Show empty tracks</button> : null}
+          </p>
+        ) : null}
       </div>
+      )}
     </section>
   );
 }
