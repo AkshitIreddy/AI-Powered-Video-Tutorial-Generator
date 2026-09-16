@@ -1,15 +1,44 @@
-import { useEffect, useId, useReducer, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useReducer, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import {
+  Captions,
+  ChevronDown,
+  ChevronUp,
+  Clapperboard,
+  FileJson,
+  Film,
+  Pause,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Play,
+  Redo2,
+  Repeat,
+  RotateCcw,
+  SkipBack,
+  SlidersHorizontal,
+  Sparkles,
+  Square,
+  StepBack,
+  StepForward,
+  Undo2,
+  Upload,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import "./editor.css";
 import { clipCarriesProgrammeAudio } from "./audioPolicy";
 import { BrowserMediaImportController, createBrowserClipFromAsset, downloadEditorProject, downloadOtioTimeline } from "./browserBridge";
 import { EditorCanvas, EditorInspector, MediaBin, ProposalPanel, TranscriptPanel } from "./EditorPanels";
 import { EditorTimeline } from "./EditorTimeline";
-import { createEditorState } from "./model";
+import { EditorIconButton, EditorTooltip } from "./EditorTooltip";
+import { EDITOR_DOCK_MAX, EDITOR_DOCK_MIN, EDITOR_LAYOUT_DEFAULTS, EDITOR_TIMELINE_MAX, EDITOR_TIMELINE_MIN, clampDockWidth, clampTimelineHeight, loadEditorLayout, saveEditorLayout } from "./editorLayout";
+import { createEditorState, selectedClips } from "./model";
 import { exportOtioLike, parseEditorProject, parseOtioLike } from "./otio";
 import { editorReducer } from "./reducer";
 import { formatTimecode, nominalFramesPerSecond, parseTimecode } from "./timecode";
 import type { EditorWaveformPreview } from "./waveform";
 import type { EditProposal, EditorClip, EditorImportBatch, EditorMediaAsset, EditorProject, OtioLikeTimeline } from "./types";
+
+export type EditorImportRights = "unknown" | "owned" | "licensed" | "publicDomain";
 
 export interface AdvancedVideoEditorProps {
   project: EditorProject;
@@ -25,6 +54,11 @@ export interface AdvancedVideoEditorProps {
   allowProjectFileImport?: boolean;
   className?: string;
   editorLabel?: string;
+  saveStatus?: ReactNode;
+  importRightsValue?: EditorImportRights;
+  onImportRightsChange?: (value: EditorImportRights) => void;
+  onReturn?: () => void | Promise<void>;
+  returning?: boolean;
 }
 
 function waveformAssets(project: EditorProject): EditorMediaAsset[] {
@@ -50,6 +84,94 @@ function TimecodeControl({ value, rate, onCommit }: { value: number; rate: Edito
   return <label className="aly-editor-timecode"><span className="aly-editor-sr-only">Playhead timecode</span><input aria-label="Playhead timecode" value={draft} inputMode="numeric" onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(); } }} /></label>;
 }
 
+function WorkspaceSplitter({ orientation, label, value, min, max, onChange, inverted = false }: {
+  orientation: "vertical" | "horizontal";
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+  inverted?: boolean;
+}) {
+  const drag = useRef<{ origin: number; value: number } | null>(null);
+  const clamp = (candidate: number) => Math.min(max, Math.max(min, Math.round(candidate)));
+  return (
+    <div
+      role="separator"
+      aria-orientation={orientation}
+      aria-label={label}
+      aria-valuenow={Math.round(value)}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      tabIndex={0}
+      className={`aly-editor-splitter aly-editor-splitter--${orientation}`}
+      onKeyDown={(event) => {
+        const large = event.shiftKey ? 48 : 12;
+        if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); event.stopPropagation(); onChange(clamp(value - large)); }
+        else if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); event.stopPropagation(); onChange(clamp(value + large)); }
+        else if (event.key === "Home") { event.preventDefault(); event.stopPropagation(); onChange(min); }
+        else if (event.key === "End") { event.preventDefault(); event.stopPropagation(); onChange(max); }
+      }}
+      onPointerDown={(event) => {
+        (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+        drag.current = { origin: orientation === "vertical" ? event.clientX : event.clientY, value };
+      }}
+      onPointerMove={(event) => {
+        const active = drag.current;
+        if (!active) return;
+        const cursor = orientation === "vertical" ? event.clientX : event.clientY;
+        const delta = inverted ? active.origin - cursor : cursor - active.origin;
+        onChange(clamp(active.value + delta));
+      }}
+      onPointerUp={(event) => {
+        drag.current = null;
+        if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+      }}
+      onPointerCancel={() => { drag.current = null; }}
+    >
+      <span aria-hidden="true" />
+    </div>
+  );
+}
+
+interface RailItem {
+  id: "media" | "transcript" | "inspector" | "proposals";
+  label: string;
+  accessibleName: string;
+  icon: LucideIcon;
+  tooltip: ReactNode;
+  badge?: string | undefined;
+  dot?: boolean | undefined;
+}
+
+function RailButton({ item, active, onSelect }: { item: RailItem; active: boolean; onSelect: () => void }) {
+  return (
+    <EditorTooltip description={item.tooltip}>
+      {({ ref, describedBy, handlers }) => (
+        <button
+          type="button"
+          ref={ref as (element: HTMLButtonElement | null) => void}
+          aria-label={item.accessibleName}
+          aria-describedby={describedBy}
+          aria-current={active ? "page" : undefined}
+          onMouseEnter={handlers.onMouseEnter}
+          onMouseLeave={handlers.onMouseLeave}
+          onFocus={handlers.onFocus}
+          onBlur={handlers.onBlur}
+          onKeyDown={handlers.onKeyDown}
+          onClick={onSelect}
+          className={`aly-editor-rail__btn${active ? " is-active" : ""}`}
+        >
+          <item.icon size={18} aria-hidden="true" />
+          <span aria-hidden="true">{item.label}</span>
+          {item.dot ? <i className="aly-editor-rail__dot" aria-hidden="true" /> : null}
+          {item.badge ? <em className="aly-editor-rail__badge" aria-hidden="true">{item.badge}</em> : null}
+        </button>
+      )}
+    </EditorTooltip>
+  );
+}
+
 export function AdvancedVideoEditor({
   project,
   proposals = [],
@@ -64,6 +186,11 @@ export function AdvancedVideoEditor({
   allowProjectFileImport = true,
   className = "",
   editorLabel = "Advanced video editor",
+  saveStatus,
+  importRightsValue,
+  onImportRightsChange,
+  onReturn,
+  returning = false,
 }: AdvancedVideoEditorProps) {
   const [state, dispatch] = useReducer(editorReducer, undefined, () => createEditorState(project, proposals));
   const [projectImportError, setProjectImportError] = useState("");
@@ -71,6 +198,24 @@ export function AdvancedVideoEditor({
   const [rendering, setRendering] = useState(false);
   const [exportingDocument, setExportingDocument] = useState(false);
   const [documentExportStatus, setDocumentExportStatus] = useState<{ message: string; failed: boolean } | null>(null);
+  const [layout, setLayout] = useState(loadEditorLayout);
+  useEffect(() => { saveEditorLayout(layout); }, [layout]);
+  useEffect(() => {
+    const handleResize = () => {
+      setLayout((current) => {
+        const dockWidth = clampDockWidth(current.dockWidth);
+        const timelineHeight = clampTimelineHeight(current.timelineHeight);
+        return dockWidth === current.dockWidth && timelineHeight === current.timelineHeight
+          ? current
+          : { ...current, dockWidth, timelineHeight };
+      });
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+  const resetLayout = () => {
+    setLayout((current) => ({ ...current, dockWidth: EDITOR_LAYOUT_DEFAULTS.dockWidth, timelineHeight: EDITOR_LAYOUT_DEFAULTS.timelineHeight, dockCollapsed: false, timelineCollapsed: false }));
+  };
   const exportDocument = async (format: "editorJson" | "otio") => {
     if (exportingDocument) return;
     setExportingDocument(true);
@@ -240,57 +385,210 @@ export function AdvancedVideoEditor({
     }
   };
 
-  const panel = state.view.activePanel === "media"
-    ? <MediaBin state={state} dispatch={dispatch} onImportFiles={effectiveImportMedia} onCreateClipFromAsset={effectiveCreateClip} />
-    : state.view.activePanel === "transcript"
-      ? <TranscriptPanel state={state} dispatch={dispatch} />
-      : <ProposalPanel state={state} dispatch={dispatch} />;
+  const selection = selectedClips(state);
+  const selectedClip = selection[0] ?? null;
+  const captionTrack = state.project.tracks.find((track) => track.kind === "captions");
+  const narrationTrack = state.project.tracks.find((track) => track.kind === "narration");
+  const cueCount = (captionTrack && captionTrack.clips.length ? captionTrack.clips : narrationTrack?.clips ?? []).length;
+  const effectivePanel = state.view.activePanel === "proposals" && !state.proposals.length ? "media" : state.view.activePanel;
+  const rail: RailItem[] = [
+    { id: "media", label: "Media", accessibleName: "Media", icon: Film, tooltip: "Project media bin. Import verified media and place ready assets at the playhead." },
+    { id: "transcript", label: "Script", accessibleName: "Transcript", icon: Captions, tooltip: cueCount ? `${cueCount} transcript cues. Edit cue text across most of this panel; timecodes stay compact.` : "Transcript. Caption or narration cues appear here for full-width editing.", badge: cueCount ? String(cueCount) : undefined },
+    { id: "inspector", label: "Inspect", accessibleName: "Inspector", icon: SlidersHorizontal, tooltip: selectedClip ? `Inspector. ${selectedClip.name} is selected; edit timing, transform, audio, text, and keyframes.` : "Inspector. Select a clip in the preview or timeline to edit its properties.", dot: selection.length > 0 },
+  ];
+  if (state.proposals.length) {
+    rail.push({ id: "proposals", label: "Plans", accessibleName: "AI proposals", icon: Sparkles, tooltip: `${state.proposals.length} edit proposals awaiting review. Nothing applies until you accept it.`, badge: String(state.proposals.length) });
+  }
+  const canUndo = state.versionIndex >= 0;
+  const canRedo = state.versionIndex < state.versions.length - 1;
+  const frameRateValue = state.project.frameRate.numerator / state.project.frameRate.denominator;
 
   return (
     <div className={`aly-editor-shell${className ? ` ${className}` : ""}`} role="application" aria-label={editorLabel} aria-describedby={statusId} tabIndex={0} onKeyDown={onEditorKeyDown}>
       <header className="aly-editor-shell__topbar">
-        <div className="aly-editor-shell__identity"><span className="aly-editor-shell__eyebrow">Editor project</span><h1>{state.project.name}</h1><span>{state.project.canvas.width}×{state.project.canvas.height} · {state.project.frameRate.numerator / state.project.frameRate.denominator} fps</span></div>
-        <div className="aly-editor-shell__history" role="group" aria-label="Edit history">
-          <button type="button" aria-label="Undo last edit" aria-keyshortcuts="Control+Z Meta+Z" disabled={state.versionIndex < 0} onClick={() => dispatch({ type: "UNDO" })}>Undo</button>
-          <button type="button" aria-label="Redo last edit" aria-keyshortcuts="Control+Y Meta+Y" disabled={state.versionIndex >= state.versions.length - 1} onClick={() => dispatch({ type: "REDO" })}>Redo</button>
+        <div className="aly-editor-shell__identity">
+          {onReturn ? (
+            <EditorIconButton
+              icon={X}
+              label={returning ? "Saving editor changes" : "Return to scene"}
+              tooltip={returning ? "Saving the timeline. The editor stays open until the save finishes." : "Save the timeline and return to the scene workspace."}
+              disabled={returning}
+              onClick={() => { void onReturn(); }}
+              className="aly-editor-shell__return"
+            />
+          ) : null}
+          <div className="aly-editor-shell__titlewrap">
+            <span className="aly-editor-shell__eyebrow">Finishing room · {state.project.canvas.width}×{state.project.canvas.height} · {frameRateValue} fps</span>
+            <h1 title={state.project.name}>{state.project.name}</h1>
+          </div>
+          {saveStatus ? <span className="aly-editor-shell__savestate">{saveStatus}</span> : null}
           <span className="aly-editor-shell__revision">Revision {state.revision}</span>
         </div>
-        <div className="aly-editor-shell__project-actions" role="group" aria-label="Project import and export">
-          {allowProjectFileImport ? <><input ref={projectInputRef} className="aly-editor-shell__project-input" type="file" accept="application/json,.json,.otio" aria-label="Import editor project file" onChange={(event) => void importProjectFile(event.target.files?.[0])} /><button type="button" onClick={() => projectInputRef.current?.click()}>Import project</button></> : null}
-          <button type="button" disabled={exportingDocument} onClick={() => void exportDocument("editorJson")}>Export project JSON</button>
-          <button type="button" disabled={exportingDocument} onClick={() => void exportDocument("otio")}>Export OTIO</button>
-          {onRenderTimeline ? <button type="button" disabled={rendering} onClick={() => void renderTimeline()}>{rendering ? "Rendering…" : "Render timeline"}</button> : null}
+        <div className="aly-editor-shell__actions" role="group" aria-label="Editor document actions">
+          <span className="aly-editor-shell__actiongroup" role="group" aria-label="Edit history">
+            <EditorIconButton icon={Undo2} label="Undo last edit" tooltip="Undo the last edit. Every undo is itself reversible with redo." shortcut="Ctrl+Z" disabled={!canUndo} disabledReason="There is nothing to undo yet." onClick={() => dispatch({ type: "UNDO" })} />
+            <EditorIconButton icon={Redo2} label="Redo last edit" tooltip="Redo the undone edit." shortcut="Ctrl+Shift+Z" disabled={!canRedo} disabledReason="There is nothing to redo." onClick={() => dispatch({ type: "REDO" })} />
+          </span>
+          {onImportRightsChange ? (
+            <label className="aly-editor-shell__rights">
+              <span className="aly-editor-sr-only">Rights for new editor media</span>
+              <EditorTooltip description="Rights applied to media you import from here. This travels with the asset; it never changes your provider routes.">
+                {({ ref, describedBy, handlers }) => (
+                  <span
+                    className="aly-editor-shell__rights-tip"
+                    ref={ref as (element: HTMLSpanElement | null) => void}
+                    aria-describedby={describedBy}
+                    onMouseEnter={handlers.onMouseEnter}
+                    onMouseLeave={handlers.onMouseLeave}
+                    onFocus={handlers.onFocus}
+                    onBlur={handlers.onBlur}
+                    onKeyDown={handlers.onKeyDown}
+                  >
+                    Rights
+                  </span>
+                )}
+              </EditorTooltip>
+              <select aria-label="Rights for new editor media" value={importRightsValue ?? "unknown"} onChange={(event) => onImportRightsChange(event.target.value as EditorImportRights)}>
+                <option value="unknown">Not reviewed · preview only</option>
+                <option value="owned">I own the media</option>
+                <option value="licensed">Licensed for distribution</option>
+                <option value="publicDomain">Public domain</option>
+              </select>
+            </label>
+          ) : null}
+          <span className="aly-editor-shell__actiongroup" role="group" aria-label="Project import and export">
+            {allowProjectFileImport ? (
+              <>
+                <input ref={projectInputRef} className="aly-editor-shell__project-input" type="file" accept="application/json,.json,.otio" aria-label="Import editor project file" onChange={(event) => void importProjectFile(event.target.files?.[0])} />
+                <EditorIconButton icon={Upload} label="Import project" tooltip="Import an editor JSON or OTIO file into this project. The open project keeps its identity; the file is treated as provenance." onClick={() => projectInputRef.current?.click()} />
+              </>
+            ) : null}
+            <EditorIconButton icon={FileJson} label="Export project JSON" tooltip={onExportProject ? "Export the editor document to this project's exports folder." : "Download the editor document as JSON."} disabled={exportingDocument} disabledReason="An export is already running." onClick={() => void exportDocument("editorJson")} />
+            <EditorIconButton icon={Clapperboard} label="Export OTIO" tooltip={onExportOtio ? "Export an OTIO interchange timeline to this project's exports folder." : "Download an OTIO interchange timeline."} disabled={exportingDocument} disabledReason="An export is already running." onClick={() => void exportDocument("otio")} />
+            {onRenderTimeline ? (
+              <button type="button" className="aly-editor-shell__render" aria-label="Render timeline" disabled={rendering} onClick={() => void renderTimeline()}>
+                {rendering ? <Square size={13} aria-hidden="true" /> : <Play size={13} aria-hidden="true" />}
+                {rendering ? "Rendering…" : "Render"}
+              </button>
+            ) : null}
+          </span>
         </div>
       </header>
       {projectImportError ? <div className="aly-editor-shell__import-error" role="alert">{projectImportError}</div> : null}
       {documentExportStatus ? <div className="aly-editor-shell__import-error" role={documentExportStatus.failed ? "alert" : "status"}>{documentExportStatus.message}</div> : null}
 
-      <div className="aly-editor-shell__workspace">
-        <aside className="aly-editor-shell__left-panel">
-          <nav className="aly-editor-panel-tabs" aria-label="Editor side panels">
-            <button type="button" aria-current={state.view.activePanel === "media" ? "page" : undefined} onClick={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "media" })}>Media</button>
-            <button type="button" aria-current={state.view.activePanel === "transcript" ? "page" : undefined} onClick={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "transcript" })}>Transcript</button>
-            {state.proposals.length ? <button type="button" aria-current={state.view.activePanel === "proposals" ? "page" : undefined} onClick={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "proposals" })}>AI proposals</button> : null}
-          </nav>
-          {panel}
-        </aside>
+      <div
+        className={`aly-editor-shell__workspace${layout.dockCollapsed ? " is-dock-collapsed" : ""}`}
+        style={{ "--aly-editor-dock-width": `${layout.dockCollapsed ? 0 : layout.dockWidth}px` } as CSSProperties}
+      >
+        <nav className="aly-editor-rail" aria-label="Editor side panels">
+          {rail.map((item) => <RailButton key={item.id} item={item} active={effectivePanel === item.id} onSelect={() => {
+            if (layout.dockCollapsed) setLayout((current) => ({ ...current, dockCollapsed: false }));
+            dispatch({ type: "SET_ACTIVE_PANEL", panel: item.id });
+          }} />)}
+          <span className="aly-editor-rail__spacer" aria-hidden="true" />
+          <EditorIconButton
+            icon={layout.dockCollapsed ? PanelLeftOpen : PanelLeftClose}
+            label={layout.dockCollapsed ? "Expand side panel" : "Collapse side panel"}
+            tooltip={layout.dockCollapsed ? "Reopen the side panel at its previous width." : "Collapse the side panel to give the preview the full width. Your place and drafts are kept."}
+            onClick={() => setLayout((current) => ({ ...current, dockCollapsed: !current.dockCollapsed }))}
+          />
+        </nav>
+        <div className="aly-editor-dock" hidden={layout.dockCollapsed}>
+          <div className="aly-editor-dock__body">
+            <div className="aly-editor-dock__page" hidden={effectivePanel !== "media"}>
+              <MediaBin state={state} dispatch={dispatch} onImportFiles={effectiveImportMedia} onCreateClipFromAsset={effectiveCreateClip} />
+            </div>
+            <div className="aly-editor-dock__page" hidden={effectivePanel !== "transcript"}>
+              <TranscriptPanel state={state} dispatch={dispatch} />
+            </div>
+            <div className="aly-editor-dock__page" hidden={effectivePanel !== "inspector"}>
+              <EditorInspector state={state} dispatch={dispatch} />
+            </div>
+            {state.proposals.length ? (
+              <div className="aly-editor-dock__page" hidden={effectivePanel !== "proposals"}>
+                <ProposalPanel state={state} dispatch={dispatch} />
+              </div>
+            ) : null}
+          </div>
+          <div className="aly-editor-dock__footer">
+            {selectedClip ? (
+              <button type="button" className="aly-editor-dock__inspect" onClick={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "inspector" })}>
+                Inspect {selectedClip.name}
+              </button>
+            ) : <span className="aly-editor-dock__hint">Select a clip to inspect it</span>}
+            <button
+              type="button"
+              className="aly-editor-dock__reset"
+              onClick={resetLayout}
+            >
+              <RotateCcw size={12} aria-hidden="true" /> Reset layout
+            </button>
+          </div>
+        </div>
+        {layout.dockCollapsed ? null : (
+          <WorkspaceSplitter
+            orientation="vertical"
+            label="Resize side panel width"
+            value={layout.dockWidth}
+            min={EDITOR_DOCK_MIN}
+            max={EDITOR_DOCK_MAX}
+            onChange={(dockWidth) => setLayout((current) => ({ ...current, dockWidth: clampDockWidth(dockWidth) }))}
+          />
+        )}
         <main className="aly-editor-shell__center">
           <EditorCanvas state={state} dispatch={dispatch} />
           <div className="aly-editor-transport" role="group" aria-label="Playback transport">
-            <button type="button" aria-label="Go to start" onClick={() => dispatch({ type: "SET_PLAYHEAD", frame: state.transport.inFrame ?? 0 })}>Start</button>
-            <button type="button" aria-label="Step backward one frame" onClick={() => dispatch({ type: "SET_PLAYHEAD", frame: state.transport.playheadFrame - 1 })}>−1</button>
-            <button type="button" aria-label={state.transport.status === "playing" ? "Pause playback" : "Play"} aria-keyshortcuts="Space" onClick={() => dispatch({ type: "TRANSPORT_TOGGLE" })}>{state.transport.status === "playing" ? "Pause" : "Play"}</button>
-            <button type="button" aria-label="Step forward one frame" onClick={() => dispatch({ type: "SET_PLAYHEAD", frame: state.transport.playheadFrame + 1 })}>+1</button>
-            <button type="button" aria-label="Stop playback" onClick={() => dispatch({ type: "TRANSPORT_STOP" })}>Stop</button>
+            <EditorIconButton icon={SkipBack} label="Go to start" tooltip="Jump to the in point, or to the timeline start when no in point is set." onClick={() => dispatch({ type: "SET_PLAYHEAD", frame: state.transport.inFrame ?? 0 })} />
+            <EditorIconButton icon={StepBack} label="Step backward one frame" tooltip="Move the playhead back one frame." shortcut="←" onClick={() => dispatch({ type: "SET_PLAYHEAD", frame: state.transport.playheadFrame - 1 })} />
+            <EditorIconButton
+              icon={state.transport.status === "playing" ? Pause : Play}
+              label={state.transport.status === "playing" ? "Pause playback" : "Play"}
+              tooltip={state.transport.status === "playing" ? "Pause playback. Composite scene audio pauses with it." : "Play from the playhead. What you hear matches the audible tracks."}
+              shortcut="Space"
+              pressed={state.transport.status === "playing"}
+              onClick={() => dispatch({ type: "TRANSPORT_TOGGLE" })}
+            />
+            <EditorIconButton icon={StepForward} label="Step forward one frame" tooltip="Move the playhead forward one frame. Hold Shift with arrow keys to jump a second." shortcut="→" onClick={() => dispatch({ type: "SET_PLAYHEAD", frame: state.transport.playheadFrame + 1 })} />
+            <EditorIconButton icon={Square} label="Stop playback" tooltip="Stop playback and return to the in point (or the start)." shortcut="K pauses" onClick={() => dispatch({ type: "TRANSPORT_STOP" })} />
             <TimecodeControl value={state.transport.playheadFrame} rate={state.project.frameRate} onCommit={(frame) => dispatch({ type: "SET_PLAYHEAD", frame })} />
-            <button type="button" aria-pressed={state.transport.loop} onClick={() => dispatch({ type: "TOGGLE_LOOP" })}>Loop</button>
-            <label className="aly-editor-transport__rate"><span>Speed</span><select value={state.transport.playbackRate} onChange={(event) => dispatch({ type: "SET_PLAYBACK_RATE", rate: Number(event.target.value) })}><option value="0.5">0.5×</option><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+            <EditorIconButton icon={Repeat} label="Loop playback" tooltip="Loop between the in and out points while playing." pressed={state.transport.loop} onClick={() => dispatch({ type: "TOGGLE_LOOP" })} />
+            <label className="aly-editor-transport__rate"><span>Speed</span><select value={state.transport.playbackRate} aria-label="Playback speed" onChange={(event) => dispatch({ type: "SET_PLAYBACK_RATE", rate: Number(event.target.value) })}><option value="0.5">0.5×</option><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
             <button type="button" onClick={() => dispatch({ type: "SET_IN_POINT" })}>Set in</button><button type="button" onClick={() => dispatch({ type: "SET_OUT_POINT" })}>Set out</button>
           </div>
         </main>
-        <aside className="aly-editor-shell__right-panel"><EditorInspector state={state} dispatch={dispatch} /></aside>
       </div>
-      <EditorTimeline state={state} dispatch={dispatch} waveforms={waveforms} />
+      <div className={`aly-editor-shell__timelinewrap${layout.timelineCollapsed ? " is-collapsed" : ""}`} style={layout.timelineCollapsed ? undefined : { height: layout.timelineHeight }}>
+        {layout.timelineCollapsed ? null : (
+          <WorkspaceSplitter
+            orientation="horizontal"
+            label="Resize timeline height"
+            value={layout.timelineHeight}
+            min={EDITOR_TIMELINE_MIN}
+            max={EDITOR_TIMELINE_MAX}
+            inverted
+            onChange={(timelineHeight) => setLayout((current) => ({ ...current, timelineHeight: clampTimelineHeight(timelineHeight) }))}
+          />
+        )}
+        <EditorTimeline
+          state={state}
+          dispatch={dispatch}
+          waveforms={waveforms}
+          collapsed={layout.timelineCollapsed}
+          onToggleCollapse={() => setLayout((current) => ({ ...current, timelineCollapsed: !current.timelineCollapsed }))}
+          hideEmptyTracks={layout.hideEmptyTracks}
+          onToggleEmptyTracks={() => setLayout((current) => ({ ...current, hideEmptyTracks: !current.hideEmptyTracks }))}
+          onResetLayout={resetLayout}
+          collapseControl={
+            <EditorIconButton
+              icon={layout.timelineCollapsed ? ChevronUp : ChevronDown}
+              label={layout.timelineCollapsed ? "Expand timeline" : "Collapse timeline"}
+              tooltip={layout.timelineCollapsed ? "Reopen the timeline at its previous height." : "Collapse the timeline to give the preview full height. Clips and the playhead are kept."}
+              onClick={() => setLayout((current) => ({ ...current, timelineCollapsed: !current.timelineCollapsed }))}
+            />
+          }
+        />
+      </div>
       <div id={statusId} className="aly-editor-shell__status" role="status" aria-live="polite">{renderStatus || state.announcement}</div>
     </div>
   );
