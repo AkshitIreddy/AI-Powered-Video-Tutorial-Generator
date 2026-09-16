@@ -897,19 +897,6 @@ fn validate_generation(input: &mut GenerationRequest) -> Result<(), CommandError
             "must identify a durable project revision",
         ));
     }
-    if input.budget.currency.len() != 3
-        || !input
-            .budget
-            .currency
-            .chars()
-            .all(|c| c.is_ascii_alphabetic())
-    {
-        return Err(CommandError::invalid(
-            "budget.currency",
-            "must be a three-letter ISO currency code",
-        ));
-    }
-    input.budget.currency.make_ascii_uppercase();
     if input.approved_provider_ids.len() > 32 {
         return Err(CommandError::invalid(
             "approvedProviderIds",
@@ -1185,26 +1172,25 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn generation_validation_normalizes_and_deduplicates() {
-        let mut input = GenerationRequest {
-            project_id: Uuid::nil(),
-            project_directory: "C:/project".into(),
-            snapshot_id: None,
-            scope: GenerationScope::Project,
-            quality: QualityPreset::Standard,
-            privacy: PrivacyMode::Local,
-            budget: BudgetPolicy {
-                currency: "usd".into(),
-                hard_limit_minor_units: 0,
-                require_known_pricing: true,
-            },
-            approved_provider_ids: vec!["Local".into(), "local".into()],
-            preservation_locks: vec!["scene-a".into(), "scene-a".into()],
-        };
+    fn generation_request_matches_the_frontend_without_a_budget() {
+        let frontend_request = serde_json::json!({
+            "projectId": "00000000-0000-0000-0000-000000000000",
+            "projectDirectory": "C:/project",
+            "snapshotId": null,
+            "scope": { "kind": "project" },
+            "quality": "standard",
+            "privacy": "local",
+            "approvedProviderIds": ["Local", "local"],
+            "preservationLocks": ["scene-a", "scene-a"]
+        });
+        let mut input: GenerationRequest = serde_json::from_value(frontend_request).unwrap();
+
         validate_generation(&mut input).unwrap();
-        assert_eq!(input.budget.currency, "USD");
         assert_eq!(input.approved_provider_ids, ["local"]);
         assert_eq!(input.preservation_locks, ["scene-a"]);
+
+        let worker_payload = serde_json::to_value(input).unwrap();
+        assert!(worker_payload.get("budget").is_none());
     }
 
     #[test]

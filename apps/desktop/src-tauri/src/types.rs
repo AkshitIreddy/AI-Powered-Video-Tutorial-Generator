@@ -453,7 +453,6 @@ pub struct GenerationRequest {
     pub scope: GenerationScope,
     pub quality: QualityPreset,
     pub privacy: PrivacyMode,
-    pub budget: BudgetPolicy,
     pub approved_provider_ids: Vec<String>,
     #[serde(default)]
     pub preservation_locks: Vec<String>,
@@ -482,14 +481,6 @@ pub enum PrivacyMode {
     Local,
     Hybrid,
     Cloud,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BudgetPolicy {
-    pub currency: String,
-    pub hard_limit_minor_units: u64,
-    pub require_known_pricing: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
