@@ -12,6 +12,23 @@ import {
 } from "..";
 import type { OnboardingCatalog, OnboardingSetupState, PersistedOnboardingState } from "..";
 
+vi.mock("../../downloads/ModelDownloadProvider", () => ({
+  useModelDownloads: () => ({
+    catalog: [],
+    statuses: [],
+    loading: false,
+    error: null,
+    queuedModelIds: [],
+    startingModelIds: new Set<string>(),
+    enqueue: vi.fn(),
+    refresh: vi.fn(async () => undefined),
+    openPanel: vi.fn(),
+    minimize: vi.fn(),
+    panelOpen: false,
+    cancel: vi.fn(async () => undefined),
+  }),
+}));
+
 const catalog: OnboardingCatalog = {
   goals: [
     { id: "tutorials", label: "Tutorials", description: "Build structured educational videos." },
@@ -88,13 +105,17 @@ describe("OnboardingDialog", () => {
     }} />);
     expect(screen.getByText(/3 model selections/)).toBeVisible();
     expect(screen.queryByText(/3 models attached/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Chapter 6 Review your model toolkit/i }));
+    await user.click(screen.getByRole("button", { name: /Chapter 5 Choose your model toolkit/i }));
     expect(screen.getByRole("checkbox", { name: /Chosen model/ })).toBeChecked();
-    expect(screen.getByText(/Packs with a reviewed native declaration appear below/)).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: /Chosen model/ })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /Unpriced model/ })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /Available model/ })).toBeEnabled();
+    expect(screen.getByText(/Selecting a downloadable pack starts its verified installation immediately/)).toBeVisible();
     expect(screen.getByText("~1.0 GB download estimate")).toBeVisible();
     expect(screen.getByText("No verified installer yet")).toBeVisible();
-    expect(screen.getAllByText("Selected · installer pending")).toHaveLength(2);
+    expect(screen.getAllByText("Download unavailable")).toHaveLength(2);
     expect(screen.getByText("Installed", { exact: true })).toBeVisible();
+    expect(screen.getAllByRole("checkbox", { name: /model/i }).map((choice) => choice.getAttribute("value"))).toEqual(["installed", "chosen", "unknown"]);
     expect(screen.queryByText(/already downloaded/)).not.toBeInTheDocument();
   });
 
@@ -173,10 +194,23 @@ describe("OnboardingDialog", () => {
     onExit.mockClear();
     const inProgress = createOnboardingState({}, () => "2026-09-02T08:00:00.000Z");
     inProgress.status = "in-progress";
-    inProgress.activeChapterId = "privacy";
+    inProgress.activeChapterId = "provider";
     render(<OnboardingHarness persistedState={inProgress} onExit={onExit} />);
     await user.click(screen.getByRole("button", { name: "Exit onboarding" }));
-    expect(onExit).toHaveBeenLastCalledWith(expect.objectContaining({ status: "in-progress", activeChapterId: "privacy" }));
+    expect(onExit).toHaveBeenLastCalledWith(expect.objectContaining({ status: "in-progress", activeChapterId: "provider" }));
+  });
+
+  it("does not render the removed privacy chapter or summary controls", async () => {
+    const user = userEvent.setup();
+    const state = createOnboardingState();
+    state.status = "in-progress";
+    state.activeChapterId = "ready";
+    state.visitedChapterIds = ["ready"];
+    render(<OnboardingHarness persistedState={state} />);
+
+    expect(screen.queryByText(/privacy/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /local only|ask before cloud|approved providers/i })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
   });
 
   it("persists state through the injected callback", async () => {

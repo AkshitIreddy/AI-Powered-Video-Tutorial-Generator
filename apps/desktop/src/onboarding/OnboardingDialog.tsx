@@ -1,13 +1,9 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import type { ModelDownloadCatalogEntry, ModelDownloadPhase, ModelDownloadStatus } from "../native";
+import { useEffect, useId, useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
+import type { ModelDownloadPhase, ModelDownloadStatus } from "../native";
+import { useModelDownloads } from "../downloads/ModelDownloadProvider";
 import { ProfileGallery } from "./ProfileGallery";
 import { canAdvanceOnboarding, chapterIndex, isChapterConfigured, onboardingChapters } from "./state";
 import type { OnboardingController } from "./useOnboardingController";
-import {
-  isActiveModelDownloadPhase,
-  useOnboardingModelDownloads,
-  type OnboardingModelDownloads,
-} from "./useOnboardingModelDownloads";
 import type {
   ImportedProfileAsset,
   OnboardingCatalog,
@@ -15,6 +11,7 @@ import type {
   OnboardingSetupState,
   ProfilePortraitAsset,
 } from "./types";
+import "./OnboardingDialog.css";
 
 const focusableSelector = [
   "a[href]",
@@ -62,7 +59,7 @@ function SelectionCard({
   description: string;
   badge?: string | undefined;
   icon?: ReactNode;
-  metadata?: string | undefined;
+  metadata?: ReactNode;
   onChange: () => void;
 }) {
   return (
@@ -123,88 +120,18 @@ function completedDownload(status: ModelDownloadStatus | undefined): boolean {
   return status?.phase === "ready" || status?.phase === "inUse" || status?.phase === "downloadedQuarantined";
 }
 
-function DownloadCard({
-  entry,
-  status,
-  accepted,
-  starting,
-  queued,
-  onAcceptedChange,
-  onStart,
-}: {
-  entry: ModelDownloadCatalogEntry;
-  status: ModelDownloadStatus | undefined;
-  accepted: boolean;
-  starting: boolean;
-  queued: boolean;
-  onAcceptedChange: (accepted: boolean) => void;
-  onStart: () => void;
-}) {
-  const active = isActiveModelDownloadPhase(status?.phase);
-  const complete = completedDownload(status);
-  const total = status?.totalBytes || entry.totalBytes;
-  const downloaded = Math.min(status?.downloadedBytes ?? 0, total);
-  const progress = total > 0 ? Math.round((downloaded / total) * 100) : 0;
-  const retry = status?.phase === "failed" || status?.phase === "cancelled" || status?.phase === "corrupt";
-  const unavailable = !entry.available && !complete && !active;
-  const actionLabel = queued
-    ? "Queued"
-    : starting
-    ? "Starting…"
-    : retry
-      ? "Retry verified download"
-      : downloaded > 0
-        ? "Resume verified download"
-        : "Download and verify";
-
-  return (
-    <article className={`aly-onboarding-download${complete ? " aly-onboarding-download--complete" : ""}${status?.phase === "failed" ? " aly-onboarding-download--failed" : ""}`}>
-      <div className="aly-onboarding-download__heading">
-        <div>
-          <strong>{entry.displayName}</strong>
-          <span>{formatModelBytes(entry.totalBytes)} · {entry.artifactCount} pinned file{entry.artifactCount === 1 ? "" : "s"}</span>
-        </div>
-        <em className={`aly-onboarding-download__phase aly-onboarding-download__phase--${queued ? "queued" : status?.phase ?? "manifestRequired"}`}>
-          {queued ? "Queued" : modelDownloadPhaseLabel(status?.phase)}
-        </em>
-      </div>
-
-      <progress className="aly-onboarding-download__progress" max={Math.max(total, 1)} value={downloaded} aria-label={`${entry.displayName} download progress`} />
-      <div className="aly-onboarding-download__metrics">
-        <span>{formatModelBytes(downloaded)} of {formatModelBytes(total)}</span>
-        <span>{status?.verifiedArtifacts ?? 0} of {entry.artifactCount} files verified · {progress}%</span>
-      </div>
-
-      {complete ? (
-        <p className="aly-onboarding-download__detail">
-          {status?.phase === "downloadedQuarantined"
-            ? "Every file was downloaded and hash checked. This pack stays inactive until its runtime review passes."
-            : "This verified installation is already available. Alystria will reuse it without downloading it again."}
-        </p>
-      ) : (
-        <>
-          <p className="aly-onboarding-download__detail">{status?.detail ?? entry.downloadOnlyReason}</p>
-          <label className="aly-onboarding-download__license">
-            <input
-              type="checkbox"
-              checked={accepted}
-              disabled={active || starting || queued || unavailable}
-              onChange={(event) => onAcceptedChange(event.target.checked)}
-            />
-            <span>
-              I accept the exact <a href={entry.licenseUrl} target="_blank" rel="noreferrer">{entry.licenseId}</a> record for this pinned revision.
-              <small>{entry.licenseScope}</small>
-            </span>
-          </label>
-          <div className="aly-onboarding-download__actions">
-            <button type="button" disabled={!accepted || active || starting || queued || unavailable} onClick={onStart}>{actionLabel}</button>
-            <span>{unavailable ? "Open the packaged Windows app with its verified worker to install this pack." : active ? "You may continue setup while this finishes." : queued ? "This pack starts when the current verified download finishes." : "Failed or interrupted downloads can reuse verified files on retry."}</span>
-          </div>
-        </>
-      )}
-    </article>
-  );
+function isActiveModelDownloadPhase(phase: ModelDownloadPhase | undefined): boolean {
+  return phase === "downloading"
+    || phase === "verifying"
+    || phase === "installing"
+    || phase === "activating"
+    || phase === "repairing"
+    || phase === "cancelling"
+    || phase === "removing"
+    || phase === "inspecting";
 }
+
+type ModelDownloads = ReturnType<typeof useModelDownloads>;
 
 function ModelChapter({
   controller,
@@ -215,10 +142,9 @@ function ModelChapter({
   controller: OnboardingController;
   catalog: OnboardingCatalog;
   setup: OnboardingSetupState;
-  downloads: OnboardingModelDownloads;
+  downloads: ModelDownloads;
 }) {
   const { configuration } = controller.state;
-  const [acceptedLicenses, setAcceptedLicenses] = useState<Record<string, boolean>>({});
   const selectedEntries = downloads.catalog.filter((entry) => configuration.modelIds.includes(entry.modelId));
   const selectedStatuses = selectedEntries.map((entry) => downloads.statuses.find((status) => status.modelId === entry.modelId));
   const activeCount = selectedStatuses.filter((status) => isActiveModelDownloadPhase(status?.phase)).length;
@@ -228,16 +154,23 @@ function ModelChapter({
   const selectedDownloadBytes = selectedEntries
     .filter((entry, index) => !completedDownload(selectedStatuses[index]))
     .reduce((total, entry) => total + entry.totalBytes, 0);
-  const queueableEntries = selectedEntries.filter((entry) => {
-    const status = downloads.statuses.find((candidate) => candidate.modelId === entry.modelId);
-    return entry.available
-      && !completedDownload(status)
-      && !isActiveModelDownloadPhase(status?.phase)
-      && !downloads.startingModelIds.has(entry.modelId)
-      && !downloads.queuedModelIds.includes(entry.modelId)
-      && acceptedLicenses[entry.modelId] === true;
+  // Native packages are authoritative; newly installed runtime catalogs can
+  // supply downloads before the descriptive discovery catalog is refreshed.
+  const nativeOnlyModels: OnboardingCatalog["models"] = downloads.catalog
+    .filter((entry) => entry.available && !catalog.models.some((model) => model.id === entry.modelId))
+    .map((entry) => ({ id: entry.modelId, name: entry.displayName, providerId: "local-runtime", medium: "other", description: entry.downloadOnlyReason, downloadBytes: entry.totalBytes, sizeConfidence: "exact" }));
+  const orderedModels = [...catalog.models, ...nativeOnlyModels].sort((left, right) => {
+    const rank = (model: OnboardingCatalog["models"][number]) => {
+      const entry = downloads.catalog.find((candidate) => candidate.modelId === model.id);
+      const status = downloads.statuses.find((candidate) => candidate.modelId === model.id);
+      const installed = model.installed || setup.installedModelIds?.includes(model.id);
+      const attached = setup.attachedModelIds?.includes(model.id);
+      if (installed || attached || completedDownload(status)) return 0;
+      if (entry?.available) return 1;
+      return 2;
+    };
+    return rank(left) - rank(right);
   });
-
   const summary = downloads.loading && !downloads.catalog.length
     ? "Checking verified downloads…"
     : activeCount > 0
@@ -255,39 +188,40 @@ function ModelChapter({
       <div className="aly-onboarding-download-summary" role="status">
         <strong>{summary}</strong>
         <span>
-          Select the tools you want. Packs with a reviewed native declaration appear below so you can accept their exact license, download, verify, retry, and reuse them without leaving setup.
+          Selecting a downloadable pack starts its verified installation immediately. Progress opens in a panel you can minimize while you keep working.
         </span>
         {downloads.error ? <button type="button" onClick={() => { void downloads.refresh(); }}>Download status failed to refresh · Try again</button> : null}
       </div>
 
       <fieldset className="aly-onboarding-options aly-onboarding-options--models">
         <legend className="aly-onboarding-sr-only">Model toolkit</legend>
-        {catalog.models.map((model) => {
+        {orderedModels.map((model) => {
           const installed = model.installed || setup.installedModelIds?.includes(model.id);
           const attached = setup.attachedModelIds?.includes(model.id);
           const entry = downloads.catalog.find((candidate) => candidate.modelId === model.id);
           const status = downloads.statuses.find((candidate) => candidate.modelId === model.id);
+          const unavailable = !entry?.available && !installed && !attached && !completedDownload(status);
           const size = entry
             ? `${formatModelBytes(entry.totalBytes)} exact download`
             : model.downloadBytes
               ? `${model.sizeConfidence === "exact" ? "" : "~"}${formatModelBytes(model.downloadBytes)} download estimate`
               : "No verified installer yet";
           const footprint = model.installedBytes ? ` · ${formatModelBytes(model.installedBytes)} installed` : "";
-          const badge = completedDownload(status)
-            ? modelDownloadPhaseLabel(status?.phase)
-            : isActiveModelDownloadPhase(status?.phase)
-              ? modelDownloadPhaseLabel(status?.phase)
-              : installed
-                ? "Installed"
-                : attached
-                  ? "Already attached"
-                  : model.compatible === false
-                    ? "Not compatible"
-                    : setup.selectedModelIds?.includes(model.id)
-                      ? entry ? "Selected · download below" : "Selected · installer pending"
-                      : model.required
-                        ? "Required"
-                        : undefined;
+          const queued = downloads.queuedModelIds.includes(model.id);
+          const starting = downloads.startingModelIds.has(model.id);
+          const badge = (() => {
+            if (completedDownload(status)) return modelDownloadPhaseLabel(status?.phase);
+            if (isActiveModelDownloadPhase(status?.phase)) return modelDownloadPhaseLabel(status?.phase);
+            if (queued) return "Queued";
+            if (starting) return "Starting…";
+            if (installed) return "Installed";
+            if (attached) return "Already attached";
+            if (model.compatible === false) return "Not compatible";
+            if (unavailable) return "Download unavailable";
+            if (setup.selectedModelIds?.includes(model.id)) return "Selected · open progress";
+            if (model.required) return "Required";
+            return undefined;
+          })();
           return (
             <SelectionCard
               key={model.id}
@@ -295,44 +229,39 @@ function ModelChapter({
               name="aly-onboarding-model"
               value={model.id}
               checked={configuration.modelIds.includes(model.id)}
-              disabled={model.compatible === false || model.required}
+              disabled={model.compatible === false || model.required || unavailable}
               label={model.name}
               description={model.description ?? `${model.medium} model from ${model.providerId}`}
               badge={badge}
-              metadata={`${size}${footprint}${model.requirementReason ? ` · ${model.requirementReason}` : ""}`}
-              onChange={() => { if (!model.required) controller.updateConfiguration({ modelIds: toggleValue(configuration.modelIds, model.id) }); }}
+              metadata={(
+                <>
+                  <span>{size}{footprint}{model.requirementReason ? ` · ${model.requirementReason}` : ""}</span>
+                  {entry && entry.available && !completedDownload(status) ? (
+                    <span className="aly-onboarding-choice__license-note">
+                      Selecting downloads this pinned revision under the{" "}
+                      <a href={entry.licenseUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{entry.licenseId}</a>
+                      {" "}license · exact record <code>{entry.licenseSha256.slice(0, 12)}…</code>
+                    </span>
+                  ) : null}
+                </>
+              )}
+              onChange={() => {
+                if (model.required || unavailable) return;
+                const selected = configuration.modelIds.includes(model.id);
+                controller.updateConfiguration({ modelIds: toggleValue(configuration.modelIds, model.id) });
+                if (!selected && entry?.available && !completedDownload(status)) {
+                  downloads.enqueue([model.id]);
+                  downloads.openPanel();
+                  controller.setOpen(false);
+                }
+              }}
             />
           );
         })}
         {!catalog.models.length ? <p className="aly-onboarding-options__empty">No models were supplied by the application. You can configure them later.</p> : null}
       </fieldset>
 
-      {selectedEntries.length ? (
-        <section className="aly-onboarding-downloads" aria-labelledby="aly-onboarding-downloads-title">
-          <div className="aly-onboarding-downloads__header">
-            <div><span>Selected downloads</span><h3 id="aly-onboarding-downloads-title">Install without leaving onboarding</h3></div>
-            <div className="aly-onboarding-downloads__controls">
-              <button type="button" onClick={() => downloads.queue(queueableEntries)} disabled={queueableEntries.length === 0}>Queue accepted packs{queueableEntries.length ? ` (${queueableEntries.length})` : ""}</button>
-              {downloads.queuedModelIds.length > 0 ? <button type="button" onClick={downloads.clearQueue}>Clear waiting packs ({downloads.queuedModelIds.length})</button> : null}
-              <button type="button" onClick={() => { void downloads.refresh(); }} disabled={downloads.loading}>Refresh status</button>
-            </div>
-          </div>
-          <div className="aly-onboarding-downloads__list">
-            {selectedEntries.map((entry) => (
-              <DownloadCard
-                key={entry.modelId}
-                entry={entry}
-                status={downloads.statuses.find((status) => status.modelId === entry.modelId)}
-                accepted={acceptedLicenses[entry.modelId] === true}
-                starting={downloads.startingModelIds.has(entry.modelId)}
-                queued={downloads.queuedModelIds.includes(entry.modelId)}
-                onAcceptedChange={(accepted) => setAcceptedLicenses((current) => ({ ...current, [entry.modelId]: accepted }))}
-                onStart={() => downloads.queue([entry])}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
+      {selectedEntries.length ? <button type="button" className="aly-onboarding-download-panel-link" onClick={downloads.openPanel}>Open download progress</button> : null}
     </div>
   );
 }
@@ -346,11 +275,11 @@ function WelcomeChapter({ productName, brandMarkSrc, setup }: { productName: str
     <div className="aly-onboarding-welcome">
       <div className="aly-onboarding-welcome__mark" aria-hidden="true">{brandMarkSrc ? <img src={brandMarkSrc} alt="" /> : null}</div>
       <p className="aly-onboarding-welcome__lede">
-        Configure {productName} around your creative goals, hardware, privacy boundary, and preferred generation tools.
+        Configure {productName} around your creative goals, hardware, and preferred generation tools.
       </p>
       <ul className="aly-onboarding-welcome__promises">
         <li><strong>Your choices remain editable.</strong><span>Replay this guide or change individual settings later.</span></li>
-        <li><strong>Cloud use remains explicit.</strong><span>Provider selection never grants blanket permission to upload source material.</span></li>
+        <li><strong>Downloads stay out of your way.</strong><span>Follow real progress in a panel you can minimize while you work.</span></li>
         <li><strong>Existing setup is preserved.</strong><span>Detected providers, models, and profile details are carried into this guide.</span></li>
       </ul>
       {configured ? <div className="aly-onboarding-welcome__detected" role="status"><strong>Your existing setup is already here.</strong><span>{connected} provider{connected === 1 ? "" : "s"} connected{attached > 0 ? ` · ${attached} model${attached === 1 ? "" : "s"} attached` : ""}{selected > 0 ? ` · ${selected} model selection${selected === 1 ? "" : "s"}` : ""}{setup.existingProfile?.displayName ? ` · profile ${setup.existingProfile.displayName}` : ""}</span></div> : null}
@@ -400,7 +329,7 @@ function HardwareChapter({
   );
 }
 
-function ReadyChapter({ controller, catalog, downloads }: { controller: OnboardingController; catalog: OnboardingCatalog; downloads: OnboardingModelDownloads }) {
+function ReadyChapter({ controller, catalog, downloads }: { controller: OnboardingController; catalog: OnboardingCatalog; downloads: ModelDownloads }) {
   const { configuration } = controller.state;
   const providerNames = catalog.providers.filter((provider) => configuration.providerIds.includes(provider.id)).map((provider) => provider.name);
   const modelNames = catalog.models.filter((model) => configuration.modelIds.includes(model.id)).map((model) => model.name);
@@ -420,7 +349,6 @@ function ReadyChapter({ controller, catalog, downloads }: { controller: Onboardi
       <dl className="aly-onboarding-ready__summary">
         <div><dt>Creative goals</dt><dd>{configuration.goals.length ? configuration.goals.join(", ") : "Decide later"}</dd></div>
         <div><dt>Runtime</dt><dd>{configuration.runtime ?? "Not selected"}</dd></div>
-        <div><dt>Privacy</dt><dd>{configuration.privacy ?? "Not selected"}</dd></div>
         <div><dt>Providers</dt><dd>{providerNames.length ? providerNames.join(", ") : "None selected"}</dd></div>
         <div><dt>Models</dt><dd>{modelNames.length ? modelNames.join(", ") : "Choose later"}</dd></div>
         <div><dt>Downloads</dt><dd>{downloadSummary}</dd></div>
@@ -448,7 +376,7 @@ function ChapterContent({
   productName: string;
   brandMarkSrc?: string | undefined;
   onAcceptProfileAsset?: ((file: File) => Promise<ImportedProfileAsset | ProfilePortraitAsset | null>) | undefined;
-  downloads: OnboardingModelDownloads;
+  downloads: ModelDownloads;
 }) {
   const { configuration } = controller.state;
   const fieldName = `aly-onboarding-${chapterId}`;
@@ -491,15 +419,6 @@ function ChapterContent({
               onChange={() => controller.updateConfiguration({ runtime: runtime.id })}
             />
           ))}
-        </fieldset>
-      );
-    case "privacy":
-      return (
-        <fieldset className="aly-onboarding-options">
-          <legend className="aly-onboarding-sr-only">Privacy boundary</legend>
-          <SelectionCard type="radio" name={fieldName} value="local-only" checked={configuration.privacy === "local-only"} label="Local only" description="Keep source material and generation on this computer." onChange={() => controller.updateConfiguration({ privacy: "local-only" })} />
-          <SelectionCard type="radio" name={fieldName} value="ask-before-cloud" checked={configuration.privacy === "ask-before-cloud"} label="Ask before cloud use" description="Allow cloud routes only after a project-specific approval." badge="Recommended" onChange={() => controller.updateConfiguration({ privacy: "ask-before-cloud" })} />
-          <SelectionCard type="radio" name={fieldName} value="approved-cloud" checked={configuration.privacy === "approved-cloud"} label="Approved providers" description="Permit configured cloud providers while retaining per-route controls." onChange={() => controller.updateConfiguration({ privacy: "approved-cloud" })} />
         </fieldset>
       );
     case "provider":
@@ -553,14 +472,12 @@ export function OnboardingDialog({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const wasOpen = useRef(false);
-  const downloads = useOnboardingModelDownloads(controller.isOpen);
+  const downloads = useModelDownloads();
   const chapter = onboardingChapters.find((candidate) => candidate.id === controller.state.activeChapterId) ?? onboardingChapters[0]!;
   const activeIndex = chapterIndex(chapter.id);
   const optional = chapter.optional === true;
   const canContinue = canAdvanceOnboarding(controller.state, setupState);
-  const pendingQueueCount = downloads.queuedModelIds.length + downloads.startingModelIds.size;
-  const queueIsPending = pendingQueueCount > 0;
-  const canNavigateForward = canContinue && !(chapter.id === "ready" && queueIsPending);
+  const canNavigateForward = canContinue;
   const accessibleChapters = useMemo(
     () => new Set<OnboardingChapterId>([
       controller.state.activeChapterId,
@@ -587,7 +504,7 @@ export function OnboardingDialog({
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      if (!queueIsPending) controller.exit();
+      controller.exit();
       return;
     }
     if (event.altKey && event.key === "ArrowLeft" && activeIndex > 0) {
@@ -671,7 +588,7 @@ export function OnboardingDialog({
             </div>
             <div className="aly-onboarding-dialog__header-actions">
               {headerAccessory}
-              <button type="button" className="aly-onboarding-dialog__exit" aria-label="Exit onboarding" disabled={queueIsPending} onClick={controller.exit}>×</button>
+              <button type="button" className="aly-onboarding-dialog__exit" aria-label="Exit onboarding" onClick={controller.exit}>×</button>
             </div>
           </header>
 
@@ -682,15 +599,11 @@ export function OnboardingDialog({
           {controller.persistenceError ? (
             <p className="aly-onboarding-dialog__persistence-error" role="alert">Your latest onboarding choice could not be saved. You can retry by changing the selection again.</p>
           ) : null}
-          {queueIsPending ? (
-            <p className="aly-onboarding-dialog__requirement" role="status">
-              Keep setup open while {pendingQueueCount} selected pack{pendingQueueCount === 1 ? " waits" : "s wait"} to start. A download continues in the background after the native worker starts it. Return to Model toolkit and clear waiting packs if you want to leave now.
-            </p>
-          ) : !canContinue ? <p className="aly-onboarding-dialog__requirement" role="status">Choose an option above to continue.</p> : null}
+          {!canContinue ? <p className="aly-onboarding-dialog__requirement" role="status">Choose an option above to continue.</p> : null}
 
           <footer className="aly-onboarding-dialog__footer">
             <div className="aly-onboarding-dialog__secondary-actions">
-              {allowSkip ? <button type="button" className="aly-onboarding-dialog__skip" disabled={queueIsPending} onClick={controller.skip}>Skip setup</button> : null}
+              {allowSkip ? <button type="button" className="aly-onboarding-dialog__skip" onClick={controller.skip}>Skip setup</button> : null}
               {optional && !isChapterConfigured(chapter.id, controller.state.configuration, setupState) ? <span className="aly-onboarding-dialog__optional">Optional chapter</span> : null}
             </div>
             <div className="aly-onboarding-dialog__navigation">

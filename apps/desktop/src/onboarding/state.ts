@@ -9,14 +9,13 @@ import {
 } from "./types";
 
 export const onboardingChapters: readonly OnboardingChapterDefinition[] = [
-  { id: "welcome", eyebrow: "Welcome", title: "Make AI Video Tutorial Generator yours", description: "A short guided setup keeps every generation deliberate, private, and matched to your computer." },
+  { id: "welcome", eyebrow: "Welcome", title: "Make AI Video Tutorial Generator yours", description: "A short guided setup matches the workspace and generation tools to how you create." },
   { id: "goal", eyebrow: "Chapter 1", title: "What will you create?", description: "Choose one or more goals. You can change these later in Settings." },
   { id: "runtime", eyebrow: "Chapter 2", title: "Choose where work runs", description: "Balance local control, cloud capability, and convenience." },
-  { id: "privacy", eyebrow: "Chapter 3", title: "Set your privacy boundary", description: "The app should never send source material somewhere you did not approve." },
-  { id: "provider", eyebrow: "Chapter 4", title: "Connect generation providers", description: "Use existing connections or select providers to configure after onboarding.", optional: true },
-  { id: "hardware", eyebrow: "Chapter 5", title: "Review this system", description: "Confirm the detected hardware before selecting local workloads." },
-  { id: "model", eyebrow: "Chapter 6", title: "Review your model toolkit", description: "Review the local tools you want. Downloadable packs can be installed here; other choices stay clearly marked until an installer exists.", optional: true },
-  { id: "profile", eyebrow: "Chapter 7", title: "Create your studio profile", description: "Choose how your account appears in the workspace." },
+  { id: "provider", eyebrow: "Chapter 3", title: "Connect generation providers", description: "Use existing connections or select providers to configure after onboarding.", optional: true },
+  { id: "hardware", eyebrow: "Chapter 4", title: "Review this system", description: "Confirm the detected hardware before selecting local workloads." },
+  { id: "model", eyebrow: "Chapter 5", title: "Choose your model toolkit", description: "Select a downloadable pack to start its verified installation, then follow progress while you use the app.", optional: true },
+  { id: "profile", eyebrow: "Chapter 6", title: "Create your studio profile", description: "Choose how your account appears in the workspace." },
   { id: "ready", eyebrow: "Ready", title: "Your studio plan is ready", description: "Review the choices below, then enter the workspace." },
 ] as const;
 
@@ -76,8 +75,6 @@ export function isChapterConfigured(
       return configuration.goals.length > 0;
     case "runtime":
       return configuration.runtime !== null || setup.runtimeConfigured === true;
-    case "privacy":
-      return configuration.privacy !== null || setup.privacyConfigured === true;
     case "provider":
       return configuration.providerIds.length > 0 || (setup.connectedProviderIds?.length ?? 0) > 0;
     case "hardware":
@@ -133,7 +130,12 @@ export function normalizeOnboardingState(
     profile: { ...defaultOnboardingConfiguration.profile, ...persisted.configuration?.profile },
   }, setup);
   const configured = configuredChapterIds(configuration, setup);
-  const activeChapterId = chapterSet.has(persisted.activeChapterId) ? persisted.activeChapterId : "welcome";
+  const persistedChapterId = persisted.activeChapterId as string;
+  const activeChapterId = persistedChapterId === "privacy"
+    ? "provider"
+    : chapterSet.has(persistedChapterId)
+      ? persisted.activeChapterId
+      : "welcome";
 
   return {
     ...persisted,

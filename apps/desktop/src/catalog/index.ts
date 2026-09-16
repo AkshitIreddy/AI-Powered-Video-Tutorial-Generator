@@ -4,6 +4,7 @@ export * from "./CatalogIntegrationExample";
 export * from "./CatalogModule";
 export * from "./compatibility";
 export * from "./defaults";
+export * from "./downloadMatching";
 export * from "./ModelLibrary";
 export * from "./ModelRoutingSettings";
 export * from "./ProviderMark";

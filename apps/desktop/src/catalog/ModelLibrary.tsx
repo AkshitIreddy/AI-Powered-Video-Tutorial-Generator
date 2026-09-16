@@ -28,12 +28,20 @@ import { isCloudWritingProfileCandidate } from "./writingProfile";
 export interface ModelLibraryProps {
   items: readonly CatalogItem[];
   compatibilityContext: CompatibilityContext;
-  onInspect?: (item: CatalogItem) => void;
+  onDownload?: (item: CatalogItem) => void;
+  downloadState?: (item: CatalogItem) => CatalogDownloadActionState;
   onSelect?: (item: CatalogItem) => void;
   onUseForWritingProfile?: (item: CatalogItem) => void;
   writingProfileProviderIds?: readonly string[];
   onAddToRoute?: (selection: CapabilityRouteSelection) => void;
   initialQuery?: string;
+}
+
+export interface CatalogDownloadActionState {
+  label: string;
+  disabled: boolean;
+  detail?: string;
+  progressPercent?: number;
 }
 
 const compatibilityLabels: Readonly<Record<CompatibilityLevel, string>> = {
@@ -60,7 +68,8 @@ const RESULT_BATCH_SIZE = 6;
 export function ModelLibrary({
   items,
   compatibilityContext,
-  onInspect,
+  onDownload,
+  downloadState,
   onSelect,
   onUseForWritingProfile,
   writingProfileProviderIds,
@@ -74,10 +83,28 @@ export function ModelLibrary({
   const [showFilters, setShowFilters] = useState(false);
   const [visibleResultCount, setVisibleResultCount] = useState(RESULT_BATCH_SIZE);
   const parsed = useMemo(() => parseCatalogQuery(query), [query]);
-  const results = useMemo(
+  const filteredResults = useMemo(
     () => filterCatalogItems(items, { query, filters, sort, context: compatibilityContext }),
     [items, query, filters, sort, compatibilityContext],
   );
+  const results = useMemo(() => {
+    if (query.trim() || sort !== "relevance") return filteredResults;
+    return [...filteredResults].sort((left, right) => defaultActionRank(
+      left.item,
+      left.compatibility.canSelect,
+      onDownload,
+      downloadState,
+      onUseForWritingProfile,
+      writingProfileProviderIds,
+    ) - defaultActionRank(
+      right.item,
+      right.compatibility.canSelect,
+      onDownload,
+      downloadState,
+      onUseForWritingProfile,
+      writingProfileProviderIds,
+    ));
+  }, [filteredResults, query, sort, onDownload, downloadState, onUseForWritingProfile, writingProfileProviderIds]);
   const visibleResults = results.slice(0, visibleResultCount);
 
   useEffect(() => {
@@ -191,6 +218,10 @@ export function ModelLibrary({
           {visibleResults.map(({ item, compatibility }) => {
             const canStageWritingProfile = Boolean(onUseForWritingProfile)
               && isCloudWritingProfileCandidate(item, writingProfileProviderIds ?? [item.identity.providerId]);
+            const isLocalModel = item.execution.boundaries.includes("local");
+            const resolvedDownloadState = isLocalModel && (onDownload || downloadState)
+              ? downloadState?.(item) ?? defaultDownloadState(item)
+              : null;
             return (
             <li className="aly-catalog-card" key={`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`}>
               <div className="aly-catalog-card__topline">
@@ -214,8 +245,21 @@ export function ModelLibrary({
                 <div><dt>License</dt><dd>{item.license.identifier ?? item.license.status}</dd></div>
               </dl>
               {compatibility.reasons[0] && <p className="aly-catalog-card__reason">{compatibility.reasons[0].message}</p>}
+              <details>
+                <summary>Model details</summary>
+                <p>{item.identity.revision ? `Revision ${item.identity.revision}` : "No immutable revision is listed."}</p>
+                <p>{item.requirements.downloadBytes === null ? "Download size is not listed." : `${formatBytes(item.requirements.downloadBytes)} download size.`}</p>
+              </details>
+              {resolvedDownloadState?.detail && <p className="aly-catalog-card__reason" role="status">{resolvedDownloadState.detail}</p>}
+              {resolvedDownloadState?.progressPercent !== undefined && (
+                <progress
+                  aria-label={`${item.identity.name} download progress`}
+                  max={100}
+                  value={Math.max(0, Math.min(100, resolvedDownloadState.progressPercent))}
+                />
+              )}
               <div className="aly-catalog-card__actions">
-                {onInspect && <button type="button" className="aly-catalog-button aly-catalog-button--quiet" onClick={() => onInspect(item)}>Inspect details</button>}
+                {resolvedDownloadState && <button type="button" className="aly-catalog-button" disabled={resolvedDownloadState.disabled || !onDownload} onClick={() => onDownload?.(item)}>{resolvedDownloadState.label}</button>}
                 {onAddToRoute && <button type="button" className="aly-catalog-button aly-catalog-button--quiet" disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Add this ready item to a capability route" : "Resolve compatibility checks before routing this item"} onClick={() => onAddToRoute(selectionFromCatalogItem(item))}>Add to route</button>}
                 {canStageWritingProfile && <button type="button" className="aly-catalog-button" disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Stage this exact model in the active writing profile; use Save setup below to keep it" : "Connect the provider and resolve its compatibility checks before using it"} onClick={() => onUseForWritingProfile?.(item)}>Use in writing profile</button>}
                 {onSelect && <button type="button" className="aly-catalog-button" disabled={!compatibility.canSelect} onClick={() => onSelect(item)}>Select model</button>}
@@ -238,4 +282,36 @@ export function ModelLibrary({
       )}
     </section>
   );
+}
+
+function defaultDownloadState(item: CatalogItem): CatalogDownloadActionState {
+  if (item.availability === "installed" || item.localInstall?.status === "verified") {
+    return { label: "Installed", disabled: true, detail: "This model is installed and verified on this device." };
+  }
+  if (item.availability === "downloadable") {
+    return { label: "Download", disabled: false };
+  }
+  return {
+    label: "Download unavailable",
+    disabled: true,
+    detail: "No verified download package is available for this catalog entry.",
+  };
+}
+
+function defaultActionRank(
+  item: CatalogItem,
+  canSelect: boolean,
+  onDownload: ModelLibraryProps["onDownload"],
+  downloadState: ModelLibraryProps["downloadState"],
+  onUseForWritingProfile: ModelLibraryProps["onUseForWritingProfile"],
+  writingProfileProviderIds: ModelLibraryProps["writingProfileProviderIds"],
+): number {
+  if (item.execution.boundaries.includes("local") && (onDownload || downloadState)) {
+    const state = downloadState?.(item) ?? defaultDownloadState(item);
+    return /unavailable/i.test(state.label) ? 4 : 0;
+  }
+  if (onUseForWritingProfile && isCloudWritingProfileCandidate(item, writingProfileProviderIds ?? [item.identity.providerId])) {
+    return canSelect ? 1 : 3;
+  }
+  return canSelect ? 2 : 4;
 }

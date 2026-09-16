@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ModelLibrary } from "../ModelLibrary";
 import { ModelRoutingSettings } from "../ModelRoutingSettings";
+import { CatalogIntegrationExample } from "../CatalogIntegrationExample";
 import { stageCatalogWritingModel } from "../writingProfile";
 import type { RoutingProfile } from "../types";
 import { catalogFixture, contextFixture, hardwareFixture } from "./fixtures";
@@ -17,6 +18,21 @@ const profile: RoutingProfile = {
 };
 
 describe("catalog selection controls", () => {
+  it("integrates only operative catalog actions instead of temporary route and resource editors", () => {
+    render(
+      <CatalogIntegrationExample
+        hardware={hardwareFixture()}
+        items={[catalogFixture({ name: "Managed local model", availability: "downloadable" })]}
+        onModelDownload={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Managed local model" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Compare routes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Estimate resources" })).not.toBeInTheDocument();
+  });
+
   it("renders large result sets in responsive batches without hiding the exact total", async () => {
     const user = userEvent.setup();
     const items = Array.from({ length: 30 }, (_, index) => catalogFixture({
@@ -37,25 +53,102 @@ describe("catalog selection controls", () => {
     expect(screen.queryByRole("button", { name: /Show .* more/ })).not.toBeInTheDocument();
   });
 
-  it("shows only catalog actions that have a working callback", async () => {
+  it("puts actionable models first by default while preserving explicit search and sort", async () => {
     const user = userEvent.setup();
-    const item = catalogFixture({ name: "Inspectable model" });
-    const onInspect = vi.fn();
+    const unsupported = catalogFixture({ name: "Alpha unsupported", sourceId: "local/unsupported", availability: "downloadable" });
+    const cloud = catalogFixture({
+      name: "Middle cloud writer",
+      sourceId: "openai/gpt-oss-20b",
+      providerId: "groq",
+      capabilities: ["llm.text", "llm.structured"],
+      boundaries: ["cloud"],
+      availability: "available",
+    });
+    const downloadable = catalogFixture({ name: "Zulu downloadable", sourceId: "local/downloadable", availability: "downloadable" });
+    render(
+      <ModelLibrary
+        items={[unsupported, cloud, downloadable]}
+        compatibilityContext={contextFixture({ capability: null, hardware: hardwareFixture({ providerConnectionIds: ["groq"] }) })}
+        onDownload={vi.fn()}
+        downloadState={(item) => item === downloadable
+          ? { label: "Download", disabled: false }
+          : { label: "Download unavailable", disabled: true }}
+        onUseForWritingProfile={vi.fn()}
+        writingProfileProviderIds={["groq"]}
+      />,
+    );
+
+    expect(screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      "Zulu downloadable",
+      "Middle cloud writer",
+      "Alpha unsupported",
+    ]);
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "name");
+    expect(screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      "Alpha unsupported",
+      "Middle cloud writer",
+      "Zulu downloadable",
+    ]);
+
+    await user.type(screen.getByRole("searchbox", { name: "Search models" }), "Zulu");
+    expect(screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)).toEqual(["Zulu downloadable"]);
+  });
+
+  it("uses Download as the primary local-model action and keeps details secondary", async () => {
+    const user = userEvent.setup();
+    const item = catalogFixture({ name: "Downloadable model", availability: "downloadable" });
+    const onDownload = vi.fn();
     const { rerender } = render(
       <ModelLibrary
         items={[item]}
         compatibilityContext={contextFixture()}
-        onInspect={onInspect}
+        onDownload={onDownload}
       />,
     );
 
     expect(screen.queryByRole("button", { name: "Select model" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Inspect details" }));
-    expect(onInspect).toHaveBeenCalledWith(item);
+    expect(screen.queryByRole("button", { name: "Inspect details" })).not.toBeInTheDocument();
+    expect(screen.getByText("Model details")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Download" }));
+    expect(onDownload).toHaveBeenCalledWith(item);
 
     rerender(<ModelLibrary items={[item]} compatibilityContext={contextFixture()} />);
-    expect(screen.queryByRole("button", { name: "Inspect details" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Select model" })).not.toBeInTheDocument();
+  });
+
+  it("shows managed progress and an unavailable download without implying success", () => {
+    const downloading = catalogFixture({ name: "Downloading model", sourceId: "local/downloading", availability: "downloadable" });
+    const unavailable = catalogFixture({ name: "Unmanaged model", sourceId: "local/unmanaged", availability: "downloadable" });
+    render(
+      <ModelLibrary
+        items={[downloading, unavailable]}
+        compatibilityContext={contextFixture()}
+        onDownload={vi.fn()}
+        downloadState={(item) => item.identity.sourceId === "local/downloading"
+          ? { label: "Downloading 42%", disabled: true, detail: "2.1 GB of 5 GB", progressPercent: 42 }
+          : { label: "Download unavailable", disabled: true, detail: "No verified package exists for this model." }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Downloading 42%" })).toBeDisabled();
+    expect(screen.getByRole("progressbar", { name: "Downloading model download progress" })).toHaveAttribute("value", "42");
+    expect(screen.getByRole("button", { name: "Download unavailable" })).toBeDisabled();
+    expect(screen.getByText("No verified package exists for this model.")).toBeInTheDocument();
+  });
+
+  it("never offers a download action for a cloud-only model", () => {
+    render(
+      <ModelLibrary
+        items={[catalogFixture({ name: "Cloud model", boundaries: ["cloud"], availability: "available" })]}
+        compatibilityContext={contextFixture()}
+        onDownload={vi.fn()}
+        downloadState={() => ({ label: "Download", disabled: false })}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
   });
 
   it("stages a compatible connected cloud writing model and blocks it without the connection", async () => {

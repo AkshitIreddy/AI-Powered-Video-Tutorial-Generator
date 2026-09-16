@@ -126,13 +126,16 @@ export interface ProviderRoutingReview {
 export function buildProviderRoutingReview(input: {
   profile: ModelProfile;
   secretRefs: Record<string, ProviderSecretRef>;
-  dataClassification: "public" | "project";
-  approvalChecked: boolean;
-  hasPrivateSources: boolean;
+  hasImportedSources?: boolean;
   groundingMode: "creative" | "grounded" | "strict";
-  reviewedAt?: string;
+  createdAt?: string;
   setupUpdatedAt?: string;
   providerAccountIds?: Readonly<Record<string, string>>;
+  /** Legacy call-site fields are ignored; the saved profile now authorizes its exact routes. */
+  approvalChecked?: boolean;
+  dataClassification?: "public" | "project";
+  hasPrivateSources?: boolean;
+  reviewedAt?: string;
 }): ProviderRoutingReview {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -216,12 +219,12 @@ export function buildProviderRoutingReview(input: {
   const hasCloud = selectedProviders.some(([id]) => providerPolicies[id]?.boundary === "cloud");
   const hasLocal = selectedProviders.some(([id]) => providerPolicies[id]?.boundary === "local");
   const privacy: TutorialRoutingPolicy["privacyMode"] = hasCloud ? (hasLocal ? "hybrid" : "cloud") : "local";
+  const usesPublicPreview = selectedProviders.some(([id]) => id === "nvidia-nim");
+  const hasImportedSources = input.hasImportedSources ?? input.hasPrivateSources ?? false;
+  const dataClassification: TutorialRoutingPolicy["dataClassification"] = usesPublicPreview && !hasImportedSources ? "public" : "project";
 
-  if (input.hasPrivateSources && hasCloud) {
-    errors.push("Private source files cannot enter this cloud profile. Use an all-local profile or create the project without those files.");
-  }
-  if (input.dataClassification === "project" && selectedProviders.some(([id]) => id === "nvidia-nim")) {
-    errors.push("NVIDIA hosted preview accepts only public or synthetic project content.");
+  if (hasImportedSources && usesPublicPreview) {
+    errors.push("NVIDIA hosted preview accepts only prompt-only tutorials. Choose another saved profile when source files are attached.");
   }
   const selectedPresenterProfileId = [
     input.profile.routes.lipSync,
@@ -247,15 +250,11 @@ export function buildProviderRoutingReview(input: {
   ) {
     warnings.push(`${curatedPairing.label} has a curated ElevenLabs pairing (${curatedPairing.recommendedElevenLabsVoiceId}); the selected override remains available for creative control.`);
   }
-  if (!input.approvalChecked) {
-    errors.push("Review and approve the named providers and their data-handling boundaries.");
-  }
-
   const approvals: ProviderApproval[] = selectedProviders.map(([providerId, capabilities]) => {
     const descriptor = providerPolicies[providerId]!;
     const credential = input.secretRefs[providerId];
     if (descriptor.credential && credential?.availability !== "present") {
-      errors.push(`${providerId} needs a credential in the OS vault before this profile can be approved.`);
+      errors.push(`${providerId} needs a credential in the OS vault before this profile can be used.`);
     }
     const accountId = input.providerAccountIds?.[providerId]?.trim() || null;
     if (
@@ -271,12 +270,16 @@ export function buildProviderRoutingReview(input: {
       boundary: descriptor.boundary,
       retention: descriptor.retention,
       regions: [...descriptor.regions],
-      dataClasses: [input.dataClassification],
-      privacyApproved: input.approvalChecked,
-      retentionApproved: input.approvalChecked,
-      regionApproved: input.approvalChecked,
-      termsApproved: input.approvalChecked && providerId === "nvidia-nim",
-      modelAccessCheckedAt: providerId === "nvidia-nim" && input.approvalChecked ? (input.reviewedAt ?? new Date().toISOString()) : null,
+      dataClasses: [dataClassification],
+      // Selecting and saving a profile is the user's routing decision. These
+      // compatibility flags keep the existing native policy format readable;
+      // they are derived from the selected provider instead of a second set
+      // of privacy, retention, and region controls in project creation.
+      privacyApproved: true,
+      retentionApproved: true,
+      regionApproved: true,
+      termsApproved: providerId === "nvidia-nim",
+      modelAccessCheckedAt: providerId === "nvidia-nim" ? (input.createdAt ?? input.reviewedAt ?? new Date().toISOString()) : null,
       ...(providerId === "cloudflare-workers-ai"
         ? { accountId }
         : {}),
@@ -289,7 +292,7 @@ export function buildProviderRoutingReview(input: {
   const policy: TutorialRoutingPolicy | null = uniqueErrors.length ? null : {
     version: 1,
     privacyMode: privacy,
-    dataClassification: input.dataClassification,
+    dataClassification,
     approvals,
     routes,
   };
@@ -297,7 +300,7 @@ export function buildProviderRoutingReview(input: {
     schemaVersion: 1,
     profileId: input.profile.id,
     profileName: input.profile.name,
-    capturedAt: input.reviewedAt ?? new Date().toISOString(),
+    capturedAt: input.createdAt ?? input.reviewedAt ?? new Date().toISOString(),
     ...(input.setupUpdatedAt ? { sourceSetupUpdatedAt: input.setupUpdatedAt } : {}),
     routes: snapshotRoutes,
   } : null;

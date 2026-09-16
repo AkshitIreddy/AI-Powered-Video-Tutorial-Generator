@@ -59,7 +59,8 @@ describe("onboarding state", () => {
       hardwareReviewed: true,
       profile: { displayName: "Akshit", portraitAssetId: "portrait-2" },
     });
-    expect(state.completedChapterIds).toEqual(expect.arrayContaining(["welcome", "runtime", "privacy", "provider", "hardware", "model", "profile"]));
+    expect(state.completedChapterIds).toEqual(expect.arrayContaining(["welcome", "runtime", "provider", "hardware", "model", "profile"]));
+    expect(state.completedChapterIds).not.toContain("privacy");
     expect(state.status).toBe("not-started");
     expect(shouldOpenFirstRunOnboarding(state)).toBe(true);
   });
@@ -124,7 +125,8 @@ describe("onboarding state", () => {
       ...beforeReplay,
       providerIds: ["openai", "elevenlabs"],
     });
-    expect(replayed.completedChapterIds).toEqual(expect.arrayContaining(["goal", "runtime", "privacy", "provider", "hardware", "model", "profile"]));
+    expect(replayed.completedChapterIds).toEqual(expect.arrayContaining(["goal", "runtime", "provider", "hardware", "model", "profile"]));
+    expect(replayed.completedChapterIds).not.toContain("privacy");
   });
 
   it("normalizes duplicate and stale state without erasing user configuration", () => {
@@ -146,6 +148,27 @@ describe("onboarding state", () => {
     expect(normalized.configuration.goals).toEqual(["tutorials"]);
     expect(normalized.configuration.providerIds).toEqual(["openai"]);
     expect(normalized.completedChapterIds.filter((id) => id === "goal")).toHaveLength(1);
+  });
+
+  it("migrates a legacy privacy chapter to the next available setup step", () => {
+    const persisted = {
+      ...createOnboardingState({}, clock),
+      status: "in-progress",
+      activeChapterId: "privacy",
+      completedChapterIds: ["goal", "runtime", "privacy"],
+      visitedChapterIds: ["welcome", "goal", "runtime", "privacy"],
+      configuration: {
+        ...createOnboardingState({}, clock).configuration,
+        privacy: "ask-before-cloud",
+      },
+    } as unknown as PersistedOnboardingState;
+
+    const normalized = normalizeOnboardingState(persisted, {}, clock);
+
+    expect(normalized.activeChapterId).toBe("provider");
+    expect(normalized.completedChapterIds).not.toContain("privacy");
+    expect(normalized.visitedChapterIds).not.toContain("privacy");
+    expect(normalized.configuration.privacy).toBe("ask-before-cloud");
   });
 });
 

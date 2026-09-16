@@ -6,7 +6,6 @@ export const onboardingChapterIds = [
   "welcome",
   "goal",
   "runtime",
-  "privacy",
   "provider",
   "hardware",
   "model",
@@ -85,6 +84,7 @@ export interface AccountProfileConfiguration {
 export interface OnboardingConfiguration {
   goals: string[];
   runtime: RuntimePreference | null;
+  /** @deprecated Retained only so existing persisted onboarding state can migrate safely. */
   privacy: PrivacyPreference | null;
   providerIds: string[];
   modelIds: string[];
@@ -95,7 +95,9 @@ export interface OnboardingConfiguration {
 export interface OnboardingSetupState {
   runtimeConfigured?: boolean;
   detectedRuntime?: RuntimePreference | null;
+  /** @deprecated Retained only for compatibility with existing setup records. */
   privacyConfigured?: boolean;
+  /** @deprecated Retained only for compatibility with existing setup records. */
   detectedPrivacy?: PrivacyPreference | null;
   connectedProviderIds?: readonly string[];
   /** Saved choices only; these do not prove installation or attachment. */

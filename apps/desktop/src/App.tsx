@@ -1,3 +1,9 @@
+import { CommandPalette } from "./CommandPalette";
+import { InspectorSection } from "./InspectorSection";
+import { isDownloadActive, isDownloadComplete, downloadPhaseLabel as modelDownloadPhaseLabel } from "./downloads/downloadState";
+import { ModelDownloadProvider, useModelDownloads } from "./downloads/ModelDownloadProvider";
+import { ModelDownloadLauncher, ModelDownloadPanel } from "./downloads/ModelDownloadPanel";
+import { findModelDownloadEntry } from "./catalog/downloadMatching";
 import {
   Activity,
   AlignLeft,
@@ -149,9 +155,6 @@ import {
   jobStatus,
   localModelSetupGet,
   localModelSetupSave,
-  localModelDownloadCatalog,
-  localModelDownloadStart,
-  localModelDownloadStatus,
   masterExport,
   projectCreate,
   projectAssetImport,
@@ -170,6 +173,8 @@ import {
   qaRepair,
   sceneRegenerate,
   sceneCandidateAccept,
+  sceneEditCandidateAccept,
+  sceneEditCandidateReject,
   searchVisualCandidates,
   sceneRender,
   sourceImport,
@@ -180,14 +185,13 @@ import {
   type GroundingMode,
   type JobReceipt,
   type LocalModelSetup,
-  type ModelDownloadCatalogEntry,
-  type ModelDownloadStatus,
   type MasterExportRequest,
   type ModelProfile,
   type ProjectAssetImportReceipt,
   type ProviderSecretRef,
   type TutorialRoutingPolicy,
   type QualityPreset,
+  type SceneRegenerationRequest,
   type SourceImportReceipt,
 } from "./native";
 import { buildProviderRoutingReview } from "./providerRouting";
@@ -219,6 +223,13 @@ import { RenderedFrameReviewPanel } from "./RenderedFrameReviewPanel";
 import { StockImageSearch } from "./StockImageSearch";
 import type { StockProvider } from "./stockSearchRoutes";
 import { visualCandidates, type VisualCandidate } from "./visualCandidates";
+import {
+  parseSceneEditCandidates,
+  SceneEditCandidateReview,
+  type SceneEditCandidate,
+  type SceneEditContent,
+  type SceneEditFocus,
+} from "./sceneEdits";
 import { BundledAssetLibrary } from "./BundledAssetLibrary";
 import { presenterCollection } from "./presenterCollection";
 import { PresenterPicker } from "./PresenterPicker";
@@ -271,7 +282,6 @@ interface TutorialCreationSettings {
   sourceFiles: File[];
   routingPolicy: TutorialRoutingPolicy;
   approvedProviderIds: string[];
-  privacy: TutorialRoutingPolicy["privacyMode"];
 }
 
 const ONBOARDING_STORAGE_KEY = "alystria-onboarding-v1";
@@ -781,14 +791,14 @@ function LogoMark() {
   );
 }
 
-function App() {
+function AppWorkbench() {
   const [preferences] = usePersistentState<AlystriaPreferences>("alystria-preferences-v1", DEFAULT_ALYSTRIA_PREFERENCES);
   useEffect(() => {
     document.documentElement.dataset.reduceMotion = String(preferences.reducedMotion);
     document.documentElement.dataset.highContrast = String(preferences.highContrast);
     document.documentElement.dataset.denseEditor = String(preferences.denseEditor);
   }, [preferences.reducedMotion, preferences.highContrast, preferences.denseEditor]);
-  const [snapshot, setSnapshot, resetSnapshot] = usePersistentState<AppSnapshot>("alystria-studio-v2", defaultSnapshot, normalizeAppSnapshot);
+  const [snapshot, setSnapshot] = usePersistentState<AppSnapshot>("alystria-studio-v2", defaultSnapshot, normalizeAppSnapshot);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const [runtime, setRuntime] = useState<RuntimeState>({ environment: desktopEnvironment(), bootstrap: null, loading: true, error: null });
@@ -1484,16 +1494,15 @@ function App() {
       projectDirectory: handle.projectDirectory,
       expectedHeadRevisionId: createdProject.nativeHeadRevisionId!,
       policy: settings.routingPolicy,
-      message: `Approved ${settings.routingPolicy.privacyMode} provider routing for tutorial creation`,
+      message: "Saved the selected model profile for tutorial creation",
     });
     createdProject = {
       ...createdProject,
       nativeHeadRevisionId: routingReceipt.headRevisionId,
       ...(routingReceipt.revisionNumber !== undefined ? { nativeRevisionNumber: routingReceipt.revisionNumber } : {}),
-      privacy: settings.privacy === "local" ? "Local only" : "Approved cloud",
-      // The policy contains only explicit route identities and opaque keyring
-      // references. Keep it in later snapshots so normal scene/design saves
-      // cannot silently erase the approved provider boundary.
+      privacy: settings.routingPolicy.privacyMode === "local" ? "Local only" : "Approved cloud",
+      // Keep the selected route identities and opaque keyring references in
+      // later snapshots so scene/design saves cannot erase the chosen profile.
       providerRoutingPolicy: settings.routingPolicy,
     };
     const receipt = await generationStart({
@@ -1502,7 +1511,7 @@ function App() {
       snapshotId: createdProject.nativeHeadRevisionId ?? null,
       scope: { kind: "project" },
       quality: settings.quality,
-      privacy: settings.privacy,
+      privacy: settings.routingPolicy.privacyMode,
       approvedProviderIds: settings.approvedProviderIds,
       preservationLocks: [],
     });
@@ -1522,7 +1531,7 @@ function App() {
     setActiveSceneId(createdProject.scenes[0]?.id ?? "");
     setWorkspace("plan");
     setJobsOpen(true);
-    notify("Project and routing approved", `${createdProject.title} is stored under ${bootstrap.paths.projects} with the reviewed ${settings.privacy} provider policy.`, receipt.state === "BLOCKED" || receipt.state === "FAILED" ? "warning" : "success");
+    notify("Tutorial created", `${createdProject.title} is stored under ${bootstrap.paths.projects} and uses the selected model profile.`, receipt.state === "BLOCKED" || receipt.state === "FAILED" ? "warning" : "success");
   };
 
   const importSources = async (projectId: string, files: File[]) => {
@@ -1906,7 +1915,7 @@ function App() {
               onUseTemplate={(templateId) => { setSelectedTemplateId(templateId); setNewTutorialOpen(true); }}
               onNotify={notify}
               onImportSources={(files) => snapshot.recentProjectId ? importSources(snapshot.recentProjectId, files) : Promise.resolve([])}
-              onReset={() => { resetSnapshot(); notify("Workspace view reset", "Recent tutorial links and the visible job list were cleared. Saved project folders and provider settings remain on disk.", "info"); }}
+              onReset={() => { setSnapshot((current) => ({ ...current, recentProjectId: null, jobs: current.jobs.filter((job) => job.status === "running" || job.status === "queued"), studioMode: "guided" })); setActiveProjectId(null); setWorkspace(null); setJobsOpen(false); notify("Workspace view reset", "The view and finished job list were reset. Your projects and active work remain available.", "info"); }}
               onReplayOnboarding={onboarding.replay}
               onReplayTour={() => startGuidedTour(true)}
               onUseBundledAsset={useBundledAsset}
@@ -1919,27 +1928,31 @@ function App() {
 
       {newTutorialOpen && <NewTutorialWizard environment={runtime.environment} templateId={selectedTemplateId} onClose={() => setNewTutorialOpen(false)} onCreate={createTutorial} />}
 
-      {regenScene && activeProject && <RegenerationSheet scene={regenScene} onClose={() => setRegenScene(null)} onRun={(instruction, preserve, alternatives) => {
+      {regenScene && activeProject && <RegenerationSheet scene={regenScene} onClose={() => setRegenScene(null)} onRun={(instruction, focus, preserveTiming, alternatives) => {
         const scene = regenScene;
         const projectLink = nativeProjectLink(activeProject);
         const start = async () => {
           if (projectLink && activeProject.nativeHeadRevisionId) {
             await snapshotSaveSequence.current;
             const baseJobId = baseGenerationJobId(activeProject);
+            const preservationLocks: SceneRegenerationRequest["preservationLocks"] = focus === "visual"
+              ? ["narration", "citations", "learningobjective", "timing", "presenter"]
+              : ["citations", "learningobjective", "assets", "presenter", ...(preserveTiming ? ["timing" as const] : [])];
             const receipt = await sceneRegenerate({
               ...projectLink,
               baseRevisionId: activeProject.nativeHeadRevisionId,
               ...(baseJobId ? { baseJobId } : {}),
               sceneId: scene.id,
               instruction,
-              preservationLocks: preserve ? ["narration", "citations", "learningobjective"] : ["learningobjective"],
+              ...(focus === "visual" ? {} : { editFocus: focus }),
+              preservationLocks,
               alternatives,
             });
-            addNativeControlJob(activeProject, receipt, `Regenerating scene ${scene.index}`, instruction || `Refine ${scene.title}`);
+            addNativeControlJob(activeProject, receipt, focus === "visual" ? `Artwork · scene ${scene.index}` : `Wording · scene ${scene.index}`, instruction);
             await refreshProjectAfterControl(activeProject, receipt);
             notify(receipt.state === "SUCCEEDED" ? "Candidate ready to review" : ["FAILED", "BLOCKED", "CANCELLED", "STALE"].includes(receipt.state) ? "Candidate needs attention" : "Candidate generation queued", receipt.message, receipt.state === "SUCCEEDED" ? "success" : ["FAILED", "BLOCKED", "CANCELLED", "STALE"].includes(receipt.state) ? "warning" : "info");
           } else {
-            addJob({ id: `demo-${Date.now()}`, title: `Regenerating scene ${scene.index}`, detail: "Browser demo only · candidate simulation; accepted scene unchanged", status: "complete", progress: 100, operation: "regenerate_scene", result: { demoOnly: true } });
+            addJob({ id: `demo-${Date.now()}`, title: `Candidate · scene ${scene.index}`, detail: "Browser demo only · candidate simulation; accepted scene unchanged", status: "complete", progress: 100, operation: focus === "visual" ? "regenerate_scene" : "regenerate_authored_scene", result: { demoOnly: true } });
             setJobsOpen(true);
             notify("Browser demo only", "Candidate simulation completed; no native revision or artifact was created.", "info");
           }
@@ -2058,6 +2071,7 @@ function Topbar({ project, workspace, mode, jobs, runtime, onMode, onJobs, onMen
           <button className={mode === "studio" ? "active" : ""} onClick={() => onMode("studio")}>Studio</button>
         </div>}
         <button className="command-trigger" onClick={onCommand} aria-label="Search or run"><Search size={15} /><span>Search or run</span><kbd>Ctrl K</kbd></button>
+        <ModelDownloadLauncher />
         <button className={`jobs-button ${running ? "is-running" : ""}`} onClick={onJobs} aria-label="Jobs"><Activity size={17} /><span>Jobs</span>{running > 0 && <b>{running}</b>}</button>
       </div>
     </header>
@@ -2140,12 +2154,24 @@ function HomeView({ snapshot, runtime, onOpen, onNew, onArea }: {
 function ProjectsView({ projects, onOpen, onNew }: { projects: ProjectRecord[]; onOpen: (id: string) => void; onNew: () => void }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
-  const filtered = projects.filter((project) => (filter === "All" || project.status === filter) && `${project.title} ${project.topic}`.toLowerCase().includes(query.toLowerCase()));
+  const [advanced, setAdvanced] = useState(false);
+  const [sort, setSort] = useState("recent");
+  const [withSources, setWithSources] = useState(false);
+  const [withPresenters, setWithPresenters] = useState(false);
+  const filtered = projects.filter((project) => (filter === "All" || project.status === filter)
+    && `${project.title} ${project.topic}`.toLowerCase().includes(query.toLowerCase())
+    && (!withSources || project.sources.length > 0)
+    && (!withPresenters || projectPresenterSelection(project).mode !== "off"));
+  if (sort === "title") filtered.sort((left, right) => left.title.localeCompare(right.title));
+  if (sort === "duration") filtered.sort((left, right) => left.duration - right.duration);
+  if (sort === "progress") filtered.sort((left, right) => right.progress - left.progress);
+  const clearFilters = () => { setQuery(""); setFilter("All"); setSort("recent"); setWithSources(false); setWithPresenters(false); };
   return (
     <div className="page projects-page">
       <PageTitle kicker="Local workbench" title="Projects" description="Each tutorial is a private folder with its own sources, history, artifacts, and exports." action={<button className="primary-button" onClick={onNew}><Plus size={17} /> New tutorial</button>} />
-      <div className="toolbar"><label className="search-field"><Search size={16} /><input aria-label="Search projects" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects" /></label><div className="filter-pills">{["All", "Planning", "Ready to review", "Complete"].map((item) => <button key={item} onClick={() => setFilter(item)} className={filter === item ? "active" : ""}>{item}</button>)}</div><button className="icon-button"><SlidersHorizontal size={17} /></button></div>
-      {filtered.length ? <div className="project-grid">{filtered.map((project) => <ProjectCard key={project.id} project={project} onOpen={() => onOpen(project.id)} />)}<button className="project-card new-card" onClick={onNew}><span><Plus size={24} /></span><strong>Start with a difficult idea</strong><small>Build a grounded learning plan first.</small></button></div> : <EmptyState icon={Search} title={projects.length ? "No projects match" : "Your first tutorial starts here"} detail={projects.length ? "Try a different phrase or clear the current status filter." : "Create a tutorial to keep its sources, scenes, and edits together."} action={projects.length ? <button className="secondary-button" onClick={() => { setQuery(""); setFilter("All"); }}>Clear filters</button> : <button className="primary-button" onClick={onNew}><Plus size={16} /> New tutorial</button>} />}
+      <div className="toolbar"><label className="search-field"><Search size={16} /><input aria-label="Search projects" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects" /></label><div className="filter-pills">{["All", "Planning", "Rendering", "Ready to review", "Complete"].map((item) => <button key={item} onClick={() => setFilter(item)} className={filter === item ? "active" : ""}>{item}</button>)}</div><button className="icon-button" aria-label="Project filters and sorting" aria-expanded={advanced} aria-controls="project-advanced-filters" onClick={() => setAdvanced((value) => !value)}><SlidersHorizontal size={17} /></button></div>
+      {advanced && <div id="project-advanced-filters" className="project-advanced-filters"><label>Sort projects<select value={sort} onChange={(event) => setSort(event.target.value)}><option value="recent">Workspace order</option><option value="title">Title A–Z</option><option value="duration">Shortest first</option><option value="progress">Most complete first</option></select></label><label><input type="checkbox" checked={withSources} onChange={(event) => setWithSources(event.target.checked)} /> With source material</label><label><input type="checkbox" checked={withPresenters} onChange={(event) => setWithPresenters(event.target.checked)} /> With presenters</label><button className="text-button" onClick={clearFilters}>Reset filters</button><span role="status">{filtered.length} matching projects</span></div>}
+      {filtered.length ? <div className="project-grid">{filtered.map((project) => <ProjectCard key={project.id} project={project} onOpen={() => onOpen(project.id)} />)}<button className="project-card new-card" onClick={onNew}><span><Plus size={24} /></span><strong>Start with a difficult idea</strong><small>Build a grounded learning plan first.</small></button></div> : <EmptyState icon={Search} title={projects.length ? "No projects match" : "Your first tutorial starts here"} detail={projects.length ? "Try a different phrase or clear the current status filter." : "Create a tutorial to keep its sources, scenes, and edits together."} action={projects.length ? <button className="secondary-button" onClick={clearFilters}>Clear filters</button> : <button className="primary-button" onClick={onNew}><Plus size={16} /> New tutorial</button>} />}
     </div>
   );
 }
@@ -2298,17 +2324,7 @@ function ProviderSectionPlaceholder({ title, detail }: { title: string; detail: 
   return <section className="provider-progressive-placeholder" aria-busy="true" aria-label={`Preparing ${title}`}><span className="section-kicker">Preparing this section</span><h2>{title}</h2><p>{detail}</p><i aria-hidden="true" /></section>;
 }
 
-function sameDownloadCatalog(left: ModelDownloadCatalogEntry[], right: ModelDownloadCatalogEntry[]) {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function sameDownloadStatuses(left: ModelDownloadStatus[], right: ModelDownloadStatus[]) {
-  const omitPollingTimestamp = (key: string, value: unknown) => key === "updatedAt" ? undefined : value;
-  return JSON.stringify(left, omitPollingTimestamp) === JSON.stringify(right, omitPollingTimestamp);
-}
-
 function ProvidersView({ environment, diagnosticReport, onNotify }: { environment: RuntimeState["environment"]; diagnosticReport: DiagnosticReport | null; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void }) {
-  const [mode, setMode] = useState("Hybrid");
   const [secretRefs, setSecretRefs] = useState<Record<string, ProviderSecretRef>>({});
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [secret, setSecret] = useState("");
@@ -2316,10 +2332,9 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   const [setup, setSetup] = useState<LocalModelSetup | null>(null);
   const [setupLoading, setSetupLoading] = useState(true);
   const [setupSaving, setSetupSaving] = useState(false);
-  const [downloadCatalog, setDownloadCatalog] = useState<ModelDownloadCatalogEntry[]>([]);
-  const [downloadStatuses, setDownloadStatuses] = useState<ModelDownloadStatus[]>([]);
-  const [licenseAccepted, setLicenseAccepted] = useState(false);
-  const [downloadStarting, setDownloadStarting] = useState(false);
+  const downloads = useModelDownloads();
+  const downloadCatalog = downloads.catalog;
+  const downloadStatuses = downloads.statuses;
   const [selectedImageModelId, setSelectedImageModelId] = useState<string | null>(null);
   const [downloadSelectionId, setDownloadSelectionId] = useState<string | null>(null);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>(() => [...alystriaCatalogItems]);
@@ -2332,40 +2347,18 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
 
   useEffect(() => {
     let active = true;
-    let timer: number | undefined;
     const remoteProviders = providerConfigs.filter((provider) => !provider.local);
-    const unavailableSecrets = () => Object.fromEntries(remoteProviders.map((provider) => [provider.id, {
-      reference: "", providerId: provider.id, credentialKind: "api_key", availability: "keyringUnavailable", updatedAt: null,
-    } satisfies ProviderSecretRef]));
-    const readSecrets = () => Promise.all(remoteProviders.map(async (provider) => [
-      provider.id,
+    const readSecrets = () => Promise.all(remoteProviders.map(async (provider) => [provider.id,
       await providerSecretStatus({ providerId: provider.id, credentialKind: "api_key" }),
-    ] as const)).then((entries) => Object.fromEntries(entries)).catch(() => unavailableSecrets());
-    const readSetup = () => localModelSetupGet().then((value) => ({ value, error: null })).catch((error: unknown) => ({ value: null, error }));
-    const readDownloads = () => Promise.all([localModelDownloadCatalog(), localModelDownloadStatus()])
-      .then(([catalog, statuses]) => ({ catalog, statuses, error: null }))
-      .catch((error: unknown) => ({ catalog: null, statuses: null, error }));
-    const applyDownloads = (catalog: ModelDownloadCatalogEntry[], statuses: ModelDownloadStatus[]) => {
-      setDownloadCatalog((current) => sameDownloadCatalog(current, catalog) ? current : catalog);
-      setDownloadStatuses((current) => sameDownloadStatuses(current, statuses) ? current : statuses);
-    };
-    const refreshDownloads = async () => {
-      const result = await readDownloads();
+    ] as const)).then((entries) => Object.fromEntries(entries));
+    void Promise.allSettled([readSecrets(), localModelSetupGet()]).then(([secrets, setupResult]) => {
       if (!active) return;
-      if (result.error) onNotify("Model download status needs attention", errorMessage(result.error), "warning");
-      else if (result.catalog && result.statuses) applyDownloads(result.catalog, result.statuses);
-    };
-    void Promise.all([readSecrets(), readSetup(), readDownloads()]).then(([secrets, setupResult, downloads]) => {
-      if (!active) return;
-      setSecretRefs(secrets);
-      if (setupResult.error) onNotify("Local model setup needs attention", errorMessage(setupResult.error), "warning");
-      else if (setupResult.value) setSetup(setupResult.value);
+      if (secrets.status === "fulfilled") setSecretRefs(secrets.value);
+      if (setupResult.status === "fulfilled") setSetup(setupResult.value);
+      else onNotify("Local model setup needs attention", errorMessage(setupResult.reason), "warning");
       setSetupLoading(false);
-      if (downloads.error) onNotify("Model download status needs attention", errorMessage(downloads.error), "warning");
-      else if (downloads.catalog && downloads.statuses) applyDownloads(downloads.catalog, downloads.statuses);
-      timer = window.setInterval(() => { void refreshDownloads(); }, 2000);
     });
-    return () => { active = false; if (timer !== undefined) window.clearInterval(timer); };
+    return () => { active = false; };
   }, [environment, onNotify]);
 
   const mutateSetup = (update: (current: LocalModelSetup) => LocalModelSetup) => setSetup((current) => current ? update(current) : current);
@@ -2417,23 +2410,28 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     && selectedDownloadStatus.activationBlocked === false
     && Boolean(selectedDownloadStatus.runtimeRevision?.trim())
     && /^[a-f0-9]{64}$/.test(selectedDownloadStatus.installFingerprint ?? "");
-  useEffect(() => setLicenseAccepted(false), [selectedDownloadModelId]);
-  const beginModelDownload = async () => {
-    if (!selectedDownload || !licenseAccepted) return;
-    setDownloadStarting(true);
-    try {
-      const status = await localModelDownloadStart({ modelId: selectedDownload.modelId, licenseSha256: selectedDownload.licenseSha256, licenseAccepted: true });
-      setDownloadStatuses((current) => [...current.filter((item) => item.modelId !== status.modelId), status]);
-      const managedSdxl = selectedDownload.modelId === "local/sdxl-base-1.0";
-      onNotify(
-        status.downloadedBytes > 0 ? "Model download resumed" : managedSdxl ? "Local image installation started" : "Model download started",
-        managedSdxl
-          ? "The pinned ComfyUI runtime, SDXL checkpoint, and optional LoRA are being verified under managed model storage. Installation does not generate an image or use the GPU."
-          : "Artifacts are entering hash-verified local storage. Experimental image bundles remain unavailable for generation until their exact workflow passes on this PC.",
-        "success",
-      );
-    } catch (error) { onNotify("Model download did not start", errorMessage(error), "warning"); }
-    finally { setDownloadStarting(false); }
+  const beginModelDownload = () => {
+    if (selectedDownload) downloads.enqueue([selectedDownload.modelId]);
+  };
+  const downloadState = (item: CatalogItem) => {
+    const entry = findModelDownloadEntry(item, downloadCatalog);
+    if (!entry?.available) return { label: "Download unavailable", disabled: true, detail: downloads.loading ? "Loading download packages…" : "This model has no downloadable package yet." };
+    const status = downloadStatuses.find((value) => value.modelId === entry.modelId);
+    const active = isDownloadActive(status?.phase) || downloads.startingModelIds.has(entry.modelId);
+    const queued = downloads.queuedModelIds.includes(entry.modelId);
+    const complete = isDownloadComplete(status?.phase);
+    return {
+      label: queued ? "Queued · view progress" : active ? "Downloading · view progress" : complete ? modelDownloadPhaseLabel(status?.phase) : status?.downloadedBytes ? "Resume download" : "Download",
+      disabled: false,
+      detail: complete ? status?.detail : `Download under the ${entry.licenseId} license.`,
+      ...(active && status?.totalBytes ? { progressPercent: Math.min(100, status.downloadedBytes / status.totalBytes * 100) } : {}),
+    };
+  };
+  const downloadCatalogModel = (item: CatalogItem) => {
+    const entry = findModelDownloadEntry(item, downloadCatalog);
+    if (!entry) return;
+    setDownloadSelectionId(entry.modelId);
+    downloads.enqueue([entry.modelId]);
   };
   const useVerifiedSdxlForImages = () => {
     if (!activeProfile || !sdxlInstallReceiptReady || !selectedDownloadStatus?.runtimeRevision || !selectedDownloadStatus.installFingerprint) return;
@@ -2460,7 +2458,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     try {
       const saved = await localModelSetupSave({ activeProfileId: setup.activeProfileId, selectedModelIds: setup.selectedModelIds, lipSyncModelId: setup.lipSyncModelId, portraitAnimationModelId: setup.portraitAnimationModelId ?? null, existingModelDirectory: setup.existingModelDirectory, profiles: setup.profiles });
       setSetup(saved);
-      onNotify("Setup saved locally", "Your model choices and no-secret profiles were saved. A project still asks for provider and privacy approval before a provider call.", "success");
+      onNotify("Setup saved locally", "Your model choices and provider profile are ready to use in new tutorials.", "success");
     } catch (error) {
       onNotify("Setup was not saved", errorMessage(error), "warning");
     } finally { setSetupSaving(false); }
@@ -2468,7 +2466,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   const stageWritingProfileModel = (item: CatalogItem) => {
     if (!activeProfile || !profileProviderIds.includes(item.identity.providerId as typeof profileProviderIds[number])) return;
     updateProfile(activeProfile.id, (profile) => stageCatalogWritingModel(profile, item));
-    onNotify("Writing choice staged", `${item.identity.name} is staged in ${activeProfile.name}. Use Save setup & active profile below to keep this choice. Project cloud approval is still required.`, "info");
+    onNotify("Writing choice staged", `${item.identity.name} is staged in ${activeProfile.name}. Save the profile below to use it in new tutorials.`, "info");
     window.setTimeout(() => {
       const input = document.querySelector<HTMLInputElement>('[aria-label="Writing & review model"]');
       const scroller = input?.closest<HTMLElement>(".main-content");
@@ -2519,51 +2517,50 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   };
 
   return <div className="page">
-    <PageTitle kicker="Your compute, your choice" title="Models & providers" description={`${PRODUCT_NAME} only routes work to providers you configure and approve. Local mode blocks project-content networking.`} />
-    <section className="routing-card"><div><span className="section-kicker">Routing choices explained</span><h3>{mode} routing</h3><p>{mode === "Local" ? "All generation remains on this device. No cloud fallback." : mode === "Cloud" ? "Use only connected cloud providers after provider and privacy approval." : "Keep private sources local; route approved creative tasks to cloud providers. Choose models in a saved profile below."}</p></div><div className="segmented-large" role="group" aria-label="Compare routing modes">{["Local", "Hybrid", "Cloud"].map((item) => <button key={item} className={mode === item ? "active" : ""} onClick={() => setMode(item)}><span>{item === "Local" ? <HardDrive /> : item === "Cloud" ? <Cloud /> : <Network />}</span>{item}</button>)}</div><div className="routing-facts"><span><ShieldCheck /> No silent fallback</span><span><ShieldCheck /> Provider quotas respected</span><span><Lock /> Keys in OS vault</span></div></section>
+    <PageTitle kicker="Your compute, your choice" title="Models & providers" description="Download local models, connect API providers, and save the exact models you want each tutorial to use." />
     <section className="federated-catalog-panel" aria-labelledby="federated-catalog-title">
-      <div className="federated-catalog-heading federated-catalog-heading--compact"><div><span className="section-kicker">Find and compare models</span><h2 id="federated-catalog-title">Model library</h2><p>Catalog filters, route comparisons, and resource estimates are temporary. Choose a compatible writing model here, then save it in a model profile below.</p></div><span><Cpu size={16} /> {catalogHardware.gpuNames[0] ?? "Hardware probe pending"}</span></div>
+      <div className="federated-catalog-heading federated-catalog-heading--compact"><div><span className="section-kicker">Find and compare models</span><h2 id="federated-catalog-title">Model library</h2><p>Download local models and follow their progress while you work. Choose a connected writing model here to save it in your active profile below.</p></div><span><Cpu size={16} /> {catalogHardware.gpuNames[0] ?? "Hardware probe pending"}</span></div>
       <details className="catalog-source-disclosure"><summary><span><strong>{defaultCatalogSources.length} catalog sources</strong><small>Curated, connected, public, and local indexes</small></span><span>Browse and sync <ChevronDown size={15} aria-hidden="true" /></span></summary><div className="catalog-source-strip" aria-label="Federated catalog sources">{defaultCatalogSources.map((source) => {
         const syncable = (["hugging-face", "civitai", "nvidia-nim", "cohere"] as const).find((candidate) => candidate === source.id);
         const count = syncable ? catalogSyncedCounts[syncable] ?? 0 : 0;
         const hasMore = syncable ? Boolean(catalogCursors[syncable]) : false;
         return <article key={source.id} className={!source.catalogUrl ? "local-source" : ""}><ProviderMark providerId={source.brandAssetId} compact /><strong>{source.label}</strong><small>{count ? `${count} live rows · ` : ""}{source.discovery.replaceAll("-", " ")} · {source.authentication.replaceAll("-", " ")}</small><span>{source.catalogUrl && <a href={source.catalogUrl} target="_blank" rel="noreferrer">Explore</a>}{syncable && <button type="button" disabled={catalogSyncing !== null || ((syncable === "nvidia-nim" || syncable === "cohere") && secretRefs[syncable]?.availability !== "present")} onClick={() => { void syncCatalog(syncable); }}><RefreshCw size={11} className={catalogSyncing === syncable ? "spinning" : ""} />{catalogSyncing === syncable ? "Syncing…" : hasMore ? "Load more" : "Sync"}</button>}</span></article>;
       })}</div></details>
-      <CatalogIntegrationExample hardware={catalogHardwareWithConnections} items={catalogItems} onModelInspected={(item) => onNotify("Model inspected", `${item.identity.name} was reviewed here only. Compare routes and estimates here; save models in a profile below.`, "info")} writingProfileProviderIds={profileProviderIds} {...(setup && activeProfile ? { onUseForWritingProfile: stageWritingProfileModel } : {})} />
+      <CatalogIntegrationExample hardware={catalogHardwareWithConnections} items={catalogItems} onModelDownload={downloadCatalogModel} downloadState={downloadState} writingProfileProviderIds={profileProviderIds} {...(setup && activeProfile ? { onUseForWritingProfile: stageWritingProfileModel } : {})} />
     </section>
     <div className="provider-heading"><div><span className="section-kicker">Configured capabilities</span><h2>Provider connections</h2></div><span className="environment-note"><ShieldCheck size={15} /> {environment === "native" ? "OS credential vault" : "Browser demo · values discarded"}</span></div>
     <div className="provider-grid">{providers.map(({ id, name, icon: Icon, detail, tone, local }) => {
       const availability = local ? "manager" : secretRefs[id]?.availability ?? "missing";
       const connected = availability === "present";
-      return <article className="provider-card" key={name}><span className={`provider-icon ${tone}`}>{local ? <Icon size={22} /> : <ProviderMark providerId={id === "nvidia-nim" ? "nvidia" : id} compact />}</span><div><h3>{name}</h3><p>{detail}</p></div><span className={`provider-state ${connected || local ? "" : "add"}`}>{connected || local ? <Check size={13} /> : null}{local ? "Manager ready" : connected ? "Connected" : availability === "keyringUnavailable" ? "Vault unavailable" : "Add key"}</span>{local && <div className="model-meter"><span><b>On-demand profiles</b><small>Nothing bundled · download and verify before use</small></span><div><i style={{ width: "18%" }} /></div></div>}{!local && <button className="icon-button" aria-label={`${connected ? "Manage" : "Add"} ${name} credential`} onClick={() => { setEditingProvider(id); setSecret(""); }}><KeyRound size={17} /></button>}</article>;
+      return <article className="provider-card" key={name}><span className={`provider-icon ${tone}`}>{local ? <Icon size={22} /> : <ProviderMark providerId={id === "nvidia-nim" ? "nvidia" : id} compact />}</span><div><h3>{name}</h3><p>{detail}</p></div><span className={`provider-state ${connected || local ? "" : "add"}`}>{connected || local ? <Check size={13} /> : null}{local ? "Manager ready" : connected ? "Connected" : availability === "keyringUnavailable" ? "Vault unavailable" : "Add key"}</span>{local && <div className="model-meter"><span><b>{downloadStatuses.filter((status) => isDownloadComplete(status.phase)).length} packs downloaded</b><small>Download models and follow real progress in Downloads</small></span></div>}{!local && <button className="icon-button" aria-label={`${connected ? "Manage" : "Add"} ${name} credential`} onClick={() => { setEditingProvider(id); setSecret(""); }}><KeyRound size={17} /></button>}</article>;
     })}</div>
     {editingProvider && <section className="credential-panel" aria-labelledby="credential-title"><div><span className="section-kicker">Credential broker</span><h3 id="credential-title">Connect {providers.find((provider) => provider.id === editingProvider)?.name}</h3><p>{environment === "native" ? "The value goes directly to the operating-system vault. Project files receive only an opaque reference." : "Browser demo mode exercises the flow but immediately discards the value."}</p></div><label>API key<input autoFocus type="password" autoComplete="off" value={secret} onChange={(event) => setSecret(event.target.value)} /></label><div className="credential-actions">{secretRefs[editingProvider]?.availability === "present" && <button className="secondary-button danger-text" onClick={() => { void deleteSecret(editingProvider); setEditingProvider(null); }}><X size={15} /> Remove</button>}<button className="secondary-button" onClick={() => { setEditingProvider(null); setSecret(""); }}>Cancel</button><button className="primary-button" disabled={!secret.trim() || saving} onClick={() => { void saveSecret(); }}><KeyRound size={15} /> {saving ? "Saving…" : "Store securely"}</button></div></section>}
     {progressiveStage >= 1 ? <section className="model-setup-panel" aria-labelledby="local-model-setup-title">
-      <div className="model-setup-heading"><div><span className="section-kicker">First-run setup</span><h2 id="local-model-setup-title">Local models, without surprise downloads.</h2><p>Pick a small local profile, bring a pre-existing model folder, or stay API-first. Model weights are never bundled or activated until a signed immutable manifest, license acceptance, hash check, and hardware preflight all pass.</p></div><span className="setup-state"><HardDrive size={15} /> {setupLoading ? "Loading setup" : `${setup?.selectedModelIds.length ?? 0} choices saved`}</span></div>
-      <div className="lipsync-chooser" aria-labelledby="local-image-model-title"><div><span className="section-kicker">Local image studio</span><h3 id="local-image-model-title">Choose an image model to inspect or install</h3><p>SDXL is the current working route for creating slide artwork and fictional presenter portraits. The two newer bundles are available for deliberate download, but stay blocked from generation until their exact offload recipes pass on this PC.</p></div><div className="lipsync-options">{localImageModelOptions.map((model) => { const status = downloadStatuses.find((entry) => entry.modelId === model.id); const stateLabel = status?.phase === "ready" || status?.phase === "inUse" ? "Installed · ready" : status?.phase === "downloadedQuarantined" ? "Downloaded · recipe blocked" : model.tag; return <label className={inspectedImageModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="local-image-model" checked={inspectedImageModelId === model.id} disabled={!setup} onClick={() => setDownloadSelectionId(model.id)} onChange={() => { setSelectedImageModelId(model.id); toggleLocalModel(model.id, true); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{stateLabel}</em></label>; })}</div><p className="inspector-note">Selecting a card keeps the model in your saved choices and opens its exact download declaration below. It does not silently change an existing project or send a prompt.</p></div>
+      <div className="model-setup-heading"><div><span className="section-kicker">First-run setup</span><h2 id="local-model-setup-title">Your local model toolkit.</h2><p>Download a model, use a folder you already have, or connect an API provider. Follow download progress from anywhere in the app.</p></div><span className="setup-state"><HardDrive size={15} /> {setupLoading ? "Loading setup" : `${setup?.selectedModelIds.length ?? 0} choices saved`}</span></div>
+      <div className="lipsync-chooser" aria-labelledby="local-image-model-title"><div><span className="section-kicker">Local image studio</span><h3 id="local-image-model-title">Choose an image model to download</h3><p>SDXL is the current working route for creating slide artwork and fictional presenter portraits. The two newer bundles are available for deliberate download, but stay blocked from generation until their exact offload recipes pass on this PC.</p></div><div className="lipsync-options">{localImageModelOptions.map((model) => { const status = downloadStatuses.find((entry) => entry.modelId === model.id); const stateLabel = status?.phase === "ready" || status?.phase === "inUse" ? "Installed · ready" : status?.phase === "downloadedQuarantined" ? "Downloaded · recipe blocked" : model.tag; return <label className={inspectedImageModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="local-image-model" checked={inspectedImageModelId === model.id} disabled={!setup} onClick={() => setDownloadSelectionId(model.id)} onChange={() => { setSelectedImageModelId(model.id); toggleLocalModel(model.id, true); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{stateLabel}</em></label>; })}</div><p className="inspector-note">Select a model, then choose Download below. Downloaded models remain available across your projects.</p></div>
       <div className="local-model-grid" aria-busy={setupLoading}>{localModelOptions.map((model) => { const selected = setup?.selectedModelIds.includes(model.id) ?? false; return <label className={`local-model-choice ${selected ? "selected" : ""}`} key={model.id}><input type="checkbox" checked={selected} disabled={!setup} onChange={(event) => toggleLocalModel(model.id, event.target.checked)} /><span><b>{model.name}</b><small>{model.medium} · {model.detail}</small></span><em>Manifest required</em></label>; })}</div>
       <div className="existing-model-row"><div><b>Use an existing model folder</b><small>The native app proves the folder exists when you save. It records the location but never executes or activates its contents; a later manifest inspection still has to identify every revision, license, file, and hash.</small>{setup?.existingModelDirectory && <span className="folder-record-state"><FolderClock size={13} /> Folder path entered · save to verify it exists</span>}</div><label><span>Existing folder path</span><input value={setup?.existingModelDirectory ?? ""} disabled={!setup} placeholder={environment === "native" ? "E:\\temp\\AI Video Tutorial Generator Models" : "/your/local/model-folder"} onChange={(event) => mutateSetup((current) => ({ ...current, existingModelDirectory: event.target.value || null }))} /></label></div>
       <div className="lipsync-chooser"><div><span className="section-kicker">Presenter motion stage</span><h3>Choose how portraits come alive</h3><p>Motion and lip-sync are separate stages. The measured local default animates pose, gaze, expression, and genuine blinks with LivePortrait, then uses the selected lip-sync model only for narration-accurate mouth motion.</p></div><div className="lipsync-options">{portraitAnimationModelOptions.map((model) => <label className={setup?.portraitAnimationModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="portrait-animation-model" checked={setup?.portraitAnimationModelId === model.id} disabled={!setup || model.id === "local/echomimicv3-flash" || model.id === "local/hunyuan-video-avatar"} onChange={() => selectPortraitAnimation(model.id)} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{model.tag}</em></label>)}</div></div>
       <div className="lipsync-chooser"><div><span className="section-kicker">Narration mouth stage</span><h3>Choose your local lip-sync model</h3><p>This stage follows portrait animation and may be disabled for presenter-free scenes. Choosing a pack saves a preference; downloading remains a separate explicit step and inference stays blocked until activation review.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onClick={() => setDownloadSelectionId(model.id)} onChange={() => selectLipSync(model.id)} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{downloadCatalog.some((entry) => entry.modelId === model.id) ? "Download declaration ready" : model.tag}</em></label>)}</div></div>
       <div className="model-download-panel" aria-live="polite">
         {selectedDownload ? <>
-          <div className="download-record"><span className="download-record-mark"><PackageCheck size={19} /></span><div><b>{selectedDownload.displayName} · {selectedImageOption?.executionReady ? "managed image runtime" : "download-only pack"}</b><small>{formatBytes(selectedDownload.totalBytes)} across {selectedDownload.artifactCount} artifacts · revision <code>{selectedDownload.immutableRevision}</code></small><p>{selectedDownload.downloadOnlyReason}</p></div><span className={`download-phase ${selectedDownloadStatus?.phase ?? "manifestRequired"}`}>{downloadPhaseLabel(selectedDownloadStatus?.phase)}</span></div>
+          <div className="download-record"><span className="download-record-mark"><PackageCheck size={19} /></span><div><b>{selectedDownload.displayName} · {selectedImageOption?.executionReady ? "managed image runtime" : "download-only pack"}</b><small>{formatBytes(selectedDownload.totalBytes)} across {selectedDownload.artifactCount} artifacts · revision <code>{selectedDownload.immutableRevision}</code></small><p>{selectedDownload.downloadOnlyReason}</p></div><span className={`download-phase ${selectedDownloadStatus?.phase ?? "manifestRequired"}`}>{modelDownloadPhaseLabel(selectedDownloadStatus?.phase)}</span></div>
           <div className="download-progress" aria-label={`${selectedDownload.displayName} download progress`}><i style={{ width: `${selectedDownloadStatus?.totalBytes ? Math.min(100, (selectedDownloadStatus.downloadedBytes / selectedDownloadStatus.totalBytes) * 100) : 0}%` }} /></div>
-          <div className="download-detail"><span>{selectedDownloadStatus?.detail ?? "Pinned declaration ready for review."}</span><span>{formatBytes(selectedDownloadStatus?.downloadedBytes ?? 0)} / {formatBytes(selectedDownload.totalBytes)} · {selectedDownloadStatus?.verifiedArtifacts ?? 0}/{selectedDownload.artifactCount} hashes verified</span></div>
-          <label className="license-accept"><input type="checkbox" checked={licenseAccepted} disabled={downloadComplete} onChange={(event) => setLicenseAccepted(event.target.checked)} /><span>I accept <a href={selectedDownload.licenseUrl} target="_blank" rel="noreferrer">{selectedDownload.licenseId}</a> for this exact license hash <code>{selectedDownload.licenseSha256.slice(0, 12)}…</code>.</span></label>
-          <div className="model-setup-actions"><button className="secondary-button" disabled={!selectedDownload.available || !licenseAccepted || downloadStarting || environment !== "native" || downloadComplete || selectedDownloadStatus?.phase === "downloading" || selectedDownloadStatus?.phase === "installing" || selectedDownloadStatus?.phase === "verifying"} onClick={() => { void beginModelDownload(); }}><Download size={16} /> {downloadStarting ? "Starting…" : selectedImageOption?.executionReady ? selectedDownloadStatus?.downloadedBytes ? "Resume SDXL installation" : "Install verified SDXL" : selectedDownloadStatus?.downloadedBytes ? "Resume verified download" : "Start verified download"}</button>{selectedImageOption?.executionReady && selectedDownloadStatus?.phase === "ready" && <button type="button" className="secondary-button" disabled={!activeProfile || !sdxlInstallReceiptReady} onClick={useVerifiedSdxlForImages}><Image size={16} /> Use SDXL in active profile</button>}<small>{environment !== "native" ? "Open the native app to download; browser preview never fetches model bytes. This browser declaration is not installed, active, or ready for inference." : selectedImageOption?.executionReady ? sdxlInstallReceiptReady ? "The completed preflight returned an immutable runtime revision and install fingerprint. Stage SDXL in the active profile, then save below." : selectedDownloadStatus?.phase === "ready" ? "The install reports ready, but its verified identity receipt is missing or activation remains blocked. Profile activation stays unavailable until repair completes verification." : "The managed installer verifies and preflights the pinned runtime without generating an image. Readiness is determined on this machine." : "Download and hash verification use no GPU. Experimental image files stay inactive until a reviewed workflow passes on this machine."}</small></div>
+          <div className="download-detail"><span>{selectedDownloadStatus?.detail ?? "Ready to download."}</span><span>{formatBytes(selectedDownloadStatus?.downloadedBytes ?? 0)} / {formatBytes(selectedDownload.totalBytes)} · {selectedDownloadStatus?.verifiedArtifacts ?? 0}/{selectedDownload.artifactCount} hashes verified</span></div>
+          <p className="model-license-notice">Download under the <a href={selectedDownload.licenseUrl} target="_blank" rel="noreferrer">{selectedDownload.licenseId}</a> license.</p>
+          <div className="model-setup-actions"><button className="primary-button" disabled={!selectedDownload.available} onClick={beginModelDownload}><Download size={16} /> {downloadComplete ? "View download" : isDownloadActive(selectedDownloadStatus?.phase) || downloads.queuedModelIds.includes(selectedDownload.modelId) ? "View progress" : selectedDownloadStatus?.downloadedBytes ? "Resume download" : "Download"}</button>{selectedImageOption?.executionReady && selectedDownloadStatus?.phase === "ready" && <button type="button" className="secondary-button" disabled={!activeProfile || !sdxlInstallReceiptReady} onClick={useVerifiedSdxlForImages}><Image size={16} /> Use SDXL in active profile</button>}<small>Downloading accepts the linked model license. Progress stays in Downloads while you keep working.</small></div>
         </> : <div className="download-empty"><ShieldCheck size={18} /><div><b>{selectedImageOption ? `${selectedImageOption.name} has a pinned native declaration` : "No immutable download declaration for this choice"}</b><small>{selectedImageOption ? "Open the packaged Windows app to inspect its exact files, size, license, and current installation state. Browser preview never downloads model bytes." : "Keep the preference or choose an existing folder. The app will not fetch a mutable repository snapshot or guess a license."}</small></div></div>}
       </div>
     </section> : <ProviderSectionPlaceholder title="Local model setup" detail="Reading installed and available model packs without blocking the rest of this page." />}
     {progressiveStage >= 2 ? <section className="profile-panel" aria-labelledby="profile-title">
-      <div className="profile-heading"><div><span className="section-kicker">Switchable creation presets</span><h2 id="profile-title">Provider & model profiles</h2><p>Keep several named combinations for each medium and choose one before creation. The profile only records an explicit preference—routes never switch automatically, no key is stored here, and no cloud use occurs until a project approval gate is completed.</p></div><div className="profile-actions"><button className="secondary-button" disabled={!setup} onClick={createProfile}><Plus size={15} /> Add profile</button><button className="secondary-button danger-text" disabled={!setup || setup.profiles.length <= 1} onClick={removeProfile}><X size={15} /> Remove</button></div></div>
+      <div className="profile-heading"><div><span className="section-kicker">Switchable creation presets</span><h2 id="profile-title">Provider & model profiles</h2><p>Keep named combinations for writing, images, voice, and presenters. Choose a saved profile during creation and the tutorial uses those exact routes without silently switching providers.</p></div><div className="profile-actions"><button className="secondary-button" disabled={!setup} onClick={createProfile}><Plus size={15} /> Add profile</button><button className="secondary-button danger-text" disabled={!setup || setup.profiles.length <= 1} onClick={removeProfile}><X size={15} /> Remove</button></div></div>
       {setup && activeProfile ? <><div className="profile-tabs" role="tablist" aria-label="Provider profiles">{setup.profiles.map((profile) => <button role="tab" aria-selected={setup.activeProfileId === profile.id} className={setup.activeProfileId === profile.id ? "active" : ""} key={profile.id} onClick={() => mutateSetup((current) => ({ ...current, activeProfileId: profile.id }))}>{profile.name}</button>)}</div><div className="profile-editor"><div className="profile-copy-fields"><label>Name<input value={activeProfile.name} onChange={(event) => updateProfile(activeProfile.id, (profile) => ({ ...profile, name: event.target.value }))} /></label><label>Description<input value={activeProfile.description} onChange={(event) => updateProfile(activeProfile.id, (profile) => ({ ...profile, description: event.target.value }))} /></label></div><div className="profile-route-grid">{profileMediums.map(([medium, label]) => {
         const selection = activeProfile.routes[medium] ?? { providerId: "local-runtime", modelId: "choose before generation" };
         const updateSelection = (changes: Partial<typeof selection>) => updateProfile(activeProfile.id, (profile) => ({ ...profile, routes: { ...profile.routes, [medium]: { ...selection, ...changes } } }));
         const presenterBound = medium === "presenter" || medium === "portraitAnimation" || medium === "lipSync";
         return <label className="profile-route-choice" key={medium}><span>{label}{medium === "images" && <small> · optional</small>}</span><div className="profile-route-fields"><select aria-label={`${label} provider`} value={selection.providerId} onChange={(event) => updateSelection({ providerId: event.target.value })}>{profileProviderOptions.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select><input value={selection.modelId} aria-label={`${label} model`} onChange={(event) => updateSelection({ modelId: event.target.value })} placeholder="Exact model ID" />{medium === "voice" && <input value={selection.voiceId ?? ""} aria-label={`${label} voice ID`} onChange={(event) => updateSelection({ voiceId: event.target.value || null })} placeholder="Voice ID" />}{presenterBound && <input value={selection.presenterProfileId ?? ""} aria-label={`${label} presenter profile ID`} onChange={(event) => updateSelection({ presenterProfileId: event.target.value || null })} placeholder="Presenter profile ID" />}{selection.providerId === "local-runtime" && <><input value={selection.modelRevision ?? ""} aria-label={`${label} model revision`} onChange={(event) => updateSelection({ modelRevision: event.target.value || null })} placeholder="Immutable revision" /><input value={selection.installFingerprint ?? ""} aria-label={`${label} install fingerprint`} onChange={(event) => updateSelection({ installFingerprint: event.target.value || null })} placeholder="Verified SHA-256" /></>}</div>{medium === "images" && <button type="button" className="secondary-button small" onClick={() => updateSelection({ modelId: "off" })}>{selection.modelId.trim().toLowerCase().startsWith("off") ? "Using designed slides · image generation off" : "Use designed slides without image generation"}</button>}</label>;
       })}</div></div></> : <div className="profile-loading">Loading local profiles…</div>}
-      <div className="profile-save-row"><span><ShieldCheck size={15} /> Preferences only · credentials stay in the OS vault · project approval remains required</span><button className="primary-button" disabled={!setup || setupSaving} onClick={() => { void saveSetup(); }}>{setupSaving ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}{setupSaving ? "Saving…" : "Save setup & active profile"}</button></div>
+      <div className="profile-save-row"><span><ShieldCheck size={15} /> The active profile is used directly when you select it during creation</span><button className="primary-button" disabled={!setup || setupSaving} onClick={() => { void saveSetup(); }}>{setupSaving ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}{setupSaving ? "Saving…" : "Save setup & active profile"}</button></div>
     </section> : <ProviderSectionPlaceholder title="Provider & model profiles" detail="Preparing your saved creation presets after the model controls are ready." />}
   </div>;
 }
@@ -2573,9 +2570,6 @@ interface AlystriaPreferences {
   renderScratchDirectory: string;
   autosaveSeconds: number;
   backupCount: number;
-  confirmCloudTransfer: boolean;
-  redactLogs: boolean;
-  crashReports: boolean;
   reducedMotion: boolean;
   highContrast: boolean;
   denseEditor: boolean;
@@ -2589,9 +2583,6 @@ const DEFAULT_ALYSTRIA_PREFERENCES: AlystriaPreferences = {
   renderScratchDirectory: "E:\\temp\\AI Video Tutorial Generator Renders",
   autosaveSeconds: 8,
   backupCount: 12,
-  confirmCloudTransfer: true,
-  redactLogs: true,
-  crashReports: false,
   reducedMotion: false,
   highContrast: false,
   denseEditor: false,
@@ -2622,18 +2613,16 @@ function DiagnosticsView({ runtime, onNotify, onReset, onReplayOnboarding, onRep
     { id: "project-storage", label: "Project storage", level: runtime.bootstrap ? "pass" : "info", summary: runtime.bootstrap?.paths.projects ?? "Waiting for desktop bootstrap" },
     { id: "pipeline-worker", label: "Pipeline worker", level: runtime.bootstrap?.worker.state === "ready" ? "pass" : "warning", summary: workerLabel(runtime.bootstrap?.worker) },
     { id: "frame-renderer", label: "Frame renderer", level: "info", summary: "Run diagnostics to verify the installed renderer" },
-    { id: "power-profile", label: "Power profile", level: "info", summary: "Silent profile respected; no changes requested" },
+    { id: "power-profile", label: "Power profile", level: "info", summary: "The app does not alter Windows power settings" },
   ];
   return <div className="page">
-    <PageTitle kicker="Settings & diagnostics" title="A healthy studio is predictable." description="Inspect local runtimes, storage, privacy, accessibility, and recovery without changing your Windows power profile." action={<button className="primary-button" onClick={() => { void runChecks(); }} disabled={checking}>{checking ? <RefreshCw className="spin" size={17} /> : <Activity size={17} />}{checking ? " Running checks" : " Run diagnostics"}</button>} />
+    <PageTitle kicker="Settings & diagnostics" title="A healthy studio is predictable." description="Inspect local runtimes, storage, accessibility, and recovery without changing your Windows power profile." action={<button className="primary-button" onClick={() => { void runChecks(); }} disabled={checking}>{checking ? <RefreshCw className="spin" size={17} /> : <Activity size={17} />}{checking ? " Running checks" : " Run diagnostics"}</button>} />
     <div className="diagnostics-grid">
       <section className="diagnostic-panel wide"><div className="panel-heading"><div><span className="section-kicker">System readiness</span><h3>{runtime.environment === "native" ? "Native toolchain" : "Browser preview"}</h3></div><span className="health-score">{rows.filter((row) => row.level === "pass").length} / {rows.length} passed</span></div><div className="diagnostic-rows">{rows.map((row) => { const Icon = diagnosticIcon(row.id); const ready = row.level === "pass"; return <div key={row.id}><span className="diagnostic-icon"><Icon size={17} /></span><span><strong>{row.label}</strong><small>{row.summary}</small></span><span className={`check-state ${ready ? "ready" : "attention"}`}>{ready ? <Check size={13} /> : <CircleAlert size={13} />}{row.level}</span></div>; })}</div></section>
-      <section className="diagnostic-panel"><span className="section-kicker">Privacy boundary</span><div className="privacy-orbit"><Lock size={22} /><i /><i /></div><h3>Local means local.</h3><p>Analytics are off. Private source contents cannot leave this device unless you explicitly reclassify them.</p><button className="text-button" onClick={() => document.getElementById("privacy-controls")?.scrollIntoView({ behavior: preferences.reducedMotion ? "instant" : "smooth", block: "center" })}>Review privacy controls <ArrowRight size={15} /></button></section>
-      <section className="diagnostic-panel"><span className="section-kicker">Power & performance</span><div className="power-mode"><Moon size={22} /><span><strong>Silent profile respected</strong><small>Benchmarks are estimation-only</small></span></div><p>{PRODUCT_NAME} won’t change Windows or G-Helper power modes. Use a performance profile only for deliberate benchmark runs.</p><button className="text-button" onClick={() => onNotify("Power profile unchanged", "No benchmark needs boost for functional acceptance.", "info")}>Why this is recommended <ArrowRight size={15} /></button></section>
+      <section className="diagnostic-panel"><span className="section-kicker">Power & performance</span><div className="power-mode"><Moon size={22} /><span><strong>Windows power mode unchanged</strong><small>No power settings are modified</small></span></div><p>{PRODUCT_NAME} won’t change Windows or G-Helper power modes. Use a performance profile only for deliberate benchmark runs.</p><button className="text-button" onClick={() => onNotify("Power profile unchanged", "No benchmark needs boost for functional acceptance.", "info")}>Why this is recommended <ArrowRight size={15} /></button></section>
       <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Storage & recovery</span><h3>Keep heavy work away from the system drive</h3></div><HardDrive size={21} /></div><div className="settings-form-grid"><label><span>Model cache</span><input readOnly value={runtime.bootstrap?.paths.models ?? "Open the desktop app to inspect the model directory"} /></label><label><span>Render scratch</span><input readOnly value={runtime.bootstrap?.paths.cache ?? "Open the desktop app to inspect the cache directory"} /></label><label><span>Autosave interval</span><select value={preferences.autosaveSeconds} onChange={(event) => updatePreference("autosaveSeconds", Number(event.target.value))}><option value="3">3 seconds</option><option value="8">8 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select></label><p className="settings-intro">These are the active desktop locations. Attach existing model folders in Models & providers. Export a portable project archive to make a backup.</p></div></section>
-      <section id="privacy-controls" className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Privacy & trust</span><h3>Every external boundary remains deliberate</h3></div><ShieldCheck size={21} /></div><div className="settings-toggle-grid"><div className="settings-policy"><Cloud size={20} /><strong>Cloud use needs project approval</strong><p>A provider connection does not grant permission to transfer private sources.</p></div><div className="settings-policy"><Lock size={20} /><strong>Credentials stay in the OS vault</strong><p>Project files store credential references, never key values.</p></div><div className="settings-policy"><ShieldCheck size={20} /><strong>Crash reports stay local</strong><p>No automatic reporting service is connected.</p></div></div></section>
       <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Editor & accessibility</span><h3>Fit the creative surface to the person</h3></div><MonitorPlay size={21} /></div><div className="settings-toggle-grid"><SettingsToggle checked={preferences.reducedMotion} title="Reduce interface motion" detail="Preserve hierarchy and feedback without camera-like transitions." onChange={(value) => updatePreference("reducedMotion", value)} /><SettingsToggle checked={preferences.highContrast} title="High-contrast controls and guides" detail="Increase control boundaries, focus rings and canvas guide contrast." onChange={(value) => updatePreference("highContrast", value)} /><SettingsToggle checked={preferences.denseEditor} title="Dense multitrack editor" detail="Show more tracks and inspector fields on large displays." onChange={(value) => updatePreference("denseEditor", value)} /></div><div className="settings-form-grid"><p className="settings-intro">Captions follow the narration language. Select that language when creating a tutorial.</p><label><span>Default export rate</span><select value={preferences.defaultExportFps} onChange={(event) => updatePreference("defaultExportFps", Number(event.target.value))}><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div></section>
-      <section className="diagnostic-panel wide compact-settings"><div><span className="section-kicker">Tutorial & maintenance</span><h3>Replay guidance or clean local UI state</h3></div><div className="setting-actions"><button className="secondary-button" onClick={onReplayOnboarding}><PlayCircle size={16} /> Replay setup</button><button className="secondary-button" onClick={onReplayTour}><Sparkles size={16} /> Replay guided tour</button><button className="secondary-button" onClick={() => onNotify("Export a project backup", "Open a tutorial and choose Export → Export portable .alytutorial to save a verified project archive.", "info")}><Archive size={16} /> How to back up</button><button className="secondary-button danger-text" onClick={() => setResetPending(true)}><RotateCcw size={16} /> Reset workspace view</button>{resetPending && <div className="workspace-reset-confirm" role="alert"><p>Clear recent tutorial links and the visible job list? Saved project folders and provider settings remain on disk.</p><button className="secondary-button" onClick={() => setResetPending(false)}>Keep workspace view</button><button className="secondary-button danger-text" onClick={() => { onReset(); setResetPending(false); }}>Clear workspace view</button></div>}</div></section>
+      <section className="diagnostic-panel wide compact-settings"><div><span className="section-kicker">Tutorial & maintenance</span><h3>Replay guidance or clean local UI state</h3></div><div className="setting-actions"><button className="secondary-button" onClick={onReplayOnboarding}><PlayCircle size={16} /> Replay setup</button><button className="secondary-button" onClick={onReplayTour}><Sparkles size={16} /> Replay guided tour</button><button className="secondary-button" onClick={() => onNotify("Export a project backup", "Open a tutorial and choose Export → Export portable .alytutorial to save a verified project archive.", "info")}><Archive size={16} /> How to back up</button><button className="secondary-button danger-text" onClick={() => setResetPending(true)}><RotateCcw size={16} /> Reset workspace view</button>{resetPending && <div className="workspace-reset-confirm" role="alert"><p>Reset the view and clear finished jobs? Your project library, saved files, settings, and active work will stay available.</p><button className="secondary-button" onClick={() => setResetPending(false)}>Keep workspace view</button><button className="secondary-button danger-text" onClick={() => { onReset(); setResetPending(false); }}>Clear workspace view</button></div>}</div></section>
     </div>
   </div>;
 }
@@ -2656,7 +2645,7 @@ function ProjectWorkspace(props: {
   onSceneUpdate: (sceneId: string, update: Partial<Scene>) => void;
   onProjectCustomization: (customization: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => void;
   onProjectCreative: (creative: CreativeConfiguration) => void;
-  onProjectEdit: (update: Pick<Partial<ProjectRecord>, "scenes" | "sceneCandidates" | "customization" | "presenterSelection" | "editorDocument" | "reviewNotes" | "nativeHeadRevisionId" | "nativeRevisionNumber">, options?: { alreadyDurable?: boolean }) => void;
+  onProjectEdit: (update: Pick<Partial<ProjectRecord>, "scenes" | "sceneCandidates" | "sceneEditCandidates" | "customization" | "presenterSelection" | "editorDocument" | "reviewNotes" | "nativeHeadRevisionId" | "nativeRevisionNumber">, options?: { alreadyDurable?: boolean }) => void;
   onEditorDocumentChange: (document: EditorProject) => void;
   onFlushEditorDocument: () => Promise<void>;
   editorSaveStatus?: EditorSaveStatus;
@@ -2698,13 +2687,13 @@ function PlanWorkspace({ project, onNotify, onApproveGeneration, approvalPending
       {tab === "Learning plan" ? <><div className="learner-strip"><div><UserRoundCheck size={18} /><span><small>Learner</small><strong>{project.audience}</strong></span></div><div><Clock3 size={18} /><span><small>Target</small><strong>{project.duration} minutes</strong></span></div><div><Languages size={18} /><span><small>Language</small><strong>{project.locale}</strong></span></div></div>
         <div className="objective-section"><div className="section-number"><BookOpen size={22} /></div><div><span className="section-kicker">Scene learning objectives</span><div className="objective-list">{objectiveScenes.map((scene) => <div key={scene.id}><span>{scene.index}</span><label className="objective-edit"><small>{scene.title}</small><textarea aria-label={`Objective for ${scene.title}`} rows={2} value={scene.objective} onChange={(event) => onSceneUpdate(scene.id, { objective: event.target.value })} /></label></div>)}</div>{!objectiveScenes.length && <p>Add a scene objective in Studio to begin the learning plan.</p>}</div></div>
         <div className="learning-sequence"><span className="section-kicker">The teaching sequence</span>{project.scenes.map((scene) => <div key={scene.id}><span>{String(scene.index).padStart(2, "0")}</span><strong>{scene.title}</strong><small>{formatTime(scene.duration)}</small></div>)}</div>
-      </> : tab === "Presenters" ? <div className="plan-presenters"><PresenterPicker choices={PRESENTER_CHOICES} value={projectPresenterSelection(project)} onChange={(selection) => onProjectEdit({ presenterSelection: selection, customization: presenterCustomizationForSelection(project, selection) })} /><SceneSpeakerAssignments project={project} onChange={(selection) => onProjectEdit({ presenterSelection: selection })} /></div> : tab === "Brief" ? <div className="brief-document"><span className="section-kicker">The question</span><h3>{project.topic}</h3><p>{project.description}</p><dl><div><dt>Who is learning?</dt><dd>{project.audience}</dd></div><div><dt>Available time</dt><dd>{project.duration} minutes</dd></div><div><dt>Language</dt><dd>{project.locale}</dd></div><div><dt>Privacy</dt><dd>{project.privacy}</dd></div></dl><p>Review and edit the scene objectives and script before approving this plan.</p></div> : tab === "Sources" || tab === "Research" ? <SourceEvidence project={project} research={tab === "Research"} onImportSources={onImportSources} onNotify={onNotify} /> : <ScriptEditor project={project} onNotify={onNotify} onSceneUpdate={onSceneUpdate} onUndo={onUndo} onRedo={onRedo} />}
+      </> : tab === "Presenters" ? <div className="plan-presenters"><PresenterPicker choices={PRESENTER_CHOICES} value={projectPresenterSelection(project)} onChange={(selection) => onProjectEdit({ presenterSelection: selection, customization: presenterCustomizationForSelection(project, selection) })} /><SceneSpeakerAssignments project={project} onChange={(selection) => onProjectEdit({ presenterSelection: selection })} /></div> : tab === "Brief" ? <div className="brief-document"><span className="section-kicker">The question</span><h3>{project.topic}</h3><p>{project.description}</p><dl><div><dt>Who is learning?</dt><dd>{project.audience}</dd></div><div><dt>Available time</dt><dd>{project.duration} minutes</dd></div><div><dt>Language</dt><dd>{project.locale}</dd></div></dl><p>Review and edit the scene objectives and script before approving this plan.</p></div> : tab === "Sources" || tab === "Research" ? <SourceEvidence project={project} research={tab === "Research"} onImportSources={onImportSources} onNotify={onNotify} /> : <ScriptEditor project={project} onNotify={onNotify} onSceneUpdate={onSceneUpdate} onUndo={onUndo} onRedo={onRedo} />}
     </section><aside className="plan-aside"><div className="grounding-card"><div className="grounding-head"><span><ShieldCheck size={17} /> Sources & support</span></div><p>Source review and claim support are separate. Review the rendered lesson before export.</p><div className="grounding-meter"><span><strong>{reviewedSources} / {project.sources.length}</strong><small>source records reviewed</small></span><ProgressBar value={project.sources.length ? reviewedSources / project.sources.length * 100 : 0} /></div><button className="text-button" onClick={() => setTab("Sources")}>Review sources <ArrowRight size={15} /></button></div><div className="teaching-note"><span className="section-kicker">A useful review question</span><h3>Could they explain it back?</h3><p>Give each scene one job. Show an example, let the learner predict the next step, then explain what changed.</p><button className="text-button" onClick={() => setTab("Script")}>Read the full script <ArrowRight size={15} /></button></div></aside></div>
   </div>;
 }
 
 function SourceEvidence({ project, research, onImportSources, onNotify }: { project: ProjectRecord; research: boolean; onImportSources: (files: File[]) => Promise<SourceImportReceipt[]>; onNotify: ProjectWorkspaceProps["onNotify"] }) {
-  return <div className="source-evidence"><div className="source-table-head"><span>{research ? "Evidence ledger" : "Project sources"}</span><SourceImportControl label="Add source" onImport={onImportSources} onNotify={onNotify} secondary small tourTarget="source-import" /></div>{project.sources.length ? project.sources.map((source) => <article key={source.id}><span className={`source-icon ${source.kind}`}><FileText size={17} /></span><div><strong>{source.title}</strong><small>{source.origin} · {source.license}{source.byteSize ? ` · ${formatBytes(source.byteSize)}` : ""}</small></div><span className="evidence-count">{source.evidence} {research ? "spans" : "claims"}</span><span className={`source-state ${source.status}`}>{source.status === "verified" ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />} {source.status}</span><span aria-hidden="true"><ChevronRight size={16} /></span></article>) : <EmptyState icon={FileText} title="No source files yet" detail="Choose local files to validate in quarantine and preserve in this project’s content-addressed store." />}</div>;
+  return <div className="source-evidence"><div className="source-table-head"><span>{research ? "Evidence ledger" : "Project sources"}</span><SourceImportControl label="Add source" onImport={onImportSources} onNotify={onNotify} secondary small tourTarget="source-import" /></div>{project.sources.length ? project.sources.map((source) => <article key={source.id}><span className={`source-icon ${source.kind}`}><FileText size={17} /></span><div><strong>{source.title}</strong><small>{source.origin} · {source.license}{source.byteSize ? ` · ${formatBytes(source.byteSize)}` : ""}</small></div><span className="evidence-count">{source.evidence} {research ? "spans" : "claims"}</span><span className={`source-state ${source.status}`}>{source.status === "verified" ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />} {source.status}</span></article>) : <EmptyState icon={FileText} title="No source files yet" detail="Choose local files to validate in quarantine and preserve in this project’s content-addressed store." />}</div>;
 }
 
 function ScriptEditor({ project, onSceneUpdate, onUndo, onRedo }: { project: ProjectRecord; onNotify: ProjectWorkspaceProps["onNotify"]; onSceneUpdate: ProjectWorkspaceProps["onSceneUpdate"]; onUndo?: () => void; onRedo?: () => void }) {
@@ -2890,6 +2879,13 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
   } as React.CSSProperties;
   const [generatingVisual, setGeneratingVisual] = useState(false);
   const candidateImages = visualCandidates(project.sceneCandidates).filter((candidate) => candidate.sceneId === activeScene.id);
+  const authoredCandidates = parseSceneEditCandidates(project.sceneEditCandidates).filter((candidate) => candidate.sceneId === activeScene.id);
+  const currentAuthoredScene: SceneEditContent = {
+    title: activeScene.title,
+    narration: activeScene.narration,
+    objective: activeScene.objective,
+    durationSeconds: activeScene.duration,
+  };
   const resolveCandidateImage = useCallback(async (artifactHash: string) => {
     const identity = nativeProjectLink(projectRef.current);
     if (!identity) throw new Error("Open a desktop project to review saved images.");
@@ -2912,6 +2908,22 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
     await sceneCandidateAccept({ ...identity, expectedHeadRevisionId: durable.headRevisionId, candidateId: candidate.id });
     await reloadCandidateProject();
     onNotify("Image selected", "Your choice, source, and usage rights are saved with this tutorial.", "success");
+  };
+  const decideAuthoredCandidate = async (candidate: SceneEditCandidate, decision: "accept" | "reject") => {
+    const identity = nativeProjectLink(projectRef.current);
+    if (!identity) throw new Error("Open a desktop project before reviewing scene wording.");
+    const durable = await projectSnapshotGet(identity);
+    if (decision === "accept") {
+      await sceneEditCandidateAccept({ ...identity, expectedHeadRevisionId: durable.headRevisionId, candidateId: candidate.id });
+    } else {
+      await sceneEditCandidateReject({ ...identity, expectedHeadRevisionId: durable.headRevisionId, candidateId: candidate.id, reason: "Rejected during scene review" });
+    }
+    await reloadCandidateProject();
+    onNotify(
+      decision === "accept" ? "Scene wording updated" : "Scene change rejected",
+      decision === "accept" ? "The accepted wording is saved. Narration and rendered media are marked for regeneration." : "The current scene remains unchanged.",
+      "success",
+    );
   };
   const generateVisual = async (role: "scene" | "presenter") => {
     if (generatingVisual) return;
@@ -2973,7 +2985,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
       </section>
       <aside className="inspector"><div className="inspector-tabs">{["Content", "Generate", "Design", "Motion"].map((tab) => <button className={inspectorTab === tab ? "active" : ""} onClick={() => setInspectorTab(tab)} key={tab}>{tab}</button>)}</div>
         {inspectorTab === "Content" ? <div className="inspector-body"><InspectorSection title="Scene identity"><label>Title<input value={activeScene.title} onChange={(event) => onSceneUpdate(activeScene.id, { title: event.target.value })} /></label><label>Scene family<select value={activeScene.kind} onChange={(event) => onSceneUpdate(activeScene.id, { kind: event.target.value as Scene["kind"] })}><option value="title">Title</option><option value="definition">Definition</option><option value="diagram">Diagram</option><option value="worked-example">Worked example</option><option value="comparison">Comparison</option><option value="code">Code trace</option><option value="recap">Recap</option></select></label></InspectorSection><InspectorSection title="Narration"><textarea data-tour-target="scene-narration" aria-label="Scene narration" rows={7} value={activeScene.narration} onChange={(event) => onSceneUpdate(activeScene.id, { narration: event.target.value })} /><div className="field-meta"><span>{activeScene.narration.split(" ").length} words</span><span>~{activeScene.duration}s</span></div><button className="secondary-button full" onClick={() => setInspectorTab("Design")}><Mic2 size={15} /> Presenter & voice direction</button></InspectorSection><InspectorSection title="Evidence"><div className="evidence-chip"><Link2 size={15} /><span><strong>{activeScene.citations} citation references</strong><small>Review claim support in the Sources and Review workspaces.</small></span></div></InspectorSection><InspectorSection title="Your scene review"><button className="secondary-button full" onClick={() => onSceneUpdate(activeScene.id, { status: activeScene.status === "approved" ? "draft" : "approved" })}><CheckCircle2 size={15} />{activeScene.status === "approved" ? "Reopen scene review" : "Mark scene reviewed"}</button><p className="inspector-note">This records your review. Editing the explanation clears this mark; export checks still run separately.</p></InspectorSection>{mode === "studio" && <InspectorSection title="Dependency impact"><p className="inspector-note">Editing narration invalidates alignment, captions, presenter timing, scene render, and final composition.</p></InspectorSection>}</div>
-        : inspectorTab === "Generate" ? <div><fieldset className="creative-generation-fields" disabled={generatingVisual}><CreativeInspector configuration={creative} onChange={onProjectCreative} onQueueVisualReview={() => { void generateVisual("scene"); }} onGeneratePresenter={() => { void generateVisual("presenter"); }} /></fieldset><StockImageSearch policy={project.providerRoutingPolicy} sceneId={activeScene.id} suggestedQuery={activeScene.title} busy={generatingVisual} onSearch={searchStockImages} />{generatingVisual && <p role="status" className="inspector-note">Preparing image candidates… You can follow or cancel this task in Jobs.</p>}<VisualCandidateReview candidates={candidateImages} resolve={resolveCandidateImage} onAccept={acceptCandidateImage} /></div>
+        : inspectorTab === "Generate" ? <div><fieldset className="creative-generation-fields" disabled={generatingVisual}><CreativeInspector configuration={creative} onChange={onProjectCreative} onQueueVisualReview={() => { void generateVisual("scene"); }} onGeneratePresenter={() => { void generateVisual("presenter"); }} /></fieldset><StockImageSearch policy={project.providerRoutingPolicy} sceneId={activeScene.id} suggestedQuery={activeScene.title} busy={generatingVisual} onSearch={searchStockImages} />{generatingVisual && <p role="status" className="inspector-note">Preparing image candidates… You can follow or cancel this task in Jobs.</p>}{authoredCandidates.length > 0 && <SceneEditCandidateReview current={currentAuthoredScene} candidates={authoredCandidates} onAccept={(candidate) => decideAuthoredCandidate(candidate, "accept")} onReject={(candidate) => decideAuthoredCandidate(candidate, "reject")} />}<VisualCandidateReview candidates={candidateImages} resolve={resolveCandidateImage} onAccept={acceptCandidateImage} /></div>
         : inspectorTab === "Design" ? <DesignInspector project={project} customization={customization} onChange={onProjectCustomization} onNotify={onNotify} onPreviewAsset={(id, url) => setAssetPreviews((current) => ({ ...current, [id]: url }))} /> : <MotionInspector scene={activeScene} canEditTiming={canEditGeneratedTiming} onChange={(update) => onSceneUpdate(activeScene.id, update)} />}
       </aside>
     </div>
@@ -2981,8 +2993,6 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
     {editorOpen && <div className="integrated-editor-layer" role="dialog" aria-modal="true" aria-label="Integrated advanced video editor"><div className="integrated-editor-layer__bar"><div><span className="section-kicker">Non-destructive finishing room</span><strong>{project.title}</strong>{editorSaveStatus && <span className={`editor-save-status is-${editorSaveStatus.phase}`} role="status" aria-live="polite" style={{ color: editorSaveStatus.phase === "error" ? "#ffb4a8" : "#8495ae", fontSize: 11 }}>{editorSaveStatus.phase === "error" ? `Save failed · ${editorSaveStatus.detail}` : editorSaveStatus.detail}</span>}</div><label className="editor-import-rights">New media rights<select aria-label="Rights for new editor media" value={editorImportRights} onChange={(event) => setEditorImportRights(event.target.value as typeof editorImportRights)}><option value="unknown">Not reviewed · preview only</option><option value="owned">I own the media</option><option value="licensed">Licensed for distribution</option><option value="publicDomain">Public domain</option></select></label><button className="secondary-button small" disabled={returningFromEditor} aria-busy={returningFromEditor} onClick={() => { void returnToScene(); }}><X size={15} /> {returningFromEditor ? "Saving…" : "Return to scene"}</button></div><AdvancedVideoEditor project={editorProject} {...(environment === "native" ? { onImportMedia: importEditorMedia, onExportProject: (document: EditorProject) => exportEditorDocument(document, "editorJson"), onExportOtio: (_timeline, document: EditorProject) => exportEditorDocument(document, "otio"), onRenderTimeline: renderEditorTimeline, onResolveWaveform: resolveEditorWaveform } : {})} onProjectChange={(next) => { setEditorProject(next); onEditorDocumentChange(next); }} onCreateProjectCopy={(copy) => { setEditorProject(copy); onEditorDocumentChange(copy); onNotify("Version copy created", `${copy.name} is saved with this tutorial.`, "success"); }} /></div>}
   </div>;
 }
-
-function InspectorSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="inspector-section"><div className="inspector-section-title"><strong>{title}</strong><ChevronDown size={14} /></div>{children}</section>; }
 
 function DesignInspector({ project, customization, onChange, onNotify, onPreviewAsset }: {
   project: ProjectRecord;
@@ -3433,9 +3443,6 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
   const [setup, setSetup] = useState<LocalModelSetup | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [secretRefs, setSecretRefs] = useState<Record<string, ProviderSecretRef>>({});
-  const [routingApproval, setRoutingApproval] = useState(false);
-  const [routingReviewedAt, setRoutingReviewedAt] = useState<string | null>(null);
-  const [dataClassification, setDataClassification] = useState<"public" | "project">("project");
   const [routingLoading, setRoutingLoading] = useState(true);
   const [providerAccountIds, setProviderAccountIds] = usePersistentState<Record<string, string>>("alystria-provider-account-ids-v1", {});
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -3462,20 +3469,16 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
   const usesCloudflare = selectedProfile
     ? Object.values(selectedProfile.routes).some((route) => route?.providerId === "cloudflare-workers-ai" && !/^(?:off|none|disabled)\b/i.test(route.modelId.trim()))
     : false;
-  const effectiveClassification = sourceFiles.length ? "project" : dataClassification;
   const routingReview = selectedProfile ? buildProviderRoutingReview({
     profile: selectedProfile,
     secretRefs,
-    dataClassification: effectiveClassification,
-    approvalChecked: routingApproval,
-    hasPrivateSources: sourceFiles.length > 0,
+    hasImportedSources: sourceFiles.length > 0,
     groundingMode: grounding.toLowerCase() as GroundingMode,
     providerAccountIds,
-    ...(routingReviewedAt ? { reviewedAt: routingReviewedAt } : {}),
   }) : null;
   const create = async () => {
     if (!routingReview?.policy) {
-      setCreateError(routingReview?.errors[0] ?? "Choose and review a provider profile before creating this tutorial.");
+      setCreateError(routingReview?.errors[0] ?? "Choose a ready provider profile before creating this tutorial.");
       return;
     }
     const durationMinutes = duration === "custom" ? Number(exactDuration) : Number(duration);
@@ -3507,7 +3510,6 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
           sourceFiles,
           routingPolicy: routingReview.policy,
           approvedProviderIds: routingReview.approvedProviderIds,
-          privacy: routingReview.privacy,
         },
       );
     } catch (error) {
@@ -3520,19 +3522,18 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
     <div className="wizard-steps">{["Idea", "Learner", "Presenters", "Grounding", "Review"].map((label, index) => <span key={label} className={step === index + 1 ? "active" : step > index + 1 ? "complete" : ""}><i>{step > index + 1 ? <Check size={12} /> : index + 1}</i>{label}</span>)}</div>
     <div className="wizard-body">
       {step === 1 && <div className="wizard-template-selection"><img src={TEMPLATE_PREVIEWS[selectedTemplate.id]} alt="" /><span><small>Selected learning arc</small><strong>{selectedTemplate.name}</strong><em>{selectedTemplate.scenes} editable scenes · {selectedTemplate.category}</em></span></div>}
-      {step === 1 && <div className="wizard-step"><span className="section-kicker">Start with the hard part</span><h2 id="wizard-title">What should become clear?</h2><p>Describe the idea, skill, or question in plain language. You can add documents and URLs after this step.</p><label className="large-input"><WandSparkles size={21} /><textarea autoFocus rows={4} placeholder="What would you like to teach? Describe your topic, question, or learning goal." value={topic} onChange={(event) => setTopic(event.target.value)} /></label><div className="source-drop"><Upload size={20} /><span><strong>Add source material</strong><small>{sourceFiles.length ? `${sourceFiles.length} selected · imported privately before generation` : "PDF, DOCX, EPUB, Markdown, or text · 8 MiB each · optional"}</small></span><input ref={sourceInputRef} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => setSourceFiles(Array.from(event.target.files ?? []))} /><button onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? "Change files" : "Choose files"}</button></div>{sourceFiles.length > 0 && <div className="selected-source-list" aria-label="Selected source files">{sourceFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><FileCheck2 size={14} /> {file.name} <small>{formatBytes(file.size)}</small></span>)}</div>}</div>}
+      {step === 1 && <div className="wizard-step"><span className="section-kicker">Start with the hard part</span><h2 id="wizard-title">What should become clear?</h2><p>Describe the idea, skill, or question in plain language. You can add documents and URLs after this step.</p><label className="large-input"><WandSparkles size={21} /><textarea autoFocus rows={4} placeholder="What would you like to teach? Describe your topic, question, or learning goal." value={topic} onChange={(event) => setTopic(event.target.value)} /></label><div className="source-drop"><Upload size={20} /><span><strong>Add source material</strong><small>{sourceFiles.length ? `${sourceFiles.length} selected · added before generation` : "PDF, DOCX, EPUB, Markdown, or text · 8 MiB each · optional"}</small></span><input ref={sourceInputRef} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => setSourceFiles(Array.from(event.target.files ?? []))} /><button onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? "Change files" : "Choose files"}</button></div>{sourceFiles.length > 0 && <div className="selected-source-list" aria-label="Selected source files">{sourceFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><FileCheck2 size={14} /> {file.name} <small>{formatBytes(file.size)}</small></span>)}</div>}</div>}
       {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>{PRODUCT_NAME} changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="1">About 1 minute (quick draft)</option><option value="3">About 3 minutes (inspection draft)</option><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="12">About 12 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option><option value="custom">Custom length…</option></select></label>{duration === "custom" && <label><span>Exact duration in minutes</span><input aria-label="Exact duration in minutes" type="number" min="1" max="180" step="1" inputMode="numeric" value={exactDuration} onChange={(event) => setExactDuration(event.target.value)} /><small>Choose any whole number from 1 to 180 minutes.</small></label>}<label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Tutorial method</span><select aria-label="Tutorial method" value={tutorialMode} onChange={(event) => setTutorialMode(event.target.value as TutorialMode)}>{Object.entries(TUTORIAL_MODE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>Board strokes and code edits are timed to narration and remain editable.</small></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>{TUTORIAL_MODE_LABELS[tutorialMode]} · {PRODUCT_NAME} will align every visual action to narration, preserve a static accessible alternative, and surface common misconceptions.</p></div></div></div>}
       {step === 3 && <div className="wizard-step"><span className="section-kicker">Put a face to the lesson</span><h2>Who will teach?</h2><p>Choose one presenter, build a cast that takes turns, or keep the focus on your visuals.</p><PresenterPicker choices={PRESENTER_CHOICES} value={presenterSelection} onChange={setPresenterSelection} /></div>}
-      {step === 4 && <div className="wizard-step"><span className="section-kicker">Lock the trust boundary</span><h2>How should {PRODUCT_NAME} research?</h2><p>No cloud call happens until its provider, data class, and retention policy are approved.</p><div className="choice-cards">{([
+      {step === 4 && <div className="wizard-step"><span className="section-kicker">Shape the research</span><h2>How should {PRODUCT_NAME} research?</h2><p>Choose how strongly the lesson should depend on external evidence and citations.</p><div className="choice-cards">{([
         { name: "Creative", detail: "Use the prompt as the source of truth", icon: Sparkles }, { name: "Grounded", detail: "Connect verifiable claims to reliable evidence", icon: ShieldCheck }, { name: "Strict", detail: "Block every unsupported external claim", icon: Lock },
-      ] satisfies Array<{ name: string; detail: string; icon: LucideIcon }>).map(({ name, detail, icon: Icon }) => <button key={name} className={grounding === name ? "active" : ""} onClick={() => setGrounding(name)}><span><Icon size={20} /></span><strong>{name}</strong><small>{detail}</small>{grounding === name && <CheckCircle2 size={17} />}</button>)}</div><div className="privacy-selection"><Lock size={18} /><div><strong>Private sources remain local</strong><p>Imported documents start as Local only. Reclassifying them always requires an explicit decision.</p></div><span className="toggle-on"><i /></span></div></div>}
-      {step === 5 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration === "custom" ? exactDuration : duration} minutes</dd></div><div><dt>Method</dt><dd>{TUTORIAL_MODE_LABELS[tutorialMode]}</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Presenters</dt><dd>{presenterSelection.mode === "off" ? "No on-screen presenter" : presenterSelection.presenters.map((entry) => PRESENTER_CHOICES.find((choice) => choice.id === entry.portraitAssetId)?.label ?? entry.presenterId).join(", ")}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} private file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Privacy</dt><dd>{routingReview?.privacy ?? "Pending review"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
+      ] satisfies Array<{ name: string; detail: string; icon: LucideIcon }>).map(({ name, detail, icon: Icon }) => <button key={name} className={grounding === name ? "active" : ""} onClick={() => setGrounding(name)}><span><Icon size={20} /></span><strong>{name}</strong><small>{detail}</small>{grounding === name && <CheckCircle2 size={17} />}</button>)}</div></div>}
+      {step === 5 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration === "custom" ? exactDuration : duration} minutes</dd></div><div><dt>Method</dt><dd>{TUTORIAL_MODE_LABELS[tutorialMode]}</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Presenters</dt><dd>{presenterSelection.mode === "off" ? "No on-screen presenter" : presenterSelection.presenters.map((entry) => PRESENTER_CHOICES.find((choice) => choice.id === entry.portraitAssetId)?.label ?? entry.presenterId).join(", ")}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
         <section className="routing-review" aria-labelledby="routing-review-title">
-          <div className="routing-review-heading"><div><span className="section-kicker">Project provider policy</span><h3 id="routing-review-title">Name every route before work starts.</h3></div><span className={`routing-readiness ${routingReview?.policy ? "ready" : "attention"}`}>{routingLoading ? "Loading" : routingReview?.policy ? <><CheckCircle2 size={13} /> Ready</> : <><CircleAlert size={13} /> Review needed</>}</span></div>
-          <div className="routing-review-controls"><label><span>Creation profile</span><select aria-label="Creation profile" value={selectedProfile?.id ?? ""} disabled={routingLoading || !setup} onChange={(event) => { setSelectedProfileId(event.target.value); setRoutingApproval(false); setRoutingReviewedAt(null); }}>{setup?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><label><span>Content class</span><select aria-label="Content class" value={effectiveClassification} disabled={sourceFiles.length > 0} onChange={(event) => { setDataClassification(event.target.value as "public" | "project"); setRoutingApproval(false); setRoutingReviewedAt(null); }}><option value="project">Project content</option><option value="public">Public / synthetic</option></select></label>{usesCloudflare && <label><span>Cloudflare Account ID</span><input aria-label="Cloudflare Account ID" autoComplete="off" value={providerAccountIds["cloudflare-workers-ai"] ?? ""} onChange={(event) => { setProviderAccountIds((current) => ({ ...current, "cloudflare-workers-ai": event.target.value.trim() })); setRoutingApproval(false); setRoutingReviewedAt(null); }} /><small>Nonsecret account setting. The API token stays in the OS vault.</small></label>}</div>
-          {routingReview?.routeRows.length ? <div className="routing-route-list" aria-label="Reviewed provider routes">{routingReview.routeRows.map((route) => <div key={`${route.medium}-${route.providerId}`}><span>{route.medium}</span><strong>{providerDisplayName(route.providerId)}</strong><code>{route.modelId}</code><em className={route.boundary}>{route.boundary}</em></div>)}</div> : <div className="routing-empty">Choose a saved profile with explicit writing, research, image, and narration models.</div>}
+          <div className="routing-review-heading"><div><span className="section-kicker">Creation profile</span><h3 id="routing-review-title">Use your saved model choices.</h3></div><span className={`routing-readiness ${routingReview?.policy ? "ready" : "attention"}`}>{routingLoading ? "Loading" : routingReview?.policy ? <><CheckCircle2 size={13} /> Ready</> : <><CircleAlert size={13} /> Needs setup</>}</span></div>
+          <div className="routing-review-controls"><label><span>Creation profile</span><select aria-label="Creation profile" value={selectedProfile?.id ?? ""} disabled={routingLoading || !setup} onChange={(event) => setSelectedProfileId(event.target.value)}>{setup?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>{usesCloudflare && <label><span>Cloudflare Account ID</span><input aria-label="Cloudflare Account ID" autoComplete="off" value={providerAccountIds["cloudflare-workers-ai"] ?? ""} onChange={(event) => setProviderAccountIds((current) => ({ ...current, "cloudflare-workers-ai": event.target.value.trim() }))} /><small>Account setting required by Cloudflare Workers AI.</small></label>}</div>
+          {routingReview?.routeRows.length ? <div className="routing-route-list" aria-label="Selected provider routes">{routingReview.routeRows.map((route) => <div key={`${route.medium}-${route.providerId}`}><span>{route.medium}</span><strong>{providerDisplayName(route.providerId)}</strong><code>{route.modelId}</code><em className={route.boundary}>{route.boundary}</em></div>)}</div> : <div className="routing-empty">Choose a saved profile with explicit writing, research, image, and narration models.</div>}
           {routingReview?.errors.length ? <div className="routing-errors" role="status">{routingReview.errors.map((error) => <span key={error}><CircleAlert size={13} /> {error}</span>)}</div> : null}
-          <label className="routing-consent"><input type="checkbox" checked={routingApproval} onChange={(event) => { setRoutingApproval(event.target.checked); setRoutingReviewedAt(event.target.checked ? new Date().toISOString() : null); }} /><span><strong>Approve this exact routing policy</strong><small>I approve the named providers, current retention and provider-managed region, and the content class above. No unlisted fallback is allowed.{routingReview?.routeRows.some((route) => route.providerId === "nvidia-nim") ? " This includes NVIDIA API Trial Terms and a current per-model access check." : ""}</small></span></label>
         </section>
         {createError && <div className="create-error" role="alert"><CircleAlert size={17} /><span><strong>Project creation failed</strong><small>{createError}</small></span></div>}</div>}
     </div>
@@ -3540,11 +3541,20 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
   </div></div>;
 }
 
-function RegenerationSheet({ scene, onClose, onRun }: { scene: Scene; onClose: () => void; onRun: (instruction: string, preserve: boolean, alternatives: number) => void }) {
+type RegenerationFocus = "visual" | SceneEditFocus;
+
+function RegenerationSheet({ scene, onClose, onRun }: { scene: Scene; onClose: () => void; onRun: (instruction: string, focus: RegenerationFocus, preserveTiming: boolean, alternatives: number) => void }) {
   const [instruction, setInstruction] = useState("");
-  const [preserve, setPreserve] = useState(true);
+  const [focus, setFocus] = useState<RegenerationFocus>("visual");
+  const [preserveTiming, setPreserveTiming] = useState(false);
   const [alternatives, setAlternatives] = useState(1);
-  return <div className="sheet-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="regen-sheet" role="dialog" aria-modal="true" aria-labelledby="regen-title"><header><div><span className="section-kicker">Scoped regeneration</span><h2 id="regen-title">Create a new candidate</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></header><div className="regen-scene"><span>{String(scene.index).padStart(2, "0")}</span><div><strong>{scene.title}</strong><small>{scene.kind.replace("-", " ")} · {scene.duration}s</small></div></div><label className="instruction-field"><span>What should change?</span><textarea autoFocus rows={5} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe the visual, pacing, or explanation changes you want for this scene." /></label><div className="quick-instructions"><button onClick={() => setInstruction("Make the explanation more concrete without adding length.")}>More concrete</button><button onClick={() => setInstruction("Reduce narration by 20% while preserving every factual claim.")}>Tighter</button><button onClick={() => setInstruction("Try a more visual treatment using the concept thread.")}>More visual</button></div><section className="preservation-section"><span className="section-kicker">Preservation locks</span><ToggleRow checked={preserve} onChange={setPreserve} title="Keep narration and citations" detail="Regenerate only the visual treatment" /><ToggleRow checked={true} onChange={() => {}} title="Keep learning objective" detail={scene.objective} locked /><label>Alternatives<select value={alternatives} onChange={(event) => setAlternatives(Number(event.target.value))}><option value={1}>1 candidate</option><option value={2}>2 candidates</option><option value={3}>3 candidates</option><option value={4}>4 candidates</option></select></label></section><section className="impact-preview"><div><Network size={17} /><span><strong>Dependency impact</strong><small>Visual layout, scene render, visual QA, and final composition</small></span></div><div><ShieldCheck size={17} /><span><strong>Your selected provider</strong><small>Availability follows your provider’s quota. No unlisted fallback.</small></span></div><div><History size={17} /><span><strong>Accepted version is safe</strong><small>This creates a candidate. Nothing is overwritten.</small></span></div></section><footer><button className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={!instruction.trim()} onClick={() => onRun(instruction, preserve, alternatives)}><WandSparkles size={16} /> Generate candidate</button></footer></aside></div>;
+  const choose = (nextFocus: RegenerationFocus, suggestion: string) => {
+    setFocus(nextFocus);
+    setInstruction(suggestion);
+    if (nextFocus === "visual") setPreserveTiming(true);
+  };
+  const authored = focus !== "visual";
+  return <div className="sheet-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="regen-sheet" role="dialog" aria-modal="true" aria-labelledby="regen-title"><header><div><span className="section-kicker">Review-first regeneration</span><h2 id="regen-title">Create a scene candidate</h2></div><button className="icon-button" aria-label="Close candidate panel" onClick={onClose}><X size={18} /></button></header><div className="regen-scene"><span>{String(scene.index).padStart(2, "0")}</span><div><strong>{scene.title}</strong><small>{scene.kind.replace("-", " ")} · {scene.duration}s</small></div></div><section className="regeneration-focus" aria-label="What kind of change"><span className="section-kicker">What should change?</span><div><button type="button" className={focus === "explanation" ? "active" : ""} aria-pressed={focus === "explanation"} onClick={() => choose("explanation", "Make the explanation more concrete with a concise example grounded in the existing facts.")}><strong>More concrete</strong><small>Propose clearer narration and teaching structure.</small></button><button type="button" className={focus === "pacing" ? "active" : ""} aria-pressed={focus === "pacing"} onClick={() => choose("pacing", "Tighten repetition and transitions while preserving every factual claim.")}><strong>Tighter</strong><small>Propose leaner wording and adjusted duration.</small></button><button type="button" className={focus === "visual" ? "active" : ""} aria-pressed={focus === "visual"} onClick={() => choose("visual", "Try a more visual treatment that teaches the same objective without rendered text.")}><strong>More visual</strong><small>Create new artwork while keeping the script.</small></button></div></section><label className="instruction-field"><span>Your direction</span><textarea autoFocus rows={5} value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder={authored ? "Describe how the explanation or pacing should improve." : "Describe the visual treatment you want for this scene."} /></label><section className="preservation-section"><span className="section-kicker">Preserved from the accepted scene</span><ToggleRow checked={true} onChange={() => {}} title={authored ? "Keep sources, objective, artwork, and presenter" : "Keep narration, citations, timing, and presenter"} detail={authored ? "The writing proposal cannot replace approved media or invent a new learning goal." : "Only the scene artwork is proposed."} locked />{authored && <ToggleRow checked={preserveTiming} onChange={setPreserveTiming} title="Keep current duration" detail={preserveTiming ? `Hold the proposal at ${scene.duration}s.` : "Allow the proposal to adjust scene duration."} />}<label>Alternatives<select value={alternatives} onChange={(event) => setAlternatives(Number(event.target.value))}><option value={1}>1 candidate</option><option value={2}>2 candidates</option><option value={3}>3 candidates</option><option value={4}>4 candidates</option></select></label></section><section className="impact-preview"><div><Network size={17} /><span><strong>Dependency impact after acceptance</strong><small>{authored ? "Narration, alignment, captions, scene render, and final composition" : "Visual layout, scene render, visual QA, and final composition"}</small></span></div><div><ShieldCheck size={17} /><span><strong>{authored ? "Structured writing route" : "Image generation route"}</strong><small>Uses the provider selected in this project. There is no unlisted fallback.</small></span></div><div><History size={17} /><span><strong>Accepted version stays in place</strong><small>Compare every proposal before accepting or rejecting it.</small></span></div></section><footer><button className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={!instruction.trim()} onClick={() => onRun(instruction, focus, preserveTiming, alternatives)}><WandSparkles size={16} /> Generate proposal</button></footer></aside></div>;
 }
 
 function JobDetail({ job }: { job: JobRecord }) {
@@ -3564,12 +3574,6 @@ function JobDetail({ job }: { job: JobRecord }) {
 
 function JobsDrawer({ open, jobs, nativeJobIds, onClose, onCancel, onRetry }: { open: boolean; jobs: JobRecord[]; nativeJobIds: ReadonlySet<string>; onClose: () => void; onCancel: (id: string) => void; onRetry: (id: string) => void }) {
   return <aside className={`jobs-drawer ${open ? "open" : ""}`} aria-hidden={!open} aria-label="Background jobs"><header><div><span className="section-kicker">Durable work queue</span><h2>Jobs</h2></div><button className="icon-button" onClick={onClose} aria-label="Close background jobs"><PanelRightClose size={18} /></button></header><div className="jobs-summary"><div><Activity size={17} /><span><strong>{jobs.filter((job) => job.status === "running").length} active</strong><small>Editing remains available</small></span></div><div className="local-job-badge"><HardDrive size={14} /> Local worker</div></div><div className="jobs-list">{jobs.length ? jobs.map((job) => { const receiptState = jobReceiptState(job); return <article className={`job-card ${job.status}`} key={job.id}><div className="job-icon">{job.status === "complete" ? <Check size={16} /> : job.status === "attention" ? <CircleAlert size={16} /> : <RefreshCw className={job.status === "running" ? "spin" : ""} size={16} />}</div><div className="job-copy"><div><strong title={job.title}>{job.title}</strong><span>{receiptState ? receiptState.toLowerCase().replaceAll("_", " ") : job.status}</span></div><JobDetail job={job} />{job.status !== "complete" && <ProgressBar value={job.progress} />}<small>{job.eta}{job.cost && <> · {job.cost}</>}</small></div><div className="job-actions">{canRetryJob(job, nativeJobIds) && <button className="icon-button" onClick={() => onRetry(job.id)} aria-label={`Retry ${job.title}`}><RotateCcw size={14} /></button>}{canCancelJob(job) && <button className="icon-button" onClick={() => onCancel(job.id)} aria-label={`Cancel ${job.title}`}><X size={15} /></button>}</div></article>; }) : <EmptyState icon={CheckCircle2} title="No queued work" detail="New render and generation jobs appear here." />}</div><footer><ShieldCheck size={15} /> Native jobs recover after an app restart.</footer></aside>;
-}
-
-function CommandPalette({ projects, onClose, onNavigate, onOpen }: { projects: ProjectRecord[]; onClose: () => void; onNavigate: (area: GlobalArea) => void; onOpen: (id: string) => void }) {
-  const [query, setQuery] = useState("");
-  const filteredProjects = projects.filter((project) => project.title.toLowerCase().includes(query.toLowerCase()));
-  return <div className="command-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="command-palette" role="dialog" aria-modal="true"><label><Search size={19} /><input autoFocus placeholder="Search projects or run a command…" value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>esc</kbd></label><div className="command-results"><small>Projects</small>{filteredProjects.map((project) => <button key={project.id} onClick={() => onOpen(project.id)}><span className="command-icon"><Film size={16} /></span><span><strong>{project.title}</strong><small>{project.status} · {project.updatedAt}</small></span><kbd>↵</kbd></button>)}<small>Go to</small>{globalNav.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())).map(({ id, label, icon: Icon }) => <button key={id} onClick={() => onNavigate(id)}><span className="command-icon"><Icon size={16} /></span><span><strong>{label}</strong><small>{PRODUCT_NAME} area</small></span></button>)}</div></div></div>;
 }
 
 function Toast({ toast, onClose }: { toast: ToastMessage; onClose: () => void }) { return <div className={`toast ${toast.tone ?? "success"}`}><span>{toast.tone === "warning" ? <CircleAlert size={17} /> : toast.tone === "info" ? <CircleHelp size={17} /> : <CheckCircle2 size={17} />}</span><div><strong>{toast.title}</strong><p>{toast.detail}</p></div><button onClick={onClose}><X size={14} /></button></div>; }
@@ -3724,14 +3728,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-function downloadPhaseLabel(phase: ModelDownloadStatus["phase"] | undefined): string {
-  if (phase === "downloading") return "Downloading";
-  if (phase === "verifying") return "Verifying hashes";
-  if (phase === "downloadedQuarantined") return "Verified · inactive";
-  if (phase === "failed") return "Paused · resumable";
-  return "License review";
-}
-
 function receiptJob(receipt: JobReceipt, title: string, detail: string, project?: Pick<NativeJobLink, "projectId" | "projectDirectory">): JobRecord {
   const status: JobRecord["status"] = receipt.state === "SUCCEEDED"
     ? "complete"
@@ -3751,7 +3747,7 @@ function receiptJob(receipt: JobReceipt, title: string, detail: string, project?
     ...(project ? { projectId: project.projectId, projectDirectory: project.projectDirectory } : {}),
     retryable: receipt.retryable,
     ...(receipt.operation ? { operation: receipt.operation } : {}),
-    result: { ...(receipt.result ?? {}), receiptState: receipt.state },
+    result: { ...(receipt.result ?? {}), receiptState: receipt.state, receiptAcceptedAt: receipt.acceptedAt },
   };
 }
 
@@ -3783,8 +3779,14 @@ function authoritativeReviewMedia(project: ProjectRecord, jobs: readonly JobReco
   const candidate = jobs.filter((job) => {
     const path = job.result?.path ?? job.result?.outputPath;
     const mediaType = job.result?.mediaType;
+    const receiptAcceptedAt = job.result?.receiptAcceptedAt;
+    const newerThanAuthoredEdit = !project.mediaInvalidatedAt || (
+      typeof receiptAcceptedAt === "string"
+      && Date.parse(receiptAcceptedAt) > Date.parse(project.mediaInvalidatedAt)
+    );
     return job.projectId === project.nativeProjectId
       && job.status === "complete"
+      && newerThanAuthoredEdit
       && (typeof job.result?.generationId !== "string" || !project.nativeGenerationId || job.result.generationId === project.nativeGenerationId)
       && (job.operation === "export_master" || job.operation === "render_scene" || job.operation === "editor_timeline_export" || job.id === project.nativeGenerationId)
       && typeof path === "string"
@@ -3835,4 +3837,6 @@ function errorMessage(error: unknown): string {
   return "An unexpected desktop integration error occurred.";
 }
 
-export default App;
+export default function App() {
+  return <ModelDownloadProvider><AppWorkbench /><ModelDownloadPanel /></ModelDownloadProvider>;
+}

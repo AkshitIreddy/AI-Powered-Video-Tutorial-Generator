@@ -24,15 +24,13 @@ const secrets: Record<string, ProviderSecretRef> = {
 };
 
 describe("provider routing review", () => {
-  it("builds one closed project policy from an explicitly approved profile", () => {
+  it("builds one closed project policy directly from the selected profile", () => {
     const review = buildProviderRoutingReview({
       profile,
       secretRefs: secrets,
-      dataClassification: "project",
-      approvalChecked: true,
-      hasPrivateSources: false,
+      hasImportedSources: false,
       groundingMode: "grounded",
-      reviewedAt: "2026-08-29T12:00:00.000Z",
+      createdAt: "2026-08-29T12:00:00.000Z",
     });
 
     expect(review.errors).toEqual([]);
@@ -49,19 +47,28 @@ describe("provider routing review", () => {
     expect(review.policy?.approvals.every((approval) => approval.privacyApproved)).toBe(true);
   });
 
-  it("fails closed before consent or when a required credential is absent", () => {
+  it("fails closed when a provider selected in the profile has no credential", () => {
     const review = buildProviderRoutingReview({
       profile,
       secretRefs: { openai: secret("openai") },
-      dataClassification: "project",
-      approvalChecked: false,
-      hasPrivateSources: false,
+      hasImportedSources: false,
       groundingMode: "strict",
     });
 
     expect(review.policy).toBeNull();
-    expect(review.errors).toContain("Review and approve the named providers and their data-handling boundaries.");
-    expect(review.errors).toContain("elevenlabs needs a credential in the OS vault before this profile can be approved.");
+    expect(review.errors).toContain("elevenlabs needs a credential in the OS vault before this profile can be used.");
+  });
+
+  it("uses ordinary cloud profiles with imported sources without a separate privacy gate", () => {
+    const review = buildProviderRoutingReview({
+      profile,
+      secretRefs: secrets,
+      hasImportedSources: true,
+      groundingMode: "grounded",
+    });
+
+    expect(review.errors).toEqual([]);
+    expect(review.policy).toMatchObject({ dataClassification: "project", privacyMode: "cloud" });
   });
 
   it("keeps image generation optional for authored layouts and bundled visuals", () => {
@@ -256,7 +263,7 @@ describe("provider routing review", () => {
       groundingMode: "grounded",
     });
     expect(review.policy).toBeNull();
-    expect(review.errors).toContain("pexels needs a credential in the OS vault before this profile can be approved.");
+    expect(review.errors).toContain("pexels needs a credential in the OS vault before this profile can be used.");
   });
 
   it.each([
@@ -278,7 +285,7 @@ describe("provider routing review", () => {
     expect(review.errors).toContain(expectedError);
   });
 
-  it("blocks private sources and project content from cloud-preview-only routing", () => {
+  it("blocks imported sources only for the public-preview-only NVIDIA route", () => {
     const nimProfile: ModelProfile = {
       ...profile,
       routes: { ...profile.routes, writing: { providerId: "nvidia-nim", modelId: "openai/gpt-oss-20b" } },
@@ -293,8 +300,7 @@ describe("provider routing review", () => {
     });
 
     expect(review.policy).toBeNull();
-    expect(review.errors).toContain("Private source files cannot enter this cloud profile. Use an all-local profile or create the project without those files.");
-    expect(review.errors).toContain("NVIDIA hosted preview accepts only public or synthetic project content.");
+    expect(review.errors).toContain("NVIDIA hosted preview accepts only prompt-only tutorials. Choose another saved profile when source files are attached.");
   });
 
   it("routes portrait animation and lip-sync independently and snapshots exact local installs", () => {

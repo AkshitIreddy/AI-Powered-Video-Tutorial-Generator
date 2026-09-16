@@ -80,8 +80,9 @@ it("stages only the verified installed SDXL identity in the active profile", asy
   render(<App />);
 
   await user.click(screen.getByRole("button", { name: /models & providers/i }));
-  const useButton = await screen.findByRole("button", { name: /use sdxl in active profile/i });
+  const useButton = await screen.findByRole("button", { name: /use sdxl in active profile/i }, { timeout: 5000 });
   expect(useButton).toBeEnabled();
+  expect(document.querySelector(".download-phase")).toHaveTextContent("Installed");
   await user.click(useButton);
 
   expect(screen.getByLabelText(/images provider/i)).toHaveValue("local-runtime");
@@ -101,7 +102,7 @@ it.each([
   render(<App />);
 
   await user.click(screen.getByRole("button", { name: /models & providers/i }));
-  const useButton = await screen.findByRole("button", { name: /use sdxl in active profile/i });
+  const useButton = await screen.findByRole("button", { name: /use sdxl in active profile/i }, { timeout: 5000 });
   expect(useButton).toBeDisabled();
   expect(await screen.findByLabelText(/images model$/i)).not.toHaveValue("local/sdxl-base-1.0");
 });

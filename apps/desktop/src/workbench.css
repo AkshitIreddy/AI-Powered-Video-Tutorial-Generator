@@ -219,3 +219,8 @@ html[data-dense-editor=true] .aly-editor-timeline__scroll { max-height: 480px; }
   .studio-workspace .playback-bar { min-width: 0; }
   .studio-workspace .playback-bar small { display: none; }
 }
+
+.project-advanced-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding: 18px; margin: -8px 0 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.project-advanced-filters label { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 12px; }
+.project-advanced-filters select { padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.project-advanced-filters > span { color: var(--muted); font-size: 11px; margin-left: auto; }

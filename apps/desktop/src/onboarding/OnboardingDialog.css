@@ -1,0 +1,38 @@
+.aly-onboarding-choice__metadata > span {
+  display: block;
+}
+
+.aly-onboarding-choice__license-note {
+  margin-top: 5px;
+  color: var(--onboarding-muted);
+  font: 500 9px/1.45 var(--body);
+}
+
+.aly-onboarding-choice__license-note a {
+  position: relative;
+  z-index: 1;
+  color: var(--onboarding-plum);
+  font-weight: 750;
+  text-underline-offset: 2px;
+}
+
+.aly-onboarding-choice__license-note code {
+  color: var(--onboarding-plum-deep);
+  font-size: 8px;
+}
+
+.aly-onboarding-download-panel-link {
+  justify-self: start;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--onboarding-plum);
+  border-radius: 9px;
+  background: var(--onboarding-plum);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.aly-onboarding-download-panel-link:hover {
+  background: var(--onboarding-plum-deep);
+}

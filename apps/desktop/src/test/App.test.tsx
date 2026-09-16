@@ -141,6 +141,125 @@ describe("Alystria desktop shell", () => {
     expect(canonicalFixtureIdFromTopic("Create a canonical binary-search tutorial")).toBeUndefined();
   });
 
+  it("filters Rendering projects and applies the advanced source, presenter, and title controls", async () => {
+    const snapshot = structuredClone(exampleSnapshot);
+    const base = snapshot.projects[0]!;
+    snapshot.projects = [
+      {
+        ...base,
+        id: "zulu-sources",
+        title: "Zulu sources",
+        topic: "Evidence review",
+        status: "Complete",
+        duration: 9,
+        progress: 100,
+        sources: base.sources,
+        presenterSelection: { schemaVersion: 1, mode: "off", presenters: [], sceneAssignments: [] },
+      },
+      {
+        ...base,
+        id: "alpha-presenter",
+        title: "Alpha presenter",
+        topic: "A presenter-led lesson",
+        status: "Planning",
+        duration: 4,
+        progress: 15,
+        sources: [],
+        presenterSelection: {
+          schemaVersion: 1,
+          mode: "on",
+          presenters: [{ presenterId: "presenter-portrait.software-daniel-v1", portraitAssetId: "presenter-portrait.software-daniel-v1" }],
+          sceneAssignments: [],
+        },
+      },
+      {
+        ...base,
+        id: "middle-render",
+        title: "Middle render",
+        topic: "Rendering a sourced presenter lesson",
+        status: "Rendering",
+        duration: 6,
+        progress: 55,
+        sources: base.sources,
+        presenterSelection: {
+          schemaVersion: 1,
+          mode: "auto",
+          presenters: [{ presenterId: "presenter-portrait.language-sofia-v1", portraitAssetId: "presenter-portrait.language-sofia-v1" }],
+          sceneAssignments: [],
+        },
+      },
+    ];
+    snapshot.recentProjectId = "middle-render";
+    localStorage.setItem("alystria-studio-v2", JSON.stringify(snapshot));
+
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /^projects$/i }));
+    await user.click(screen.getByRole("button", { name: /project filters and sorting/i }));
+    expect(screen.getByRole("button", { name: /project filters and sorting/i })).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(screen.getByRole("button", { name: /^rendering$/i }));
+    expect(screen.getByRole("heading", { name: "Middle render" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Alpha presenter" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Zulu sources" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /reset filters/i }));
+    await user.selectOptions(screen.getByLabelText(/sort projects/i), "title");
+    expect(screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      "Alpha presenter",
+      "Middle render",
+      "Zulu sources",
+    ]);
+
+    await user.click(screen.getByRole("checkbox", { name: /with source material/i }));
+    await user.click(screen.getByRole("checkbox", { name: /with presenters/i }));
+    expect(screen.getByText("1 matching projects")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Middle render" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Zulu sources" })).not.toBeInTheDocument();
+  });
+
+  it("resets only the workspace view while preserving every project and active job", async () => {
+    const snapshot = structuredClone(exampleSnapshot);
+    const base = snapshot.projects[0]!;
+    snapshot.projects = [
+      { ...base, id: "kept-one", title: "Kept project one" },
+      { ...base, id: "kept-two", title: "Kept project two" },
+    ];
+    snapshot.recentProjectId = "kept-two";
+    snapshot.studioMode = "studio";
+    snapshot.jobs = [
+      { id: "running-job", title: "Active render", detail: "Rendering scenes", status: "running", progress: 42 },
+      { id: "queued-job", title: "Queued narration", detail: "Waiting for the worker", status: "queued", progress: 0 },
+      { id: "complete-job", title: "Finished export", detail: "Saved", status: "complete", progress: 100 },
+      { id: "attention-job", title: "Failed preview", detail: "Retry available", status: "attention", progress: 10 },
+    ];
+    localStorage.setItem("alystria-studio-v2", JSON.stringify(snapshot));
+
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /settings & diagnostics/i }));
+    await user.click(screen.getByRole("button", { name: /reset workspace view/i }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/project library.*active work will stay available/i);
+    await user.click(screen.getByRole("button", { name: /clear workspace view/i }));
+
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
+      expect(persisted.projects.map((project) => project.id)).toEqual(["kept-one", "kept-two"]);
+      expect(persisted.jobs.map((job) => job.id)).toEqual(["running-job", "queued-job"]);
+      expect(persisted.recentProjectId).toBeNull();
+      expect(persisted.studioMode).toBe("guided");
+    });
+
+    await user.click(screen.getByRole("button", { name: /^projects$/i }));
+    expect(screen.getByRole("heading", { name: "Kept project one" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Kept project two" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^jobs$/i }));
+    expect(screen.getByText("Active render")).toBeInTheDocument();
+    expect(screen.getByText("Queued narration")).toBeInTheDocument();
+    expect(screen.queryByText("Finished export")).not.toBeInTheDocument();
+    expect(screen.queryByText("Failed preview")).not.toBeInTheDocument();
+  });
+
   it("opens a project and switches between its five workspaces", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -285,7 +404,7 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByRole("button", { name: /cancel active render/i })).toBeInTheDocument();
   });
 
-  it("creates and persists a tutorial with reviewed provider routing", async () => {
+  it("creates and persists a tutorial with the selected provider profile", async () => {
     const user = userEvent.setup();
     await configureCloudProfile();
     render(<App />);
@@ -299,7 +418,7 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^strict/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
-    await user.click(await screen.findByRole("checkbox", { name: /approve this exact routing policy/i }));
+    expect(screen.queryByRole("checkbox", { name: /approve this exact routing policy/i })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /create learning plan/i }));
     expect(screen.getAllByText("Teach recursion with a visual call tree").length).toBeGreaterThan(0);
     // Persistence is intentionally asynchronous and the user can sort or
@@ -320,7 +439,7 @@ describe("Alystria desktop shell", () => {
     expect(creationJob?.projectDirectory).toBe(created?.nativeProjectDirectory);
   });
 
-  it("restores a nonsecret Cloudflare Account ID and includes it in the approved project policy", async () => {
+  it("restores a Cloudflare Account ID and includes it in the selected project policy", async () => {
     const user = userEvent.setup();
     await configureCloudflareImageProfile();
     localStorage.setItem("alystria-provider-account-ids-v1", JSON.stringify({
@@ -336,8 +455,7 @@ describe("Alystria desktop shell", () => {
 
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     expect(await screen.findByLabelText("Cloudflare Account ID")).toHaveValue("0123456789abcdef0123456789abcdef");
-    expect(screen.getByText(/nonsecret account setting/i)).toBeInTheDocument();
-    await user.click(screen.getByRole("checkbox", { name: /approve this exact routing policy/i }));
+    expect(screen.getByText(/account setting required by cloudflare workers ai/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /create learning plan/i }));
 
     await waitFor(() => {
@@ -373,7 +491,6 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("button", { name: /^creative/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     expect(screen.getByText("About 3 minutes")).toBeInTheDocument();
-    await user.click(await screen.findByRole("checkbox", { name: /approve this exact routing policy/i }));
     await user.click(screen.getByRole("button", { name: /create learning plan/i }));
 
     await waitFor(() => {
@@ -402,7 +519,6 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
     await user.click(screen.getByRole("button", { name: /^creative/i }));
     await user.click(screen.getByRole("button", { name: /^continue$/i }));
-    await user.click(await screen.findByRole("checkbox", { name: /approve this exact routing policy/i }));
     await user.click(screen.getByRole("button", { name: /create learning plan/i }));
 
     await waitFor(() => {
@@ -436,11 +552,31 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("button", { name: /storyboard/i }));
     const regenerateButtons = screen.getAllByRole("button", { name: /^regenerate$/i });
     await user.click(regenerateButtons[0]!);
-    expect(screen.getByRole("heading", { name: /create a new candidate/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /create a scene candidate/i })).toBeInTheDocument();
     await user.type(screen.getByPlaceholderText(/describe the visual/i), "Try a stronger opening contrast");
-    await user.click(screen.getByRole("button", { name: /generate candidate/i }));
+    await user.click(screen.getByRole("button", { name: /generate proposal/i }));
     expect(screen.getByRole("heading", { name: /^jobs$/i })).toBeInTheDocument();
-    expect(screen.getByText(/regenerating scene/i)).toBeInTheDocument();
+    expect(screen.getByText(/candidate · scene/i)).toBeInTheDocument();
+  });
+
+  it("routes concrete and pacing requests through authored scene proposals", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /^open project$/i }));
+    await user.click(screen.getByRole("button", { name: /storyboard/i }));
+    await user.click(screen.getAllByRole("button", { name: /^regenerate$/i })[0]!);
+    await user.click(screen.getByRole("button", { name: /more concrete/i }));
+
+    expect(screen.getByRole("button", { name: /more concrete/i })).toHaveAttribute("aria-pressed", "true");
+    expect((screen.getByRole("textbox", { name: /your direction/i }) as HTMLTextAreaElement).value).toMatch(/grounded in the existing facts/i);
+    expect(screen.getByText(/structured writing route/i)).toBeInTheDocument();
+    expect(screen.getByText(/narration, alignment, captions/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /generate proposal/i }));
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}") as AppSnapshot;
+      expect(persisted.jobs[0]?.operation).toBe("regenerate_authored_scene");
+    });
   });
 
   it("keeps wizard file bytes ephemeral while showing selected source status", async () => {
@@ -453,7 +589,7 @@ describe("Alystria desktop shell", () => {
     await user.upload(input, file);
 
     expect(screen.getByLabelText(/selected source files/i)).toHaveTextContent("private-notes.txt");
-    expect(screen.getByText(/1 selected · imported privately before generation/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 selected · added before generation/i)).toBeInTheDocument();
     expect(localStorage.getItem("alystria-studio-v2") ?? "").not.toContain(raw);
   });
 
@@ -463,7 +599,7 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("button", { name: /models & providers/i }));
     expect(screen.getByRole("heading", { name: /nvidia nim \(dev\/test\)/i })).toBeInTheDocument();
     expect(screen.getByText(/one key · public\/synthetic hosted previews/i)).toBeInTheDocument();
-    expect(screen.getByText(/no silent fallback/i)).toBeInTheDocument();
+    expect(screen.getByText(/internal evaluation only; outputs cannot be published/i)).toBeInTheDocument();
   });
 
   it("keeps local lip-sync choices and switchable provider profiles explicit", async () => {
@@ -475,8 +611,8 @@ describe("Alystria desktop shell", () => {
     });
     render(<App />);
     await user.click(screen.getByRole("button", { name: /models & providers/i }));
-    expect(await screen.findByRole("heading", { name: /local models, without surprise downloads/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /choose an image model to inspect or install/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /your local model toolkit/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /choose an image model to download/i })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /stable diffusion xl 1.0/i })).toBeChecked();
     expect(screen.getByText(/stable diffusion xl 1.0 has a pinned native declaration/i)).toBeInTheDocument();
     expect(screen.getAllByText(/^download only$/i)).toHaveLength(2);
@@ -488,9 +624,9 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("radio", { name: /musetalk 1.5/i }));
     expect(screen.getByRole("radio", { name: /musetalk 1.5/i })).toBeChecked();
     expect(await screen.findByText(/download-only pack/i)).toBeInTheDocument();
-    expect(screen.getByText(/browser preview never fetches model bytes/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /start verified download/i })).toBeDisabled();
-    expect(screen.getByText(/not installed, active, or ready for inference/i)).toBeInTheDocument();
+    expect(screen.getByText(/progress stays in downloads while you keep working/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^download$/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /use .* in active profile/i })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /add profile/i }));
     await user.clear(screen.getByLabelText(/^name$/i));

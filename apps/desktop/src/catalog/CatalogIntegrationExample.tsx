@@ -1,59 +1,49 @@
-import { useMemo, useState } from "react";
-import { CatalogModule } from "./CatalogModule";
+import { useMemo } from "react";
 import {
   createDefaultCompatibilityContext,
-  createDefaultRoutingProfile,
   defaultCatalogItems,
 } from "./defaults";
 import { resourcePolicyPresets } from "./resourcePolicy";
 import type { CatalogItem, HardwareSnapshot } from "./types";
+import { ModelLibrary, type CatalogDownloadActionState } from "./ModelLibrary";
 import "./catalog.css";
 
 export interface CatalogIntegrationExampleProps {
   hardware: HardwareSnapshot;
   items?: readonly CatalogItem[];
-  onModelInspected?: (item: CatalogItem) => void;
+  onModelDownload?: (item: CatalogItem) => void;
+  downloadState?: (item: CatalogItem) => CatalogDownloadActionState;
   onUseForWritingProfile?: (item: CatalogItem) => void;
   writingProfileProviderIds?: readonly string[];
-  /** @deprecated The library action inspects a model; use onModelInspected. */
-  onModelSelected?: (item: CatalogItem) => void;
 }
 
 /**
- * Controlled integration seam for App.tsx or a settings route. Replace `items`
- * after each adapter sync; persist profile and policy changes in the host app.
+ * Controlled integration seam for the app's model catalog. Native-backed model
+ * profiles and downloads are owned by the surrounding Models page; this view
+ * only discovers models and evaluates their fit against a fixed display policy.
  */
 export function CatalogIntegrationExample({
   hardware,
   items = defaultCatalogItems,
-  onModelInspected,
+  onModelDownload,
+  downloadState,
   onUseForWritingProfile,
   writingProfileProviderIds,
-  onModelSelected,
 }: CatalogIntegrationExampleProps) {
-  const [routingProfile, setRoutingProfile] = useState(() => createDefaultRoutingProfile());
-  const [resourcePolicy, setResourcePolicy] = useState(resourcePolicyPresets.balanced);
   const baseContext = useMemo(
-    () => createDefaultCompatibilityContext({ hardware, policy: resourcePolicy }),
-    [hardware, resourcePolicy],
+    () => createDefaultCompatibilityContext({ hardware, policy: resourcePolicyPresets.balanced }),
+    [hardware],
   );
 
   return (
-    <CatalogModule
+    <ModelLibrary
       items={items}
-      hardware={hardware}
       compatibilityContext={baseContext}
-      contextFor={(capability) => ({ ...baseContext, capability })}
-      routingProfile={routingProfile}
-      resourcePolicy={resourcePolicy}
-      onRoutingProfileChange={setRoutingProfile}
-      onResourcePolicyChange={setResourcePolicy}
+      {...(onModelDownload === undefined ? {} : { onDownload: onModelDownload })}
+      {...(downloadState === undefined ? {} : { downloadState })}
       {...(onUseForWritingProfile === undefined
         ? {}
         : { onUseForWritingProfile, writingProfileProviderIds })}
-      {...(onModelInspected === undefined && onModelSelected === undefined
-        ? {}
-        : { onInspect: onModelInspected ?? onModelSelected })}
     />
   );
 }

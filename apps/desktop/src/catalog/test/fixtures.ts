@@ -23,6 +23,7 @@ export interface CatalogFixtureOptions {
   artifactType?: ArtifactType;
   boundaries?: readonly ExecutionBoundary[];
   runtimes?: readonly string[];
+  tags?: readonly string[];
   baseFamilies?: readonly string[];
   compatibleBaseFamilies?: readonly string[];
   estimatedVramBytes?: number | null;
@@ -61,7 +62,7 @@ export function catalogFixture(options: CatalogFixtureOptions = {}): CatalogItem
       modalities: ["image"],
       architecture: "fixture-architecture",
       baseFamilies,
-      tags: ["fixture", "safetensors"],
+      tags: options.tags ?? ["fixture", "safetensors"],
     },
     execution: {
       boundaries: options.boundaries ?? ["local"],
