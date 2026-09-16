@@ -1,11 +1,12 @@
 # Alystria Studio documentation
 
-Alystria Studio 2.0 is a Windows-first, local-first tutorial-production desktop application. Project content, artifacts, history, and durable job state remain on the user's machine. Cloud AI is bring-your-own-key and opt-in at the point where data would leave the device; a hosted Alystria account, backend, synchronization service, and collaboration service are deliberately out of scope.
+Alystria Studio 2.0 is a Windows-first, local-first tutorial-production desktop application. Project content, artifacts, history, and durable job state remain on the user's machine. Cloud AI uses the user-selected bring-your-own-key profile; a hosted Alystria account, backend, synchronization service, and collaboration service are deliberately out of scope.
 
 This documentation is both an implementation contract and an operator guide. Where implementation is incomplete, documents say so explicitly rather than presenting a planned capability as shipped.
 
 ## Start here
 
+- [September 16 download/control audit](../WORK_2026-09-16_CONTROLS.md) — shared downloads, onboarding, privacy-control removal, authored scene proposals, control audit, and native evidence.
 - [September 16 product follow-up](../WORK_2026-09-16.md) — presenter casts, optional downloads, budget removal, navigation measurements, and exact native evidence.
 - [Architecture](architecture/overview.md) — process boundaries, trust model, data flow, and failure recovery.
 - [Architecture decision records](adr/README.md) — locked choices, implementation evidence, and remaining release gates.

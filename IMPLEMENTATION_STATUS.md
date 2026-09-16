@@ -2,6 +2,17 @@
 
 Current audit: **2026-09-16**, local `main`. The historical checklist below records the August 28 baseline; it is not a substitute for current integrated acceptance.
 
+## September 16 download and control audit
+
+The [control audit](WORK_2026-09-16_CONTROLS.md) supersedes the earlier inline
+onboarding queue and privacy-screen descriptions. Setup and Models share real
+native downloads in a minimizable app panel. Unsupported installer choices are
+explicitly unavailable. Authored explanation/pacing proposals now have a durable
+writing-provider workflow with review, acceptance, rejection, and stale-media
+invalidation. Project filters, command palette keys, inspector disclosure,
+editor visibility/import identity, and presenter acceptance are connected.
+No push or release is authorized by these local changes.
+
 ## September 16 product follow-up
 
 New tutorials use an open topic prompt without fixed suggestions or monetary

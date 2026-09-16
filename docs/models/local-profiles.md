@@ -104,21 +104,27 @@ catalog—not model weights. On first launch:
    explain the exact reason and offer a smaller approved profile; never silently
    move project content to a cloud provider.
 
-The assistant can be reopened from **Models & Providers → Local models**. A
-user can install only the small retrieval/TTS/ASR profile first, then add
-Qwen3.5 or MuseTalk later. This keeps the initial setup useful on low-memory
-machines while making the RTX 4080 Laptop profile a deliberate opt-in.
+The assistant can be reopened from **Models & Providers → Local models**. The
+profile examples above are research candidates, not a promise of an installer
+for every listed model. Only the declared packages listed below can currently
+be downloaded through this surface.
 
 ### Current RC setup surface
 
-Onboarding now uses the native model download manager for explicitly selected
-packs with a verified declaration. It shows license acceptance, pinned files,
-progress, retry, and installed reuse. Fresh setup selects no optional packs.
-Queued packs start sequentially; leaving setup is blocked only while requests
-are still waiting to reach the native worker, and unstarted requests can be
-cleared explicitly. Started downloads continue in the background. A selected
-candidate without an installer stays labeled as pending; selecting it does
-not claim installation or activation.
+Selecting an available model in onboarding immediately queues it in the native
+manager, closes setup, and opens the app-wide Downloads panel. The panel can
+minimize while navigation and other work continue. Model Library uses the same
+persisted queue. Entries show actual transferred bytes, linked licenses,
+retry/resume, and installed reuse. Downloading accepts the displayed license;
+there is no additional checkbox. Fresh setup selects no optional packs.
+Unstarted requests can be removed. Active transfers continue while the app is
+open; an interrupted transfer can resume from retained partial files.
+
+Available packages and existing installations appear first. Entries without a
+verified installer are disabled in onboarding rather than saving a choice that
+cannot download. The currently declared packages are SDXL, FLUX.2 Klein,
+Z-Image Turbo, and MuseTalk. SDXL has an execution-ready recipe; the other
+packages retain their explicit runtime/hardware activation restrictions.
 
 The local RC now includes the first, deliberately non-destructive part of this
 assistant in **Models & Providers**:
