@@ -32,7 +32,7 @@ Run the target-specific layout and accessibility checks. Portrait and square tar
 
 ## Cloud request is blocked
 
-Common reasons are absent credential, unapproved provider or payload class, stale retention/pricing metadata, unknown upper-bound cost, exceeded budget, region mismatch, or Fully Local mode. The remedy is an explicit configuration or approval—not a silent alternate provider.
+Common reasons are absent credential, unapproved provider or payload class, stale retention metadata, exhausted account quota, region mismatch, or Fully Local mode. The remedy is an explicit configuration or approval—not a silent alternate provider.
 
 ## Export is blocked by rights or consent
 

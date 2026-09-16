@@ -111,6 +111,15 @@ machines while making the RTX 4080 Laptop profile a deliberate opt-in.
 
 ### Current RC setup surface
 
+Onboarding now uses the native model download manager for explicitly selected
+packs with a verified declaration. It shows license acceptance, pinned files,
+progress, retry, and installed reuse. Fresh setup selects no optional packs.
+Queued packs start sequentially; leaving setup is blocked only while requests
+are still waiting to reach the native worker, and unstarted requests can be
+cleared explicitly. Started downloads continue in the background. A selected
+candidate without an installer stays labeled as pending; selecting it does
+not claim installation or activation.
+
 The local RC now includes the first, deliberately non-destructive part of this
 assistant in **Models & Providers**:
 
@@ -126,7 +135,7 @@ assistant in **Models & Providers**:
 
 The preference file lives under application data, contains no credentials, and
 is not a project routing approval. API keys remain in the OS credential vault;
-every project still needs a separate payload/privacy/retention/region/budget
+every project still needs a separate payload/privacy/retention/region
 approval before a cloud request can occur. Multiple packs may remain selected
 or eventually installed. Disk and safe system-RAM caching are acceptable for
 this non-latency-critical product, while the scheduler keeps one GPU-heavy

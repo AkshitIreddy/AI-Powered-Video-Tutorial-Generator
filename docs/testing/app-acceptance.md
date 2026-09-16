@@ -14,7 +14,7 @@ The command fails on the first broken layer. It performs:
 2. A Playwright **UI-contract** journey in Chromium, through the browser
    command adapter, that creates and saves an explicit cloud profile with
    discarded session-only browser credential availability, creates
-   a public/synthetic test project, reviews the provider boundary and budget,
+   a public/synthetic test project, reviews the provider boundary and cast,
    approves the learning plan,
    enters Review, verifies that simulated generation does not masquerade as
    playable media, configures Export, archives the project, and submits a
@@ -57,7 +57,7 @@ encoded by the production media toolchain.
 | Layer | Automated here | Explicit boundary |
 |---|---|---|
 | React user journey | Yes, through Playwright | Runs the browser UI-contract adapter; no native artifacts |
-| Provider policy and budget UI | Yes | Uses session-only discarded test values and public/synthetic content |
+| Provider policy and cast UI | Yes | Uses session-only discarded test values and public/synthetic content |
 | Tauri/Rust command broker | No | Covered by Rust tests, not this Playwright process |
 | Authenticated Python sidecar | Yes | Direct loopback protocol, same allowed desktop methods |
 | Durable generation and approval | Yes | Local deterministic adapters |

@@ -6,6 +6,7 @@ This documentation is both an implementation contract and an operator guide. Whe
 
 ## Start here
 
+- [September 16 product follow-up](../WORK_2026-09-16.md) — presenter casts, optional downloads, budget removal, navigation measurements, and exact native evidence.
 - [Architecture](architecture/overview.md) — process boundaries, trust model, data flow, and failure recovery.
 - [Architecture decision records](adr/README.md) — locked choices, implementation evidence, and remaining release gates.
 - [Project format](architecture/project-format.md) — the local directory, SQLite authority, content-addressed objects, revisions, migration, and portable archives.
@@ -30,7 +31,7 @@ This documentation is both an implementation contract and an operator guide. Whe
 
 ## Evidence policy
 
-Architecture decisions rely on primary or authoritative sources. Provider capabilities, retention, regional availability, license terms, model identifiers, and prices can change; the application must keep a versioned catalog with a `lastVerifiedAt` timestamp and must block unbounded or stale cost estimates rather than guess.
+Architecture decisions rely on primary or authoritative sources. Provider capabilities, retention, regional availability, license terms, model identifiers, and prices can change; the application must keep a versioned catalog with a `lastVerifiedAt` timestamp and must label unknown or stale prices rather than guess. Pricing does not block an otherwise approved route; provider quotas and bounded retries still apply.
 
 The principal external references are maintained next to the relevant decisions. Key starting points include [Tauri architecture](https://v2.tauri.app/concept/architecture/), [Tauri capabilities](https://v2.tauri.app/security/capabilities/), [DBOS workflow recovery](https://docs.dbos.dev/production/workflow-recovery), [JSON Schema 2020-12](https://json-schema.org/specification), [FFmpeg documentation](https://ffmpeg.org/ffmpeg.html), [WebVTT](https://www.w3.org/TR/webvtt1/), [WCAG 2.2](https://www.w3.org/TR/WCAG22/), [SPDX](https://spdx.dev/learn/overview/), and [C2PA](https://spec.c2pa.org/post/contentcredentials/).
 

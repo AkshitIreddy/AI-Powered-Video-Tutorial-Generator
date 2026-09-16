@@ -8,7 +8,7 @@ AI Video Tutorial Generator is a Windows-first, local-first desktop environment 
 
 ![Current teaching workbench, empty local profile](docs/images/workbench-home-2026-09-05.png)
 
-The [September 5 independent audit](docs/research/product-audit-2026-09-05.md) records the product changes and evidence boundaries. The screenshots here show the September 5 browser UI; they do not substitute for the separately documented native Windows acceptance. September 8 verification and remaining work are tracked in the [implementation ledger](IMPLEMENTATION_STATUS.md) and [continuation checkpoint](CONTINUE_2026-09-08.md).
+The [September 5 independent audit](docs/research/product-audit-2026-09-05.md) records the product changes and evidence boundaries. The screenshots here show the September 5 browser UI; they do not substitute for the separately documented native Windows acceptance. The latest September 16 product changes and verification are tracked in the [implementation ledger](IMPLEMENTATION_STATUS.md) and [current work record](WORK_2026-09-16.md); the [September 8 checkpoint](CONTINUE_2026-09-08.md) preserves earlier media evidence.
 
 [Documentation](docs/README.md) · [Architecture](docs/architecture/overview.md) · [Local model profiles](docs/models/local-profiles.md) · [Free/trial provider guide](docs/providers/free-and-trial.md) · [Security and privacy](docs/security/security-and-privacy.md) · [Evaluation](docs/testing/evaluation.md) · [Implementation ledger](IMPLEMENTATION_STATUS.md)
 
@@ -23,6 +23,8 @@ This is still a **local RC candidate**, not a published installer. Clean-machine
 - Local model weights are **not bundled**. Optional pinned ComfyUI packages have managed download, verification, reuse and preflight paths. Local SDXL 1.0 with its official offset LoRA completed a real image-candidate generate/review/accept/reload workflow on the 12 GB GPU. FLUX.2 Klein and Z-Image remain optional offload candidates, without a claimed laptop quality/performance pass. See the [local image audit](docs/research/local-image-model-audit-2026-09-05.md).
 - The included library provides four slide backgrounds and eight elements without an API key. Image generation is optional for creating more scene artwork or fictional teachers; generated candidates require explicit review and selection.
 - **Designed layout** is the default and uses authored slide content without an image-generation request. Choose **Illustrated** explicitly with an approved image route to generate artwork. After an image failure, switching to Designed and approving again preserves unchanged narration clips once active work has stopped.
+- New tutorials ask explicitly for no presenter or a cast of up to four. Speakers take turns across scenes; Plan → Presenters controls scene assignments and optional voice overrides. Twelve additional bundled portraits cover anime, clay, graphic illustration, gouache, and watercolor settings. Animation still needs a compatible installed runtime or approved provider.
+- Onboarding downloads selected, declared model packs after license acceptance, with progress and retry. No optional packs are selected for a fresh profile. Choices without a verified installer remain marked as unavailable for download.
 
 ## Guided and Studio workflows
 
@@ -30,13 +32,13 @@ The Guided flow keeps provider IDs, raw prompts, cache keys, codec details, and 
 
 1. Start with a topic, learner question, script, or source material.
 2. Choose audience, duration, locale, theme, Creative/Grounded/Strict research, quality, and Local/Hybrid/Cloud privacy.
-3. Review objectives, prerequisites, misconceptions, evidence, outline, and script.
-4. Approve the storyboard plus cost, privacy, rights, and provider plan.
+3. Choose no presenter or a cast of up to four, then review the objectives, evidence, outline, script, and scene speaker assignments.
+4. Approve the storyboard, privacy, rights, and provider plan.
 5. Generate assets, narration, captions, optional presenter moments, renders, and QA as durable jobs.
 6. Review claims, versions, accessibility, and repair suggestions.
 7. Export video, captions, transcript, bibliography, chapters, metadata, thumbnail, provenance, or `.alytutorial`.
 
-No content-bearing cloud call should occur before provider, payload class, retention/region, and upper-bound cost are approved.
+No content-bearing cloud call should occur before provider, payload class, and retention/region are approved. There is no app monetary budget or known-price gate; provider quotas, bounded retries, and explicit routing still apply.
 
 ![Current New Tutorial wizard in an empty browser profile](docs/images/new-tutorial-2026-09-05.png)
 
@@ -74,7 +76,7 @@ The current New Tutorial UI accepts PDF, DOCX, PPTX, EPUB, Markdown, text, CSV, 
 learner brief → safe sources → research questions → evidence ledger
 → objectives + prerequisites + misconceptions → concept graph
 → outline candidates → reviewed script → storyboard + VisualBible
-→ cost/privacy/rights approval → media + render → QA + bounded repair
+→ provider/privacy/rights approval → media + render → QA + bounded repair
 ```
 
 Academic adapters normalize OpenAlex, Crossref, DataCite, OpenCitations, Europe PMC, and arXiv behind a safe transport. Evidence stays connected to immutable source versions and exact text offsets, page boxes, time ranges, table cells, figures, sections, or records.
@@ -108,11 +110,11 @@ See [Rendering](docs/architecture/rendering.md) and [Accessibility](docs/accessi
 
 - **Fully Local:** project-content networking is denied; loopback workers remain available.
 - **Hybrid:** sensitive stages can remain local while separately approved payloads use named cloud capabilities.
-- **Cloud:** approved capabilities may use cloud providers, with explicit model, payload, region/retention, and cost.
+- **Cloud:** approved capabilities may use cloud providers, with explicit model, payload, and region/retention. Usage and known cost remain receipts.
 
 Current typed text adapters cover OpenAI Responses, Anthropic Messages, Gemini generateContent, reviewed Groq/Mistral/OpenRouter structured routes, NVIDIA NIM hosted chat/VLM, and OpenAI-compatible local endpoints. NVIDIA NIM also has typed embedding and dormant reranking contracts plus exact allowlisted image endpoints behind one OS-keyring credential; video is not advertised because its documented route is deprecated. Its hosted catalog is public/synthetic development testing only—not production or self-hosted NIM—and every selected model's access and rate limit is rechecked. Media request builders cover configured capabilities across OpenAI, Google/Gemini, NVIDIA NIM, Black Forest Labs, Recraft, Openverse, Pexels, Runway, ElevenLabs, Azure/Google speech, HeyGen, and Tavus.
 
-Availability is **capability-gated**: an adapter is selectable only when its catalog, credential, policy/pricing freshness, request shape, rights/consent, and budget checks pass. The deterministic mock is the only provider approved by default. There is no silent provider, region, retention, or local/cloud fallback.
+Availability is **capability-gated**: an adapter is selectable only when its catalog, credential, policy freshness, request shape, and rights/consent checks pass. The deterministic mock is the only provider approved by default. There is no silent provider, region, retention, or local/cloud fallback.
 
 The local catalog records candidates for Qwen LLM/VLM and embeddings, FLUX, Qwen TTS, Kokoro, Whisper, and MuseTalk. Most remain `artifact-pin-required` or `benchmark-and-artifact-pin-required`. Weights download on demand; no model becomes supported before immutable pin/hash, license acceptance, runtime compatibility, and hardware verification.
 
@@ -292,9 +294,9 @@ Read [Security and privacy](docs/security/security-and-privacy.md), [Accessibili
 
 **Why does setup stop?** Exact versions and frozen locks are enforced. Run `corepack pnpm doctor`; use `--allow-version-mismatch` only for non-release development.
 
-**Why can I edit but not generate?** The supervised pipeline, compatible capability, FFmpeg runtime, approval, or current bounded price may be absent. Diagnostics identifies the blocker.
+**Why can I edit but not generate?** The supervised pipeline, compatible capability, FFmpeg runtime, or required approval may be absent. Diagnostics identifies the blocker.
 
-**Why is cloud blocked?** Check Local mode, credentials, provider/payload approval, price/retention freshness, budget, region, capability, rights, and consent.
+**Why is cloud blocked?** Check Local mode, credentials, provider/payload approval, retention freshness, account quota, region, capability, rights, and consent.
 
 **Why is export blocked?** Strict-mode support findings, rights, attribution, expiry, and consent are deliberate gates.
 

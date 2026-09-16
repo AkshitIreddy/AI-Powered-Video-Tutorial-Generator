@@ -1,6 +1,24 @@
 # AI Video Tutorial Generator implementation ledger
 
-Current audit: **2026-09-08**, local `main`. The historical checklist below records the August 28 baseline; it is not a substitute for current integrated acceptance.
+Current audit: **2026-09-16**, local `main`. The historical checklist below records the August 28 baseline; it is not a substitute for current integrated acceptance.
+
+## September 16 product follow-up
+
+New tutorials use an open topic prompt without fixed suggestions or monetary
+budgets. Creation asks explicitly for no presenter or a cast of up to four,
+with scene speaker assignments and optional voice overrides. Twelve original
+portraits add six anime settings and six other illustration styles. Selected
+onboarding packs use the native download manager after license acceptance;
+fresh setup selects no optional downloads. The onboarding styling matches the
+workbench. Model catalog rendering and provider polling have been reduced to
+address navigation stalls.
+
+The [September 16 work record](WORK_2026-09-16.md) records exact builds, source
+checks, native recovery, performance measurements, and the failures caught
+during integration. Multiple presenters take turns across scenes; simultaneous
+animated faces and animation quality on every new portrait are not claimed.
+The September 8 long-form media qualification below remains historical proof,
+not a new generation with the September 16 source. No push or release.
 
 ## September 8 verification
 

@@ -8,9 +8,9 @@ The desktop interface is not a trusted shell. The Rust core is a narrow privileg
 
 ## Local, hybrid, and cloud execution
 
-Fully Local mode blocks project-content network egress, remote fonts/assets, analytics, crash-upload, and cloud fallback. Loopback IPC remains allowed. Hybrid and Cloud modes require a per-operation disclosure of provider, model, payload classes, endpoint/region, retention policy, estimated cost, and purpose before the first content-bearing call.
+Fully Local mode blocks project-content network egress, remote fonts/assets, analytics, crash-upload, and cloud fallback. Loopback IPC remains allowed. Hybrid and Cloud modes require a per-operation disclosure of provider, model, payload classes, endpoint/region, retention policy, and purpose before the first content-bearing call.
 
-Consent to one provider is not consent to another. A failed provider may be retried only under its declared policy; switching provider, region, retention class, or local/cloud boundary requires a new approval. Pricing or retention that cannot be bounded blocks the call.
+Consent to one provider is not consent to another. A failed provider may be retried only under its declared policy; switching provider, region, retention class, or local/cloud boundary requires a new approval. Unapproved retention blocks the call. Unknown pricing does not block an otherwise approved route; usage receipts retain known cost, and retries remain bounded.
 
 ## Secrets
 
