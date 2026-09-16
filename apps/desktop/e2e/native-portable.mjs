@@ -232,10 +232,8 @@ try {
       throw new Error((await providerSetupError.textContent())?.trim() || "Provider setup failed to load");
     }
     await wizard.getByLabel("Creation profile").selectOption(parsed.profileId);
-    await wizard.getByLabel("Content class", { exact: true }).selectOption("public");
-    await wizard.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
     await expect(wizard.locator(".routing-readiness")).toContainText("Ready");
-    await wizard.screenshot({ path: path.join(evidenceRoot, "02-reviewed-policy.png") });
+    await wizard.screenshot({ path: path.join(evidenceRoot, "02-selected-profile.png") });
     await wizard.getByRole("button", { name: /create learning plan/i }).click();
 
     await waitForPersistedProjectByTitle(page, projectTitle, parsed.actionTimeoutMs);
@@ -2242,7 +2240,7 @@ function assertRepresentativeProjectContract(project, storyboardPayload, profile
 }
 
 function assertRepresentativeProviderPolicy(policy, profileId) {
-  if (!policy || !Array.isArray(policy.routes)) throw new Error("Representative profile did not persist its approved routing policy");
+  if (!policy || !Array.isArray(policy.routes)) throw new Error("Representative profile did not persist its selected routing policy");
   const route = (capability) => policy.routes.find((candidate) => candidate.capability === capability);
   const writing = profileId.includes("mistral")
     ? ["mistral", "mistral-small-2603"]

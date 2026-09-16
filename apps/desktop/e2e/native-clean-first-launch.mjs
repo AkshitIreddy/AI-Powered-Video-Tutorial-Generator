@@ -59,15 +59,14 @@ try {
   await continueOnboarding(dialog);
   await dialog.locator('input[type="radio"][value="hybrid"]').check();
   await continueOnboarding(dialog);
-  await dialog.locator('input[type="radio"][value="ask-before-cloud"]').check();
-  await continueOnboarding(dialog);
+  await expect(dialog.getByText(/privacy boundary|ask before cloud|approved providers/i)).toHaveCount(0);
   await continueOnboarding(dialog);
   const hardwareReview = dialog.getByRole("checkbox", { name: /reviewed this system summary/i });
   if (!await hardwareReview.isChecked()) await hardwareReview.check();
   await continueOnboarding(dialog);
-  const museTalkChoice = dialog.locator('input[type="checkbox"][value="local/musetalk-1.5"]');
-  if (!await museTalkChoice.isChecked()) await museTalkChoice.check();
-  await expect(dialog.getByRole("heading", { name: "Install without leaving onboarding" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Choose your model toolkit" })).toBeVisible();
+  await expect(dialog.getByText(/selecting a downloadable pack starts its verified installation immediately/i)).toBeVisible();
+  await expect(page.locator(".model-download-drawer")).toHaveCount(0);
   await page.screenshot({ path: path.join(evidenceRoot, "02-model-toolkit-availability.png"), fullPage: true });
   await continueOnboarding(dialog);
   const displayName = dialog.getByLabel("Display name");
@@ -96,6 +95,11 @@ try {
   await dialog.getByRole("button", { name: "Exit onboarding" }).click();
   const finalOnboarding = await page.evaluate(() => JSON.parse(localStorage.getItem("alystria-onboarding-v1") ?? "{}"));
   if (finalOnboarding.status !== "completed") throw new Error(`Replay exit left onboarding in ${finalOnboarding.status ?? "unknown"}`);
+  if (finalOnboarding.configuration?.modelIds?.length) {
+    throw new Error(`Clean launch unexpectedly selected model downloads: ${finalOnboarding.configuration.modelIds.join(", ")}`);
+  }
+  const pendingDownloadQueue = await page.evaluate(() => JSON.parse(localStorage.getItem("alystria-model-download-queue-v1") ?? "[]"));
+  if (pendingDownloadQueue.length) throw new Error("Clean launch unexpectedly queued a model download");
 
   const firstDesktopPid = launch.child.pid;
   const firstWorkerPid = launch.workerPid;
@@ -144,6 +148,8 @@ try {
     seededProjectCount: finalWorkspace.projects?.length ?? 0,
     seededJobCount: finalWorkspace.jobs?.length ?? 0,
     onboardingStatus: finalOnboarding.status,
+    modelDownloadSelectionCount: finalOnboarding.configuration?.modelIds?.length ?? 0,
+    pendingModelDownloadCount: pendingDownloadQueue.length,
     replaySetupOpenedThroughUi: true,
     normalRelaunchCompleted: true,
     normalRelaunchSeededProjectCount: relaunchedStorage.workspace.projects?.length ?? 0,

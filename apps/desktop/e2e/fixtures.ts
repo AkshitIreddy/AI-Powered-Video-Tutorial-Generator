@@ -5,18 +5,18 @@ export const completedOnboarding = {
   schemaVersion: 1,
   status: "completed",
   activeChapterId: "ready",
-  completedChapterIds: ["welcome", "goal", "runtime", "privacy", "provider", "hardware", "model", "profile", "ready"],
-  visitedChapterIds: ["welcome", "goal", "runtime", "privacy", "provider", "hardware", "model", "profile", "ready"],
+  completedChapterIds: ["welcome", "goal", "runtime", "provider", "hardware", "model", "profile", "ready"],
+  visitedChapterIds: ["welcome", "goal", "runtime", "provider", "hardware", "model", "profile", "ready"],
   configuration: {
     goals: ["tutorial"],
     runtime: "hybrid",
-    privacy: "ask-before-cloud",
+    privacy: null,
     providerIds: [],
     modelIds: ["local/qwen3.5-9b-gguf", "local/kokoro", "local/whisper-large-v3-turbo", "local/liveportrait", "local/musetalk-1.5"],
     hardwareReviewed: true,
     profile: { displayName: "Akshit", portraitAssetId: "presenter-portrait.academic-amara-v1" },
   },
-  revision: 9,
+  revision: 8,
   updatedAt: "2026-09-02T00:00:00.000Z",
 };
 

@@ -81,7 +81,7 @@ test("@ui-contract drives create, approve, review boundary, and export through t
   await expect(wizard.getByRole("button", { name: "Just the lesson" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: /^creative/i }).click();
-  await expect(page.getByText(/no cloud call happens/i)).toBeVisible();
+  await expect(page.getByText(/depend on external evidence and citations/i)).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(wizard.getByText("About 3 minutes")).toBeVisible();
   await page.getByRole("button", { name: "Maximum", exact: true }).click();
@@ -89,9 +89,8 @@ test("@ui-contract drives create, approve, review boundary, and export through t
   await expect(wizard.getByText(/hard creation budget/i)).toHaveCount(0);
   await wizard.getByLabel("Creation profile").selectOption({ label: "UI contract cloud" });
   await expect(wizard.getByLabel("Creation profile")).toHaveValue("custom-profile-2");
-  await page.getByLabel("Content class", { exact: true }).selectOption("public");
   await expect(page.getByText(/none yet/i)).toBeVisible();
-  await page.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
+  await expect(page.getByRole("checkbox", { name: /approve this exact routing policy/i })).toHaveCount(0);
   await expect(page.locator(".routing-readiness")).toContainText("Ready");
   await page.getByRole("button", { name: /create learning plan/i }).click();
 
@@ -222,7 +221,6 @@ test("@ui-contract creates a cast and persists a scene speaker assignment withou
   await expect(wizard.getByText("Daniel · software instructor, Astrid · anime editorial", { exact: true })).toBeVisible();
   await expect(wizard.getByLabel(/hard budget/i)).toHaveCount(0);
   await expect(wizard.getByText(/hard creation budget/i)).toHaveCount(0);
-  await wizard.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
   await wizard.getByRole("button", { name: /create learning plan/i }).click();
 
   await expect(page.getByRole("heading", { name: /shape the learning journey/i })).toBeVisible();

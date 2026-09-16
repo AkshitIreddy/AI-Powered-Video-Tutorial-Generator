@@ -280,7 +280,6 @@ async function createBlockedTutorial(page) {
   const setupError = wizard.getByRole("alert");
   if (await setupError.count() && await setupError.isVisible()) throw new Error(`Native model setup failed: ${(await setupError.innerText()).trim()}`);
   await wizard.getByLabel("Creation profile").selectOption("portable-test-local");
-  await wizard.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
   await wizard.getByRole("button", { name: /create learning plan/i }).click();
   const jobs = page.getByRole("complementary", { name: /background jobs/i });
   await expect(jobs.locator(".job-card").filter({ hasText: "Creating learning plan" })).toContainText("blocked", { timeout: 120_000 });
@@ -332,8 +331,8 @@ function assertRecoveredCast(project, phase) {
 }
 
 function completedOnboarding() {
-  const chapters = ["welcome", "goal", "runtime", "privacy", "provider", "hardware", "model", "profile", "ready"];
-  return { schemaVersion: 1, status: "completed", activeChapterId: "ready", completedChapterIds: chapters, visitedChapterIds: chapters, configuration: { goals: ["tutorial"], runtime: "local", privacy: "local-only", providerIds: [], modelIds: [], hardwareReviewed: true, profile: { displayName: "Recovery acceptance", portraitAssetId: "presenter-portrait.broadcast-elena-v1" } }, revision: 9, updatedAt: new Date().toISOString() };
+  const chapters = ["welcome", "goal", "runtime", "provider", "hardware", "model", "profile", "ready"];
+  return { schemaVersion: 1, status: "completed", activeChapterId: "ready", completedChapterIds: chapters, visitedChapterIds: chapters, configuration: { goals: ["tutorial"], runtime: "local", privacy: null, providerIds: [], modelIds: [], hardwareReviewed: true, profile: { displayName: "Recovery acceptance", portraitAssetId: "presenter-portrait.broadcast-elena-v1" } }, revision: 8, updatedAt: new Date().toISOString() };
 }
 
 async function reservePort() {

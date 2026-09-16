@@ -14,7 +14,7 @@ test("home, project, and studio flows render without page errors", async ({ page
   await page.getByRole("navigation", { name: /project workspace/i }).getByRole("button", { name: /studio/i }).click();
   await expect(page.locator(".studio-workspace")).toBeVisible();
   await page.getByRole("button", { name: /new candidate/i }).click();
-  await expect(page.getByRole("heading", { name: /create a new candidate/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /create a scene candidate/i })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -259,7 +259,7 @@ test("stock photo search exposes only approved routes and keeps durable credits 
   await credits.locator("details").screenshot({ path: testInfo.outputPath("stock-image-review-scores.png") });
 });
 
-test("new tutorial wizard exposes presenter and privacy choices before creation", async ({ page }, testInfo) => {
+test("new tutorial wizard uses the selected provider profile without a second approval gate", async ({ page }, testInfo) => {
   await configureLocalRouting(page);
   await page.getByRole("button", { name: /create a tutorial/i }).click();
   await page.getByPlaceholder("What would you like to teach? Describe your topic, question, or learning goal.").fill("Explain stable sorting visually");
@@ -267,13 +267,13 @@ test("new tutorial wizard exposes presenter and privacy choices before creation"
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Who will teach?" })).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByText(/no cloud call happens/i)).toBeVisible();
+  await expect(page.getByText(/depend on external evidence and citations/i)).toBeVisible();
   await page.getByRole("button", { name: /^creative/i }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByLabel(/hard budget/i)).toHaveCount(0);
-  await page.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
+  await expect(page.getByRole("checkbox", { name: /approve this exact routing policy/i })).toHaveCount(0);
   await expect(page.locator(".routing-readiness")).toContainText("Ready");
-  await page.locator(".routing-review").screenshot({ path: testInfo.outputPath("routing-review-approved.png") });
+  await page.locator(".routing-review").screenshot({ path: testInfo.outputPath("selected-creation-profile.png") });
   await page.getByRole("button", { name: /create learning plan/i }).click();
   await expect(page.getByText(/Explain stable sorting visually is stored under/i)).toBeVisible();
 });
@@ -296,8 +296,7 @@ test("selected sources remain visible through review and portable export is wire
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: /^creative/i }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByText(/1 private file/i)).toBeVisible();
-  await page.getByRole("checkbox", { name: /approve this exact routing policy/i }).check();
+  await expect(page.getByText(/1 file/i)).toBeVisible();
   await page.getByRole("button", { name: /create learning plan/i }).click();
   await page.locator("[data-tour-route='plan-sources']").click();
   await expect(page.getByText(/recursion-notes.md/i)).toBeVisible();
@@ -328,7 +327,7 @@ test("narrow desktop does not overflow horizontally", async ({ page }, testInfo)
 
 test("local model and provider profiles remain explicit and saveable", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: /models & providers/i }).click();
-  await expect(page.getByRole("heading", { name: /local models, without surprise downloads/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /your local model toolkit/i })).toBeVisible();
   await expect(page.getByRole("radio", { name: /stable diffusion xl 1.0/i })).toBeChecked();
   await expect(page.getByRole("radio", { name: /flux.2 klein 4b fp8/i })).toBeVisible();
   await expect(page.getByRole("radio", { name: /z-image turbo int8/i })).toBeVisible();
@@ -339,8 +338,8 @@ test("local model and provider profiles remain explicit and saveable", async ({ 
   await page.getByRole("radio", { name: /musetalk 1.5/i }).click();
   await expect(page.getByRole("radio", { name: /musetalk 1.5/i })).toBeChecked();
   await expect(page.getByText(/download-only pack/i)).toBeVisible();
-  await expect(page.getByText(/browser preview never fetches model bytes/i)).toBeVisible();
-  await expect(page.getByRole("button", { name: /start verified download/i })).toBeDisabled();
+  await expect(page.getByText(/progress stays in downloads while you keep working/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^download$/i })).toBeDisabled();
   await page.getByRole("button", { name: /add profile/i }).click();
   await page.getByLabel("Name", { exact: true }).fill("Offline presenter review");
   await page.getByRole("button", { name: /save setup & active profile/i }).click();
