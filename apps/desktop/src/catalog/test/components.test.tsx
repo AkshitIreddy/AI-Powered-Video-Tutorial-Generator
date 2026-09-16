@@ -17,6 +17,26 @@ const profile: RoutingProfile = {
 };
 
 describe("catalog selection controls", () => {
+  it("renders large result sets in responsive batches without hiding the exact total", async () => {
+    const user = userEvent.setup();
+    const items = Array.from({ length: 30 }, (_, index) => catalogFixture({
+      name: `Catalog model ${String(index + 1).padStart(2, "0")}`,
+      sourceId: `fixture/model-${index + 1}`,
+    }));
+    const { container } = render(<ModelLibrary items={items} compatibilityContext={contextFixture()} />);
+
+    expect(screen.getAllByRole("heading", { name: /Catalog model/ })).toHaveLength(6);
+    expect(container.querySelector(".aly-catalog-results-heading p")?.textContent).toContain("30 models");
+    expect(screen.getByText(/Showing/)).toHaveTextContent("Showing 6 of 30 matching models.");
+
+    await user.click(screen.getByRole("button", { name: "Show 6 more" }));
+    expect(screen.getAllByRole("heading", { name: /Catalog model/ })).toHaveLength(12);
+
+    await user.type(screen.getByRole("searchbox", { name: "Search models" }), "Catalog model 30");
+    expect(screen.getAllByRole("heading", { name: /Catalog model/ })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /Show .* more/ })).not.toBeInTheDocument();
+  });
+
   it("shows only catalog actions that have a working callback", async () => {
     const user = userEvent.setup();
     const item = catalogFixture({ name: "Inspectable model" });

@@ -75,7 +75,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import appMark from "./assets/ai-video-tutorial-generator-mark.svg";
@@ -2251,6 +2251,51 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 type SyncableCatalogSource = "hugging-face" | "civitai" | "nvidia-nim" | "cohere";
 
+function useProgressiveProviderSections() {
+  const [stage, setStage] = useState(0);
+  useEffect(() => {
+    let active = true;
+    let idle: number | undefined;
+    let timer: number | undefined;
+    let frame: number | undefined;
+    let nextStage = 1;
+    const schedule = () => {
+      frame = window.requestAnimationFrame(() => {
+        const advance = () => {
+          if (!active) return;
+          startTransition(() => setStage(nextStage));
+          nextStage += 1;
+          if (nextStage <= 2) schedule();
+        };
+        const requestIdle = window.requestIdleCallback?.bind(window);
+        if (requestIdle) idle = requestIdle(advance, { timeout: 180 });
+        else timer = window.setTimeout(advance, 32);
+      });
+    };
+    schedule();
+    return () => {
+      active = false;
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      if (idle !== undefined) window.cancelIdleCallback(idle);
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, []);
+  return stage;
+}
+
+function ProviderSectionPlaceholder({ title, detail }: { title: string; detail: string }) {
+  return <section className="provider-progressive-placeholder" aria-busy="true" aria-label={`Preparing ${title}`}><span className="section-kicker">Preparing this section</span><h2>{title}</h2><p>{detail}</p><i aria-hidden="true" /></section>;
+}
+
+function sameDownloadCatalog(left: ModelDownloadCatalogEntry[], right: ModelDownloadCatalogEntry[]) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function sameDownloadStatuses(left: ModelDownloadStatus[], right: ModelDownloadStatus[]) {
+  const omitPollingTimestamp = (key: string, value: unknown) => key === "updatedAt" ? undefined : value;
+  return JSON.stringify(left, omitPollingTimestamp) === JSON.stringify(right, omitPollingTimestamp);
+}
+
 function ProvidersView({ environment, diagnosticReport, onNotify }: { environment: RuntimeState["environment"]; diagnosticReport: DiagnosticReport | null; onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void }) {
   const [mode, setMode] = useState("Hybrid");
   const [secretRefs, setSecretRefs] = useState<Record<string, ProviderSecretRef>>({});
@@ -2272,33 +2317,44 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   const [catalogSyncedCounts, setCatalogSyncedCounts] = useState<Partial<Record<SyncableCatalogSource, number>>>({});
   const providers = providerConfigs;
   const catalogHardware = useMemo(() => catalogHardwareFromDiagnostics(diagnosticReport), [diagnosticReport]);
+  const progressiveStage = useProgressiveProviderSections();
 
   useEffect(() => {
     let active = true;
-    void Promise.all(providerConfigs.filter((provider) => !provider.local).map(async (provider) => [provider.id, await providerSecretStatus({ providerId: provider.id, credentialKind: "api_key" })] as const))
-      .then((entries) => { if (active) setSecretRefs(Object.fromEntries(entries)); })
-      .catch(() => {
-        if (active) setSecretRefs(Object.fromEntries(providerConfigs.filter((provider) => !provider.local).map((provider) => [provider.id, { reference: "", providerId: provider.id, credentialKind: "api_key", availability: "keyringUnavailable", updatedAt: null } satisfies ProviderSecretRef])));
-      });
-    return () => { active = false; };
-  }, [environment]);
-
-  useEffect(() => {
-    let active = true;
-    void localModelSetupGet().then((value) => { if (active) setSetup(value); }).catch((error: unknown) => {
-      if (active) onNotify("Local model setup needs attention", errorMessage(error), "warning");
-    }).finally(() => { if (active) setSetupLoading(false); });
-    return () => { active = false; };
-  }, [environment, onNotify]);
-
-  useEffect(() => {
-    let active = true;
-    const refresh = () => Promise.all([localModelDownloadCatalog(), localModelDownloadStatus()]).then(([catalog, statuses]) => {
-      if (active) { setDownloadCatalog(catalog); setDownloadStatuses(statuses); }
-    }).catch((error: unknown) => { if (active) onNotify("Model download status needs attention", errorMessage(error), "warning"); });
-    void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 2000);
-    return () => { active = false; window.clearInterval(timer); };
+    let timer: number | undefined;
+    const remoteProviders = providerConfigs.filter((provider) => !provider.local);
+    const unavailableSecrets = () => Object.fromEntries(remoteProviders.map((provider) => [provider.id, {
+      reference: "", providerId: provider.id, credentialKind: "api_key", availability: "keyringUnavailable", updatedAt: null,
+    } satisfies ProviderSecretRef]));
+    const readSecrets = () => Promise.all(remoteProviders.map(async (provider) => [
+      provider.id,
+      await providerSecretStatus({ providerId: provider.id, credentialKind: "api_key" }),
+    ] as const)).then((entries) => Object.fromEntries(entries)).catch(() => unavailableSecrets());
+    const readSetup = () => localModelSetupGet().then((value) => ({ value, error: null })).catch((error: unknown) => ({ value: null, error }));
+    const readDownloads = () => Promise.all([localModelDownloadCatalog(), localModelDownloadStatus()])
+      .then(([catalog, statuses]) => ({ catalog, statuses, error: null }))
+      .catch((error: unknown) => ({ catalog: null, statuses: null, error }));
+    const applyDownloads = (catalog: ModelDownloadCatalogEntry[], statuses: ModelDownloadStatus[]) => {
+      setDownloadCatalog((current) => sameDownloadCatalog(current, catalog) ? current : catalog);
+      setDownloadStatuses((current) => sameDownloadStatuses(current, statuses) ? current : statuses);
+    };
+    const refreshDownloads = async () => {
+      const result = await readDownloads();
+      if (!active) return;
+      if (result.error) onNotify("Model download status needs attention", errorMessage(result.error), "warning");
+      else if (result.catalog && result.statuses) applyDownloads(result.catalog, result.statuses);
+    };
+    void Promise.all([readSecrets(), readSetup(), readDownloads()]).then(([secrets, setupResult, downloads]) => {
+      if (!active) return;
+      setSecretRefs(secrets);
+      if (setupResult.error) onNotify("Local model setup needs attention", errorMessage(setupResult.error), "warning");
+      else if (setupResult.value) setSetup(setupResult.value);
+      setSetupLoading(false);
+      if (downloads.error) onNotify("Model download status needs attention", errorMessage(downloads.error), "warning");
+      else if (downloads.catalog && downloads.statuses) applyDownloads(downloads.catalog, downloads.statuses);
+      timer = window.setInterval(() => { void refreshDownloads(); }, 2000);
+    });
+    return () => { active = false; if (timer !== undefined) window.clearInterval(timer); };
   }, [environment, onNotify]);
 
   const mutateSetup = (update: (current: LocalModelSetup) => LocalModelSetup) => setSetup((current) => current ? update(current) : current);
@@ -2393,7 +2449,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     try {
       const saved = await localModelSetupSave({ activeProfileId: setup.activeProfileId, selectedModelIds: setup.selectedModelIds, lipSyncModelId: setup.lipSyncModelId, portraitAnimationModelId: setup.portraitAnimationModelId ?? null, existingModelDirectory: setup.existingModelDirectory, profiles: setup.profiles });
       setSetup(saved);
-      onNotify("Setup saved locally", "Your model choices and no-secret profiles were saved. A project still asks for cloud, privacy, and budget approval before a provider call.", "success");
+      onNotify("Setup saved locally", "Your model choices and no-secret profiles were saved. A project still asks for provider and privacy approval before a provider call.", "success");
     } catch (error) {
       onNotify("Setup was not saved", errorMessage(error), "warning");
     } finally { setSetupSaving(false); }
@@ -2453,7 +2509,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
 
   return <div className="page">
     <PageTitle kicker="Your compute, your choice" title="Models & providers" description={`${PRODUCT_NAME} only routes work to providers you configure and approve. Local mode blocks project-content networking.`} />
-    <section className="routing-card"><div><span className="section-kicker">Routing choices explained</span><h3>{mode} routing</h3><p>{mode === "Local" ? "All generation remains on this device. No cloud fallback." : mode === "Cloud" ? "Use only connected cloud providers after cost and privacy approval." : "Keep private sources local; route approved creative tasks to cloud providers. Choose models in a saved profile below."}</p></div><div className="segmented-large" role="group" aria-label="Compare routing modes">{["Local", "Hybrid", "Cloud"].map((item) => <button key={item} className={mode === item ? "active" : ""} onClick={() => setMode(item)}><span>{item === "Local" ? <HardDrive /> : item === "Cloud" ? <Cloud /> : <Network />}</span>{item}</button>)}</div><div className="routing-facts"><span><ShieldCheck /> No silent fallback</span><span><CircleDollarSign /> Hard budgets enabled</span><span><Lock /> Keys in OS vault</span></div></section>
+    <section className="routing-card"><div><span className="section-kicker">Routing choices explained</span><h3>{mode} routing</h3><p>{mode === "Local" ? "All generation remains on this device. No cloud fallback." : mode === "Cloud" ? "Use only connected cloud providers after provider and privacy approval." : "Keep private sources local; route approved creative tasks to cloud providers. Choose models in a saved profile below."}</p></div><div className="segmented-large" role="group" aria-label="Compare routing modes">{["Local", "Hybrid", "Cloud"].map((item) => <button key={item} className={mode === item ? "active" : ""} onClick={() => setMode(item)}><span>{item === "Local" ? <HardDrive /> : item === "Cloud" ? <Cloud /> : <Network />}</span>{item}</button>)}</div><div className="routing-facts"><span><ShieldCheck /> No silent fallback</span><span><ShieldCheck /> Provider quotas respected</span><span><Lock /> Keys in OS vault</span></div></section>
     <section className="federated-catalog-panel" aria-labelledby="federated-catalog-title">
       <div className="federated-catalog-heading federated-catalog-heading--compact"><div><span className="section-kicker">Find and compare models</span><h2 id="federated-catalog-title">Model library</h2><p>Catalog filters, route comparisons, and resource estimates are temporary. Choose a compatible writing model here, then save it in a model profile below.</p></div><span><Cpu size={16} /> {catalogHardware.gpuNames[0] ?? "Hardware probe pending"}</span></div>
       <details className="catalog-source-disclosure"><summary><span><strong>{defaultCatalogSources.length} catalog sources</strong><small>Curated, connected, public, and local indexes</small></span><span>Browse and sync <ChevronDown size={15} aria-hidden="true" /></span></summary><div className="catalog-source-strip" aria-label="Federated catalog sources">{defaultCatalogSources.map((source) => {
@@ -2471,7 +2527,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       return <article className="provider-card" key={name}><span className={`provider-icon ${tone}`}>{local ? <Icon size={22} /> : <ProviderMark providerId={id === "nvidia-nim" ? "nvidia" : id} compact />}</span><div><h3>{name}</h3><p>{detail}</p></div><span className={`provider-state ${connected || local ? "" : "add"}`}>{connected || local ? <Check size={13} /> : null}{local ? "Manager ready" : connected ? "Connected" : availability === "keyringUnavailable" ? "Vault unavailable" : "Add key"}</span>{local && <div className="model-meter"><span><b>On-demand profiles</b><small>Nothing bundled · download and verify before use</small></span><div><i style={{ width: "18%" }} /></div></div>}{!local && <button className="icon-button" aria-label={`${connected ? "Manage" : "Add"} ${name} credential`} onClick={() => { setEditingProvider(id); setSecret(""); }}><KeyRound size={17} /></button>}</article>;
     })}</div>
     {editingProvider && <section className="credential-panel" aria-labelledby="credential-title"><div><span className="section-kicker">Credential broker</span><h3 id="credential-title">Connect {providers.find((provider) => provider.id === editingProvider)?.name}</h3><p>{environment === "native" ? "The value goes directly to the operating-system vault. Project files receive only an opaque reference." : "Browser demo mode exercises the flow but immediately discards the value."}</p></div><label>API key<input autoFocus type="password" autoComplete="off" value={secret} onChange={(event) => setSecret(event.target.value)} /></label><div className="credential-actions">{secretRefs[editingProvider]?.availability === "present" && <button className="secondary-button danger-text" onClick={() => { void deleteSecret(editingProvider); setEditingProvider(null); }}><X size={15} /> Remove</button>}<button className="secondary-button" onClick={() => { setEditingProvider(null); setSecret(""); }}>Cancel</button><button className="primary-button" disabled={!secret.trim() || saving} onClick={() => { void saveSecret(); }}><KeyRound size={15} /> {saving ? "Saving…" : "Store securely"}</button></div></section>}
-    <section className="model-setup-panel" aria-labelledby="local-model-setup-title">
+    {progressiveStage >= 1 ? <section className="model-setup-panel" aria-labelledby="local-model-setup-title">
       <div className="model-setup-heading"><div><span className="section-kicker">First-run setup</span><h2 id="local-model-setup-title">Local models, without surprise downloads.</h2><p>Pick a small local profile, bring a pre-existing model folder, or stay API-first. Model weights are never bundled or activated until a signed immutable manifest, license acceptance, hash check, and hardware preflight all pass.</p></div><span className="setup-state"><HardDrive size={15} /> {setupLoading ? "Loading setup" : `${setup?.selectedModelIds.length ?? 0} choices saved`}</span></div>
       <div className="lipsync-chooser" aria-labelledby="local-image-model-title"><div><span className="section-kicker">Local image studio</span><h3 id="local-image-model-title">Choose an image model to inspect or install</h3><p>SDXL is the current working route for creating slide artwork and fictional presenter portraits. The two newer bundles are available for deliberate download, but stay blocked from generation until their exact offload recipes pass on this PC.</p></div><div className="lipsync-options">{localImageModelOptions.map((model) => { const status = downloadStatuses.find((entry) => entry.modelId === model.id); const stateLabel = status?.phase === "ready" || status?.phase === "inUse" ? "Installed · ready" : status?.phase === "downloadedQuarantined" ? "Downloaded · recipe blocked" : model.tag; return <label className={inspectedImageModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="local-image-model" checked={inspectedImageModelId === model.id} disabled={!setup} onClick={() => setDownloadSelectionId(model.id)} onChange={() => { setSelectedImageModelId(model.id); toggleLocalModel(model.id, true); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{stateLabel}</em></label>; })}</div><p className="inspector-note">Selecting a card keeps the model in your saved choices and opens its exact download declaration below. It does not silently change an existing project or send a prompt.</p></div>
       <div className="local-model-grid" aria-busy={setupLoading}>{localModelOptions.map((model) => { const selected = setup?.selectedModelIds.includes(model.id) ?? false; return <label className={`local-model-choice ${selected ? "selected" : ""}`} key={model.id}><input type="checkbox" checked={selected} disabled={!setup} onChange={(event) => toggleLocalModel(model.id, event.target.checked)} /><span><b>{model.name}</b><small>{model.medium} · {model.detail}</small></span><em>Manifest required</em></label>; })}</div>
@@ -2487,8 +2543,8 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
           <div className="model-setup-actions"><button className="secondary-button" disabled={!selectedDownload.available || !licenseAccepted || downloadStarting || environment !== "native" || downloadComplete || selectedDownloadStatus?.phase === "downloading" || selectedDownloadStatus?.phase === "installing" || selectedDownloadStatus?.phase === "verifying"} onClick={() => { void beginModelDownload(); }}><Download size={16} /> {downloadStarting ? "Starting…" : selectedImageOption?.executionReady ? selectedDownloadStatus?.downloadedBytes ? "Resume SDXL installation" : "Install verified SDXL" : selectedDownloadStatus?.downloadedBytes ? "Resume verified download" : "Start verified download"}</button>{selectedImageOption?.executionReady && selectedDownloadStatus?.phase === "ready" && <button type="button" className="secondary-button" disabled={!activeProfile || !sdxlInstallReceiptReady} onClick={useVerifiedSdxlForImages}><Image size={16} /> Use SDXL in active profile</button>}<small>{environment !== "native" ? "Open the native app to download; browser preview never fetches model bytes. This browser declaration is not installed, active, or ready for inference." : selectedImageOption?.executionReady ? sdxlInstallReceiptReady ? "The completed preflight returned an immutable runtime revision and install fingerprint. Stage SDXL in the active profile, then save below." : selectedDownloadStatus?.phase === "ready" ? "The install reports ready, but its verified identity receipt is missing or activation remains blocked. Profile activation stays unavailable until repair completes verification." : "The managed installer verifies and preflights the pinned runtime without generating an image. Readiness is determined on this machine." : "Download and hash verification use no GPU. Experimental image files stay inactive until a reviewed workflow passes on this machine."}</small></div>
         </> : <div className="download-empty"><ShieldCheck size={18} /><div><b>{selectedImageOption ? `${selectedImageOption.name} has a pinned native declaration` : "No immutable download declaration for this choice"}</b><small>{selectedImageOption ? "Open the packaged Windows app to inspect its exact files, size, license, and current installation state. Browser preview never downloads model bytes." : "Keep the preference or choose an existing folder. The app will not fetch a mutable repository snapshot or guess a license."}</small></div></div>}
       </div>
-    </section>
-    <section className="profile-panel" aria-labelledby="profile-title">
+    </section> : <ProviderSectionPlaceholder title="Local model setup" detail="Reading installed and available model packs without blocking the rest of this page." />}
+    {progressiveStage >= 2 ? <section className="profile-panel" aria-labelledby="profile-title">
       <div className="profile-heading"><div><span className="section-kicker">Switchable creation presets</span><h2 id="profile-title">Provider & model profiles</h2><p>Keep several named combinations for each medium and choose one before creation. The profile only records an explicit preference—routes never switch automatically, no key is stored here, and no cloud use occurs until a project approval gate is completed.</p></div><div className="profile-actions"><button className="secondary-button" disabled={!setup} onClick={createProfile}><Plus size={15} /> Add profile</button><button className="secondary-button danger-text" disabled={!setup || setup.profiles.length <= 1} onClick={removeProfile}><X size={15} /> Remove</button></div></div>
       {setup && activeProfile ? <><div className="profile-tabs" role="tablist" aria-label="Provider profiles">{setup.profiles.map((profile) => <button role="tab" aria-selected={setup.activeProfileId === profile.id} className={setup.activeProfileId === profile.id ? "active" : ""} key={profile.id} onClick={() => mutateSetup((current) => ({ ...current, activeProfileId: profile.id }))}>{profile.name}</button>)}</div><div className="profile-editor"><div className="profile-copy-fields"><label>Name<input value={activeProfile.name} onChange={(event) => updateProfile(activeProfile.id, (profile) => ({ ...profile, name: event.target.value }))} /></label><label>Description<input value={activeProfile.description} onChange={(event) => updateProfile(activeProfile.id, (profile) => ({ ...profile, description: event.target.value }))} /></label></div><div className="profile-route-grid">{profileMediums.map(([medium, label]) => {
         const selection = activeProfile.routes[medium] ?? { providerId: "local-runtime", modelId: "choose before generation" };
@@ -2497,7 +2553,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
         return <label className="profile-route-choice" key={medium}><span>{label}{medium === "images" && <small> · optional</small>}</span><div className="profile-route-fields"><select aria-label={`${label} provider`} value={selection.providerId} onChange={(event) => updateSelection({ providerId: event.target.value })}>{profileProviderOptions.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select><input value={selection.modelId} aria-label={`${label} model`} onChange={(event) => updateSelection({ modelId: event.target.value })} placeholder="Exact model ID" />{medium === "voice" && <input value={selection.voiceId ?? ""} aria-label={`${label} voice ID`} onChange={(event) => updateSelection({ voiceId: event.target.value || null })} placeholder="Voice ID" />}{presenterBound && <input value={selection.presenterProfileId ?? ""} aria-label={`${label} presenter profile ID`} onChange={(event) => updateSelection({ presenterProfileId: event.target.value || null })} placeholder="Presenter profile ID" />}{selection.providerId === "local-runtime" && <><input value={selection.modelRevision ?? ""} aria-label={`${label} model revision`} onChange={(event) => updateSelection({ modelRevision: event.target.value || null })} placeholder="Immutable revision" /><input value={selection.installFingerprint ?? ""} aria-label={`${label} install fingerprint`} onChange={(event) => updateSelection({ installFingerprint: event.target.value || null })} placeholder="Verified SHA-256" /></>}</div>{medium === "images" && <button type="button" className="secondary-button small" onClick={() => updateSelection({ modelId: "off" })}>{selection.modelId.trim().toLowerCase().startsWith("off") ? "Using designed slides · image generation off" : "Use designed slides without image generation"}</button>}</label>;
       })}</div></div></> : <div className="profile-loading">Loading local profiles…</div>}
       <div className="profile-save-row"><span><ShieldCheck size={15} /> Preferences only · credentials stay in the OS vault · project approval remains required</span><button className="primary-button" disabled={!setup || setupSaving} onClick={() => { void saveSetup(); }}>{setupSaving ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}{setupSaving ? "Saving…" : "Save setup & active profile"}</button></div>
-    </section>
+    </section> : <ProviderSectionPlaceholder title="Provider & model profiles" detail="Preparing your saved creation presets after the model controls are ready." />}
   </div>;
 }
 

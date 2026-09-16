@@ -80,6 +80,15 @@ body .federated-catalog-panel .aly-catalog-shell { border-radius: 0; background:
 .aly-catalog-results-heading p { margin: 0; color: var(--aly-catalog-ink); }
 .aly-catalog-results-heading p span { color: var(--aly-catalog-muted); font-weight: 400; }
 .aly-catalog-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 14px; padding: 0; margin: 0; list-style: none; }
+.aly-catalog-load-more { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 20px 0 2px; color: var(--aly-catalog-muted); }
+.aly-catalog-load-more p { margin: 0; font-size: 12px; }
+.provider-progressive-placeholder { position: relative; min-height: 176px; margin-top: 24px; overflow: hidden; padding: 25px; border: 1px solid var(--line, #e3dfea); border-radius: 14px; background: var(--surface, #fff); color: var(--ink, #292439); }
+.provider-progressive-placeholder h2 { margin: 7px 0 6px; font-size: 22px; }
+.provider-progressive-placeholder p { max-width: 640px; margin: 0; color: var(--muted, #686176); font-size: 12px; line-height: 1.55; }
+.provider-progressive-placeholder i { position: absolute; right: 25px; bottom: 25px; width: min(38%, 320px); height: 7px; overflow: hidden; border-radius: 999px; background: var(--surface-soft, #efedf5); }
+.provider-progressive-placeholder i::after { display: block; width: 38%; height: 100%; border-radius: inherit; background: var(--indigo-soft, #eee7fb); content: ""; animation: provider-section-progress 1.1s ease-in-out infinite alternate; }
+@keyframes provider-section-progress { to { transform: translateX(164%); } }
+@media (prefers-reduced-motion: reduce) { .provider-progressive-placeholder i::after { animation: none; width: 72%; } }
 .aly-catalog-card { position: relative; display: flex; flex-direction: column; min-height: 370px; overflow: hidden; border: 1px solid var(--aly-catalog-line); border-radius: 17px; background: var(--surface, #fff); box-shadow: var(--shadow-sm, 0 2px 8px #30233f06); }
 .aly-catalog-card::before { position: absolute; inset: 0 0 auto; height: 3px; content: ""; background: linear-gradient(90deg, var(--indigo, #6750bc), var(--teal, #247667)); opacity: .72; }
 .aly-catalog-card__topline { display: flex; justify-content: space-between; gap: 9px; padding: 15px 15px 0; }

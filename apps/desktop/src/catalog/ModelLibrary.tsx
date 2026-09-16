@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -55,6 +55,8 @@ const sourceLabels = {
   cloud: "Cloud",
 } as const;
 
+const RESULT_BATCH_SIZE = 6;
+
 export function ModelLibrary({
   items,
   compatibilityContext,
@@ -70,11 +72,17 @@ export function ModelLibrary({
   const [sort, setSort] = useState<CatalogSort>("relevance");
   const [filters, setFilters] = useState<CatalogFilterState>(emptyCatalogFilters);
   const [showFilters, setShowFilters] = useState(false);
+  const [visibleResultCount, setVisibleResultCount] = useState(RESULT_BATCH_SIZE);
   const parsed = useMemo(() => parseCatalogQuery(query), [query]);
   const results = useMemo(
     () => filterCatalogItems(items, { query, filters, sort, context: compatibilityContext }),
     [items, query, filters, sort, compatibilityContext],
   );
+  const visibleResults = results.slice(0, visibleResultCount);
+
+  useEffect(() => {
+    setVisibleResultCount(RESULT_BATCH_SIZE);
+  }, [items, query, filters, sort, compatibilityContext]);
 
   const updateFilter = <K extends keyof CatalogFilterState>(key: K, value: CatalogFilterState[K]) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -180,7 +188,7 @@ export function ModelLibrary({
         </div>
       ) : (
         <ul className="aly-catalog-card-grid">
-          {results.map(({ item, compatibility }) => {
+          {visibleResults.map(({ item, compatibility }) => {
             const canStageWritingProfile = Boolean(onUseForWritingProfile)
               && isCloudWritingProfileCandidate(item, writingProfileProviderIds ?? [item.identity.providerId]);
             return (
@@ -215,6 +223,18 @@ export function ModelLibrary({
             </li>
           );})}
         </ul>
+      )}
+      {visibleResults.length < results.length && (
+        <div className="aly-catalog-load-more">
+          <p>Showing <strong>{visibleResults.length}</strong> of <strong>{results.length}</strong> matching models.</p>
+          <button
+            type="button"
+            className="aly-catalog-button aly-catalog-button--quiet"
+            onClick={() => setVisibleResultCount((count) => Math.min(count + RESULT_BATCH_SIZE, results.length))}
+          >
+            Show {Math.min(RESULT_BATCH_SIZE, results.length - visibleResults.length)} more
+          </button>
+        </div>
       )}
     </section>
   );

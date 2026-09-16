@@ -103,5 +103,5 @@ it.each([
   await user.click(screen.getByRole("button", { name: /models & providers/i }));
   const useButton = await screen.findByRole("button", { name: /use sdxl in active profile/i });
   expect(useButton).toBeDisabled();
-  expect(screen.getByLabelText(/images model$/i)).not.toHaveValue("local/sdxl-base-1.0");
+  expect(await screen.findByLabelText(/images model$/i)).not.toHaveValue("local/sdxl-base-1.0");
 });
