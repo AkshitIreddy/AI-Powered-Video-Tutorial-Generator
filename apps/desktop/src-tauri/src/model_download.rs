@@ -20,6 +20,7 @@ use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 #[cfg(windows)]
@@ -29,6 +30,7 @@ const STATUS_FILE: &str = "download-status.json";
 const MAX_ARTIFACT_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const MAX_INSTALLER_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_MANAGED_MANIFEST_BYTES: u64 = 128 * 1024;
+const MANAGED_PROGRESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const COMFYUI_RUNTIME_BYTES: u64 = 1_803_412_624;
 const COMFYUI_RUNTIME_REVISION: &str = "8f40b43e0204d5b9780f3e9618e140e929e80594";
 const COMFYUI_RUNTIME_ARCHIVE: &str = "ComfyUI-v0.9.2-nvidia.7z";
@@ -71,26 +73,79 @@ struct PackageSpec {
     license_scope: &'static str,
     download_only_reason: &'static str,
     artifacts: &'static [ArtifactSpec],
+    managed_files: &'static [ManagedManifestFile],
     strategy: InstallStrategy,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct ManagedManifestFile {
     relative_path: &'static str,
+    source_url: &'static str,
     size_bytes: u64,
     sha256: &'static str,
 }
 
+const COMFYUI_RUNTIME_FILE: ManagedManifestFile = ManagedManifestFile {
+    relative_path: COMFYUI_RUNTIME_ARCHIVE,
+    source_url: "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.9.2/ComfyUI_windows_portable_nvidia.7z",
+    size_bytes: COMFYUI_RUNTIME_BYTES,
+    sha256: COMFYUI_RUNTIME_SHA256,
+};
+
 const SDXL_MANIFEST_FILES: &[ManagedManifestFile] = &[
     ManagedManifestFile {
         relative_path: "models/checkpoints/sd_xl_base_1.0.safetensors",
+        source_url: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/sd_xl_base_1.0.safetensors?download=true",
         size_bytes: 6_938_078_334,
         sha256: "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
     },
     ManagedManifestFile {
         relative_path: "models/loras/sd_xl_offset_example-lora_1.0.safetensors",
+        source_url: "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/sd_xl_offset_example-lora_1.0.safetensors?download=true",
         size_bytes: 49_553_604,
         sha256: "4852686128f953d0277d0793e2f0335352f96a919c9c16a09787d77f55cbdf6f",
+    },
+];
+
+const FLUX_KLEIN_MANIFEST_FILES: &[ManagedManifestFile] = &[
+    ManagedManifestFile {
+        relative_path: "models/diffusion_models/flux-2-klein-4b-fp8.safetensors",
+        source_url: "https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8/resolve/5b4408e59397a4a37ccb46afe426d8ed86379441/flux-2-klein-4b-fp8.safetensors?download=true",
+        size_bytes: 4_070_624_520,
+        sha256: "97ed34fe0567e436200f2faee3939b88f2b5d99f8af2a4dc16532c4245c0ccb6",
+    },
+    ManagedManifestFile {
+        relative_path: "models/text_encoders/qwen_3_4b_fp4_flux2.safetensors",
+        source_url: "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/resolve/5f526678002e43af5551dadb73ce2e8c91b43afe/split_files/text_encoders/qwen_3_4b_fp4_flux2.safetensors?download=true",
+        size_bytes: 3_848_213_998,
+        sha256: "3eab03a77adb0ee5304a4e677d5c10ac22f9049c1d7c894adca4f8bb39206ca8",
+    },
+    ManagedManifestFile {
+        relative_path: "models/vae/flux2-vae.safetensors",
+        source_url: "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/resolve/5f526678002e43af5551dadb73ce2e8c91b43afe/split_files/vae/flux2-vae.safetensors?download=true",
+        size_bytes: 336_211_292,
+        sha256: "868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3",
+    },
+];
+
+const Z_IMAGE_MANIFEST_FILES: &[ManagedManifestFile] = &[
+    ManagedManifestFile {
+        relative_path: "models/diffusion_models/z_image_turbo_int8_convrot.safetensors",
+        source_url: "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/08d04455279082882deaabc8d0d09fc914c071e1/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors?download=true",
+        size_bytes: 6_201_001_296,
+        sha256: "be517ebd47c912a5626a588e1aeea43e6be4a43c0cdcd2b48a2a780d9f358635",
+    },
+    ManagedManifestFile {
+        relative_path: "models/text_encoders/qwen_3_4b_fp4_mixed.safetensors",
+        source_url: "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/08d04455279082882deaabc8d0d09fc914c071e1/split_files/text_encoders/qwen_3_4b_fp4_mixed.safetensors?download=true",
+        size_bytes: 3_479_416_193,
+        sha256: "7ca32dcf07dfe7692945d80fff86e3a74cb83c6206b9b223ac6836b939bb85d6",
+    },
+    ManagedManifestFile {
+        relative_path: "models/vae/ae.safetensors",
+        source_url: "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/08d04455279082882deaabc8d0d09fc914c071e1/split_files/vae/ae.safetensors?download=true",
+        size_bytes: 335_304_388,
+        sha256: "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
     },
 ];
 
@@ -210,6 +265,7 @@ const MUSETALK: PackageSpec = PackageSpec {
     license_scope: "MuseTalk source code only; model-card and dependency terms remain separate activation gates.",
     download_only_reason: "Hash-verified quarantine download only. This acknowledgement covers the pinned MuseTalk code license, not a combined pack license. Model-card and dependency terms remain separate, and upstream .pth files are not activated or executed until dependency-license, runtime-trust, and hardware reviews pass.",
     artifacts: MUSETALK_ARTIFACTS,
+    managed_files: &[],
     strategy: InstallStrategy::Quarantine,
 };
 
@@ -225,6 +281,7 @@ const SDXL: PackageSpec = PackageSpec {
     license_scope: "Pinned SDXL base and official offset-example LoRA weights. The pinned ComfyUI runtime and its bundled dependencies retain their own upstream terms.",
     download_only_reason: "One-click managed install. The packaged installer verifies the ComfyUI v0.9.2 archive, SDXL base, and optional official offset LoRA by exact byte count and SHA-256, then runs the hardware-reviewed SDXL preflight. The LoRA stays optional in generation because the reference proof showed a minor out-of-crop artifact.",
     artifacts: &[],
+    managed_files: SDXL_MANIFEST_FILES,
     strategy: InstallStrategy::ManagedComfy {
         bundle_bytes: 6_987_631_938,
         artifact_count: 3,
@@ -244,6 +301,7 @@ const FLUX_KLEIN: PackageSpec = PackageSpec {
     license_scope: "Pinned BFL diffusion weight plus the pinned Comfy companion text encoder and VAE, each published as Apache-2.0. The ComfyUI runtime and bundled dependencies retain their own upstream terms.",
     download_only_reason: "Advanced download candidate. Exact FP8 diffusion, FP4 text encoder, VAE, and ComfyUI v0.9.2 files are installed and verified, but this roughly 13 GB workflow has not passed the reference 12 GB Windows preflight. It remains unavailable for generation until a reviewed CPU-offload recipe passes.",
     artifacts: &[],
+    managed_files: FLUX_KLEIN_MANIFEST_FILES,
     strategy: InstallStrategy::ManagedComfy {
         bundle_bytes: 8_255_049_810,
         artifact_count: 4,
@@ -263,6 +321,7 @@ const Z_IMAGE: PackageSpec = PackageSpec {
     license_scope: "Pinned Comfy-Org INT8 diffusion weight, FP4 text encoder, and VAE published as Apache-2.0. The ComfyUI runtime and bundled dependencies retain their own upstream terms.",
     download_only_reason: "Advanced download candidate. Exact INT8 diffusion, FP4 text encoder, VAE, and ComfyUI v0.9.2 files are installed and verified, but this workflow has not passed the reference 12 GB Windows preflight. It remains unavailable for generation until a reviewed offload recipe passes.",
     artifacts: &[],
+    managed_files: Z_IMAGE_MANIFEST_FILES,
     strategy: InstallStrategy::ManagedComfy {
         bundle_bytes: 10_015_721_877,
         artifact_count: 4,
@@ -270,7 +329,44 @@ const Z_IMAGE: PackageSpec = PackageSpec {
     },
 };
 
+#[cfg(feature = "portable-debug-runtime")]
+const ACCEPTANCE_DOWNLOAD_URL_ENV: &str = "ALYSTRIA_ACCEPTANCE_MODEL_DOWNLOAD_URL";
+#[cfg(feature = "portable-debug-runtime")]
+const ACCEPTANCE_DOWNLOAD_FIXTURE_ARTIFACTS: &[ArtifactSpec] = &[artifact(
+    "fixture/alystria-model-download-fixture.bin",
+    "alystria/portable-debug-loopback-fixture",
+    "1111111111111111111111111111111111111111",
+    "alystria-model-download-fixture.bin",
+    4 * 1024 * 1024,
+    "bb9f8df61474d25e71fa00722318cd387396ca1736605e1248821cc0de3d3af8",
+)];
+#[cfg(feature = "portable-debug-runtime")]
+const ACCEPTANCE_DOWNLOAD_FIXTURE: PackageSpec = PackageSpec {
+    model_id: "acceptance/download-fixture-v1",
+    display_name: "Acceptance download fixture (4 MiB)",
+    immutable_revision: "portable-debug-loopback-fixture-v1",
+    code_revision: "1111111111111111111111111111111111111111",
+    weight_revision: "2222222222222222222222222222222222222222",
+    license_id: "Alystria acceptance fixture",
+    license_url: "https://example.invalid/alystria/acceptance-download-fixture-v1",
+    license_sha256: "3333333333333333333333333333333333333333333333333333333333333333",
+    license_scope: "Portable-debug acceptance fixture only. It contains four MiB of zero bytes and is never available in a production build.",
+    download_only_reason: "Portable-debug acceptance fixture. It can fetch only the pinned four-MiB payload from an explicitly configured loopback HTTP endpoint and can never be activated.",
+    artifacts: ACCEPTANCE_DOWNLOAD_FIXTURE_ARTIFACTS,
+    managed_files: &[],
+    strategy: InstallStrategy::Quarantine,
+};
+
+#[cfg(not(feature = "portable-debug-runtime"))]
 const PACKAGES: &[PackageSpec] = &[MUSETALK, SDXL, FLUX_KLEIN, Z_IMAGE];
+#[cfg(feature = "portable-debug-runtime")]
+const PACKAGES: &[PackageSpec] = &[
+    MUSETALK,
+    SDXL,
+    FLUX_KLEIN,
+    Z_IMAGE,
+    ACCEPTANCE_DOWNLOAD_FIXTURE,
+];
 
 #[derive(Debug, Clone)]
 pub struct ModelDownloadManager {
@@ -355,8 +451,12 @@ impl ModelDownloadManager {
                 "The verified pipeline runtime required for local image installation",
             ));
         }
-        let downloaded_bytes = existing_bytes(&self.package_root(spec), spec);
         let managed = matches!(spec.strategy, InstallStrategy::ManagedComfy { .. });
+        let downloaded_bytes = if managed {
+            managed_progress(&self.comfy_root, spec).downloaded_bytes
+        } else {
+            existing_bytes(&self.package_root(spec), spec)
+        };
         let status = ModelDownloadStatus {
             model_id: spec.model_id.into(),
             immutable_revision: Some(spec.immutable_revision.into()),
@@ -423,13 +523,10 @@ impl ModelDownloadManager {
                 "The verified pipeline runtime required for local image installation",
             )
         })?;
-        let mut status = self.current(spec);
-        status.phase = ModelDownloadPhase::Installing;
-        status.detail = "Installing the pinned ComfyUI runtime and exact model bundle under the Alystria Models directory. No GPU is used during installation.".into();
-        status.updated_at = Utc::now();
-        self.update(status);
+        self.download_managed_files(spec)?;
+        self.record_managed_progress(spec);
 
-        let output = hidden_command(executable)
+        let mut child = hidden_command(executable)
             .args([
                 "local-image",
                 "install",
@@ -443,21 +540,54 @@ impl ModelDownloadManager {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .output()
+            .spawn()
             .map_err(|_| download_error("The managed local image installer could not start."))?;
-        if !output.status.success() {
+        let Some(stdout) = child.stdout.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(download_error(
+                "The managed local image installer output was unavailable.",
+            ));
+        };
+        let Some(stderr) = child.stderr.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(download_error(
+                "The managed local image installer diagnostics were unavailable.",
+            ));
+        };
+        let stdout_reader = capture_installer_output(stdout);
+        let stderr_reader = capture_installer_output(stderr);
+        let exit_status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) => {
+                    self.record_managed_progress(spec);
+                    std::thread::sleep(MANAGED_PROGRESS_POLL_INTERVAL);
+                }
+                Err(_) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(download_error(
+                        "The managed local image installer could not be monitored.",
+                    ));
+                }
+            }
+        };
+        self.record_managed_progress(spec);
+        let stdout = finish_installer_output(stdout_reader)?;
+        let stderr = finish_installer_output(stderr_reader)?;
+        if !exit_status.success() {
             return Err(download_error(
                 "The managed local image installer rejected the runtime or model bundle. Start again to retry verified files.",
             ));
         }
-        if output.stdout.len() > MAX_INSTALLER_OUTPUT_BYTES
-            || output.stderr.len() > MAX_INSTALLER_OUTPUT_BYTES
-        {
+        if stdout.exceeded_limit || stderr.exceeded_limit {
             return Err(download_error(
                 "The managed local image installer returned too much output.",
             ));
         }
-        let result: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| {
+        let result: serde_json::Value = serde_json::from_slice(&stdout.bytes).map_err(|_| {
             download_error("The managed local image installer returned an invalid result.")
         })?;
         validate_comfy_result(spec, &self.comfy_root, &result)?;
@@ -465,9 +595,12 @@ impl ModelDownloadManager {
         let InstallStrategy::ManagedComfy { executable, .. } = spec.strategy else {
             unreachable!("managed install strategy was checked above")
         };
-        let validated_identity = executable
-            .then(|| validated_managed_identity(spec, &self.comfy_root, false))
-            .transpose()?;
+        let validated_identity = if executable {
+            Some(validated_managed_identity(spec, &self.comfy_root, true)?)
+        } else {
+            validate_managed_runtime(&self.comfy_root)?;
+            None
+        };
         let mut ready = self.current(spec);
         ready.phase = if executable {
             ModelDownloadPhase::Ready
@@ -489,12 +622,76 @@ impl ModelDownloadManager {
         Ok(())
     }
 
-    fn download(&self, spec: &'static PackageSpec) -> Result<(), CommandError> {
-        validate_spec(spec)?;
+    fn download_managed_files(&self, spec: &PackageSpec) -> Result<(), CommandError> {
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(20))
-            .timeout(Duration::from_secs(120))
             .redirect(reqwest::redirect::Policy::limited(5))
+            .build()
+            .map_err(|_| download_error("The secure model download client could not start."))?;
+        let comfy_root = managed_comfy_root(&self.comfy_root);
+        let files = std::iter::once((&COMFYUI_RUNTIME_FILE, self.comfy_root.clone())).chain(
+            spec.managed_files
+                .iter()
+                .map(|file| (file, comfy_root.clone())),
+        );
+        for (index, (file, root)) in files.enumerate() {
+            let relative = safe_relative(file.relative_path)?;
+            let final_path = root.join(&relative);
+            let artifact = ArtifactSpec {
+                relative_path: file.relative_path,
+                repository: "managed-installer",
+                revision: spec.immutable_revision,
+                upstream_path: file.relative_path,
+                size_bytes: file.size_bytes,
+                sha256: file.sha256,
+            };
+            if verify_file(&final_path, &artifact).is_ok() {
+                self.record_managed_progress(spec);
+                continue;
+            }
+            if final_path.exists() {
+                fs::remove_file(&final_path)
+                    .map_err(|_| CommandError::io("invalid managed model artifact cleanup"))?;
+            }
+            if let Some(parent) = final_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|_| CommandError::io("managed model artifact directory creation"))?;
+            }
+            let part = partial_path(&final_path);
+            fetch_artifact_from_url(&client, spec, &artifact, &part, file.source_url, |_| {
+                self.record_managed_progress(spec)
+            })?;
+            let mut status = self.current(spec);
+            status.phase = ModelDownloadPhase::Verifying;
+            status.downloaded_bytes = managed_progress(&self.comfy_root, spec).downloaded_bytes;
+            status.detail = format!(
+                "Verifying SHA-256 for managed artifact {} of {}.",
+                index + 1,
+                spec.managed_files.len() + 1
+            );
+            status.updated_at = Utc::now();
+            self.update(status);
+            if let Err(error) = verify_file(&part, &artifact) {
+                let _ = fs::remove_file(&part);
+                return Err(error);
+            }
+            fs::rename(&part, &final_path)
+                .map_err(|_| CommandError::io("verified managed model artifact promotion"))?;
+            self.record_managed_progress(spec);
+        }
+        Ok(())
+    }
+
+    fn download(&self, spec: &'static PackageSpec) -> Result<(), CommandError> {
+        validate_spec(spec)?;
+        let redirect_policy = if is_acceptance_fixture(spec) {
+            reqwest::redirect::Policy::none()
+        } else {
+            reqwest::redirect::Policy::limited(5)
+        };
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(20))
+            .redirect(redirect_policy)
             .build()
             .map_err(|_| download_error("The secure model download client could not start."))?;
         let package_root = self.package_root(spec);
@@ -577,6 +774,22 @@ impl ModelDownloadManager {
         status.downloaded_bytes = existing_bytes(&self.package_root(spec), spec);
         status.verified_artifacts = verified;
         status.detail = detail;
+        status.updated_at = Utc::now();
+        self.update(status);
+    }
+
+    fn record_managed_progress(&self, spec: &PackageSpec) {
+        let progress = managed_progress(&self.comfy_root, spec);
+        let mut status = self.current(spec);
+        if status.downloaded_bytes == progress.downloaded_bytes
+            && status.phase == progress.phase
+            && status.detail == progress.detail
+        {
+            return;
+        }
+        status.phase = progress.phase;
+        status.downloaded_bytes = progress.downloaded_bytes;
+        status.detail = progress.detail;
         status.updated_at = Utc::now();
         self.update(status);
     }
@@ -747,11 +960,43 @@ impl ModelDownloadManager {
     }
 }
 
-fn artifact_url(spec: &ArtifactSpec) -> String {
-    format!(
+fn artifact_url(
+    package_spec: &PackageSpec,
+    artifact: &ArtifactSpec,
+) -> Result<String, CommandError> {
+    #[cfg(not(feature = "portable-debug-runtime"))]
+    let _ = package_spec;
+    #[cfg(feature = "portable-debug-runtime")]
+    if package_spec.model_id == ACCEPTANCE_DOWNLOAD_FIXTURE.model_id {
+        let raw = std::env::var(ACCEPTANCE_DOWNLOAD_URL_ENV).map_err(|_| {
+            download_error(
+                "The portable-debug acceptance download fixture has no loopback endpoint.",
+            )
+        })?;
+        let parsed = reqwest::Url::parse(&raw)
+            .map_err(|_| download_error("The acceptance download fixture endpoint is invalid."))?;
+        let loopback = parsed
+            .host_str()
+            .and_then(|host| host.parse::<std::net::IpAddr>().ok())
+            .is_some_and(|address| address.is_loopback());
+        if parsed.scheme() != "http"
+            || !loopback
+            || parsed.username() != ""
+            || parsed.password().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+            || parsed.path() != "/alystria-model-download-fixture.bin"
+        {
+            return Err(download_error(
+                "The acceptance download fixture accepts only its exact loopback HTTP path.",
+            ));
+        }
+        return Ok(parsed.into());
+    }
+    Ok(format!(
         "https://huggingface.co/{}/resolve/{}/{}",
-        spec.repository, spec.revision, spec.upstream_path
-    )
+        artifact.repository, artifact.revision, artifact.upstream_path
+    ))
 }
 
 fn fetch_artifact(
@@ -761,7 +1006,7 @@ fn fetch_artifact(
     part: &Path,
     progress: impl FnMut(String),
 ) -> Result<(), CommandError> {
-    let url = artifact_url(artifact);
+    let url = artifact_url(package_spec, artifact)?;
     fetch_artifact_from_url(client, package_spec, artifact, part, &url, progress)
 }
 
@@ -921,7 +1166,16 @@ fn validate_spec(spec: &PackageSpec) -> Result<(), CommandError> {
             bundle_bytes,
             artifact_count,
             ..
-        } if !spec.artifacts.is_empty() || bundle_bytes == 0 || artifact_count < 2 => {
+        } if !spec.artifacts.is_empty()
+            || bundle_bytes == 0
+            || artifact_count != spec.managed_files.len() + 1
+            || spec
+                .managed_files
+                .iter()
+                .map(|file| file.size_bytes)
+                .sum::<u64>()
+                != bundle_bytes =>
+        {
             return Err(download_error(
                 "The managed local image declaration is invalid.",
             ));
@@ -930,17 +1184,47 @@ fn validate_spec(spec: &PackageSpec) -> Result<(), CommandError> {
     }
     for artifact in spec.artifacts {
         safe_relative(artifact.relative_path)?;
+        let source_url = artifact_url(spec, artifact)?;
         if artifact.size_bytes == 0
             || artifact.size_bytes > MAX_ARTIFACT_BYTES
             || !is_sha256(artifact.sha256)
-            || !artifact_url(artifact).starts_with("https://huggingface.co/")
+            || (!source_url.starts_with("https://huggingface.co/") && !is_acceptance_fixture(spec))
         {
             return Err(download_error(
                 "The curated model artifact declaration is invalid.",
             ));
         }
     }
+    for file in spec.managed_files {
+        safe_relative(file.relative_path)?;
+        let source = reqwest::Url::parse(file.source_url)
+            .map_err(|_| download_error("A managed model source URL is invalid."))?;
+        if file.size_bytes == 0
+            || file.size_bytes > MAX_ARTIFACT_BYTES
+            || !is_sha256(file.sha256)
+            || source.scheme() != "https"
+            || source.username() != ""
+            || source.password().is_some()
+            || !matches!(source.host_str(), Some("huggingface.co"))
+        {
+            return Err(download_error(
+                "The managed local image declaration has an invalid artifact source.",
+            ));
+        }
+    }
     Ok(())
+}
+
+fn is_acceptance_fixture(spec: &PackageSpec) -> bool {
+    #[cfg(feature = "portable-debug-runtime")]
+    {
+        spec.model_id == ACCEPTANCE_DOWNLOAD_FIXTURE.model_id
+    }
+    #[cfg(not(feature = "portable-debug-runtime"))]
+    {
+        let _ = spec;
+        false
+    }
 }
 
 fn is_git_revision(value: &str) -> bool {
@@ -995,6 +1279,109 @@ fn artifact_count(spec: &PackageSpec) -> usize {
         InstallStrategy::ManagedComfy { artifact_count, .. } => artifact_count,
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+struct ManagedProgress {
+    downloaded_bytes: u64,
+    phase: ModelDownloadPhase,
+    detail: String,
+}
+
+fn managed_progress(runtime_root: &Path, spec: &PackageSpec) -> ManagedProgress {
+    let total = total_bytes(spec);
+    let archive = runtime_root.join(COMFYUI_RUNTIME_ARCHIVE);
+    let archive_part = partial_path(&archive);
+    let manual_comfy = runtime_root.join("ComfyUI");
+    let portable_root = runtime_root.join("ComfyUI_windows_portable");
+    let portable_comfy = portable_root.join("ComfyUI");
+    let manual_runtime_ready = manual_comfy.join("main.py").is_file()
+        && runtime_root.join("venv/Scripts/python.exe").is_file();
+    let portable_runtime_ready = portable_comfy.join("main.py").is_file()
+        && portable_root.join("python_embeded/python.exe").is_file();
+    let runtime_ready = manual_runtime_ready || portable_runtime_ready;
+    let comfy_root = managed_comfy_root(runtime_root);
+
+    let archive_final_bytes = file_bytes_capped(&archive, COMFYUI_RUNTIME_BYTES);
+    let archive_part_bytes = file_bytes_capped(&archive_part, COMFYUI_RUNTIME_BYTES);
+    let runtime_bytes = if archive_final_bytes == COMFYUI_RUNTIME_BYTES {
+        COMFYUI_RUNTIME_BYTES
+    } else {
+        archive_part_bytes
+    };
+    let mut downloaded_bytes = runtime_bytes;
+    let mut active_file = (archive_part_bytes > 0 && archive_part_bytes < COMFYUI_RUNTIME_BYTES)
+        .then_some(COMFYUI_RUNTIME_ARCHIVE);
+
+    for file in spec.managed_files {
+        let path = comfy_root.join(file.relative_path);
+        let part = partial_path(&path);
+        let final_bytes = file_bytes_capped(&path, file.size_bytes);
+        let part_bytes = file_bytes_capped(&part, file.size_bytes);
+        downloaded_bytes = downloaded_bytes.saturating_add(if final_bytes == file.size_bytes {
+            file.size_bytes
+        } else {
+            part_bytes
+        });
+        if active_file.is_none() && part_bytes > 0 && part_bytes < file.size_bytes {
+            active_file = Path::new(file.relative_path)
+                .file_name()
+                .and_then(|value| value.to_str());
+        }
+    }
+    downloaded_bytes = downloaded_bytes.min(total);
+
+    let (phase, detail) = if let Some(name) = active_file {
+        (
+            ModelDownloadPhase::Downloading,
+            format!(
+                "Downloading {name} · {} of {}.",
+                human_bytes(downloaded_bytes),
+                human_bytes(total)
+            ),
+        )
+    } else if downloaded_bytes >= total {
+        (
+            ModelDownloadPhase::Verifying,
+            "Verifying the pinned runtime and model files before they can be used.".into(),
+        )
+    } else if runtime_bytes == COMFYUI_RUNTIME_BYTES && !runtime_ready {
+        (
+            ModelDownloadPhase::Installing,
+            "Extracting the pinned ComfyUI runtime. No GPU is used during installation.".into(),
+        )
+    } else if runtime_ready && downloaded_bytes > COMFYUI_RUNTIME_BYTES {
+        (
+            ModelDownloadPhase::Installing,
+            "Checking the completed pinned model files before the next download.".into(),
+        )
+    } else {
+        (
+            ModelDownloadPhase::Downloading,
+            format!(
+                "Connecting to the pinned source · {} of {} already present.",
+                human_bytes(downloaded_bytes),
+                human_bytes(total)
+            ),
+        )
+    };
+    ManagedProgress {
+        downloaded_bytes,
+        phase,
+        detail,
+    }
+}
+
+fn managed_comfy_root(runtime_root: &Path) -> PathBuf {
+    let manual = runtime_root.join("ComfyUI");
+    if manual.join("main.py").is_file() {
+        manual
+    } else {
+        runtime_root
+            .join("ComfyUI_windows_portable")
+            .join("ComfyUI")
+    }
+}
+
 fn existing_bytes(root: &Path, spec: &PackageSpec) -> u64 {
     spec.artifacts
         .iter()
@@ -1004,21 +1391,28 @@ fn existing_bytes(root: &Path, spec: &PackageSpec) -> u64 {
             if final_path.is_file() {
                 artifact.size_bytes
             } else {
-                final_path
-                    .with_extension(format!(
-                        "{}part",
-                        final_path
-                            .extension()
-                            .and_then(|value| value.to_str())
-                            .map(|value| format!("{value}."))
-                            .unwrap_or_default()
-                    ))
-                    .metadata()
-                    .map(|value| value.len().min(artifact.size_bytes))
-                    .unwrap_or(0)
+                file_bytes_capped(&partial_path(&final_path), artifact.size_bytes)
             }
         })
         .sum()
+}
+
+fn partial_path(path: &Path) -> PathBuf {
+    path.with_extension(format!(
+        "{}part",
+        path.extension()
+            .and_then(|value| value.to_str())
+            .map(|value| format!("{value}."))
+            .unwrap_or_default()
+    ))
+}
+
+fn file_bytes_capped(path: &Path, expected: u64) -> u64 {
+    path.metadata()
+        .ok()
+        .filter(|metadata| metadata.is_file())
+        .map(|metadata| metadata.len().min(expected))
+        .unwrap_or(0)
 }
 fn existing_bytes_for_progress(
     spec: &PackageSpec,
@@ -1072,6 +1466,57 @@ fn hidden_command(program: &Path) -> Command {
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
     command
+}
+
+struct CapturedInstallerOutput {
+    bytes: Vec<u8>,
+    exceeded_limit: bool,
+    read_failed: bool,
+}
+
+fn capture_installer_output<R>(mut stream: R) -> JoinHandle<CapturedInstallerOutput>
+where
+    R: Read + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let mut exceeded_limit = false;
+        let mut read_failed = false;
+        let mut buffer = [0u8; 16 * 1024];
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => {
+                    let remaining = MAX_INSTALLER_OUTPUT_BYTES.saturating_add(1) - bytes.len();
+                    bytes.extend_from_slice(&buffer[..count.min(remaining)]);
+                    exceeded_limit |= count > remaining || bytes.len() > MAX_INSTALLER_OUTPUT_BYTES;
+                }
+                Err(_) => {
+                    read_failed = true;
+                    break;
+                }
+            }
+        }
+        CapturedInstallerOutput {
+            bytes,
+            exceeded_limit,
+            read_failed,
+        }
+    })
+}
+
+fn finish_installer_output(
+    reader: JoinHandle<CapturedInstallerOutput>,
+) -> Result<CapturedInstallerOutput, CommandError> {
+    let output = reader
+        .join()
+        .map_err(|_| download_error("The managed local image installer output reader failed."))?;
+    if output.read_failed {
+        return Err(download_error(
+            "The managed local image installer output could not be read.",
+        ));
+    }
+    Ok(output)
 }
 
 fn validate_comfy_result(
@@ -1223,32 +1668,7 @@ fn validated_managed_identity(
     }
 
     if verify_installed_bytes {
-        let manual_comfy = runtime_root.join("ComfyUI");
-        let portable_comfy = runtime_root
-            .join("ComfyUI_windows_portable")
-            .join("ComfyUI");
-        let comfy_root = if manual_comfy.join("main.py").is_file() {
-            manual_comfy
-        } else {
-            portable_comfy
-        };
-        let manual_python = runtime_root.join("venv").join("Scripts").join("python.exe");
-        let portable_python = runtime_root
-            .join("ComfyUI_windows_portable")
-            .join("python_embeded")
-            .join("python.exe");
-        if !comfy_root.join("main.py").is_file()
-            || !(manual_python.is_file() || portable_python.is_file())
-            || !verify_exact_file(
-                &runtime_root.join(COMFYUI_RUNTIME_ARCHIVE),
-                COMFYUI_RUNTIME_BYTES,
-                COMFYUI_RUNTIME_SHA256,
-            )
-        {
-            return Err(download_error(
-                "The pinned ComfyUI archive no longer matches its verified hash, or the extracted runtime entry points are missing.",
-            ));
-        }
+        let comfy_root = validate_managed_runtime(runtime_root)?;
         for expected in SDXL_MANIFEST_FILES {
             let relative = safe_relative(expected.relative_path)?;
             if !verify_exact_file(
@@ -1292,6 +1712,37 @@ fn validated_managed_identity(
         spec.immutable_revision.into(),
         format!("{:x}", fingerprint.finalize()),
     ))
+}
+
+fn validate_managed_runtime(runtime_root: &Path) -> Result<PathBuf, CommandError> {
+    let manual_comfy = runtime_root.join("ComfyUI");
+    let portable_comfy = runtime_root
+        .join("ComfyUI_windows_portable")
+        .join("ComfyUI");
+    let manual_python = runtime_root.join("venv").join("Scripts").join("python.exe");
+    let portable_python = runtime_root
+        .join("ComfyUI_windows_portable")
+        .join("python_embeded")
+        .join("python.exe");
+    let comfy_root = if manual_comfy.join("main.py").is_file() && manual_python.is_file() {
+        manual_comfy
+    } else if portable_comfy.join("main.py").is_file() && portable_python.is_file() {
+        portable_comfy
+    } else {
+        return Err(download_error(
+            "The extracted ComfyUI runtime entry points are incomplete.",
+        ));
+    };
+    if !verify_exact_file(
+        &runtime_root.join(COMFYUI_RUNTIME_ARCHIVE),
+        COMFYUI_RUNTIME_BYTES,
+        COMFYUI_RUNTIME_SHA256,
+    ) {
+        return Err(download_error(
+            "The pinned ComfyUI archive no longer matches its verified hash.",
+        ));
+    }
+    Ok(comfy_root)
 }
 
 fn verify_exact_file(path: &Path, expected_size: u64, expected_sha256: &str) -> bool {
@@ -1405,7 +1856,9 @@ mod tests {
             let (mut socket, _) = listener.accept().expect("accept fixture request");
             let mut request = [0u8; 2048];
             let count = socket.read(&mut request).expect("read fixture request");
-            assert!(String::from_utf8_lossy(&request[..count]).starts_with("GET /model.bin HTTP/1.1"));
+            assert!(
+                String::from_utf8_lossy(&request[..count]).starts_with("GET /model.bin HTTP/1.1")
+            );
             write!(
                 socket,
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -1434,6 +1887,175 @@ mod tests {
         verify_file(&part, &artifact).expect("downloaded fixture hash");
         assert_eq!(fs::read(&part).expect("fixture bytes"), bytes);
         assert_eq!(progress.len(), 1);
+    }
+
+    #[test]
+    fn bounded_http_download_resumes_only_an_exact_server_range() {
+        let directory = tempdir().expect("tempdir");
+        let bytes = b"tiny resumable model download fixture";
+        let offset = 11usize;
+        let digest = format!("{:x}", Sha256::digest(bytes));
+        let artifact = ArtifactSpec {
+            relative_path: "fixture/resumable.bin",
+            repository: "fixture/repository",
+            revision: "fixture-revision",
+            upstream_path: "resumable.bin",
+            size_bytes: bytes.len() as u64,
+            sha256: Box::leak(digest.into_boxed_str()),
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fixture");
+        let address = listener.local_addr().expect("fixture address");
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept fixture request");
+            let mut request = [0u8; 2048];
+            let count = socket.read(&mut request).expect("read fixture request");
+            let request = String::from_utf8_lossy(&request[..count]);
+            assert!(request.starts_with("GET /resumable.bin HTTP/1.1"));
+            assert!(request.contains(&format!("range: bytes={offset}-")));
+            write!(
+                socket,
+                "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nConnection: close\r\n\r\n",
+                bytes.len() - offset,
+                offset,
+                bytes.len() - 1,
+                bytes.len()
+            )
+            .expect("write fixture headers");
+            socket
+                .write_all(&bytes[offset..])
+                .expect("write fixture body");
+        });
+        let client = Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .expect("fixture client");
+        let part = directory.path().join("resumable.bin.part");
+        fs::write(&part, &bytes[..offset]).expect("partial fixture");
+
+        fetch_artifact_from_url(
+            &client,
+            &MUSETALK,
+            &artifact,
+            &part,
+            &format!("http://{address}/resumable.bin"),
+            |_| {},
+        )
+        .expect("resumed fixture download");
+        server.join().expect("fixture server");
+        verify_file(&part, &artifact).expect("resumed fixture hash");
+        assert_eq!(fs::read(part).expect("fixture bytes"), bytes);
+    }
+
+    #[test]
+    fn managed_progress_counts_only_allowlisted_runtime_and_model_bytes() {
+        let directory = tempdir().expect("tempdir");
+        let runtime_root = directory.path();
+        let portable_root = runtime_root.join("ComfyUI_windows_portable");
+        let comfy_root = portable_root.join("ComfyUI");
+        fs::create_dir_all(&comfy_root).expect("comfy root");
+        let archive_part = partial_path(&runtime_root.join(COMFYUI_RUNTIME_ARCHIVE));
+        fs::write(&archive_part, vec![0u8; 256 * 1024]).expect("partial runtime archive");
+        let checkpoint = comfy_root.join(SDXL_MANIFEST_FILES[0].relative_path);
+        fs::create_dir_all(checkpoint.parent().expect("checkpoint parent"))
+            .expect("checkpoint directory");
+        let checkpoint_part = partial_path(&checkpoint);
+        fs::write(&checkpoint_part, vec![0u8; 512 * 1024]).expect("partial checkpoint");
+        fs::write(
+            runtime_root.join("unrelated-large-file.bin"),
+            vec![0u8; 1024 * 1024],
+        )
+        .expect("unrelated fixture");
+
+        let progress = managed_progress(runtime_root, &SDXL);
+        assert_eq!(progress.downloaded_bytes, 768 * 1024);
+        assert_eq!(progress.phase, ModelDownloadPhase::Downloading);
+        assert!(progress.detail.contains(COMFYUI_RUNTIME_ARCHIVE));
+    }
+
+    #[cfg(feature = "portable-debug-runtime")]
+    #[test]
+    fn portable_debug_manager_downloads_the_loopback_hash_pinned_fixture() {
+        let directory = tempdir().expect("tempdir");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fixture");
+        let address = listener.local_addr().expect("fixture address");
+        let fixture_bytes = vec![0u8; 4 * 1024 * 1024];
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept fixture request");
+            let mut request = [0u8; 2048];
+            let count = socket.read(&mut request).expect("read fixture request");
+            assert!(
+                String::from_utf8_lossy(&request[..count])
+                    .starts_with("GET /alystria-model-download-fixture.bin HTTP/1.1")
+            );
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                fixture_bytes.len()
+            )
+            .expect("write fixture headers");
+            for chunk in fixture_bytes.chunks(64 * 1024) {
+                socket.write_all(chunk).expect("write fixture body");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        let endpoint = format!("http://{address}/alystria-model-download-fixture.bin");
+        // This variable exists only in portable-debug builds and the production
+        // resolver still validates that its parsed address is loopback-only.
+        unsafe {
+            std::env::set_var(
+                ACCEPTANCE_DOWNLOAD_URL_ENV,
+                "http://192.0.2.1/alystria-model-download-fixture.bin",
+            )
+        };
+        assert_eq!(
+            artifact_url(
+                &ACCEPTANCE_DOWNLOAD_FIXTURE,
+                &ACCEPTANCE_DOWNLOAD_FIXTURE_ARTIFACTS[0]
+            )
+            .expect_err("non-loopback fixture source")
+            .code,
+            "MODEL_DOWNLOAD_FAILED"
+        );
+        unsafe { std::env::set_var(ACCEPTANCE_DOWNLOAD_URL_ENV, &endpoint) };
+        let manager =
+            ModelDownloadManager::at(directory.path().join("models")).expect("fixture manager");
+        manager
+            .start(ModelDownloadStartRequest {
+                model_id: ACCEPTANCE_DOWNLOAD_FIXTURE.model_id.into(),
+                license_sha256: ACCEPTANCE_DOWNLOAD_FIXTURE.license_sha256.into(),
+                license_accepted: true,
+            })
+            .expect("start fixture manager download");
+        let mut saw_in_progress_bytes = false;
+        for _ in 0..500 {
+            let status = manager.current(&ACCEPTANCE_DOWNLOAD_FIXTURE);
+            saw_in_progress_bytes |=
+                status.downloaded_bytes > 0 && status.downloaded_bytes < status.total_bytes;
+            if status.phase == ModelDownloadPhase::DownloadedQuarantined {
+                break;
+            }
+            if status.phase == ModelDownloadPhase::Failed {
+                panic!("fixture download failed: {}", status.detail);
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        unsafe { std::env::remove_var(ACCEPTANCE_DOWNLOAD_URL_ENV) };
+        server.join().expect("fixture server");
+
+        let status = manager.current(&ACCEPTANCE_DOWNLOAD_FIXTURE);
+        assert!(
+            saw_in_progress_bytes,
+            "manager never surfaced real byte progress"
+        );
+        assert_eq!(status.phase, ModelDownloadPhase::DownloadedQuarantined);
+        assert_eq!(status.downloaded_bytes, 4 * 1024 * 1024);
+        assert_eq!(status.verified_artifacts, 1);
+        assert!(status.activation_blocked);
+        let artifact = manager
+            .package_root(&ACCEPTANCE_DOWNLOAD_FIXTURE)
+            .join("files/fixture/alystria-model-download-fixture.bin");
+        verify_file(&artifact, &ACCEPTANCE_DOWNLOAD_FIXTURE_ARTIFACTS[0])
+            .expect("pinned fixture hash");
     }
 
     #[test]
