@@ -1,7 +1,10 @@
 export { AdvancedVideoEditor } from "./EditorShell";
-export type { AdvancedVideoEditorProps } from "./EditorShell";
+export type { AdvancedVideoEditorProps, EditorImportRights } from "./EditorShell";
 export { EditorCanvas, EditorInspector, MediaBin, ProposalPanel, TranscriptPanel } from "./EditorPanels";
 export { EditorTimeline } from "./EditorTimeline";
+export { EditorIconButton, EditorTooltip } from "./EditorTooltip";
+export { EDITOR_DOCK_MAX, EDITOR_DOCK_MIN, EDITOR_LAYOUT_DEFAULTS, EDITOR_TIMELINE_MAX, EDITOR_TIMELINE_MIN, clampDockWidth, clampTimelineHeight, loadEditorLayout, saveEditorLayout } from "./editorLayout";
+export type { EditorLayoutPrefs } from "./editorLayout";
 export { clipCarriesProgrammeAudio, isClipAudible, isTrackAudible, trackCarriesProgrammeAudio } from "./audioPolicy";
 export { createEditorState, createEmptyEditorProject, createTrack, defaultClipValues, findClip, normalizeEditorProject, selectedClips, trackKinds } from "./model";
 export { editorReducer } from "./reducer";

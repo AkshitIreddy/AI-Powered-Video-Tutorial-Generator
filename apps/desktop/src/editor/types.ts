@@ -201,7 +201,7 @@ export interface EditorTransport {
 export interface EditorViewState {
   pixelsPerSecond: number;
   horizontalScrollFrame: number;
-  activePanel: "media" | "transcript" | "proposals";
+  activePanel: "media" | "transcript" | "proposals" | "inspector";
   inspectorOpen: boolean;
   guides: CanvasGuide[];
   snappingEnabled: boolean;
