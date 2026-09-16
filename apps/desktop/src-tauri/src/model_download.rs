@@ -759,6 +759,18 @@ fn fetch_artifact(
     package_spec: &PackageSpec,
     artifact: &ArtifactSpec,
     part: &Path,
+    progress: impl FnMut(String),
+) -> Result<(), CommandError> {
+    let url = artifact_url(artifact);
+    fetch_artifact_from_url(client, package_spec, artifact, part, &url, progress)
+}
+
+fn fetch_artifact_from_url(
+    client: &Client,
+    package_spec: &PackageSpec,
+    artifact: &ArtifactSpec,
+    part: &Path,
+    url: &str,
     mut progress: impl FnMut(String),
 ) -> Result<(), CommandError> {
     let mut offset = part.metadata().map(|value| value.len()).unwrap_or(0);
@@ -766,8 +778,7 @@ fn fetch_artifact(
         fs::remove_file(part).map_err(|_| CommandError::io("oversized model partial cleanup"))?;
         offset = 0;
     }
-    let url = artifact_url(artifact);
-    let mut request = client.get(&url);
+    let mut request = client.get(url);
     if offset > 0 {
         request = request.header(RANGE, format!("bytes={offset}-"));
     }
@@ -777,7 +788,7 @@ fn fetch_artifact(
     if offset > 0 && response.status() == reqwest::StatusCode::OK {
         fs::remove_file(part).map_err(|_| CommandError::io("model partial restart"))?;
         offset = 0;
-        response = client.get(&url).send().map_err(|_| {
+        response = client.get(url).send().map_err(|_| {
             download_error("The model source did not support resume and the clean retry failed.")
         })?;
     }
@@ -1329,6 +1340,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), CommandError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
     use tempfile::tempdir;
 
     #[test]
@@ -1372,6 +1384,56 @@ mod tests {
             verify_file(&path, &spec).expect_err("reject").code,
             "MODEL_DOWNLOAD_FAILED"
         );
+    }
+
+    #[test]
+    fn bounded_http_download_writes_and_verifies_the_exact_declared_bytes() {
+        let directory = tempdir().expect("tempdir");
+        let bytes = b"tiny onboarding download fixture";
+        let digest = format!("{:x}", Sha256::digest(bytes));
+        let artifact = ArtifactSpec {
+            relative_path: "fixture/model.bin",
+            repository: "fixture/repository",
+            revision: "fixture-revision",
+            upstream_path: "model.bin",
+            size_bytes: bytes.len() as u64,
+            sha256: Box::leak(digest.into_boxed_str()),
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fixture");
+        let address = listener.local_addr().expect("fixture address");
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept fixture request");
+            let mut request = [0u8; 2048];
+            let count = socket.read(&mut request).expect("read fixture request");
+            assert!(String::from_utf8_lossy(&request[..count]).starts_with("GET /model.bin HTTP/1.1"));
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                bytes.len()
+            )
+            .expect("write fixture headers");
+            socket.write_all(bytes).expect("write fixture body");
+        });
+        let client = Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .expect("fixture client");
+        let part = directory.path().join("model.bin.part");
+        let mut progress = Vec::new();
+
+        fetch_artifact_from_url(
+            &client,
+            &MUSETALK,
+            &artifact,
+            &part,
+            &format!("http://{address}/model.bin"),
+            |message| progress.push(message),
+        )
+        .expect("bounded fixture download");
+        server.join().expect("fixture server");
+        verify_file(&part, &artifact).expect("downloaded fixture hash");
+        assert_eq!(fs::read(&part).expect("fixture bytes"), bytes);
+        assert_eq!(progress.len(), 1);
     }
 
     #[test]

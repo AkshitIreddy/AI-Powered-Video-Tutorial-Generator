@@ -13,6 +13,7 @@ import {
   desktopShutdown,
   generationApprove,
   jobStatus,
+  localModelSetupGet,
   masterExport,
   projectCreate,
   projectCustomizationSave,
@@ -94,6 +95,18 @@ describe("native desktop bridge", () => {
     await appBootstrap();
 
     expect(tauri.invoke).toHaveBeenCalledWith("app_bootstrap", undefined);
+  });
+
+  it("keeps optional local model packs unselected in a fresh browser setup", async () => {
+    tauri.isTauri.mockReturnValue(false);
+
+    const setup = await localModelSetupGet();
+
+    expect(setup.selectedModelIds).toEqual([]);
+    expect(setup.lipSyncModelId).toBeNull();
+    expect(setup.portraitAnimationModelId).toBeNull();
+    expect(setup.profiles[0]?.routes.portraitAnimation?.modelId).toBe("off by default");
+    expect(setup.profiles[0]?.routes.lipSync?.modelId).toBe("off by default");
   });
 
   it("requests native shutdown only through the argument-free broker command", async () => {

@@ -90,11 +90,12 @@ describe("OnboardingDialog", () => {
     expect(screen.queryByText(/3 models attached/)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Chapter 6 Review your model toolkit/i }));
     expect(screen.getByRole("checkbox", { name: /Chosen model/ })).toBeChecked();
-    expect(screen.getByText("1.0 GB selected download")).toBeVisible();
-    expect(screen.getByText(/1 selected download size is not published/)).toBeVisible();
-    expect(screen.getAllByText("Selected · install not verified")).toHaveLength(2);
+    expect(screen.getByText(/Packs with a reviewed native declaration appear below/)).toBeVisible();
+    expect(screen.getByText("~1.0 GB download estimate")).toBeVisible();
+    expect(screen.getByText("No verified installer yet")).toBeVisible();
+    expect(screen.getAllByText("Selected · installer pending")).toHaveLength(2);
     expect(screen.getByText("Installed", { exact: true })).toBeVisible();
-    expect(screen.queryByText("No additional download required")).not.toBeInTheDocument();
+    expect(screen.queryByText(/already downloaded/)).not.toBeInTheDocument();
   });
 
   it("exits a completed setup replay without reapplying setup or reopening on remount", async () => {

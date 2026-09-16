@@ -65,7 +65,9 @@ try {
   const hardwareReview = dialog.getByRole("checkbox", { name: /reviewed this system summary/i });
   if (!await hardwareReview.isChecked()) await hardwareReview.check();
   await continueOnboarding(dialog);
-  await expect(dialog.getByText(/Saved selections do not install models/)).toBeVisible();
+  const museTalkChoice = dialog.locator('input[type="checkbox"][value="local/musetalk-1.5"]');
+  if (!await museTalkChoice.isChecked()) await museTalkChoice.check();
+  await expect(dialog.getByRole("heading", { name: "Install without leaving onboarding" })).toBeVisible();
   await page.screenshot({ path: path.join(evidenceRoot, "02-model-toolkit-availability.png"), fullPage: true });
   await continueOnboarding(dialog);
   const displayName = dialog.getByLabel("Display name");
@@ -74,7 +76,7 @@ try {
     await dialog.locator(".aly-onboarding-profile__portrait:not(.aly-onboarding-profile__portrait--disabled)").first().click();
   }
   await continueOnboarding(dialog);
-  await expect(dialog.getByRole("heading", { name: "Your studio is prepared" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Your studio plan is ready" })).toBeVisible();
   await page.screenshot({ path: path.join(evidenceRoot, "02-ready-with-reused-setup.png"), fullPage: true });
   await dialog.getByRole("button", { name: "Enter AI Video Tutorial Generator" }).click();
 

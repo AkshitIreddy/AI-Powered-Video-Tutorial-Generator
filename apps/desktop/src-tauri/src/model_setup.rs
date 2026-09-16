@@ -143,15 +143,9 @@ fn default_setup() -> LocalModelSetup {
     LocalModelSetup {
         schema_version: 1,
         active_profile_id: "balanced-cloud".into(),
-        selected_model_ids: vec![
-            "local/qwen3.5-9b-gguf".into(),
-            "local/kokoro".into(),
-            "local/whisper-large-v3-turbo".into(),
-            "local/liveportrait".into(),
-            "local/musetalk-1.5".into(),
-        ],
-        lip_sync_model_id: Some("local/musetalk-1.5".into()),
-        portrait_animation_model_id: Some("local/liveportrait".into()),
+        selected_model_ids: vec![],
+        lip_sync_model_id: None,
+        portrait_animation_model_id: None,
         existing_model_directory: None,
         profiles: vec![ModelProfile {
             id: "balanced-cloud".into(),
@@ -177,11 +171,11 @@ fn default_setup() -> LocalModelSetup {
                 ("presenter".into(), route("local-runtime", "off by default")),
                 (
                     "portraitAnimation".into(),
-                    route("local-runtime", "local/liveportrait"),
+                    route("local-runtime", "off by default"),
                 ),
                 (
                     "lipSync".into(),
-                    route("local-runtime", "local/musetalk-1.5"),
+                    route("local-runtime", "off by default"),
                 ),
             ]),
         }],
@@ -412,6 +406,26 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), CommandError> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn fresh_setup_does_not_preselect_optional_model_downloads() {
+        let temp = tempdir().expect("tempdir");
+        let setup = ModelSetupStore::at(temp.path().to_path_buf())
+            .get()
+            .expect("fresh setup");
+
+        assert!(setup.selected_model_ids.is_empty());
+        assert!(setup.lip_sync_model_id.is_none());
+        assert!(setup.portrait_animation_model_id.is_none());
+        assert_eq!(
+            setup.profiles[0].routes["portraitAnimation"].model_id,
+            "off by default"
+        );
+        assert_eq!(
+            setup.profiles[0].routes["lipSync"].model_id,
+            "off by default"
+        );
+    }
 
     #[test]
     fn persists_an_explicit_lipsync_choice_without_activating_it() {

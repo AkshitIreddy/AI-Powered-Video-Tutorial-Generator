@@ -41,7 +41,13 @@ test("captures the clean first launch and redesigned global surfaces", async ({ 
   if (!(await hardwareReview.isChecked())) await hardwareReview.check();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: /review your model toolkit/i })).toBeVisible();
-  await page.screenshot({ path: `${output}/01-model-toolkit-required-downloads.png` });
+  await page.locator('input[type="checkbox"][value="local/musetalk-1.5"]').check();
+  await page.locator(".aly-onboarding-dialog__content").evaluate((element) => element.scrollTo({ top: 0 }));
+  await page.screenshot({ path: `${output}/01-model-toolkit-selected-downloads.png` });
+  const downloadQueue = page.locator(".aly-onboarding-downloads");
+  await expect(downloadQueue).toBeVisible();
+  await downloadQueue.scrollIntoViewIfNeeded();
+  await downloadQueue.screenshot({ path: `${output}/01-model-download-queue.png` });
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: /create your studio profile/i })).toBeVisible();
   await waitForDecodedImages(page, ".aly-onboarding-profile__gallery img");
@@ -49,7 +55,7 @@ test("captures the clean first launch and redesigned global surfaces", async ({ 
   await page.getByRole("group", { name: "Available portraits" }).locator("label").first().click();
   await page.getByLabel("Display name", { exact: true }).fill("Akshit");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByRole("heading", { name: /your studio is prepared/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /your studio plan is ready/i })).toBeVisible();
   await page.screenshot({ path: `${output}/01b-onboarding-ready.png` });
   await page.getByRole("button", { name: /enter ai video tutorial generator/i }).click();
   await expect(page.getByRole("dialog", { name: /make ai video tutorial generator yours/i })).toHaveCount(0);

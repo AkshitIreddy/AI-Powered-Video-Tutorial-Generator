@@ -15,17 +15,9 @@ export const onboardingChapters: readonly OnboardingChapterDefinition[] = [
   { id: "privacy", eyebrow: "Chapter 3", title: "Set your privacy boundary", description: "The app should never send source material somewhere you did not approve." },
   { id: "provider", eyebrow: "Chapter 4", title: "Connect generation providers", description: "Use existing connections or select providers to configure after onboarding.", optional: true },
   { id: "hardware", eyebrow: "Chapter 5", title: "Review this system", description: "Confirm the detected hardware before selecting local workloads." },
-  { id: "model", eyebrow: "Chapter 6", title: "Review your model toolkit", description: "Core models are already selected. Review their download size and add optional specialists.", optional: true },
+  { id: "model", eyebrow: "Chapter 6", title: "Review your model toolkit", description: "Review the local tools you want. Downloadable packs can be installed here; other choices stay clearly marked until an installer exists.", optional: true },
   { id: "profile", eyebrow: "Chapter 7", title: "Create your studio profile", description: "Choose how your account appears in the workspace." },
-  { id: "ready", eyebrow: "Ready", title: "Your studio is prepared", description: "Review the choices below, then enter the workspace." },
-] as const;
-
-export const REQUIRED_ONBOARDING_MODEL_IDS = [
-  "local/qwen3.5-9b-gguf",
-  "local/kokoro",
-  "local/whisper-large-v3-turbo",
-  "local/liveportrait",
-  "local/musetalk-1.5",
+  { id: "ready", eyebrow: "Ready", title: "Your studio plan is ready", description: "Review the choices below, then enter the workspace." },
 ] as const;
 
 export const defaultOnboardingConfiguration: OnboardingConfiguration = {
@@ -33,7 +25,7 @@ export const defaultOnboardingConfiguration: OnboardingConfiguration = {
   runtime: null,
   privacy: null,
   providerIds: [],
-  modelIds: [...REQUIRED_ONBOARDING_MODEL_IDS],
+  modelIds: [],
   hardwareReviewed: false,
   profile: { displayName: "", portraitAssetId: null },
 };
@@ -59,7 +51,6 @@ function mergeSetupConfiguration(
     privacy: configuration.privacy ?? setup.detectedPrivacy ?? null,
     providerIds: unique([...configuration.providerIds, ...(setup.connectedProviderIds ?? [])]),
     modelIds: unique([
-      ...REQUIRED_ONBOARDING_MODEL_IDS,
       ...configuration.modelIds,
       ...(setup.selectedModelIds ?? []),
       ...(setup.installedModelIds ?? []),
