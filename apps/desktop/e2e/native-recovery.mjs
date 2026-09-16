@@ -53,7 +53,8 @@ try {
   }
   await second.page.getByRole("button", { name: /open project/i }).click();
   await expect(second.page.getByRole("heading", { name: /shape the learning journey/i })).toBeVisible({ timeout: 30_000 });
-  const jobs = second.page.getByRole("complementary", { name: /background jobs/i });
+  // The drawer is aria-hidden after a restart until the user opens it.
+  const jobs = second.page.locator('aside.jobs-drawer[aria-label="Background jobs"]');
   if (await jobs.evaluate((element) => element.classList.contains("open"))) {
     await jobs.locator("header .icon-button").click();
   }
@@ -287,6 +288,8 @@ async function createBlockedTutorial(page) {
     await jobs.locator("header .icon-button").click();
   }
   await page.locator(".plan-progress button").filter({ hasText: "Presenters" }).click();
+  const stepRows = await page.locator(".plan-progress button").evaluateAll((steps) => steps.map((step) => Math.round(step.getBoundingClientRect().top)));
+  if (stepRows.length !== 6 || new Set(stepRows).size !== 1) throw new Error("The six plan steps did not fit on one navigation row");
   const assignments = page.locator(".scene-speaker-assignments select");
   await expect(assignments.first()).toBeVisible();
   await assignments.first().selectOption("presenter-portrait.anime-astrid-v1");

@@ -1413,7 +1413,8 @@ function App() {
   }, [nativeJobPollKey, runtime.environment, setSnapshot]);
 
   useEffect(() => {
-    if (snapshot.version === 0) return;
+    // Establish the saved baseline even at version zero. Otherwise the first
+    // edit in a fresh workspace is mistaken for initialization and never saved.
     const project = snapshot.projects.find((item) => item.id === activeProjectId);
     if (!project?.nativeProjectId || !project.nativeProjectDirectory || !project.nativeHeadRevisionId) return;
     if (approvalInFlightProjects.current.has(project.id)) return;

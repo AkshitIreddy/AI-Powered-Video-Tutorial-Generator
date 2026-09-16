@@ -90,6 +90,17 @@ export function mergeGeneralProjectSnapshot(
   if (captured.creative !== undefined) merged.creative = structuredClone(captured.creative);
   if (captured.reviewNotes !== undefined) merged.reviewNotes = captured.reviewNotes;
   if (typeof captured.updatedAt === "string") merged.updatedAt = captured.updatedAt;
+  if (captured.presenterSelection !== undefined) {
+    merged.presenterSelection = structuredClone(captured.presenterSelection);
+    // Cast edits also change the presenter preview. Keep newer durable canvas
+    // settings, and do not overwrite them during unrelated prose autosaves.
+    if (JSON.stringify(captured.presenterSelection) !== JSON.stringify(durable.presenterSelection)) {
+      const presenter = objectRecord(captured.customization)?.presenter;
+      if (presenter !== undefined) {
+        merged.customization = { ...objectRecord(durable.customization), presenter: structuredClone(presenter) };
+      }
+    }
+  }
 
   const durablePayload = objectRecord(durable.payload);
   const durableStoryboard = objectRecord(durablePayload?.storyboard);

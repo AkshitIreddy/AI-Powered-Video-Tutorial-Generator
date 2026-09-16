@@ -7,9 +7,30 @@ function receipt(headRevisionId: string, snapshot: Record<string, unknown>): Dur
 }
 
 describe("EditorDocumentSaveQueue", () => {
-  it("preserves a newer same-generation stage while merging only authored prose and creative settings", () => {
+  it("persists edited cast and scene speakers while retaining newer durable canvas settings", () => {
+    const selection = { schemaVersion: 1, mode: "on", presenters: [{ presenterId: "daniel", portraitAssetId: "daniel" }, { presenterId: "astrid", portraitAssetId: "astrid" }], sceneAssignments: [{ sceneId: "scene-1", presenterId: "astrid" }] };
     const merged = mergeGeneralProjectSnapshot({
       generationId: "generation-1",
+      presenterSelection: { ...selection, sceneAssignments: [] },
+      customization: { accent: "new", presenter: { assetId: "daniel", placement: "picture-in-picture" } },
+      scenes: [{ id: "scene-1" }],
+    }, {
+      nativeGenerationId: "generation-1",
+      presenterSelection: selection,
+      customization: { accent: "old", presenter: { assetId: "astrid", placement: "picture-in-picture" } },
+      scenes: [{ id: "scene-1" }],
+    });
+    expect(merged.presenterSelection).toEqual(selection);
+    expect(merged.customization).toEqual({ accent: "new", presenter: { assetId: "astrid", placement: "picture-in-picture" } });
+    selection.sceneAssignments[0]!.presenterId = "daniel";
+    expect(merged.presenterSelection).toMatchObject({ sceneAssignments: [{ presenterId: "astrid" }] });
+  });
+
+  it("preserves a newer same-generation stage while merging only authored prose and creative settings", () => {
+    const presenterSelection = { schemaVersion: 1, mode: "off", presenters: [], sceneAssignments: [] };
+    const merged = mergeGeneralProjectSnapshot({
+      generationId: "generation-1",
+      presenterSelection,
       stage: "rendered",
       editorDocument: { name: "new WebM timeline" },
       customization: { accent: "new" },
@@ -17,6 +38,7 @@ describe("EditorDocumentSaveQueue", () => {
       payload: { render: { artifactHash: "new-render" }, storyboard: { approved: true, scenes: [{ id: "scene-1", type: "definition", durationTicks: 2_400_000, title: "Generated title", narration: "Generated narration", visualIntent: "Generated intent", artifactId: "immutable-scene" }] } },
     }, {
       nativeGenerationId: "generation-1",
+      presenterSelection,
       stage: "planning",
       editorDocument: { name: "old MP4 timeline" },
       customization: { accent: "old" },
