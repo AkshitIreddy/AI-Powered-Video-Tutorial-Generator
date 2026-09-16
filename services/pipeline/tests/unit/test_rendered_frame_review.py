@@ -336,7 +336,7 @@ def test_public_approved_route_reviews_six_real_samples_in_one_inline_jpeg_reque
         store.close()
 
 
-def test_non_public_project_never_extracts_or_invokes_vlm(tmp_path: Path) -> None:
+def test_project_content_uses_its_explicitly_selected_vlm_route(tmp_path: Path) -> None:
     store, video_hash = _project(tmp_path)
     ffmpeg, ffprobe = _tools(tmp_path)
     runtime = VisionRuntime('{"findings":[]}', classification=DataClassification.PROJECT)
@@ -351,10 +351,10 @@ def test_non_public_project_never_extracts_or_invokes_vlm(tmp_path: Path) -> Non
             ffprobe_path=ffprobe,
             extractor=extractor,
         )
-        assert result.status == "not_reviewed"
-        assert result.reason == "vlm_review_requires_public_project"
-        assert runtime.calls == []
-        assert extractor.probes == 0
+        assert result.status == "reviewed"
+        assert result.reason is None
+        assert len(runtime.calls) == 1
+        assert extractor.probes == 1
     finally:
         store.close()
 

@@ -4,7 +4,7 @@ The renderer's structural QA remains authoritative for frame, audio, caption,
 and timeline metrics.  This module adds a deliberately limited semantic check:
 up to six representative frames from the promoted video are decoded with the
 pinned FFmpeg runtime, assembled into one small JPEG contact sheet, and sent in
-one request through an already-approved public-project ``vlm.chat`` route.
+one request through the project's explicitly selected ``vlm.chat`` route.
 
 No route is a durable ``not_reviewed`` result, never a synthetic pass.  A
 positive provider response is also described as a sparse review rather than an
@@ -42,7 +42,6 @@ from .providers.types import (
     VisionLanguageRequest,
 )
 from .qa import Finding, Severity
-from .security.privacy import DataClassification
 
 MAX_SAMPLE_FRAMES = 6
 MAX_CONTACT_SHEET_BYTES = 180 * 1024
@@ -267,7 +266,7 @@ def review_rendered_frames(
 
     _validate_request(request)
     _verify_render_artifact(store, request)
-    route, unavailable_reason = _approved_public_vlm_route(runtime)
+    route, unavailable_reason = _selected_vlm_route(runtime)
     review_key = _review_key(request, route)
     recovered = _recover_result(store, request, review_key)
     if recovered is not None:
@@ -422,14 +421,12 @@ def critical_review_findings(result: RenderedFrameReviewResult) -> tuple[Finding
     )
 
 
-def _approved_public_vlm_route(
+def _selected_vlm_route(
     runtime: RoutedVisionRuntime | None,
 ) -> tuple[dict[str, str] | None, str | None]:
     if runtime is None:
         return None, "no_explicit_vlm_route"
     policy = runtime.policy
-    if policy.data_classification is not DataClassification.PUBLIC:
-        return None, "vlm_review_requires_public_project"
     try:
         route = policy.route_for(Capability.VISION_LANGUAGE)
         approval = policy.approval_for(route.provider_ids[0])
@@ -437,6 +434,7 @@ def _approved_public_vlm_route(
         return None, "no_explicit_vlm_route"
     if (
         Capability.VISION_LANGUAGE not in approval.capabilities
+        or policy.data_classification not in approval.data_classes
         or not approval.privacy_approved
         or not approval.retention_approved
         or not approval.region_approved
