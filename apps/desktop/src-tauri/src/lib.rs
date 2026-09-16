@@ -187,6 +187,8 @@ pub fn run() {
             scene_regenerate,
             scene_stock_search,
             scene_candidate_accept,
+            scene_edit_candidate_accept,
+            scene_edit_candidate_reject,
             scene_render,
             qa_repair,
             master_export,

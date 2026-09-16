@@ -57,6 +57,8 @@ ALLOWED_METHODS = frozenset(
         "control.searchVisualCandidates",
         "control.acceptVisualCandidate",
         "control.rejectVisualCandidate",
+        "control.acceptSceneEditCandidate",
+        "control.rejectSceneEditCandidate",
         "control.renderScene",
         "control.repairQa",
         "control.exportMaster",

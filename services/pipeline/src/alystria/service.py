@@ -67,6 +67,7 @@ from .providers import (
 from .providers.comfyui_local import SDXL_MODEL_ID, ComfyGenerationMediaClient
 from .providers.licensed_media_selection import LicensedMediaVisionSelector
 from .providers.nvidia_nim import NVIDIA_VLM_MODEL
+from .scene_edit_provider import StructuredSceneEditProvider
 from .security.files import ImportLimits, validate_file
 
 if TYPE_CHECKING:
@@ -152,6 +153,8 @@ class PipelineService:
             "control.searchVisualCandidates": self.control_search_visual_candidates,
             "control.acceptVisualCandidate": self.control_accept_visual_candidate,
             "control.rejectVisualCandidate": self.control_reject_visual_candidate,
+            "control.acceptSceneEditCandidate": self.control_accept_scene_edit_candidate,
+            "control.rejectSceneEditCandidate": self.control_reject_scene_edit_candidate,
             "control.renderScene": self.control_render_scene,
             "control.repairQa": self.control_repair_qa,
             "control.exportMaster": self.control_export_master,
@@ -688,6 +691,7 @@ class PipelineService:
                 store,
                 renderer=renderer,
                 media_client=media_client,
+                scene_edit_provider=_scene_edit_provider_for_runtime(provider_runtime),
                 licensed_media_client=provider_runtime,
                 licensed_media_selector=_licensed_media_selector(provider_runtime),
             )
@@ -814,6 +818,20 @@ class PipelineService:
         project_id = _required_uuid(params, "projectId")
         with self._open_desktop_project(params, expected_project_id=project_id) as store:
             return NativeControlCoordinator(store).reject_candidate(params)
+
+    def control_accept_scene_edit_candidate(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return NativeControlCoordinator(store).accept_scene_edit_candidate(params)
+
+    def control_reject_scene_edit_candidate(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return NativeControlCoordinator(store).reject_scene_edit_candidate(params)
 
     def control_render_scene(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._submit_native_control(params, "render")
@@ -1152,6 +1170,20 @@ def _generation_clients_for_runtime(
     return _configured_local_presenter(store, media_client), educational_provider
 
 
+def _scene_edit_provider_for_runtime(
+    provider_runtime: ProviderRuntime | None,
+) -> StructuredSceneEditProvider | None:
+    if provider_runtime is None:
+        return None
+    if not any(
+        route.capability is Capability.LLM_STRUCTURED
+        and route.provider_ids != ("local-runtime",)
+        for route in provider_runtime.policy.routes
+    ):
+        return None
+    return StructuredSceneEditProvider.from_runtime(provider_runtime)
+
+
 def _licensed_media_selector(
     provider_runtime: ProviderRuntime | None,
 ) -> LicensedMediaVisionSelector | None:
@@ -1488,6 +1520,7 @@ def desktop_run_one(
         store,
         renderer=renderer,
         media_client=media_client,
+        scene_edit_provider=_scene_edit_provider_for_runtime(provider_runtime),
         licensed_media_client=provider_runtime,
         licensed_media_selector=_licensed_media_selector(provider_runtime),
     )

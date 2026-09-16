@@ -26,6 +26,7 @@ from alystria.native_controls import (
     _renderer_scene,
 )
 from alystria.project import ProjectHistory, ProjectStore
+from alystria.scene_edit_candidates import SceneEditProviderResult, SceneEditUsageIdentity
 from alystria.service import PipelineService, desktop_run_one
 
 
@@ -72,6 +73,40 @@ class CandidateMediaClient:
 
     def create_presenter(self, *_: object, **__: object) -> GeneratedMedia:
         raise AssertionError("candidate generation must not animate a presenter")
+
+
+class SceneEditProvider:
+    def propose_scene_edit(
+        self,
+        scene: dict[str, object],
+        *,
+        instruction: str,
+        focus: str,
+        alternative_index: int,
+        preservation_locks: tuple[str, ...],
+    ) -> SceneEditProviderResult:
+        assert scene["title"] == "Accepted scene"
+        assert instruction == "Use one concrete example."
+        assert focus == "explanation"
+        assert alternative_index == 0
+        assert preservation_locks == ("assets", "learningobjective", "presenter")
+        return SceneEditProviderResult(
+            proposal={
+                "title": "Accepted scene with an example",
+                "narration": "For example, one durable operation keeps the approved result.",
+                "objective": "Explain one durable operation.",
+                "durationSeconds": 2,
+                "visualIntent": "Keep the accepted visual while showing the example.",
+            },
+            idempotency_key="scene-edit-provider-key",
+            usage=SceneEditUsageIdentity(
+                "approved-writing-provider",
+                "writing-model-v1",
+                request_id="scene-edit-request",
+                actual_cost_micros=0,
+                units={"outputTokens": 25},
+            ),
+        )
 
 
 class RecordingRenderer:
@@ -278,6 +313,69 @@ def test_scoped_regeneration_returns_before_work_and_preserves_accepted_scene(
         )
         assert accepted["candidateId"] == candidate_id
         assert accepted["artifactHash"]
+
+
+def test_authored_scene_regeneration_is_review_first_and_invalidates_on_accept(
+    tmp_path: Path,
+) -> None:
+    with _project(tmp_path) as store:
+        head = store.head_revision()
+        assert head is not None
+        control = NativeControlCoordinator(
+            store,
+            scene_edit_provider=SceneEditProvider(),
+        )
+        job = control.submit_regeneration(
+            {
+                "baseRevisionId": head.revision_id,
+                "sceneId": "scene-one",
+                "instruction": "Use one concrete example.",
+                "editFocus": "explanation",
+                "preservationLocks": ["presenter", "learningobjective", "assets"],
+                "alternatives": 1,
+            }
+        )
+
+        assert job.kind == "native.regenerate_authored_scene"
+        assert job.max_attempts == 1
+        assert store.head_revision().revision_id == head.revision_id
+
+        control.runtime.run_once(control.handlers)
+        completed = control.status(job.job_id)
+        assert completed.state.value == "SUCCEEDED"
+        assert completed.result is not None
+        proposal_head = store.head_revision()
+        assert proposal_head is not None
+        assert proposal_head.snapshot["scenes"] == head.snapshot["scenes"]
+        candidate = proposal_head.snapshot["sceneEditCandidates"][0]
+        assert candidate["proposed"]["durationSeconds"] == 2
+        promoted = control._enqueue(
+            "native.render_scene",
+            {"sceneId": "scene-one"},
+            proposal_head.root_hash,
+        )
+        control.runtime.run_once(
+            {"native.render_scene": lambda _context, _params: {"path": "old-preview.mp4"}}
+        )
+        assert control.status(promoted.job_id).state.value == "SUCCEEDED"
+
+        accepted = control.accept_scene_edit_candidate(
+            {
+                "expectedHeadRevisionId": proposal_head.revision_id,
+                "candidateId": candidate["id"],
+            }
+        )
+        accepted_head = store.head_revision()
+        assert accepted_head is not None
+        assert accepted["status"] == "accepted"
+        assert accepted_head.snapshot["scenes"][0]["duration"] == 2
+        assert accepted_head.snapshot["scenes"][0]["narration"].startswith("For example")
+        assert isinstance(accepted_head.snapshot["mediaInvalidatedAt"], str)
+        assert accepted["invalidatedJobIds"] == [promoted.job_id]
+        assert control.status(promoted.job_id).state.value == "STALE"
+        assert any(key.endswith(":narration") for key in accepted["invalidated"])
+        assert any(key.endswith(":visual-layout") for key in accepted["invalidated"])
+        assert any(key.endswith(":final-composition") for key in accepted["invalidated"])
 
 
 def test_licensed_visual_search_is_a_bounded_durable_native_job(tmp_path: Path) -> None:

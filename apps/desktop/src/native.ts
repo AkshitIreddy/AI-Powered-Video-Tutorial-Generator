@@ -309,7 +309,7 @@ export interface JobReceipt {
   acceptedAt: string;
   message: string;
   retryable: boolean;
-  operation?: "regenerate_scene" | "search_visual_candidates" | "render_scene" | "repair_qa" | "export_master" | "editor_timeline_export";
+  operation?: "regenerate_scene" | "regenerate_authored_scene" | "search_visual_candidates" | "render_scene" | "repair_qa" | "export_master" | "editor_timeline_export";
   progress?: number;
   result?: Record<string, unknown> | null;
   error?: Record<string, unknown> | null;
@@ -321,6 +321,7 @@ export interface SceneRegenerationRequest extends ProjectIdentityRequest {
   sceneId: string;
   instruction: string;
   role?: "scene" | "presenter";
+  editFocus?: "explanation" | "pacing";
   seed?: number;
   imageRecipe?: {
     model?: "local/sdxl-base-1.0";
@@ -329,6 +330,28 @@ export interface SceneRegenerationRequest extends ProjectIdentityRequest {
   };
   preservationLocks: Array<"narration" | "citations" | "learningobjective" | "timing" | "assets" | "presenter">;
   alternatives: number;
+}
+
+export interface SceneEditCandidateDecisionRequest extends ProjectIdentityRequest {
+  expectedHeadRevisionId: string;
+  candidateId: string;
+  reason?: string;
+}
+
+export interface SceneEditCandidateDecisionReceipt {
+  projectId: string;
+  headRevisionId: string;
+  revisionNumber: number;
+  candidateId: string;
+  sceneId: string;
+  status: "accepted" | "rejected";
+  invalidated?: string[];
+  invalidatedJobIds?: string[];
+  baseRevisionId?: string;
+  baseGenerationId?: string;
+  changedFields?: string[];
+  preservationLocks?: string[];
+  originalHash?: string;
 }
 
 export interface VisualCandidateAcceptRequest extends ProjectIdentityRequest {
@@ -1110,6 +1133,18 @@ export function sceneRegenerate(input: SceneRegenerationRequest): Promise<JobRec
 export function sceneCandidateAccept(input: VisualCandidateAcceptRequest): Promise<VisualCandidateAcceptReceipt> {
   return command("scene_candidate_accept", input, () => {
     throw new Error("Visual candidate acceptance requires the desktop app.");
+  });
+}
+
+export function sceneEditCandidateAccept(input: SceneEditCandidateDecisionRequest): Promise<SceneEditCandidateDecisionReceipt> {
+  return command("scene_edit_candidate_accept", input, () => {
+    throw new Error("Authored scene candidate acceptance requires the desktop app.");
+  });
+}
+
+export function sceneEditCandidateReject(input: SceneEditCandidateDecisionRequest): Promise<SceneEditCandidateDecisionReceipt> {
+  return command("scene_edit_candidate_reject", input, () => {
+    throw new Error("Authored scene candidate rejection requires the desktop app.");
   });
 }
 

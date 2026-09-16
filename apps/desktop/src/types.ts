@@ -194,6 +194,9 @@ export interface ProjectRecord {
   /** Reproducible slide and presenter generation choices. */
   creative?: CreativeConfiguration;
   sceneCandidates?: unknown[];
+  sceneEditCandidates?: unknown[];
+  /** Media promoted before this durable authored edit must not be reviewed as current. */
+  mediaInvalidatedAt?: string;
   renderedFrameReview?: unknown;
   payload?: unknown;
   /** Desktop project identity; safe to persist because it contains no credentials. */
@@ -224,7 +227,7 @@ export interface JobRecord {
   projectId?: string;
   projectDirectory?: string;
   retryable?: boolean;
-  operation?: "regenerate_scene" | "search_visual_candidates" | "render_scene" | "repair_qa" | "export_master" | "visual_review" | "presenter_generate" | "editor_timeline_export";
+  operation?: "regenerate_scene" | "regenerate_authored_scene" | "search_visual_candidates" | "render_scene" | "repair_qa" | "export_master" | "visual_review" | "presenter_generate" | "editor_timeline_export";
   result?: Record<string, unknown> | null;
 }
 

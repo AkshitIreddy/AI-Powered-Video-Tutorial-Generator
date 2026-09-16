@@ -307,6 +307,20 @@ pub fn scene_regenerate(
         ));
     }
     validate_image_recipe(&mut input.image_recipe)?;
+    if input.edit_focus.is_some() {
+        if input.role != VisualCandidateRole::Scene {
+            return Err(CommandError::invalid(
+                "editFocus",
+                "authored scene edits cannot target presenter portraits",
+            ));
+        }
+        if input.image_recipe.is_some() {
+            return Err(CommandError::invalid(
+                "imageRecipe",
+                "authored scene edits cannot include an image recipe",
+            ));
+        }
+    }
     if !(1..=4).contains(&input.alternatives) {
         return Err(CommandError::invalid(
             "alternatives",
@@ -384,6 +398,67 @@ pub fn scene_candidate_accept(
     validation::stable_id(&receipt.scene_id, "sceneId")?;
     validation::stable_id(&receipt.asset_id, "assetId")?;
     validate_sha256(&receipt.artifact_hash, "artifactHash")?;
+    Ok(receipt)
+}
+
+#[tauri::command]
+pub fn scene_edit_candidate_accept(
+    input: SceneEditCandidateDecisionRequest,
+    state: State<'_, AppState>,
+) -> Result<SceneEditCandidateDecisionReceipt, CommandError> {
+    scene_edit_candidate_decision(
+        input,
+        "control.acceptSceneEditCandidate",
+        "accepted",
+        &state,
+    )
+}
+
+#[tauri::command]
+pub fn scene_edit_candidate_reject(
+    mut input: SceneEditCandidateDecisionRequest,
+    state: State<'_, AppState>,
+) -> Result<SceneEditCandidateDecisionReceipt, CommandError> {
+    if let Some(reason) = &mut input.reason {
+        *reason = validation::bounded_text(reason, "reason", 500)?;
+    }
+    scene_edit_candidate_decision(
+        input,
+        "control.rejectSceneEditCandidate",
+        "rejected",
+        &state,
+    )
+}
+
+fn scene_edit_candidate_decision(
+    mut input: SceneEditCandidateDecisionRequest,
+    method: &str,
+    expected_status: &str,
+    state: &State<'_, AppState>,
+) -> Result<SceneEditCandidateDecisionReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    input.expected_head_revision_id = validation::bounded_text(
+        &input.expected_head_revision_id,
+        "expectedHeadRevisionId",
+        128,
+    )?;
+    input.candidate_id = validation::stable_id(&input.candidate_id, "candidateId")?;
+    let expected_project_id = input.project_id;
+    let expected_candidate_id = input.candidate_id.clone();
+    let receipt: SceneEditCandidateDecisionReceipt = worker_result(&state.worker, method, &input)?;
+    if receipt.project_id != expected_project_id
+        || receipt.candidate_id != expected_candidate_id
+        || receipt.status != expected_status
+    {
+        return Err(CommandError::worker(
+            "The pipeline returned a mismatched scene edit candidate receipt.",
+            false,
+        ));
+    }
+    validation::stable_id(&receipt.head_revision_id, "headRevisionId")?;
+    validation::stable_id(&receipt.scene_id, "sceneId")?;
     Ok(receipt)
 }
 

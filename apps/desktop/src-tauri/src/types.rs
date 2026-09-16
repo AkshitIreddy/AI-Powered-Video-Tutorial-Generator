@@ -538,12 +538,57 @@ pub struct SceneRegenerationRequest {
     #[serde(default)]
     pub role: VisualCandidateRole,
     #[serde(default)]
+    pub edit_focus: Option<SceneEditFocus>,
+    #[serde(default)]
     pub seed: Option<u64>,
     #[serde(default)]
     pub image_recipe: Option<ImageRecipeRequest>,
     #[serde(default)]
     pub preservation_locks: Vec<String>,
     pub alternatives: u8,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SceneEditFocus {
+    Explanation,
+    Pacing,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SceneEditCandidateDecisionRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub candidate_id: String,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SceneEditCandidateDecisionReceipt {
+    pub project_id: Uuid,
+    pub head_revision_id: String,
+    pub revision_number: u64,
+    pub candidate_id: String,
+    pub scene_id: String,
+    pub status: String,
+    #[serde(default)]
+    pub invalidated: Vec<String>,
+    #[serde(default)]
+    pub invalidated_job_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub base_revision_id: Option<String>,
+    #[serde(default)]
+    pub base_generation_id: Option<Uuid>,
+    #[serde(default)]
+    pub changed_fields: Vec<String>,
+    #[serde(default)]
+    pub preservation_locks: Vec<String>,
+    #[serde(default)]
+    pub original_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

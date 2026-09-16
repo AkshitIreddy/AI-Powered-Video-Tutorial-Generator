@@ -18,7 +18,10 @@ from alystria.generation import (
     GenerationState,
 )
 from alystria.jobs import SQLiteWorkflowRuntime
+from alystria.native_controls import NativeControlCoordinator
 from alystria.project import ProjectStore
+from alystria.providers import ProviderResult, TextOutput, Usage
+from alystria.scene_edit_provider import StructuredSceneEditProvider
 from alystria.service import PipelineService
 
 
@@ -174,6 +177,120 @@ def test_supervisor_recovers_expired_lease_after_process_restart(tmp_path: Path)
             ).fetchone()[0] == 1
         finally:
             database.close()
+    finally:
+        restarted.stop(timeout_seconds=3)
+
+
+def test_supervisor_reopens_authored_scene_proposal_and_service_accepts_it(
+    tmp_path: Path,
+) -> None:
+    class FixtureWritingClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate(self, request, *, idempotency_key: str):
+            self.calls += 1
+            return ProviderResult(
+                "fixture-writing",
+                request.model,
+                TextOutput(
+                    text="fixture",
+                    parsed={
+                        "title": "A concrete interval example",
+                        "narration": "Start with eight values. One comparison leaves four.",
+                        "objective": "Explain how each comparison narrows the interval.",
+                        "durationSeconds": 8,
+                        "visualIntent": "Keep the approved interval diagram visible.",
+                    },
+                ),
+                Usage(
+                    "fixture-writing",
+                    request.model,
+                    units={"outputTokens": 18},
+                    actual_cost_micros=0,
+                    request_id="fixture-scene-edit",
+                ),
+                raw_id=idempotency_key,
+            )
+
+    project = tmp_path / "authored-scene-recovery"
+    client = FixtureWritingClient()
+    provider = StructuredSceneEditProvider(client, model="fixture-writer-v1")  # type: ignore[arg-type]
+    with ProjectStore.create(
+        project,
+        name="Authored scene recovery",
+        project_id=str(uuid.uuid4()),
+        initial_snapshot={
+            "title": "Authored scene recovery",
+            "sources": [],
+            "scenes": [
+                {
+                    "id": "scene-one",
+                    "title": "Interval narrowing",
+                    "narration": "Each comparison narrows the interval.",
+                    "objective": "Explain how each comparison narrows the interval.",
+                    "duration": 6,
+                }
+            ],
+        },
+    ) as store:
+        head = store.head_revision()
+        assert head is not None
+        control = NativeControlCoordinator(store, scene_edit_provider=provider)
+        job = control.submit_regeneration(
+            {
+                "baseRevisionId": head.revision_id,
+                "sceneId": "scene-one",
+                "instruction": "Use a concrete example.",
+                "editFocus": "explanation",
+                "preservationLocks": ["learningobjective", "assets", "presenter"],
+                "alternatives": 1,
+            }
+        )
+        assert job.state.value == "QUEUED"
+        project_id = store.manifest.project_id
+
+    def execute(store: ProjectStore, runtime: SQLiteWorkflowRuntime):
+        controls = NativeControlCoordinator(store, scene_edit_provider=provider)
+        return runtime.run_once(controls.handlers)
+
+    restarted = DesktopJobSupervisor(execute, poll_interval_seconds=0.01)
+    restarted.start()
+    try:
+        restarted.register(project)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            with ProjectStore.open(project) as store:
+                recovered = SQLiteWorkflowRuntime(store.connection).get_job(job.job_id)
+                if recovered.state.value == "SUCCEEDED":
+                    candidate_id = recovered.result["candidateIds"][0]  # type: ignore[index]
+                    proposal_head = store.head_revision()
+                    assert proposal_head is not None
+                    break
+            time.sleep(0.02)
+        else:
+            raise AssertionError("authored scene proposal did not recover")
+
+        accepted = PipelineService().dispatch(
+            "control.acceptSceneEditCandidate",
+            {
+                "projectId": project_id,
+                "projectDirectory": str(project),
+                "expectedHeadRevisionId": proposal_head.revision_id,
+                "candidateId": candidate_id,
+            },
+        )
+        assert accepted["status"] == "accepted"
+        with ProjectStore.open(project) as store:
+            current = store.head_revision()
+            assert current is not None
+            assert current.snapshot["scenes"][0]["narration"].startswith("Start with eight")
+            assert current.snapshot["mediaInvalidatedAt"]
+            assert store.connection.execute(
+                "SELECT COUNT(*) FROM job_attempts WHERE job_id=? AND state='SUCCEEDED'",
+                (job.job_id,),
+            ).fetchone()[0] == 1
+        assert client.calls == 1
     finally:
         restarted.stop(timeout_seconds=3)
 

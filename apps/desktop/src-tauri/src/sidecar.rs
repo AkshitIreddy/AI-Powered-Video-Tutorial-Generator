@@ -1149,6 +1149,8 @@ fn valid_method(method: &str) -> bool {
             | "control.regenerateScene"
             | "control.searchVisualCandidates"
             | "control.acceptVisualCandidate"
+            | "control.acceptSceneEditCandidate"
+            | "control.rejectSceneEditCandidate"
             | "control.renderScene"
             | "control.repairQa"
             | "control.exportMaster"
@@ -1218,6 +1220,8 @@ mod tests {
         assert!(valid_method("editor.bindings.get"));
         assert!(valid_method("editor.waveform.get"));
         assert!(valid_method("control.acceptVisualCandidate"));
+        assert!(valid_method("control.acceptSceneEditCandidate"));
+        assert!(valid_method("control.rejectSceneEditCandidate"));
         assert!(valid_method("control.searchVisualCandidates"));
         assert!(!valid_method("shell.execute"));
         assert!(!valid_method("filesystem.read"));

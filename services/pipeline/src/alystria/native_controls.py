@@ -31,6 +31,12 @@ from alystria.licensed_media_workflow import (
 from alystria.project import ProjectStore, Revision
 from alystria.project_assets import validate_approved_presenters_for_export
 from alystria.providers.licensed_media_selection import LicensedMediaVisionSelector
+from alystria.scene_edit_candidates import (
+    SceneEditProvider,
+    accept_scene_edit_candidate,
+    generate_scene_edit_candidates,
+    reject_scene_edit_candidate,
+)
 from alystria.sources.safety import SafeHttpTransport
 from alystria.visual_candidates import (
     accept_visual_candidate,
@@ -68,6 +74,7 @@ class NativeControlCoordinator:
         *,
         renderer: RendererClient | None = None,
         media_client: GenerationMediaClient | None = None,
+        scene_edit_provider: SceneEditProvider | None = None,
         licensed_media_client: LicensedMediaInvoker | None = None,
         licensed_media_selector: LicensedMediaVisionSelector | None = None,
         licensed_media_transport: SafeHttpTransport | None = None,
@@ -76,11 +83,13 @@ class NativeControlCoordinator:
         self.runtime = SQLiteWorkflowRuntime(store.connection)
         self.renderer = renderer
         self.media_client = media_client
+        self.scene_edit_provider = scene_edit_provider
         self.licensed_media_client = licensed_media_client
         self.licensed_media_selector = licensed_media_selector
         self.licensed_media_transport = licensed_media_transport
         self.handlers = {
             "native.regenerate_scene": self._regenerate_scene,
+            "native.regenerate_authored_scene": self._regenerate_authored_scene,
             "native.search_visual_candidates": self._search_visual_candidates,
             "native.render_scene": self._render_scene,
             "native.repair_qa": self._repair_qa,
@@ -96,6 +105,28 @@ class NativeControlCoordinator:
         role = params.get("role", "scene")
         if role not in {"scene", "presenter"}:
             raise ValueError("role must be scene or presenter")
+        edit_focus = params.get("editFocus")
+        if edit_focus is not None:
+            if edit_focus not in {"explanation", "pacing"}:
+                raise ValueError("editFocus must be explanation or pacing")
+            if role != "scene":
+                raise ValueError("Authored scene edits cannot target presenter portraits")
+            if "imageRecipe" in params:
+                raise ValueError("Authored scene edits cannot include an image recipe")
+            base_generation_id = self._validate_base_generation(params.get("baseJobId"))
+            parameters = {
+                "expectedHeadRevisionId": head.revision_id,
+                "baseRevisionId": _required_text(params, "baseRevisionId"),
+                "baseGenerationId": base_generation_id,
+                "sceneId": scene["id"],
+                "focus": edit_focus,
+                "instruction": instruction,
+                "preservationLocks": sorted(locks),
+                "alternatives": alternatives,
+            }
+            return self._enqueue(
+                "native.regenerate_authored_scene", parameters, head.root_hash
+            )
         requested_seed = params.get("seed")
         if "seed" in params and (
             not isinstance(requested_seed, int)
@@ -551,6 +582,24 @@ class NativeControlCoordinator:
     def reject_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
         return reject_visual_candidate(self.store, params)
 
+    def accept_scene_edit_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        result = accept_scene_edit_candidate(self.store, params)
+        head = self.store.head_revision()
+        if head is None:
+            raise RuntimeError("Accepted scene edit did not create a project revision")
+        result["invalidated"] = self._invalidate_authored_scene(
+            str(result["sceneId"]),
+            result.get("baseGenerationId"),
+            head.root_hash,
+        )
+        result["invalidatedJobIds"] = self._mark_promoted_media_stale(
+            str(result["sceneId"])
+        )
+        return result
+
+    def reject_scene_edit_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        return reject_scene_edit_candidate(self.store, params)
+
     def _enqueue(self, kind: str, parameters: dict[str, Any], root_hash: str) -> Job:
         action = ActionKey(
             kind,
@@ -571,7 +620,11 @@ class NativeControlCoordinator:
             max_attempts=(
                 1
                 if kind
-                in {"native.regenerate_scene", "native.search_visual_candidates"}
+                in {
+                    "native.regenerate_scene",
+                    "native.regenerate_authored_scene",
+                    "native.search_visual_candidates",
+                }
                 else 2
             ),
         )
@@ -612,6 +665,17 @@ class NativeControlCoordinator:
         if self.media_client is None:
             raise RuntimeError("Configured image-generation runtime is unavailable")
         return generate_visual_candidates(self.store, self.media_client, context, params)
+
+    def _regenerate_authored_scene(
+        self, context: JobContext, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        if self.scene_edit_provider is None:
+            raise RuntimeError(
+                "An approved structured-writing provider route is required for authored scene edits"
+            )
+        return generate_scene_edit_candidates(
+            self.store, self.scene_edit_provider, context, params
+        )
 
     def _search_visual_candidates(
         self, context: JobContext, params: dict[str, Any]
@@ -1548,6 +1612,65 @@ class NativeControlCoordinator:
         del locks
         return graph.invalidate_from([f"{prefix}:visual-layout"])
 
+    def _invalidate_authored_scene(
+        self,
+        scene_id: str,
+        generation_id: Any,
+        root_hash: str,
+    ) -> list[str]:
+        if isinstance(generation_id, str):
+            return list(
+                GenerationCoordinator(self.store).invalidate_scope(
+                    generation_id, f"scene:{scene_id}"
+                )
+            )
+        graph = DependencyGraph(self.store.connection, self.store.manifest.project_id)
+        prefix = f"project:{self.store.manifest.project_id}:scene:{scene_id}"
+        narration = f"{prefix}:narration"
+        visual_layout = f"{prefix}:visual-layout"
+        scene_render = f"{prefix}:scene-render"
+        visual_qa = f"{prefix}:visual-qa"
+        composition = f"{prefix}:final-composition"
+        nodes = [
+            (narration, []),
+            (visual_layout, []),
+            (scene_render, [narration, visual_layout]),
+            (visual_qa, [scene_render]),
+            (composition, [visual_qa]),
+        ]
+        for key, upstream in nodes:
+            graph.record_node(
+                key,
+                hashlib.sha256(f"{root_hash}:{key}".encode()).hexdigest(),
+                upstream_keys=upstream,
+            )
+        return graph.invalidate_from([narration, visual_layout])
+
+    def _mark_promoted_media_stale(self, scene_id: str) -> list[str]:
+        stale_ids: list[str] = []
+        for job in self.runtime.list_jobs(
+            project_id=self.store.manifest.project_id,
+            limit=1_000,
+        ):
+            if job.state is not JobState.SUCCEEDED:
+                continue
+            scene_render = (
+                job.kind == "native.render_scene"
+                and job.parameters.get("sceneId") == scene_id
+            )
+            project_render = job.kind in {
+                "native.export_master",
+                "native.editor_timeline_export",
+            }
+            if not scene_render and not project_render:
+                continue
+            self.runtime.mark_stale(
+                job.job_id,
+                reason=f"Authored scene {scene_id} changed after this media was promoted",
+            )
+            stale_ids.append(job.job_id)
+        return stale_ids
+
     def _copy_export_sidecars(
         self,
         generation_id: str,
@@ -1613,6 +1736,7 @@ def native_job_receipt(job: Job, message: str | None = None) -> dict[str, Any]:
 def _job_message(job: Job) -> str:
     labels = {
         "native.regenerate_scene": "Scoped scene candidate work persisted",
+        "native.regenerate_authored_scene": "Authored scene proposals are ready for review",
         "native.search_visual_candidates": "Licensed visual candidates are ready for review",
         "native.render_scene": "Scene render completed",
         "native.repair_qa": "Selected QA repair work persisted",
