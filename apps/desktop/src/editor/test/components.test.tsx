@@ -144,6 +144,7 @@ describe("AdvancedVideoEditor", () => {
     const user = userEvent.setup();
     render(<AdvancedVideoEditor project={makeSampleProject()} />);
     await user.click(screen.getByRole("button", { name: /Opening question, titles/ }));
+    await user.click(screen.getByRole("button", { name: "Inspector" }));
 
     expect(screen.getByRole("group", { name: "On-screen text style" })).toBeInTheDocument();
     const textSize = screen.getByRole("spinbutton", { name: "Text size" });
@@ -192,6 +193,7 @@ describe("AdvancedVideoEditor", () => {
     await user.click(screen.getByRole("button", { name: "Unsolo Narration" }));
 
     await user.click(screen.getByRole("button", { name: /Opening slide, slides/ }));
+    await user.click(screen.getByRole("button", { name: "Inspector" }));
     expect(screen.getByRole("group", { name: "Source audio" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "Volume dB" })).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "Mute clip" }));

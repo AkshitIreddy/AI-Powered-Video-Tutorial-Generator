@@ -110,10 +110,12 @@ try {
   let videoClip = editor.locator(".aly-editor-clip--slides").filter({ hasText: importedName }).first();
   await expect(videoClip).toBeVisible();
   await videoClip.click();
+  await editor.getByRole("button", { name: "Inspector", exact: true }).click();
   await editor.getByLabel("End frame").fill("90");
   await editor.getByLabel("End frame").press("Enter");
   const titleClip = editor.locator(".aly-editor-clip--titles").first();
   await titleClip.click();
+  await editor.getByRole("button", { name: "Inspector", exact: true }).click();
   await editor.getByLabel("On-screen text").fill(editedTitle);
   await expect.poll(() => editor.locator(".aly-editor-clip__waveform img").count(), { timeout: 90_000 }).toBeGreaterThan(0);
   await expect.poll(() => editor.locator(".aly-editor-clip__waveform img").first().evaluate((image) => image.complete && image.naturalWidth > 0), { timeout: 90_000 }).toBe(true);
@@ -156,6 +158,7 @@ try {
   await expect(card).toContainText("ready", { timeout: 45_000 });
   videoClip = editor.locator(".aly-editor-clip--slides").filter({ hasText: importedName }).first();
   await videoClip.click();
+  await editor.getByRole("button", { name: "Inspector", exact: true }).click();
   await expect(editor.getByLabel("End frame")).toHaveValue("90");
   const reloadedPreview = editor.getByLabel(`Preview of ${importedName}`);
   const reloadedUrl = await reloadedPreview.getAttribute("src");
@@ -187,6 +190,7 @@ try {
   const initialDesktopPid = launch.child.pid;
   const initialWorkerPid = launch.workerPid;
   await editor.locator(".aly-editor-clip--titles").first().click();
+  await editor.getByRole("button", { name: "Inspector", exact: true }).click();
   await editor.getByLabel("On-screen text").fill(closeProofTitle);
   await closeNative(launch);
   launch = undefined;
@@ -203,6 +207,7 @@ try {
   const reopenedEditor = reopenedPage.getByRole("dialog", { name: "Integrated advanced video editor" });
   await expect(reopenedEditor).toBeVisible({ timeout: 45_000 });
   await reopenedEditor.locator(".aly-editor-clip--titles").first().click();
+  await reopenedEditor.getByRole("button", { name: "Inspector", exact: true }).click();
   await expect(reopenedEditor.getByLabel("On-screen text")).toHaveValue(closeProofTitle);
   await reopenedPage.screenshot({ path: path.join(evidenceRoot, "04-close-flush-reopened.png"), fullPage: true });
 
