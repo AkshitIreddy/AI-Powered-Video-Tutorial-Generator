@@ -2,6 +2,32 @@
 
 Current audit: **2026-09-16**, local `main`. The historical checklist below records the August 28 baseline; it is not a substitute for current integrated acceptance.
 
+## September 16 editor workspace redesign
+
+The integrated editor now has one project header (title, save state, media
+rights, return, undo/redo, import/export/render) instead of two stacked title
+bars. Media, Transcript, Inspector, and proposals share a single left dock
+behind an icon rail; the permanent empty right inspector is gone. Dock width
+and timeline height resize by pointer or keyboard, collapse and reset, clamp
+to the window, and persist across reloads. Transcript cues give editable text
+most of the panel width with compact seek timecodes, contextual speaker
+editing that never invents a speaker, explicit save/revert, and drafts that
+survive panel switches. Empty timeline tracks render compact with an optional
+hide that preserves track data. Word-heavy editor actions use icons with
+themed hover-and-focus tooltips; accessible names, shortcuts, and
+disabled/pressed states are preserved. Track labels were widened so full
+track names stay readable.
+
+Verified with 307 desktop unit tests (43 files), typecheck, lint, a production
+frontend build, browser editor checks (desktop, narrow, short-height, pointer
+drag with reload persistence), and native acceptance against a rebuilt
+portable debug package: project recovery, real media import/trim/waveform,
+transport-driven playback, transcript/title edits, save/reopen durability,
+immediate-close flush, and a rendered 3-second vp9/opus proof inspected as
+video. Pre-existing catalog-layout browser failures were reproduced unchanged
+at the pre-redesign checkpoint and are unrelated to this work. No push or
+release is authorized by these local changes.
+
 ## September 16 download and control audit
 
 The [control audit](WORK_2026-09-16_CONTROLS.md) supersedes the earlier inline
