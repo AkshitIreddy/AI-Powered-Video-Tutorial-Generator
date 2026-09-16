@@ -253,6 +253,21 @@ def test_presenter_acceptance_creates_synthetic_profile_and_selects_it(tmp_path:
         assert initial is not None
         disabled_snapshot = initial.snapshot
         disabled_snapshot["customization"]["presenter"]["placement"] = "off"
+        disabled_snapshot["presenterSelection"] = {
+            "schemaVersion": 1,
+            "mode": "on",
+            "presenters": [
+                {
+                    "presenterId": "presenter_existing",
+                    "portraitAssetId": "presenter-portrait.existing",
+                    "voiceId": "voice-existing",
+                }
+            ],
+            "sceneAssignments": [
+                {"sceneId": "scene-one", "presenterId": "presenter_existing"},
+                {"sceneId": "scene-two", "presenterId": "presenter_existing"},
+            ],
+        }
         initial = store.create_revision(
             snapshot=disabled_snapshot,
             expected_head=initial.revision_id,
@@ -291,6 +306,23 @@ def test_presenter_acceptance_creates_synthetic_profile_and_selects_it(tmp_path:
         assert current.snapshot["selectedPresenterProfileId"] == profile["profileId"]
         assert current.snapshot["customization"]["presenter"]["assetId"] == receipt["assetId"]
         assert current.snapshot["customization"]["presenter"]["placement"] == "picture-in-picture"
+        selection = current.snapshot["presenterSelection"]
+        assert selection["mode"] == "on"
+        assert selection["presenters"] == [
+            {
+                "presenterId": "presenter_existing",
+                "portraitAssetId": "presenter-portrait.existing",
+                "voiceId": "voice-existing",
+            },
+            {
+                "presenterId": profile["profileId"],
+                "portraitAssetId": receipt["assetId"],
+            },
+        ]
+        assert selection["sceneAssignments"] == [
+            {"sceneId": "scene-two", "presenterId": "presenter_existing"},
+            {"sceneId": "scene-one", "presenterId": profile["profileId"]},
+        ]
         export_policy = validate_selected_presenter_for_export(
             store,
             current.snapshot,

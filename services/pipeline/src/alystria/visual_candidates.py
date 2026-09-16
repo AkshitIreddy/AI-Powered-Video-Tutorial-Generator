@@ -373,6 +373,12 @@ def accept_visual_candidate(store: ProjectStore, params: Mapping[str, Any]) -> d
         customization["presenter"] = presenter
         snapshot["customization"] = customization
         snapshot["selectedPresenterProfileId"] = profile_id
+        snapshot["presenterSelection"] = _select_generated_presenter(
+            snapshot.get("presenterSelection"),
+            profile_id=profile_id,
+            portrait_asset_id=asset_id,
+            scene_id=scene_id,
+        )
 
     revision = store.create_revision(
         snapshot=snapshot,
@@ -395,6 +401,74 @@ def accept_visual_candidate(store: ProjectStore, params: Mapping[str, Any]) -> d
         "assetId": asset_id,
         "baseGenerationId": candidate.get("baseGenerationId"),
         "preservationLocks": copy.deepcopy(candidate.get("preservationLocks", [])),
+    }
+
+
+def _select_generated_presenter(
+    value: Any,
+    *,
+    profile_id: str,
+    portrait_asset_id: str,
+    scene_id: str,
+) -> dict[str, Any]:
+    """Join an accepted portrait to the current cast and assign its source scene.
+
+    New projects use ``presenterSelection`` as the generation authority.  The
+    legacy ``selectedPresenterProfileId`` remains populated for old projects,
+    but updating only that field makes an accepted generated portrait invisible
+    to the multi-presenter renderer whenever a modern selection already exists.
+    """
+
+    if value is None:
+        presenters: list[dict[str, Any]] = []
+        assignments: list[dict[str, Any]] = []
+    else:
+        if not isinstance(value, dict):
+            raise ValueError("presenterSelection must be an object")
+        if value.get("schemaVersion") != 1:
+            raise ValueError("presenterSelection.schemaVersion must be 1")
+        raw_presenters = value.get("presenters")
+        raw_assignments = value.get("sceneAssignments")
+        if not isinstance(raw_presenters, list) or not all(
+            isinstance(item, dict) for item in raw_presenters
+        ):
+            raise ValueError("presenterSelection.presenters must be an array of records")
+        if not isinstance(raw_assignments, list) or not all(
+            isinstance(item, dict) for item in raw_assignments
+        ):
+            raise ValueError("presenterSelection.sceneAssignments must be an array of records")
+        presenters = copy.deepcopy(raw_presenters)
+        assignments = copy.deepcopy(raw_assignments)
+
+    if not any(item.get("presenterId") == profile_id for item in presenters):
+        if len(presenters) >= 12:
+            raise ValueError(
+                "The presenter cast already contains the maximum of 12 presenters; "
+                "remove one before accepting another generated portrait"
+            )
+        presenters.append(
+            {"presenterId": profile_id, "portraitAssetId": portrait_asset_id}
+        )
+    else:
+        presenters = [
+            {
+                **item,
+                "portraitAssetId": portrait_asset_id,
+            }
+            if item.get("presenterId") == profile_id
+            else item
+            for item in presenters
+        ]
+
+    assignments = [
+        item for item in assignments if item.get("sceneId") != scene_id
+    ]
+    assignments.append({"sceneId": scene_id, "presenterId": profile_id})
+    return {
+        "schemaVersion": 1,
+        "mode": "on",
+        "presenters": presenters,
+        "sceneAssignments": assignments,
     }
 
 
