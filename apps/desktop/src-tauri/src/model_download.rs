@@ -403,6 +403,7 @@ impl ModelDownloadManager {
     pub fn catalog(&self) -> Vec<ModelDownloadCatalogEntry> {
         PACKAGES
             .iter()
+            .filter(|spec| catalog_package_visible(spec))
             .map(|spec| catalog_entry(spec, self.installer_executable.is_some()))
             .collect()
     }
@@ -968,35 +969,50 @@ fn artifact_url(
     let _ = package_spec;
     #[cfg(feature = "portable-debug-runtime")]
     if package_spec.model_id == ACCEPTANCE_DOWNLOAD_FIXTURE.model_id {
-        let raw = std::env::var(ACCEPTANCE_DOWNLOAD_URL_ENV).map_err(|_| {
-            download_error(
-                "The portable-debug acceptance download fixture has no loopback endpoint.",
-            )
-        })?;
-        let parsed = reqwest::Url::parse(&raw)
-            .map_err(|_| download_error("The acceptance download fixture endpoint is invalid."))?;
-        let loopback = parsed
-            .host_str()
-            .and_then(|host| host.parse::<std::net::IpAddr>().ok())
-            .is_some_and(|address| address.is_loopback());
-        if parsed.scheme() != "http"
-            || !loopback
-            || parsed.username() != ""
-            || parsed.password().is_some()
-            || parsed.query().is_some()
-            || parsed.fragment().is_some()
-            || parsed.path() != "/alystria-model-download-fixture.bin"
-        {
-            return Err(download_error(
-                "The acceptance download fixture accepts only its exact loopback HTTP path.",
-            ));
-        }
-        return Ok(parsed.into());
+        return Ok(acceptance_download_url()?.into());
     }
     Ok(format!(
         "https://huggingface.co/{}/resolve/{}/{}",
         artifact.repository, artifact.revision, artifact.upstream_path
     ))
+}
+
+fn catalog_package_visible(spec: &PackageSpec) -> bool {
+    #[cfg(feature = "portable-debug-runtime")]
+    {
+        !is_acceptance_fixture(spec) || acceptance_download_url().is_ok()
+    }
+    #[cfg(not(feature = "portable-debug-runtime"))]
+    {
+        let _ = spec;
+        true
+    }
+}
+
+#[cfg(feature = "portable-debug-runtime")]
+fn acceptance_download_url() -> Result<reqwest::Url, CommandError> {
+    let raw = std::env::var(ACCEPTANCE_DOWNLOAD_URL_ENV).map_err(|_| {
+        download_error("The portable-debug acceptance download fixture has no loopback endpoint.")
+    })?;
+    let parsed = reqwest::Url::parse(&raw)
+        .map_err(|_| download_error("The acceptance download fixture endpoint is invalid."))?;
+    let loopback = parsed
+        .host_str()
+        .and_then(|host| host.parse::<std::net::IpAddr>().ok())
+        .is_some_and(|address| address.is_loopback());
+    if parsed.scheme() != "http"
+        || !loopback
+        || parsed.username() != ""
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.path() != "/alystria-model-download-fixture.bin"
+    {
+        return Err(download_error(
+            "The acceptance download fixture accepts only its exact loopback HTTP path.",
+        ));
+    }
+    Ok(parsed)
 }
 
 fn fetch_artifact(
@@ -1976,6 +1992,16 @@ mod tests {
     #[test]
     fn portable_debug_manager_downloads_the_loopback_hash_pinned_fixture() {
         let directory = tempdir().expect("tempdir");
+        unsafe { std::env::remove_var(ACCEPTANCE_DOWNLOAD_URL_ENV) };
+        let hidden_manager = ModelDownloadManager::at(directory.path().join("hidden-models"))
+            .expect("fixture-hidden manager");
+        assert!(
+            hidden_manager
+                .catalog()
+                .iter()
+                .all(|entry| entry.model_id != ACCEPTANCE_DOWNLOAD_FIXTURE.model_id),
+            "fixture must stay out of the portable-debug catalog without a validated loopback endpoint"
+        );
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fixture");
         let address = listener.local_addr().expect("fixture address");
         let fixture_bytes = vec![0u8; 4 * 1024 * 1024];
@@ -2016,9 +2042,26 @@ mod tests {
             .code,
             "MODEL_DOWNLOAD_FAILED"
         );
+        assert!(
+            hidden_manager
+                .catalog()
+                .iter()
+                .all(|entry| entry.model_id != ACCEPTANCE_DOWNLOAD_FIXTURE.model_id),
+            "fixture must stay out of the portable-debug catalog for a non-loopback endpoint"
+        );
         unsafe { std::env::set_var(ACCEPTANCE_DOWNLOAD_URL_ENV, &endpoint) };
         let manager =
             ModelDownloadManager::at(directory.path().join("models")).expect("fixture manager");
+        let fixture_entry = manager
+            .catalog()
+            .into_iter()
+            .find(|entry| entry.model_id == ACCEPTANCE_DOWNLOAD_FIXTURE.model_id)
+            .expect("validated loopback fixture catalog entry");
+        assert_eq!(
+            fixture_entry.display_name,
+            ACCEPTANCE_DOWNLOAD_FIXTURE.display_name
+        );
+        assert_eq!(fixture_entry.total_bytes, 4 * 1024 * 1024);
         manager
             .start(ModelDownloadStartRequest {
                 model_id: ACCEPTANCE_DOWNLOAD_FIXTURE.model_id.into(),
