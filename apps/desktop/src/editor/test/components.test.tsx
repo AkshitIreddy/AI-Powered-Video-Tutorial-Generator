@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { AdvancedVideoEditor, createEditorProjectFromAlystriaProject, defaultClipValues } from "..";
+import { AdvancedVideoEditor, createEditorProjectFromAlystriaProject, defaultClipValues, serializeEditorProject } from "..";
 import { makeProposal, makeSampleProject } from "./fixtures";
 
 describe("AdvancedVideoEditor", () => {
@@ -25,7 +25,7 @@ describe("AdvancedVideoEditor", () => {
   });
 
   it("renders an accessible seven-track editor without inventing preview media", () => {
-    render(<AdvancedVideoEditor project={makeSampleProject()} proposals={[makeProposal()]} />);
+    render(<AdvancedVideoEditor project={makeSampleProject()} />);
 
     expect(screen.getByRole("application", { name: "Advanced video editor" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Explicit local sample" })).toBeInTheDocument();
@@ -34,6 +34,48 @@ describe("AdvancedVideoEditor", () => {
     }
     expect(screen.getAllByText("Start with the question.").length).toBeGreaterThan(0);
     expect(screen.queryByText(/generated successfully/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "AI proposals" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mute Titles" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Solo Captions" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide Titles" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mute Narration" })).toBeInTheDocument();
+  });
+
+  it("hides a visual track in both preview and the persisted render state", async () => {
+    const user = userEvent.setup();
+    const delivered = vi.fn();
+    render(<AdvancedVideoEditor project={makeSampleProject()} onProjectChange={delivered} />);
+    expect(screen.getByTestId("editor-preview-title")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Hide Titles" }));
+
+    expect(screen.queryByTestId("editor-preview-title")).not.toBeInTheDocument();
+    await waitFor(() => expect(delivered).toHaveBeenCalledOnce());
+    expect(delivered.mock.calls[0]?.[0].tracks.find((track: { kind: string }) => track.kind === "titles")).toMatchObject({ hidden: true });
+    expect(screen.getByRole("button", { name: "Show Titles" })).toBeInTheDocument();
+  });
+
+  it("keeps an imported document bound to the open native project identity", async () => {
+    const user = userEvent.setup();
+    const host = makeSampleProject();
+    const imported = { ...makeSampleProject(), id: "another-project", name: "Imported edit" };
+    const onProjectChange = vi.fn();
+    render(<AdvancedVideoEditor project={host} onProjectChange={onProjectChange} />);
+    const file = new File([serializeEditorProject(imported)], "imported-editor.json", { type: "application/json" });
+    Object.defineProperty(file, "text", { value: async () => serializeEditorProject(imported) });
+
+    await user.upload(
+      screen.getByLabelText("Import editor project file"),
+      file,
+    );
+
+    await waitFor(() => expect(onProjectChange).toHaveBeenCalledOnce());
+    expect(onProjectChange.mock.calls[0]?.[0]).toMatchObject({
+      id: host.id,
+      name: "Imported edit",
+      metadata: { importedProjectId: "another-project", importedIntoProjectId: host.id },
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Imported edit imported");
   });
 
   it("supports keyboard split plus reversible undo and redo", async () => {

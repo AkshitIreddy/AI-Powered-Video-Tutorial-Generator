@@ -19,13 +19,15 @@ function clipLabel(clip: EditorClip, state: EditorState): string {
 }
 
 function TrackControls({ track, dispatch }: { track: EditorTrack; dispatch: Dispatch<EditorAction> }) {
+  const canCarryAudio = track.kind !== "titles" && track.kind !== "captions";
   return (
     <div className="aly-editor-track__controls">
       <button type="button" className="aly-editor-track__select" onClick={() => dispatch({ type: "SELECT_TRACK", trackId: track.id })}>{track.name}</button>
       <div className="aly-editor-track__toggles">
         <button type="button" className={`aly-editor-track__toggle${track.locked ? " aly-editor-track__toggle--active" : ""}`} aria-pressed={track.locked} aria-label={`${track.locked ? "Unlock" : "Lock"} ${track.name}`} onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { locked: !track.locked } })}>L</button>
-        <button type="button" className={`aly-editor-track__toggle${track.muted ? " aly-editor-track__toggle--active" : ""}`} aria-pressed={track.muted} aria-label={`${track.muted ? "Unmute" : "Mute"} ${track.name}`} onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { muted: !track.muted } })}>M</button>
-        <button type="button" className={`aly-editor-track__toggle${track.solo ? " aly-editor-track__toggle--active" : ""}`} aria-pressed={track.solo} aria-label={`${track.solo ? "Unsolo" : "Solo"} ${track.name}`} onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { solo: !track.solo } })}>S</button>
+        <button type="button" className={`aly-editor-track__toggle${track.hidden ? " aly-editor-track__toggle--active" : ""}`} aria-pressed={track.hidden} aria-label={`${track.hidden ? "Show" : "Hide"} ${track.name}`} onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { hidden: !track.hidden } })}>H</button>
+        {canCarryAudio ? <button type="button" className={`aly-editor-track__toggle${track.muted ? " aly-editor-track__toggle--active" : ""}`} aria-pressed={track.muted} aria-label={`${track.muted ? "Unmute" : "Mute"} ${track.name}`} onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { muted: !track.muted } })}>M</button> : null}
+        {canCarryAudio ? <button type="button" className={`aly-editor-track__toggle${track.solo ? " aly-editor-track__toggle--active" : ""}`} aria-pressed={track.solo} aria-label={`${track.solo ? "Unsolo" : "Solo"} ${track.name}`} onClick={() => dispatch({ type: "UPDATE_TRACK", trackId: track.id, patch: { solo: !track.solo } })}>S</button> : null}
       </div>
     </div>
   );
@@ -137,7 +139,7 @@ export function EditorTimeline({ state, dispatch, waveforms = {} }: EditorTimeli
                 const rect = event.currentTarget.getBoundingClientRect();
                 dispatch({ type: "SET_PLAYHEAD", frame: Math.round((event.clientX - rect.left) / rect.width * duration), snap: true });
               }}>
-                {track.clips.map((clip) => <TimelineClip key={clip.id} clip={clip} state={state} dispatch={dispatch} {...(clip.assetId && waveforms[clip.assetId] ? { waveform: waveforms[clip.assetId] } : {})} />)}
+                {!track.hidden ? track.clips.map((clip) => <TimelineClip key={clip.id} clip={clip} state={state} dispatch={dispatch} {...(clip.assetId && waveforms[clip.assetId] ? { waveform: waveforms[clip.assetId] } : {})} />) : null}
                 {!track.clips.length ? <span className="aly-editor-track__empty">Empty {track.name.toLowerCase()} track</span> : null}
               </div>
             </div>

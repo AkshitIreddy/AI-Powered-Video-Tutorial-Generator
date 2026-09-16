@@ -161,6 +161,17 @@ export function AdvancedVideoEditor({
       } catch {
         imported = parseOtioLike(text);
       }
+      if (imported.id !== state.project.id) {
+        imported = {
+          ...imported,
+          id: state.project.id,
+          metadata: {
+            ...imported.metadata,
+            importedProjectId: imported.id,
+            importedIntoProjectId: state.project.id,
+          },
+        };
+      }
       dispatch({ type: "REPLACE_PROJECT", project: imported });
     } catch (error) {
       setProjectImportError(error instanceof Error ? error.message : "The project could not be imported.");
@@ -259,7 +270,7 @@ export function AdvancedVideoEditor({
           <nav className="aly-editor-panel-tabs" aria-label="Editor side panels">
             <button type="button" aria-current={state.view.activePanel === "media" ? "page" : undefined} onClick={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "media" })}>Media</button>
             <button type="button" aria-current={state.view.activePanel === "transcript" ? "page" : undefined} onClick={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "transcript" })}>Transcript</button>
-            <button type="button" aria-current={state.view.activePanel === "proposals" ? "page" : undefined} onClick={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "proposals" })}>AI proposals</button>
+            {state.proposals.length ? <button type="button" aria-current={state.view.activePanel === "proposals" ? "page" : undefined} onClick={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "proposals" })}>AI proposals</button> : null}
           </nav>
           {panel}
         </aside>
