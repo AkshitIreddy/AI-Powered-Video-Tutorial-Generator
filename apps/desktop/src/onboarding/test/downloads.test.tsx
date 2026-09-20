@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModelDownloadCatalogEntry, ModelDownloadStatus } from "../../native";
+import { COMFYUI_RUNTIME_PACKAGE_ID } from "../../localRuntime";
 import type { OnboardingCatalog, PersistedOnboardingState } from "..";
 
 const downloads = vi.hoisted(() => ({
@@ -39,6 +40,17 @@ const entry: ModelDownloadCatalogEntry = {
   weightRevision: "c".repeat(40),
   available: true,
   downloadOnlyReason: "Verified local download.",
+};
+
+const runtimeEntry: ModelDownloadCatalogEntry = {
+  ...entry,
+  modelId: COMFYUI_RUNTIME_PACKAGE_ID,
+  displayName: "ComfyUI 0.9.2 portable runtime",
+  immutableRevision: "comfyui-8f40b43e0204d5b9780f3e9618e140e929e80594",
+  totalBytes: 1_803_412_624,
+  artifactCount: 1,
+  licenseId: "GPL-3.0",
+  licenseSha256: "f".repeat(64),
 };
 
 function status(phase: ModelDownloadStatus["phase"]): ModelDownloadStatus {
@@ -98,7 +110,7 @@ function Harness({
 
 describe("onboarding model downloads", () => {
   beforeEach(() => {
-    downloads.catalog = [entry];
+    downloads.catalog = [runtimeEntry, entry];
     downloads.statuses = [status("manifestRequired")];
     downloads.loading = false;
     downloads.error = null;
@@ -161,6 +173,45 @@ describe("onboarding model downloads", () => {
     await user.click(screen.getByRole("button", { name: "Open download progress" }));
     expect(downloads.openPanel).toHaveBeenCalledOnce();
     expect(downloads.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("prompts for the runtime before downloading a model that needs ComfyUI", async () => {
+    const fluxEntry: ModelDownloadCatalogEntry = { ...entry, modelId: "local/flux.2-klein-4b-fp8", displayName: "FLUX test" };
+    downloads.catalog = [runtimeEntry, fluxEntry];
+    const user = userEvent.setup();
+    const onPersist = vi.fn();
+    render(<Harness onPersist={onPersist} onboardingCatalog={{ ...catalog, models: [] }} />);
+
+    await user.click(screen.getByRole("checkbox", { name: /FLUX test/ }));
+    expect(downloads.enqueue).not.toHaveBeenCalled();
+    expect(screen.getByRole("alertdialog", { name: "Install ComfyUI with FLUX test" })).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Choose your model toolkit" })).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: /FLUX test/ }));
+
+    await user.click(screen.getByRole("button", { name: "Download FLUX test + ComfyUI" }));
+    expect(downloads.enqueue).toHaveBeenCalledWith([COMFYUI_RUNTIME_PACKAGE_ID, fluxEntry.modelId]);
+    expect(downloads.openPanel).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(onPersist).toHaveBeenLastCalledWith(expect.objectContaining({
+      configuration: expect.objectContaining({ modelIds: [fluxEntry.modelId] }),
+    })));
+  });
+
+  it("offers the runtime separately without adding it to model configuration", async () => {
+    const user = userEvent.setup();
+    const onPersist = vi.fn();
+    render(<Harness onPersist={onPersist} onboardingCatalog={{ ...catalog, models: [] }} />);
+
+    expect(screen.queryByRole("checkbox", { name: /ComfyUI/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Download runtime" }));
+    expect(downloads.enqueue).toHaveBeenCalledWith([COMFYUI_RUNTIME_PACKAGE_ID]);
+    expect(downloads.openPanel).toHaveBeenCalledOnce();
+    expect(onPersist).not.toHaveBeenCalledWith(expect.objectContaining({
+      configuration: expect.objectContaining({ modelIds: [COMFYUI_RUNTIME_PACKAGE_ID] }),
+    }));
   });
 
   it("sorts actionable models first and disables choices without a download or installation", () => {

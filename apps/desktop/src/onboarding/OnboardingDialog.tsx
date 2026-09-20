@@ -1,6 +1,15 @@
-import { useEffect, useId, useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ModelDownloadPhase, ModelDownloadStatus } from "../native";
 import { useModelDownloads } from "../downloads/ModelDownloadProvider";
+import {
+  COMFYUI_RUNTIME_PACKAGE_ID,
+  comfyuiRuntimeEntry,
+  comfyuiRuntimeStatus,
+  comfyuiVersionFromStatuses,
+  isComfyuiRuntimePackage,
+  shouldPromptForRuntime,
+} from "../localRuntime";
+import { RuntimeDownloadPrompt } from "../LocalRuntimePanel";
 import { ProfileGallery } from "./ProfileGallery";
 import { canAdvanceOnboarding, chapterIndex, isChapterConfigured, onboardingChapters } from "./state";
 import type { OnboardingController } from "./useOnboardingController";
@@ -145,7 +154,15 @@ function ModelChapter({
   downloads: ModelDownloads;
 }) {
   const { configuration } = controller.state;
-  const selectedEntries = downloads.catalog.filter((entry) => configuration.modelIds.includes(entry.modelId));
+  const runtimeEntry = comfyuiRuntimeEntry(downloads.catalog);
+  const runtimeStatus = comfyuiRuntimeStatus(downloads.statuses);
+  const comfyInstalled = comfyuiVersionFromStatuses(downloads.statuses) !== null;
+  const runtimeBusy = downloads.queuedModelIds.includes(COMFYUI_RUNTIME_PACKAGE_ID)
+    || downloads.startingModelIds.has(COMFYUI_RUNTIME_PACKAGE_ID)
+    || isActiveModelDownloadPhase(runtimeStatus?.phase);
+  const [runtimePrompt, setRuntimePrompt] = useState<{ modelId: string; modelName: string; totalBytes: number } | null>(null);
+  const modelDownloadCatalog = downloads.catalog.filter((entry) => !isComfyuiRuntimePackage(entry.modelId));
+  const selectedEntries = modelDownloadCatalog.filter((entry) => configuration.modelIds.includes(entry.modelId));
   const selectedStatuses = selectedEntries.map((entry) => downloads.statuses.find((status) => status.modelId === entry.modelId));
   const activeCount = selectedStatuses.filter((status) => isActiveModelDownloadPhase(status?.phase)).length;
   const completeCount = selectedStatuses.filter(completedDownload).length;
@@ -156,7 +173,7 @@ function ModelChapter({
     .reduce((total, entry) => total + entry.totalBytes, 0);
   // Native packages are authoritative; newly installed runtime catalogs can
   // supply downloads before the descriptive discovery catalog is refreshed.
-  const nativeOnlyModels: OnboardingCatalog["models"] = downloads.catalog
+  const nativeOnlyModels: OnboardingCatalog["models"] = modelDownloadCatalog
     .filter((entry) => entry.available && !catalog.models.some((model) => model.id === entry.modelId))
     .map((entry) => ({ id: entry.modelId, name: entry.displayName, providerId: "local-runtime", medium: "other", description: entry.downloadOnlyReason, downloadBytes: entry.totalBytes, sizeConfidence: "exact" }));
   const orderedModels = [...catalog.models, ...nativeOnlyModels].sort((left, right) => {
@@ -192,6 +209,39 @@ function ModelChapter({
         </span>
         {downloads.error ? <button type="button" onClick={() => { void downloads.refresh(); }}>Download status failed to refresh · Try again</button> : null}
       </div>
+
+      <section className="aly-onboarding-runtime-option" aria-labelledby="aly-onboarding-runtime-title">
+        <div>
+          <span className="section-kicker">Optional local image engine</span>
+          <strong id="aly-onboarding-runtime-title">ComfyUI 0.9.2 portable runtime</strong>
+          <small>
+            {runtimeEntry
+              ? `${formatModelBytes(runtimeEntry.totalBytes)} exact download · ${runtimeEntry.licenseId} · shared by every managed local image model.`
+              : downloads.loading
+                ? "Checking the verified runtime package…"
+                : "The verified runtime package is unavailable in this build."}
+          </small>
+        </div>
+        <span className={`aly-onboarding-runtime-option__state${comfyInstalled ? " is-ready" : ""}`}>
+          {comfyInstalled ? "Ready" : runtimeBusy ? modelDownloadPhaseLabel(runtimeStatus?.phase) : "Optional"}
+        </span>
+        {comfyInstalled || runtimeBusy ? (
+          <button type="button" className="aly-onboarding-download-panel-link" onClick={downloads.openPanel}>View downloads</button>
+        ) : (
+          <button
+            type="button"
+            className="aly-onboarding-download-panel-link"
+            disabled={!runtimeEntry?.available || downloads.loading}
+            onClick={() => {
+              downloads.enqueue([COMFYUI_RUNTIME_PACKAGE_ID]);
+              downloads.openPanel();
+              controller.setOpen(false);
+            }}
+          >
+            Download runtime
+          </button>
+        )}
+      </section>
 
       <fieldset className="aly-onboarding-options aly-onboarding-options--models">
         <legend className="aly-onboarding-sr-only">Model toolkit</legend>
@@ -248,6 +298,10 @@ function ModelChapter({
               onChange={() => {
                 if (model.required || unavailable) return;
                 const selected = configuration.modelIds.includes(model.id);
+                if (!selected && entry?.available && !completedDownload(status) && shouldPromptForRuntime(model.id, comfyInstalled)) {
+                  setRuntimePrompt({ modelId: model.id, modelName: model.name, totalBytes: entry.totalBytes });
+                  return;
+                }
                 controller.updateConfiguration({ modelIds: toggleValue(configuration.modelIds, model.id) });
                 if (!selected && entry?.available && !completedDownload(status)) {
                   downloads.enqueue([model.id]);
@@ -258,10 +312,24 @@ function ModelChapter({
             />
           );
         })}
-        {!catalog.models.length ? <p className="aly-onboarding-options__empty">No models were supplied by the application. You can configure them later.</p> : null}
+        {!orderedModels.length ? <p className="aly-onboarding-options__empty">No models were supplied by the application. You can configure them later.</p> : null}
       </fieldset>
 
       {selectedEntries.length ? <button type="button" className="aly-onboarding-download-panel-link" onClick={downloads.openPanel}>Open download progress</button> : null}
+      {runtimePrompt ? <RuntimeDownloadPrompt
+        modelName={runtimePrompt.modelName}
+        modelTotalBytes={runtimePrompt.totalBytes}
+        runtimeBytes={runtimeEntry?.totalBytes ?? 0}
+        canDownload={runtimeEntry?.available === true}
+        onConfirm={() => {
+          controller.updateConfiguration({ modelIds: [...new Set([...configuration.modelIds, runtimePrompt.modelId])] });
+          downloads.enqueue([COMFYUI_RUNTIME_PACKAGE_ID, runtimePrompt.modelId]);
+          setRuntimePrompt(null);
+          downloads.openPanel();
+          controller.setOpen(false);
+        }}
+        onCancel={() => setRuntimePrompt(null)}
+      /> : null}
     </div>
   );
 }

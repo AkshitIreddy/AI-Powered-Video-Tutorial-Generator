@@ -36,3 +36,62 @@
 .aly-onboarding-download-panel-link:hover {
   background: var(--onboarding-plum-deep);
 }
+
+.aly-onboarding-download-panel-link:disabled {
+  cursor: not-allowed;
+  opacity: .52;
+}
+
+.aly-onboarding-runtime-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 15px;
+  border: 1px solid #d7c3cf;
+  border-radius: 13px;
+  background: #fffaf7;
+}
+
+.aly-onboarding-runtime-option > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.aly-onboarding-runtime-option strong {
+  color: var(--onboarding-plum-deep);
+  font: 700 13px/1.25 var(--display);
+}
+
+.aly-onboarding-runtime-option small {
+  color: var(--onboarding-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.aly-onboarding-runtime-option__state {
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: #f2e9ed;
+  color: var(--onboarding-plum);
+  font: 750 8px/1 var(--mono);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.aly-onboarding-runtime-option__state.is-ready {
+  background: #e5f3ed;
+  color: #28735c;
+}
+
+@media (max-width: 720px) {
+  .aly-onboarding-runtime-option {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .aly-onboarding-runtime-option .aly-onboarding-download-panel-link {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+}

@@ -4,10 +4,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { createOnboardingState } from "../onboarding";
 import { exampleSnapshot } from "../data";
 
-const install = vi.hoisted((): { activationBlocked: boolean; installFingerprint: string | null; runtimeRevision: string | null } => ({
+const install = vi.hoisted((): { activationBlocked: boolean; installFingerprint: string | null; runtimeRevision: string | null; runtimeReady: boolean } => ({
   activationBlocked: false,
   installFingerprint: "d".repeat(64),
   runtimeRevision: "comfyui-8f40b43e+sdxl-46216598+recipe-v1",
+  runtimeReady: true,
 }));
 
 vi.mock("../native", async () => {
@@ -43,10 +44,31 @@ vi.mock("../native", async () => {
     activationBlocked: false,
     updatedAt: "2026-09-08T00:00:00.000Z",
   };
+  const runtimeEntry: import("../native").ModelDownloadCatalogEntry = {
+    ...catalogEntry,
+    modelId: "runtime/comfyui-0.9.2",
+    displayName: "ComfyUI 0.9.2 portable runtime",
+    immutableRevision: "comfyui-8f40b43e0204d5b9780f3e9618e140e929e80594",
+    totalBytes: 1_803_412_624,
+    artifactCount: 1,
+    licenseId: "GPL-3.0",
+  };
+  const runtimeStatus: import("../native").ModelDownloadStatus = {
+    ...status,
+    modelId: runtimeEntry.modelId,
+    immutableRevision: runtimeEntry.immutableRevision,
+    downloadedBytes: runtimeEntry.totalBytes,
+    totalBytes: runtimeEntry.totalBytes,
+    verifiedArtifacts: 1,
+    artifactCount: 1,
+    licenseId: runtimeEntry.licenseId,
+    installFingerprint: "e".repeat(64),
+    runtimeRevision: "comfyui-8f40b43e0204d5b9780f3e9618e140e929e80594",
+  };
   return {
     ...actual,
-    localModelDownloadCatalog: vi.fn(async () => [catalogEntry]),
-    localModelDownloadStatus: vi.fn(async () => [{
+    localModelDownloadCatalog: vi.fn(async () => [runtimeEntry, catalogEntry]),
+    localModelDownloadStatus: vi.fn(async () => [...(install.runtimeReady ? [runtimeStatus] : []), {
       ...status,
       activationBlocked: install.activationBlocked,
       installFingerprint: install.installFingerprint,
@@ -61,6 +83,7 @@ beforeEach(() => {
   install.activationBlocked = false;
   install.installFingerprint = "d".repeat(64);
   install.runtimeRevision = "comfyui-8f40b43e+sdxl-46216598+recipe-v1";
+  install.runtimeReady = true;
   localStorage.clear();
   localStorage.setItem("alystria-studio-v2", JSON.stringify(exampleSnapshot));
   const onboarding = createOnboardingState({
@@ -92,12 +115,14 @@ it("stages only the verified installed SDXL identity in the active profile", asy
   expect(screen.getByText(/local image route staged/i)).toBeInTheDocument();
 });
 it.each([
-  { name: "an activation-blocked receipt", activationBlocked: true, installFingerprint: "d".repeat(64), runtimeRevision: "comfyui-8f40b43e+sdxl-46216598+recipe-v1" },
-  { name: "a missing install identity", activationBlocked: false, installFingerprint: null, runtimeRevision: null },
-])("keeps SDXL profile activation disabled for $name", async ({ activationBlocked, installFingerprint, runtimeRevision }) => {
+  { name: "an activation-blocked receipt", activationBlocked: true, installFingerprint: "d".repeat(64), runtimeRevision: "comfyui-8f40b43e+sdxl-46216598+recipe-v1", runtimeReady: true },
+  { name: "a missing install identity", activationBlocked: false, installFingerprint: null, runtimeRevision: null, runtimeReady: true },
+  { name: "a missing dedicated runtime", activationBlocked: false, installFingerprint: "d".repeat(64), runtimeRevision: "comfyui-8f40b43e+sdxl-46216598+recipe-v1", runtimeReady: false },
+])("keeps SDXL profile activation disabled for $name", async ({ activationBlocked, installFingerprint, runtimeRevision, runtimeReady }) => {
   install.activationBlocked = activationBlocked;
   install.installFingerprint = installFingerprint;
   install.runtimeRevision = runtimeRevision;
+  install.runtimeReady = runtimeReady;
   const user = userEvent.setup();
   render(<App />);
 

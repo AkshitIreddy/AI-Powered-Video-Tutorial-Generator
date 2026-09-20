@@ -602,6 +602,14 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByText(/internal evaluation only; outputs cannot be published/i)).toBeInTheDocument();
   });
 
+  it("shows the local runtime panel above the model library", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /models & providers/i }));
+    expect(screen.getByRole("heading", { name: "ComfyUI runtime" })).toBeInTheDocument();
+    expect(screen.getAllByText("Not installed", { exact: true })).not.toHaveLength(0);
+  });
+
   it("keeps local lip-sync choices and switchable provider profiles explicit", async () => {
     const user = userEvent.setup();
     const initialSetup = await localModelSetupGet();

@@ -1,5 +1,13 @@
 import { CommandPalette } from "./CommandPalette";
 import { InspectorSection } from "./InspectorSection";
+import { LocalRuntimePanel, RuntimeDownloadPrompt } from "./LocalRuntimePanel";
+import {
+  COMFYUI_RUNTIME_PACKAGE_ID,
+  comfyuiRuntimeEntry,
+  comfyuiRuntimeStatus,
+  comfyuiVersionFromStatuses,
+  shouldPromptForRuntime,
+} from "./localRuntime";
 import { isDownloadActive, isDownloadComplete, downloadPhaseLabel as modelDownloadPhaseLabel } from "./downloads/downloadState";
 import { ModelDownloadProvider, useModelDownloads } from "./downloads/ModelDownloadProvider";
 import { ModelDownloadLauncher, ModelDownloadPanel } from "./downloads/ModelDownloadPanel";
@@ -45,7 +53,6 @@ import {
   MessageSquareText,
   Mic2,
   MonitorPlay,
-  Moon,
   MoreHorizontal,
   Network,
   PackageCheck,
@@ -2190,7 +2197,7 @@ function TemplatesView({ onUse }: { onUse: (templateId: string) => void }) {
     <PageTitle kicker="Starting structures" title="Templates" description="Editorially designed learning arcs—not prompt presets. Every structure adapts to your audience and evidence." />
     <div className="template-banner"><div><span className="section-kicker"><Star size={14} /> Featured learning arc</span><h2>Build intuition, then earn the formula.</h2><p>A purpose-built sequence for technical concepts: misconception, visual model, derivation, worked example, and transfer check.</p><button className="light-button" onClick={() => onUse("explain-hard-idea")}>Use this structure <ArrowRight size={15} /></button></div><ConceptDiagram /></div>
     <div className="toolbar template-toolbar"><div className="filter-pills">{["All", "Concept", "Code", "Humanities", "Mathematics", "Software", "Illustrated"].map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}</button>)}</div></div>
-    <div className="template-grid">{shown.map((template) => <article className={`template-card template-${template.color}`} key={template.id}><div className="template-visual"><TemplateArt id={template.id} /><span>{template.category}</span></div><div><small>{template.scenes} suggested scenes</small><h3>{template.name}</h3><p>{template.description}</p><button className="text-button" onClick={() => onUse(template.id)}>Use template <ArrowRight size={15} /></button></div></article>)}</div>
+    <div className="template-grid">{shown.map((template) => <button type="button" className={`template-card template-${template.color}`} key={template.id} aria-label={`Use ${template.name} template`} onClick={() => onUse(template.id)}><div className="template-visual"><TemplateArt id={template.id} /><span>{template.category}</span></div><div><small>{template.scenes} suggested scenes</small><h3>{template.name}</h3><p>{template.description}</p><span className="text-button" aria-hidden="true">Use template <ArrowRight size={15} /></span></div></button>)}</div>
   </div>;
 }
 
@@ -2371,11 +2378,17 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   const selectedDownloadModelId = downloadSelectionId ?? inspectedImageModelId;
   const catalogHardwareWithConnections = useMemo(() => ({
     ...catalogHardware,
+    installedRuntimes: (() => {
+      const version = comfyuiVersionFromStatuses(downloadStatuses);
+      return version ? { comfyui: version } : {};
+    })(),
     providerConnectionIds: [...new Set([
       ...catalogHardware.providerConnectionIds,
       ...Object.entries(secretRefs).filter(([, reference]) => reference.availability === "present").map(([providerId]) => providerId),
     ])],
-  }), [catalogHardware, secretRefs]);
+  }), [catalogHardware, secretRefs, downloadStatuses]);
+  const comfyVersion = catalogHardwareWithConnections.installedRuntimes.comfyui ?? null;
+  const [runtimePrompt, setRuntimePrompt] = useState<{ modelId: string; modelName: string; totalBytes: number } | null>(null);
   const updateProfile = (profileId: string, update: (profile: ModelProfile) => ModelProfile) => mutateSetup((current) => ({ ...current, profiles: current.profiles.map((profile) => profile.id === profileId ? update(profile) : profile) }));
   const createProfile = () => {
     if (!setup || !activeProfile) return;
@@ -2405,13 +2418,19 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   const selectedDownloadStatus = downloadStatuses.find((status) => status.modelId === selectedDownload?.modelId) ?? null;
   const selectedImageOption = localImageModelOptions.find((model) => model.id === selectedDownloadModelId) ?? null;
   const downloadComplete = selectedDownloadStatus?.phase === "ready" || selectedDownloadStatus?.phase === "inUse" || selectedDownloadStatus?.phase === "downloadedQuarantined";
-  const sdxlInstallReceiptReady = selectedDownloadStatus?.modelId === "local/sdxl-base-1.0"
+  const sdxlInstallReceiptReady = comfyVersion !== null
+    && selectedDownloadStatus?.modelId === "local/sdxl-base-1.0"
     && selectedDownloadStatus.phase === "ready"
     && selectedDownloadStatus.activationBlocked === false
     && Boolean(selectedDownloadStatus.runtimeRevision?.trim())
     && /^[a-f0-9]{64}$/.test(selectedDownloadStatus.installFingerprint ?? "");
   const beginModelDownload = () => {
-    if (selectedDownload) downloads.enqueue([selectedDownload.modelId]);
+    if (!selectedDownload) return;
+    if (shouldPromptForRuntime(selectedDownload.modelId, comfyVersion !== null)) {
+      setRuntimePrompt({ modelId: selectedDownload.modelId, modelName: selectedImageOption?.name ?? selectedDownload.displayName, totalBytes: selectedDownload.totalBytes });
+      return;
+    }
+    downloads.enqueue([selectedDownload.modelId]);
   };
   const downloadState = (item: CatalogItem) => {
     const entry = findModelDownloadEntry(item, downloadCatalog);
@@ -2427,11 +2446,25 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       ...(active && status?.totalBytes ? { progressPercent: Math.min(100, status.downloadedBytes / status.totalBytes * 100) } : {}),
     };
   };
+  const runtimeEntry = comfyuiRuntimeEntry(downloadCatalog);
+  const runtimeStatus = comfyuiRuntimeStatus(downloadStatuses);
   const downloadCatalogModel = (item: CatalogItem) => {
     const entry = findModelDownloadEntry(item, downloadCatalog);
     if (!entry) return;
     setDownloadSelectionId(entry.modelId);
+    if (shouldPromptForRuntime(entry.modelId, comfyVersion !== null)) {
+      setRuntimePrompt({ modelId: entry.modelId, modelName: item.identity.name, totalBytes: entry.totalBytes });
+      return;
+    }
     downloads.enqueue([entry.modelId]);
+  };
+  const confirmRuntimePrompt = () => {
+    const prompt = runtimePrompt;
+    setRuntimePrompt(null);
+    if (!prompt) return;
+    downloads.enqueue([COMFYUI_RUNTIME_PACKAGE_ID, prompt.modelId]);
+    downloads.openPanel();
+    onNotify("Model and runtime queued", `${prompt.modelName} will download after the shared ComfyUI runtime.`, "success");
   };
   const useVerifiedSdxlForImages = () => {
     if (!activeProfile || !sdxlInstallReceiptReady || !selectedDownloadStatus?.runtimeRevision || !selectedDownloadStatus.installFingerprint) return;
@@ -2518,6 +2551,15 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
 
   return <div className="page">
     <PageTitle kicker="Your compute, your choice" title="Models & providers" description="Download local models, connect API providers, and save the exact models you want each tutorial to use." />
+    <LocalRuntimePanel
+      runtimeEntry={runtimeEntry}
+      runtimeStatus={runtimeStatus}
+      queued={downloads.queuedModelIds.includes(COMFYUI_RUNTIME_PACKAGE_ID)}
+      starting={downloads.startingModelIds.has(COMFYUI_RUNTIME_PACKAGE_ID)}
+      loading={downloads.loading}
+      onDownloadRuntime={() => { downloads.enqueue([COMFYUI_RUNTIME_PACKAGE_ID]); }}
+      onViewDownloads={() => { downloads.openPanel(); }}
+    />
     <section className="federated-catalog-panel" aria-labelledby="federated-catalog-title">
       <div className="federated-catalog-heading federated-catalog-heading--compact"><div><span className="section-kicker">Find and compare models</span><h2 id="federated-catalog-title">Model library</h2><p>Download local models and follow their progress while you work. Choose a connected writing model here to save it in your active profile below.</p></div><span><Cpu size={16} /> {catalogHardware.gpuNames[0] ?? "Hardware probe pending"}</span></div>
       <details className="catalog-source-disclosure"><summary><span><strong>{defaultCatalogSources.length} catalog sources</strong><small>Curated, connected, public, and local indexes</small></span><span>Browse and sync <ChevronDown size={15} aria-hidden="true" /></span></summary><div className="catalog-source-strip" aria-label="Federated catalog sources">{defaultCatalogSources.map((source) => {
@@ -2537,14 +2579,14 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     {editingProvider && <section className="credential-panel" aria-labelledby="credential-title"><div><span className="section-kicker">Credential broker</span><h3 id="credential-title">Connect {providers.find((provider) => provider.id === editingProvider)?.name}</h3><p>{environment === "native" ? "The value goes directly to the operating-system vault. Project files receive only an opaque reference." : "Browser demo mode exercises the flow but immediately discards the value."}</p></div><label>API key<input autoFocus type="password" autoComplete="off" value={secret} onChange={(event) => setSecret(event.target.value)} /></label><div className="credential-actions">{secretRefs[editingProvider]?.availability === "present" && <button className="secondary-button danger-text" onClick={() => { void deleteSecret(editingProvider); setEditingProvider(null); }}><X size={15} /> Remove</button>}<button className="secondary-button" onClick={() => { setEditingProvider(null); setSecret(""); }}>Cancel</button><button className="primary-button" disabled={!secret.trim() || saving} onClick={() => { void saveSecret(); }}><KeyRound size={15} /> {saving ? "Saving…" : "Store securely"}</button></div></section>}
     {progressiveStage >= 1 ? <section className="model-setup-panel" aria-labelledby="local-model-setup-title">
       <div className="model-setup-heading"><div><span className="section-kicker">First-run setup</span><h2 id="local-model-setup-title">Your local model toolkit.</h2><p>Download a model, use a folder you already have, or connect an API provider. Follow download progress from anywhere in the app.</p></div><span className="setup-state"><HardDrive size={15} /> {setupLoading ? "Loading setup" : `${setup?.selectedModelIds.length ?? 0} choices saved`}</span></div>
-      <div className="lipsync-chooser" aria-labelledby="local-image-model-title"><div><span className="section-kicker">Local image studio</span><h3 id="local-image-model-title">Choose an image model to download</h3><p>SDXL is the current working route for creating slide artwork and fictional presenter portraits. The two newer bundles are available for deliberate download, but stay blocked from generation until their exact offload recipes pass on this PC.</p></div><div className="lipsync-options">{localImageModelOptions.map((model) => { const status = downloadStatuses.find((entry) => entry.modelId === model.id); const stateLabel = status?.phase === "ready" || status?.phase === "inUse" ? "Installed · ready" : status?.phase === "downloadedQuarantined" ? "Downloaded · recipe blocked" : model.tag; return <label className={inspectedImageModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="local-image-model" checked={inspectedImageModelId === model.id} disabled={!setup} onClick={() => setDownloadSelectionId(model.id)} onChange={() => { setSelectedImageModelId(model.id); toggleLocalModel(model.id, true); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{stateLabel}</em></label>; })}</div><p className="inspector-note">Select a model, then choose Download below. Downloaded models remain available across your projects.</p></div>
+      <div className="lipsync-chooser" aria-labelledby="local-image-model-title"><div><span className="section-kicker">Local image studio</span><h3 id="local-image-model-title">Choose an image model to download</h3><p>SDXL is the current working route for creating slide artwork and fictional presenter portraits. The two newer bundles are available for deliberate download, but stay blocked from generation until their exact offload recipes pass on this PC.</p></div><div className="lipsync-options">{localImageModelOptions.map((model) => { const status = downloadStatuses.find((entry) => entry.modelId === model.id); const stateLabel = status?.phase === "ready" || status?.phase === "inUse" ? comfyVersion ? "Installed · ready" : "Model installed · runtime required" : status?.phase === "downloadedQuarantined" ? "Downloaded · recipe blocked" : model.tag; return <label className={inspectedImageModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="local-image-model" checked={inspectedImageModelId === model.id} disabled={!setup} onClick={() => setDownloadSelectionId(model.id)} onChange={() => { setSelectedImageModelId(model.id); toggleLocalModel(model.id, true); }} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{stateLabel}</em></label>; })}</div><p className="inspector-note">Select a model, then choose Download below. Downloaded models remain available across your projects.</p></div>
       <div className="local-model-grid" aria-busy={setupLoading}>{localModelOptions.map((model) => { const selected = setup?.selectedModelIds.includes(model.id) ?? false; return <label className={`local-model-choice ${selected ? "selected" : ""}`} key={model.id}><input type="checkbox" checked={selected} disabled={!setup} onChange={(event) => toggleLocalModel(model.id, event.target.checked)} /><span><b>{model.name}</b><small>{model.medium} · {model.detail}</small></span><em>Manifest required</em></label>; })}</div>
       <div className="existing-model-row"><div><b>Use an existing model folder</b><small>The native app proves the folder exists when you save. It records the location but never executes or activates its contents; a later manifest inspection still has to identify every revision, license, file, and hash.</small>{setup?.existingModelDirectory && <span className="folder-record-state"><FolderClock size={13} /> Folder path entered · save to verify it exists</span>}</div><label><span>Existing folder path</span><input value={setup?.existingModelDirectory ?? ""} disabled={!setup} placeholder={environment === "native" ? "E:\\temp\\AI Video Tutorial Generator Models" : "/your/local/model-folder"} onChange={(event) => mutateSetup((current) => ({ ...current, existingModelDirectory: event.target.value || null }))} /></label></div>
       <div className="lipsync-chooser"><div><span className="section-kicker">Presenter motion stage</span><h3>Choose how portraits come alive</h3><p>Motion and lip-sync are separate stages. The measured local default animates pose, gaze, expression, and genuine blinks with LivePortrait, then uses the selected lip-sync model only for narration-accurate mouth motion.</p></div><div className="lipsync-options">{portraitAnimationModelOptions.map((model) => <label className={setup?.portraitAnimationModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="portrait-animation-model" checked={setup?.portraitAnimationModelId === model.id} disabled={!setup || model.id === "local/echomimicv3-flash" || model.id === "local/hunyuan-video-avatar"} onChange={() => selectPortraitAnimation(model.id)} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{model.tag}</em></label>)}</div></div>
       <div className="lipsync-chooser"><div><span className="section-kicker">Narration mouth stage</span><h3>Choose your local lip-sync model</h3><p>This stage follows portrait animation and may be disabled for presenter-free scenes. Choosing a pack saves a preference; downloading remains a separate explicit step and inference stays blocked until activation review.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onClick={() => setDownloadSelectionId(model.id)} onChange={() => selectLipSync(model.id)} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{downloadCatalog.some((entry) => entry.modelId === model.id) ? "Download declaration ready" : model.tag}</em></label>)}</div></div>
       <div className="model-download-panel" aria-live="polite">
         {selectedDownload ? <>
-          <div className="download-record"><span className="download-record-mark"><PackageCheck size={19} /></span><div><b>{selectedDownload.displayName} · {selectedImageOption?.executionReady ? "managed image runtime" : "download-only pack"}</b><small>{formatBytes(selectedDownload.totalBytes)} across {selectedDownload.artifactCount} artifacts · revision <code>{selectedDownload.immutableRevision}</code></small><p>{selectedDownload.downloadOnlyReason}</p></div><span className={`download-phase ${selectedDownloadStatus?.phase ?? "manifestRequired"}`}>{modelDownloadPhaseLabel(selectedDownloadStatus?.phase)}</span></div>
+          <div className="download-record"><span className="download-record-mark"><PackageCheck size={19} /></span><div><b>{selectedDownload.displayName} · {selectedImageOption?.executionReady ? "managed image model" : "download-only pack"}</b><small>{formatBytes(selectedDownload.totalBytes)} across {selectedDownload.artifactCount} artifacts · revision <code>{selectedDownload.immutableRevision}</code></small><p>{selectedDownload.downloadOnlyReason}</p></div><span className={`download-phase ${selectedDownloadStatus?.phase ?? "manifestRequired"}`}>{modelDownloadPhaseLabel(selectedDownloadStatus?.phase)}</span></div>
           <div className="download-progress" aria-label={`${selectedDownload.displayName} download progress`}><i style={{ width: `${selectedDownloadStatus?.totalBytes ? Math.min(100, (selectedDownloadStatus.downloadedBytes / selectedDownloadStatus.totalBytes) * 100) : 0}%` }} /></div>
           <div className="download-detail"><span>{selectedDownloadStatus?.detail ?? "Ready to download."}</span><span>{formatBytes(selectedDownloadStatus?.downloadedBytes ?? 0)} / {formatBytes(selectedDownload.totalBytes)} · {selectedDownloadStatus?.verifiedArtifacts ?? 0}/{selectedDownload.artifactCount} hashes verified</span></div>
           <p className="model-license-notice">Download under the <a href={selectedDownload.licenseUrl} target="_blank" rel="noreferrer">{selectedDownload.licenseId}</a> license.</p>
@@ -2562,6 +2604,14 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       })}</div></div></> : <div className="profile-loading">Loading local profiles…</div>}
       <div className="profile-save-row"><span><ShieldCheck size={15} /> The active profile is used directly when you select it during creation</span><button className="primary-button" disabled={!setup || setupSaving} onClick={() => { void saveSetup(); }}>{setupSaving ? <RefreshCw className="spin" size={16} /> : <Check size={16} />}{setupSaving ? "Saving…" : "Save setup & active profile"}</button></div>
     </section> : <ProviderSectionPlaceholder title="Provider & model profiles" detail="Preparing your saved creation presets after the model controls are ready." />}
+    {runtimePrompt ? <RuntimeDownloadPrompt
+      modelName={runtimePrompt.modelName}
+      modelTotalBytes={runtimePrompt.totalBytes}
+      runtimeBytes={runtimeEntry?.totalBytes ?? 0}
+      canDownload={runtimeEntry?.available === true}
+      onConfirm={confirmRuntimePrompt}
+      onCancel={() => setRuntimePrompt(null)}
+    /> : null}
   </div>;
 }
 
@@ -2613,13 +2663,11 @@ function DiagnosticsView({ runtime, onNotify, onReset, onReplayOnboarding, onRep
     { id: "project-storage", label: "Project storage", level: runtime.bootstrap ? "pass" : "info", summary: runtime.bootstrap?.paths.projects ?? "Waiting for desktop bootstrap" },
     { id: "pipeline-worker", label: "Pipeline worker", level: runtime.bootstrap?.worker.state === "ready" ? "pass" : "warning", summary: workerLabel(runtime.bootstrap?.worker) },
     { id: "frame-renderer", label: "Frame renderer", level: "info", summary: "Run diagnostics to verify the installed renderer" },
-    { id: "power-profile", label: "Power profile", level: "info", summary: "The app does not alter Windows power settings" },
   ];
   return <div className="page">
-    <PageTitle kicker="Settings & diagnostics" title="A healthy studio is predictable." description="Inspect local runtimes, storage, accessibility, and recovery without changing your Windows power profile." action={<button className="primary-button" onClick={() => { void runChecks(); }} disabled={checking}>{checking ? <RefreshCw className="spin" size={17} /> : <Activity size={17} />}{checking ? " Running checks" : " Run diagnostics"}</button>} />
+    <PageTitle kicker="Settings & diagnostics" title="A healthy studio is predictable." description="Inspect local runtimes, storage, accessibility, and recovery." action={<button className="primary-button" onClick={() => { void runChecks(); }} disabled={checking}>{checking ? <RefreshCw className="spin" size={17} /> : <Activity size={17} />}{checking ? " Running checks" : " Run diagnostics"}</button>} />
     <div className="diagnostics-grid">
       <section className="diagnostic-panel wide"><div className="panel-heading"><div><span className="section-kicker">System readiness</span><h3>{runtime.environment === "native" ? "Native toolchain" : "Browser preview"}</h3></div><span className="health-score">{rows.filter((row) => row.level === "pass").length} / {rows.length} passed</span></div><div className="diagnostic-rows">{rows.map((row) => { const Icon = diagnosticIcon(row.id); const ready = row.level === "pass"; return <div key={row.id}><span className="diagnostic-icon"><Icon size={17} /></span><span><strong>{row.label}</strong><small>{row.summary}</small></span><span className={`check-state ${ready ? "ready" : "attention"}`}>{ready ? <Check size={13} /> : <CircleAlert size={13} />}{row.level}</span></div>; })}</div></section>
-      <section className="diagnostic-panel"><span className="section-kicker">Power & performance</span><div className="power-mode"><Moon size={22} /><span><strong>Windows power mode unchanged</strong><small>No power settings are modified</small></span></div><p>{PRODUCT_NAME} won’t change Windows or G-Helper power modes. Use a performance profile only for deliberate benchmark runs.</p><button className="text-button" onClick={() => onNotify("Power profile unchanged", "No benchmark needs boost for functional acceptance.", "info")}>Why this is recommended <ArrowRight size={15} /></button></section>
       <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Storage & recovery</span><h3>Keep heavy work away from the system drive</h3></div><HardDrive size={21} /></div><div className="settings-form-grid"><label><span>Model cache</span><input readOnly value={runtime.bootstrap?.paths.models ?? "Open the desktop app to inspect the model directory"} /></label><label><span>Render scratch</span><input readOnly value={runtime.bootstrap?.paths.cache ?? "Open the desktop app to inspect the cache directory"} /></label><label><span>Autosave interval</span><select value={preferences.autosaveSeconds} onChange={(event) => updatePreference("autosaveSeconds", Number(event.target.value))}><option value="3">3 seconds</option><option value="8">8 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select></label><p className="settings-intro">These are the active desktop locations. Attach existing model folders in Models & providers. Export a portable project archive to make a backup.</p></div></section>
       <section className="diagnostic-panel wide intricate-settings"><div className="panel-heading"><div><span className="section-kicker">Editor & accessibility</span><h3>Fit the creative surface to the person</h3></div><MonitorPlay size={21} /></div><div className="settings-toggle-grid"><SettingsToggle checked={preferences.reducedMotion} title="Reduce interface motion" detail="Preserve hierarchy and feedback without camera-like transitions." onChange={(value) => updatePreference("reducedMotion", value)} /><SettingsToggle checked={preferences.highContrast} title="High-contrast controls and guides" detail="Increase control boundaries, focus rings and canvas guide contrast." onChange={(value) => updatePreference("highContrast", value)} /><SettingsToggle checked={preferences.denseEditor} title="Dense multitrack editor" detail="Show more tracks and inspector fields on large displays." onChange={(value) => updatePreference("denseEditor", value)} /></div><div className="settings-form-grid"><p className="settings-intro">Captions follow the narration language. Select that language when creating a tutorial.</p><label><span>Default export rate</span><select value={preferences.defaultExportFps} onChange={(event) => updatePreference("defaultExportFps", Number(event.target.value))}><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div></section>
       <section className="diagnostic-panel wide compact-settings"><div><span className="section-kicker">Tutorial & maintenance</span><h3>Replay guidance or clean local UI state</h3></div><div className="setting-actions"><button className="secondary-button" onClick={onReplayOnboarding}><PlayCircle size={16} /> Replay setup</button><button className="secondary-button" onClick={onReplayTour}><Sparkles size={16} /> Replay guided tour</button><button className="secondary-button" onClick={() => onNotify("Export a project backup", "Open a tutorial and choose Export → Export portable .alytutorial to save a verified project archive.", "info")}><Archive size={16} /> How to back up</button><button className="secondary-button danger-text" onClick={() => setResetPending(true)}><RotateCcw size={16} /> Reset workspace view</button>{resetPending && <div className="workspace-reset-confirm" role="alert"><p>Reset the view and clear finished jobs? Your project library, saved files, settings, and active work will stay available.</p><button className="secondary-button" onClick={() => setResetPending(false)}>Keep workspace view</button><button className="secondary-button danger-text" onClick={() => { onReset(); setResetPending(false); }}>Clear workspace view</button></div>}</div></section>
@@ -3826,7 +3874,6 @@ function diagnosticIcon(id: string): LucideIcon {
   if (id.includes("gpu")) return Gauge;
   if (id.includes("keyring") || id.includes("credential")) return KeyRound;
   if (id.includes("renderer") || id.includes("chromium")) return MonitorPlay;
-  if (id.includes("power")) return Moon;
   return HardDrive;
 }
 
