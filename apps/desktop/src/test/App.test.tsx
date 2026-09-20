@@ -472,7 +472,7 @@ describe("Alystria desktop shell", () => {
     });
   });
 
-  it("accepts an exact user-entered tutorial duration", async () => {
+  it("accepts a custom target duration", async () => {
     const user = userEvent.setup();
     await configureCloudProfile();
     render(<App />);
@@ -483,7 +483,7 @@ describe("Alystria desktop shell", () => {
     expect(screen.getByRole("option", { name: "About 3 minutes (inspection draft)" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "About 12 minutes" })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Target duration"), "custom");
-    const exactDuration = screen.getByLabelText("Exact duration in minutes");
+    const exactDuration = screen.getByLabelText("Custom target in minutes");
     await user.clear(exactDuration);
     await user.type(exactDuration, "3");
     await user.click(screen.getByRole("button", { name: /^continue$/i }));

@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+import alystria.generation.workflow as generation_workflow
 from alystria.generation import (
     ALL_STAGES,
     ApprovalNotReadyError,
@@ -1470,8 +1471,79 @@ def pacing_recovery_request() -> GenerationRequest:
                 "Explain how measured narration pacing matches the tutorial timeline.",
             ),
         ),
-        metadata={"canonicalFixtureScenes": fixture_scenes},
+        metadata={
+            "canonicalFixtureScenes": fixture_scenes,
+            "durationContract": "exact",
+        },
     )
+
+
+def test_legacy_target_retry_reuses_verified_clips_and_persists_retime_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALYSTRIA_MEDIA_MODE", "production")
+    store = ProjectStore.create(tmp_path / "Legacy target retry", name="Legacy target retry")
+    media = PacingRecoveryMediaClient()
+    coordinator = GenerationCoordinator(store, media_client=media)
+    real_fit = generation_workflow._fit_storyboard_to_narration
+    try:
+        target_request = replace(
+            request(),
+            duration_seconds=120,
+            presenter_mode="off",
+            metadata={},
+        )
+        generation_id = coordinator.start(target_request).generation_id
+        coordinator.run_pending()
+        head = store.head_revision()
+        assert head is not None
+        approved = coordinator.approve(
+            generation_id,
+            expected_head_revision_id=head.revision_id,
+        )
+        assert approved.approval_revision_id is not None
+
+        def fail_after_verified_synthesis(*_: Any, **__: Any) -> dict[str, Any]:
+            raise ValueError("legacy exact-duration pacing failure")
+
+        monkeypatch.setattr(
+            generation_workflow,
+            "_fit_storyboard_to_narration",
+            fail_after_verified_synthesis,
+        )
+        failed = coordinator.run_pending()
+        assert failed is not None and failed.state is GenerationState.FAILED
+        narration_calls = len(media.narration_scenes)
+        assert narration_calls > 0
+
+        failed_narration = next(
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters.get("stage") == GenerationStage.NARRATION.value
+        )
+        monkeypatch.setattr(
+            generation_workflow,
+            "_fit_storyboard_to_narration",
+            real_fit,
+        )
+        coordinator.runtime.retry(failed_narration.job_id)
+        completed = coordinator.run_pending()
+
+        assert completed is not None and completed.state is GenerationState.SUCCEEDED
+        assert len(media.narration_scenes) == narration_calls
+        narration_job = coordinator.runtime.get_job(failed_narration.job_id)
+        assert narration_job.result is not None
+        payload = narration_job.result["payload"]
+        assert payload["storyboard"]["timingAdjustment"]["durationContract"] == "target"
+        assert all(
+            item["synthesis"]["reused"] is True
+            and item["synthesis"]["providerInvoked"] is False
+            and item["synthesis"]["newActualCostMicros"] == 0
+            for item in payload["narration"]
+        )
+    finally:
+        store.close()
 
 
 def test_failed_measured_pacing_can_freeze_a_new_reviewed_approval_branch(

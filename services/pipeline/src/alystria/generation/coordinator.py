@@ -973,6 +973,10 @@ def request_from_desktop(
         "presenterSelection": presenter_selection,
         "fontCustomization": font_customization,
         "customization": customization,
+        # Every current wizard choice is presented as an approximate target
+        # ("About 1 minute", "min target"). Measured narration may therefore
+        # retime the result within the workflow's narrow audited bound.
+        "durationContract": "target",
     }
     presenter_mode = str(presenter_selection["mode"])
     canonical_fixture_value = snapshot.get("canonicalFixtureId")
@@ -993,7 +997,7 @@ def request_from_desktop(
             return replace(
                 fixture,
                 presenter_mode=presenter_mode,
-                metadata={**fixture.metadata, **metadata},
+                metadata={**fixture.metadata, **metadata, "durationContract": "exact"},
             )
     return GenerationRequest(
         topic=topic,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Sequence
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -15,6 +16,7 @@ from alystria.generation.education_provider import (
 )
 from alystria.generation.workflow import _fit_storyboard_to_narration, _paced_scene_ticks
 from alystria.providers import (
+    Capability,
     DataClassification,
     FailureCode,
     PrivacyMode,
@@ -66,10 +68,12 @@ class FakeTextClient:
         self.responses = list(responses)
         self.correction_attempts = list(correction_attempts)
         self.requests: list[TextRequest] = []
+        self.idempotency_keys: list[str] = []
 
     def generate(self, request: TextRequest, *, idempotency_key: str) -> ProviderResult[TextOutput]:
         assert idempotency_key.startswith("education-")
         self.requests.append(request)
+        self.idempotency_keys.append(idempotency_key)
         response = self.responses.pop(0)
         correction_attempts = (
             self.correction_attempts.pop(0) if self.correction_attempts else 0
@@ -434,6 +438,75 @@ def test_structured_provider_authors_exact_timed_plan_and_semantic_slides() -> N
         for requirement in script_prompt["requirements"]
     )
     assert len(script_client.requests) == 1
+
+
+def test_structured_provider_uses_selected_magpie_voice_pacing_profile() -> None:
+    routes = {
+        Capability.LLM_STRUCTURED: SimpleNamespace(model="writer-v1"),
+        Capability.TTS: SimpleNamespace(
+            provider_ids=("nvidia-nim",),
+            model="nvidia/magpie-tts-multilingual",
+            voice="Magpie-Multilingual.EN-US.Aria",
+        ),
+    }
+    def route_for(capability: Capability) -> Any:
+        try:
+            return routes[capability]
+        except KeyError as error:
+            raise ValueError(f"no route for {capability.value}") from error
+
+    runtime = SimpleNamespace(policy=SimpleNamespace(route_for=route_for))
+
+    provider = StructuredWritingEducationalProvider.from_runtime(runtime)  # type: ignore[arg-type]
+
+    assert provider.narration_words_per_second == 2.85
+
+
+def test_voice_pacing_profile_changes_script_targets_and_idempotency() -> None:
+    learner = LearnerProfile("curious beginners", ExperienceLevel.BEGINNER)
+    outline_provider = StructuredWritingEducationalProvider(
+        FakeTextClient([_outline_response()]), model="writer-v1"
+    )
+    outline = tuple(
+        outline_provider.build_outline("Karatsuba multiplication", learner, _objectives(), 60)
+    )
+    plan = LearningPlan(
+        "Karatsuba multiplication",
+        learner,
+        _objectives(),
+        PrerequisiteDag(()),
+        (),
+        outline,
+        60,
+    )
+    default_response = _script_response([section.id for section in outline])
+    magpie_response = copy.deepcopy(default_response)
+    for section in default_response["sections"]:
+        section["narration"] = " ".join(["spoken"] * 41)
+    for section in magpie_response["sections"]:
+        section["narration"] = " ".join(["spoken"] * 57)
+    default_client = FakeTextClient([default_response])
+    magpie_client = FakeTextClient([magpie_response])
+
+    StructuredWritingEducationalProvider(
+        default_client,
+        model="writer-v1",
+    ).draft_script(plan, GroundingMode.CREATIVE)
+    StructuredWritingEducationalProvider(
+        magpie_client,
+        model="writer-v1",
+        narration_words_per_second=2.85,
+    ).draft_script(plan, GroundingMode.CREATIVE)
+
+    default_prompt = json.loads(default_client.requests[0].prompt)
+    magpie_prompt = json.loads(magpie_client.requests[0].prompt)
+    assert default_prompt["targetNarrationWords"] == 123
+    assert magpie_prompt["targetNarrationWords"] == 171
+    assert any(
+        "171 words per minute" in requirement
+        for requirement in magpie_prompt["requirements"]
+    )
+    assert default_client.idempotency_keys[0] != magpie_client.idempotency_keys[0]
 
 
 def test_structured_provider_repairs_math_that_expands_past_spoken_pacing() -> None:
@@ -830,6 +903,16 @@ def test_measured_audio_rejects_a_tutorial_that_cannot_fit() -> None:
         )
 
 
+def test_fixture_padding_does_not_hide_a_target_duration_overrun() -> None:
+    with pytest.raises(ValueError, match="exceeds the requested tutorial duration"):
+        _fit_storyboard_to_narration(
+            {"scenes": [{"id": "one", "durationTicks": 10 * 240_000}]},
+            [{"sceneId": "one", "durationMs": 10_001}],
+            allow_fixture_padding=True,
+            duration_contract="target",
+        )
+
+
 def test_measured_audio_rejects_unvoiced_duration_padding() -> None:
     storyboard = {
         "scenes": [
@@ -845,4 +928,59 @@ def test_measured_audio_rejects_unvoiced_duration_padding() -> None:
                 {"sceneId": f"scene-{index}", "durationMs": 30_000}
                 for index in range(5)
             ],
+        )
+
+
+def test_target_duration_retimes_real_measured_audio_with_a_durable_receipt() -> None:
+    storyboard = {
+        "scenes": [
+            {"id": "one", "durationTicks": 20 * 240_000},
+            {"id": "two", "durationTicks": 20 * 240_000},
+            {"id": "three", "durationTicks": 20 * 240_000},
+        ]
+    }
+
+    fitted = _fit_storyboard_to_narration(
+        storyboard,
+        [
+            {"sceneId": "one", "durationMs": 15_093},
+            {"sceneId": "two", "durationMs": 13_514},
+            {"sceneId": "three", "durationMs": 14_071},
+        ],
+        duration_contract="target",
+    )
+
+    assert [scene["visualTailTicks"] for scene in fitted["scenes"]] == [288_000] * 3
+    assert sum(scene["durationTicks"] for scene in fitted["scenes"]) == 11_106_720
+    assert fitted["timingAdjustment"] == {
+        "schemaVersion": 1,
+        "durationContract": "target",
+        "reason": "measured-narration-fit",
+        "requestedDurationTicks": 14_400_000,
+        "measuredNarrationTicks": 10_242_720,
+        "maximumVisualTailTicks": 864_000,
+        "appliedVisualTailTicks": 864_000,
+        "fittedDurationTicks": 11_106_720,
+        "adjustmentTicks": -3_293_280,
+        "adjustmentRatio": -0.2287,
+    }
+    assert storyboard["scenes"][0]["durationTicks"] == 20 * 240_000
+
+
+def test_target_duration_rejects_an_excessive_measured_adjustment() -> None:
+    storyboard = {
+        "scenes": [
+            {"id": f"scene-{index}", "durationTicks": 20 * 240_000}
+            for index in range(3)
+        ]
+    }
+
+    with pytest.raises(ValueError, match="automatic target adjustment is limited"):
+        _fit_storyboard_to_narration(
+            storyboard,
+            [
+                {"sceneId": f"scene-{index}", "durationMs": 6_000}
+                for index in range(3)
+            ],
+            duration_contract="target",
         )

@@ -263,7 +263,7 @@ async function createBlockedTutorial(page) {
   await wizard.getByRole("button", { name: /continue/i }).click();
   await wizard.getByLabel("Audience").fill("Windows native recovery reviewers");
   await wizard.getByLabel("Target duration").selectOption("custom");
-  await wizard.getByLabel("Exact duration in minutes").fill("3");
+  await wizard.getByLabel("Custom target in minutes").fill("3");
   await wizard.getByRole("button", { name: /continue/i }).click();
   await expect(wizard.getByRole("heading", { name: "Who will teach?" })).toBeVisible();
   await wizard.getByRole("button", { name: "Choose a cast" }).click();

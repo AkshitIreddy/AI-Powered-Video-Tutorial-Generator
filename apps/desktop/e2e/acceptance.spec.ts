@@ -72,8 +72,8 @@ test("@ui-contract drives create, approve, review boundary, and export through t
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await wizard.getByLabel("Audience").fill("Undergraduate computer science students");
   await wizard.getByLabel("Target duration").selectOption("custom");
-  await wizard.getByLabel("Exact duration in minutes").fill("3");
-  await expect(wizard.getByLabel("Exact duration in minutes")).toHaveValue("3");
+  await wizard.getByLabel("Custom target in minutes").fill("3");
+  await expect(wizard.getByLabel("Custom target in minutes")).toHaveValue("3");
   await wizard.locator(".form-grid").screenshot({ path: testInfo.outputPath("custom-duration-three-minutes.png") });
   await wizard.getByLabel("Language").selectOption("English");
   await page.getByRole("button", { name: "Continue", exact: true }).click();

@@ -125,11 +125,12 @@ from .narration_cache import fingerprint as narration_cache_fingerprint
 from .spoken_text import normalize_spoken_text
 
 IMPLEMENTATION_VERSION = "generation-v13-grounded-web-research"
-PROMPT_VERSION = "offline-education-v4-spoken-math-and-exact-roles"
+PROMPT_VERSION = "offline-education-v5-voice-paced-spoken-math"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
 MAX_UNAUTHORED_VISUAL_TAIL_MS = 2_000
 MAX_UNAUTHORED_VISUAL_TAIL_RATIO = 0.06
+MAX_TARGET_DURATION_ADJUSTMENT_RATIO = 0.25
 PRESENTER_SCENE_TYPES = frozenset({"presenter", "presenter-slide", "presenter-with-slide"})
 
 
@@ -1716,6 +1717,7 @@ class GenerationWorkflow:
             approved["storyboard"],
             narration,
             allow_fixture_padding=fixture_timing,
+            duration_contract=_duration_contract_for_request(request),
         )
         result = self._persist_stage(
             context,
@@ -3653,13 +3655,29 @@ def _objective_ids_for_section(plan: dict[str, Any], section_id: str) -> list[st
     return []
 
 
+def _duration_contract_for_request(request: GenerationRequest) -> str:
+    value = request.metadata.get("durationContract")
+    if value is None:
+        # Older desktop jobs predate the explicit field. Ordinary wizard
+        # durations were already labelled "About"/"target"; bundled authored
+        # fixtures remain exact so their reviewed teaching timeline is stable.
+        return "exact" if request.metadata.get("canonicalFixtureScenes") else "target"
+    if not isinstance(value, str) or value not in {"exact", "target"}:
+        raise ValueError("Narration duration contract must be exact or target")
+    return str(value)
+
+
 def _fit_storyboard_to_narration(
     storyboard: dict[str, Any],
     narration: list[dict[str, Any]],
     *,
     allow_fixture_padding: bool = False,
+    duration_contract: str = "exact",
 ) -> dict[str, Any]:
-    """Fit every scene to measured audio while preserving the exact total."""
+    """Fit scenes to measured audio and honor exact versus approximate duration intent."""
+
+    if duration_contract not in {"exact", "target"}:
+        raise ValueError("Narration duration contract must be exact or target")
 
     fitted = copy.deepcopy(storyboard)
     scenes = fitted.get("scenes")
@@ -3681,17 +3699,24 @@ def _fit_storyboard_to_narration(
             * TICKS_PER_MILLISECOND
         )
     measured_total = sum(measured_ticks)
-    if measured_total > total_ticks:
-        overrun_ms = round((measured_total - total_ticks) / TICKS_PER_MILLISECOND)
-        raise ValueError(
-            f"Measured narration exceeds the requested tutorial duration by {overrun_ms} ms"
-        )
-    unvoiced_ticks = total_ticks - measured_total
     maximum_unvoiced_ticks = min(
         len(scenes) * MAX_UNAUTHORED_VISUAL_TAIL_MS * TICKS_PER_MILLISECOND,
         int(total_ticks * MAX_UNAUTHORED_VISUAL_TAIL_RATIO),
     )
-    if unvoiced_ticks > maximum_unvoiced_ticks and not allow_fixture_padding:
+    fitted_total = total_ticks
+    if measured_total > total_ticks and (
+        duration_contract == "exact" or allow_fixture_padding
+    ):
+        overrun_ms = round((measured_total - total_ticks) / TICKS_PER_MILLISECOND)
+        raise ValueError(
+            f"Measured narration exceeds the requested tutorial duration by {overrun_ms} ms"
+        )
+    unvoiced_ticks = max(0, total_ticks - measured_total)
+    if (
+        unvoiced_ticks > maximum_unvoiced_ticks
+        and not allow_fixture_padding
+        and duration_contract == "exact"
+    ):
         unvoiced_ms = round(unvoiced_ticks / TICKS_PER_MILLISECOND)
         maximum_ms = round(maximum_unvoiced_ticks / TICKS_PER_MILLISECOND)
         raise ValueError(
@@ -3699,6 +3724,40 @@ def _fit_storyboard_to_narration(
             f"are limited to {maximum_ms} ms. Revise and approve the narration pacing "
             "instead of padding finished scenes."
         )
+    if duration_contract == "target" and not allow_fixture_padding:
+        if measured_total > total_ticks:
+            fitted_total = measured_total
+            unvoiced_ticks = 0
+        elif unvoiced_ticks > maximum_unvoiced_ticks:
+            unvoiced_ticks = maximum_unvoiced_ticks
+            fitted_total = measured_total + unvoiced_ticks
+        adjustment_ticks = fitted_total - total_ticks
+        adjustment_ratio = abs(adjustment_ticks) / total_ticks
+        if adjustment_ratio > MAX_TARGET_DURATION_ADJUSTMENT_RATIO:
+            adjustment_ms = round(abs(adjustment_ticks) / TICKS_PER_MILLISECOND)
+            maximum_ms = round(
+                total_ticks
+                * MAX_TARGET_DURATION_ADJUSTMENT_RATIO
+                / TICKS_PER_MILLISECOND
+            )
+            raise ValueError(
+                f"Measured narration would adjust the target duration by {adjustment_ms} ms; "
+                f"automatic target adjustment is limited to {maximum_ms} ms. Revise and "
+                "approve the narration pacing."
+            )
+        if adjustment_ticks:
+            fitted["timingAdjustment"] = {
+                "schemaVersion": 1,
+                "durationContract": "target",
+                "reason": "measured-narration-fit",
+                "requestedDurationTicks": total_ticks,
+                "measuredNarrationTicks": measured_total,
+                "maximumVisualTailTicks": maximum_unvoiced_ticks,
+                "appliedVisualTailTicks": unvoiced_ticks,
+                "fittedDurationTicks": fitted_total,
+                "adjustmentTicks": adjustment_ticks,
+                "adjustmentRatio": round(adjustment_ticks / total_ticks, 6),
+            }
     breath, remainder = divmod(unvoiced_ticks, len(scenes))
     for index, (scene, audio_ticks) in enumerate(zip(scenes, measured_ticks, strict=True)):
         visual_tail_ticks = breath + (1 if index < remainder else 0)

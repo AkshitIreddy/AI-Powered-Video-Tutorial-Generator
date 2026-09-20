@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from alystria.providers import (
+    NVIDIA_MAGPIE_MODEL,
+    NVIDIA_MAGPIE_VOICE,
     Capability,
     FailureCode,
     ProviderFailure,
@@ -48,10 +50,12 @@ _SCENE_TYPES = {
     "live_code",
 }
 
-# Alice's measured long-form delivery varies with equations and punctuation.
-# Author 123 wpm, synthesize at a natural 0.86 speed, then let the measured MP3
-# frame duration—not a text estimate—set every scene's final timing.
-NARRATION_WORDS_PER_SECOND = 2.05
+# Text targets are only authoring estimates. Measured audio still owns the
+# rendered timeline, but matching the selected voice avoids systematic gaps
+# before synthesis. The default retains Alice's reviewed 123-wpm profile;
+# NVIDIA Magpie Aria is calibrated from the app's measured narration clips.
+DEFAULT_NARRATION_WORDS_PER_SECOND = 2.05
+NVIDIA_MAGPIE_NARRATION_WORDS_PER_SECOND = 2.85
 MAX_WEB_RESEARCH_RAW_TEXT_CHARS = 16_384
 MAX_WEB_RESEARCH_RAW_CITATIONS = 32
 MAX_WEB_RESEARCH_RAW_CITATION_BYTES = 65_536
@@ -595,12 +599,16 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
         model: str,
         research_model: str | None = None,
         research_context: Mapping[str, Any] | None = None,
+        narration_words_per_second: float = DEFAULT_NARRATION_WORDS_PER_SECOND,
     ) -> None:
         if not model.strip():
             raise ValueError("structured writing model must not be blank")
         self.client = client
         self.model = model.strip()
         self.research_model = research_model.strip() if research_model else None
+        if narration_words_per_second <= 0:
+            raise ValueError("narration words per second must be positive")
+        self.narration_words_per_second = narration_words_per_second
         self.research_context = (
             validate_web_research_payload(research_context)
             if research_context is not None
@@ -614,8 +622,24 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             research_model = runtime.policy.route_for(Capability.RESEARCH).model
         except ValueError:
             research_model = None
+        try:
+            speech_route = runtime.policy.route_for(Capability.TTS)
+        except ValueError:
+            narration_words_per_second = DEFAULT_NARRATION_WORDS_PER_SECOND
+        else:
+            narration_words_per_second = (
+                NVIDIA_MAGPIE_NARRATION_WORDS_PER_SECOND
+                if speech_route.provider_ids
+                and speech_route.provider_ids[0] == "nvidia-nim"
+                and speech_route.model == NVIDIA_MAGPIE_MODEL
+                and speech_route.voice == NVIDIA_MAGPIE_VOICE
+                else DEFAULT_NARRATION_WORDS_PER_SECOND
+            )
         return cls(
-            ProviderTextClient(runtime), model=route.model, research_model=research_model
+            ProviderTextClient(runtime),
+            model=route.model,
+            research_model=research_model,
+            narration_words_per_second=narration_words_per_second,
         )
 
     @property
@@ -680,6 +704,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             model=self.model,
             research_model=self.research_model,
             research_context=value,
+            narration_words_per_second=self.narration_words_per_second,
         )
 
     def build_outline(
@@ -880,7 +905,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                 "groundingMode": grounding.value,
                 "targetDurationSeconds": plan.target_duration_seconds,
                 "targetNarrationWords": round(
-                    plan.target_duration_seconds * NARRATION_WORDS_PER_SECOND
+                    plan.target_duration_seconds * self.narration_words_per_second
                 ),
                 "informationUnitRoleVocabulary": list(information_unit_roles),
                 "objectives": [
@@ -901,7 +926,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                         "estimatedSeconds": section.estimated_seconds,
                         "claimIds": list(section.evidence_claim_ids),
                         "targetWords": round(
-                            section.estimated_seconds * NARRATION_WORDS_PER_SECOND
+                            section.estimated_seconds * self.narration_words_per_second
                         ),
                     }
                     for section in plan.outline
@@ -914,7 +939,8 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                 "requirements": [
                     "Return exactly one section for every supplied outline ID, in the same order.",
                     "Open with a concrete learner-facing question, then answer it rather than lingering.",
-                    "Narration must be natural spoken prose at roughly 123 words per minute.",
+                    "Narration must be natural spoken prose at roughly "
+                    f"{round(self.narration_words_per_second * 60)} words per minute.",
                     _SPOKEN_MATH_REQUIREMENT,
                     "For English narration, pace the spoken expansion of equations, operators, numbers, and symbols rather than treating each written expression as one word.",
                     "Keep every section's narration within ten percent of its targetWords value and the complete narration within six percent of targetNarrationWords.",
@@ -931,12 +957,15 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             },
             ensure_ascii=False,
         )
-        target_words = round(plan.target_duration_seconds * NARRATION_WORDS_PER_SECOND)
+        target_words = round(
+            plan.target_duration_seconds * self.narration_words_per_second
+        )
         idempotency_key = _idempotency(
             "script",
             plan.topic,
             [item.id for item in plan.outline],
             plan.target_duration_seconds,
+            self.narration_words_per_second,
         )
         result = self.client.generate(
             TextRequest(
@@ -996,7 +1025,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             "locale": plan.learner.locale,
             "previousTotalWords": previous_word_count,
             "targetTotalWords": round(
-                plan.target_duration_seconds * NARRATION_WORDS_PER_SECOND
+                plan.target_duration_seconds * self.narration_words_per_second
             ),
             "preservedInformationUnitRoleVocabulary": list(
                 _script_information_unit_roles()
@@ -1024,7 +1053,8 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                         if objective.id in plan.outline[index].objective_ids
                     ],
                     "targetWords": round(
-                        plan.outline[index].estimated_seconds * NARRATION_WORDS_PER_SECOND
+                        plan.outline[index].estimated_seconds
+                        * self.narration_words_per_second
                     ),
                     "currentNarration": _clean_text(
                         raw.get("narration"), "script narration", 4_000
@@ -1038,6 +1068,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             plan.topic,
             expected_ids,
             plan.target_duration_seconds,
+            self.narration_words_per_second,
             attempt,
         )
         result = self.client.generate(

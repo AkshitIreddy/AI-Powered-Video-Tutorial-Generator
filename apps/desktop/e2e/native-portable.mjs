@@ -210,7 +210,7 @@ try {
     await wizard.getByRole("button", { name: /continue/i }).click();
     await wizard.getByLabel("Audience").fill(targetAudience);
     await wizard.getByLabel("Target duration").selectOption("custom");
-    await wizard.getByLabel("Exact duration in minutes").fill("3");
+    await wizard.getByLabel("Custom target in minutes").fill("3");
     await wizard.getByLabel("Language").selectOption("English");
     await wizard.getByRole("button", { name: /continue/i }).click();
     await expect(wizard.getByRole("heading", { name: "Who will teach?" })).toBeVisible();
