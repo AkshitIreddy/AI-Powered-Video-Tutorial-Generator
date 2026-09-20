@@ -86,6 +86,19 @@ def _require_manifested(path: str | Path, manifest_paths: frozenset[str], label:
         raise ValueError(f"{label} is not pinned by its verified runtime manifest")
 
 
+def _job_workspace(job: Mapping[str, Any], output: Path) -> Path:
+    value = job.get("workspace")
+    if not isinstance(value, Mapping) or not isinstance(value.get("path"), str):
+        raise ValueError("JoyVASA job has no brokered attempt workspace")
+    workspace_path = Path(value["path"])
+    if workspace_path.is_symlink() or not workspace_path.is_dir():
+        raise ValueError("JoyVASA brokered workspace must be an existing regular directory")
+    workspace = _inside(workspace_path, output.parent.parent)
+    if _same_path(workspace, output.parent):
+        raise ValueError("JoyVASA workspace must be separate from the delivery directory")
+    return workspace
+
+
 def _encoder_command(
     encoding: Mapping[str, Any], width: int, height: int, fps: int, output: Path
 ) -> list[str]:
@@ -265,7 +278,7 @@ def run_presenter_job(job: dict[str, Any], emit_progress: Callable[..., None]) -
                 f"JoyVASA {role} does not identify the pinned Chinese HuBERT {filename}"
             )
     output = Path(job["output"]["path"]).resolve()
-    workspace = output.parent
+    workspace = _job_workspace(job, output)
     work = workspace / "joyvasa"
     work.mkdir(exist_ok=False)
     previous_cwd = Path.cwd()
@@ -336,7 +349,7 @@ def run_presenter_job(job: dict[str, Any], emit_progress: Callable[..., None]) -
         suffix = "_animal" if model == "joyvasa-animal" else ""
         pipeline_module = importlib.import_module(f"src.live_portrait_wmg_pipeline{suffix}")
         pipeline_module.images2video, pipeline_module.add_audio_to_video = _media_writers(
-            job, workspace, emit_progress
+            job, work, emit_progress
         )
         pipeline_type = getattr(
             pipeline_module, "LivePortraitPipelineAnimal" if suffix else "LivePortraitPipeline"

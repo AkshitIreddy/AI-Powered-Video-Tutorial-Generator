@@ -291,7 +291,13 @@ def main() -> int:
     audio = _verify_pin(inputs.get("audio"), "audio input")
     output_path = Path(str(output.get("path", "")))
     progress_path = Path(str(progress.get("path", "")))
-    workspace = Path(args.workspace)
+    workspace_argument = Path(args.workspace)
+    workspace_value = job.get("workspace")
+    if not isinstance(workspace_value, dict):
+        _fail("job workspace contract is missing")
+    workspace_manifest_path = workspace_value.get("path")
+    if not isinstance(workspace_manifest_path, str) or not workspace_manifest_path:
+        _fail("job workspace path is invalid")
     if (
         portrait != Path(args.portrait).resolve(strict=True)
         or audio != Path(args.audio).resolve(strict=True)
@@ -303,8 +309,14 @@ def main() -> int:
         _fail("output path must be a new file in an existing directory")
     if progress_path.exists() or not progress_path.parent.is_dir():
         _fail("progress path must be a new file in an existing directory")
-    if not workspace.is_dir() or workspace.is_symlink():
+    if not workspace_argument.is_dir() or workspace_argument.is_symlink():
         _fail("workspace must be an existing non-symlink directory")
+    workspace = workspace_argument.resolve(strict=True)
+    try:
+        if not os.path.samefile(workspace, Path(workspace_manifest_path)):
+            _fail("argv and manifest workspace identity differ")
+    except OSError as error:
+        raise RuntimeError("job workspace is unavailable") from error
 
     sequence = 0
     last_progress = -1.0

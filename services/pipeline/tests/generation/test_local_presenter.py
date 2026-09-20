@@ -113,6 +113,10 @@ class FakePresenterRunner:
                 assert job["schemaVersion"] == 2
                 assert Path(job["inputs"]["portrait"]["path"]) == portrait
                 assert Path(job["output"]["path"]) == output
+                if "--workspace" in call:
+                    assert Path(job["workspace"]["path"]) == Path(
+                        call[call.index("--workspace") + 1]
+                    )
                 if "workerContract" in job:
                     assert job["workerContract"]["contractId"] == "alystria.musetalk.worker.v1"
                     assert job["gpuLease"]["leaseId"] == "test-lease"
@@ -1315,6 +1319,7 @@ def test_pinned_worker_validates_contract_and_emits_progress(tmp_path: Path) -> 
             "portrait": {"path": str(portrait), "sha256": _digest(portrait)},
             "audio": {"path": str(audio), "sha256": _digest(audio)},
         },
+        "workspace": {"path": str(workspace)},
         "output": {"path": str(output), "mediaType": "video/mp4"},
         "progress": {"path": str(progress), "schemaVersion": 1},
         "encoding": {
@@ -1416,6 +1421,8 @@ def test_managed_joyvasa_runtime_requires_matching_exact_hash_contract(tmp_path:
             "{audio}",
             "--output",
             "{output}",
+            "--workspace",
+            "{workspace}",
             "--job",
             "{job_manifest}",
         ),
@@ -1518,6 +1525,7 @@ def test_pinned_worker_supports_joyvasa_and_rejects_contract_model_mismatch(
             "portrait": {"path": str(portrait), "sha256": _digest(portrait)},
             "audio": {"path": str(audio), "sha256": _digest(audio)},
         },
+        "workspace": {"path": str(workspace)},
         "output": {"path": str(output), "mediaType": "video/mp4"},
         "progress": {"path": str(progress), "schemaVersion": 1},
         "encoding": {
@@ -1560,6 +1568,18 @@ def test_pinned_worker_supports_joyvasa_and_rejects_contract_model_mismatch(
         "--seed",
         "21",
     )
+    other_workspace = tmp_path / "other-workspace"
+    other_workspace.mkdir()
+    job["workspace"] = {"path": str(other_workspace)}
+    manifest.write_text(json.dumps(job), encoding="utf-8")
+    workspace_mismatch = subprocess.run(
+        command, cwd=tmp_path, capture_output=True, check=False, timeout=10
+    )
+    assert workspace_mismatch.returncode == 1
+    assert b"argv and manifest workspace identity differ" in workspace_mismatch.stderr
+
+    job["workspace"] = {"path": str(workspace)}
+    manifest.write_text(json.dumps(job), encoding="utf-8")
     result = subprocess.run(command, cwd=tmp_path, capture_output=True, check=False, timeout=10)
     assert result.returncode == 0, result.stderr.decode(errors="replace")
     events = [json.loads(line) for line in progress.read_text(encoding="utf-8").splitlines()]

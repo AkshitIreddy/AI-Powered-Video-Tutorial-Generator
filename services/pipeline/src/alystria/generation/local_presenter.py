@@ -498,6 +498,8 @@ class LocalPresenterRuntime:
                         f"Managed {runtime_name} requires the brokered job manifest; direct upstream "
                         "libx264 muxing is not permitted"
                     )
+                if expected_contract == JOYVASA_CONTRACT_ID and "{workspace}" not in placeholders:
+                    raise ValueError("Managed JoyVASA requires the brokered attempt workspace")
                 if self.worker_contract is None:
                     raise ValueError(
                         f"Managed {runtime_name} requires an exact-hash worker contract"
@@ -804,6 +806,7 @@ class LocalPresenterMediaClient:
                         "mediaType": narration["mediaType"],
                     },
                 },
+                "workspace": {"path": str(workspace_root)},
                 "output": {"path": str(output_path), "mediaType": "video/mp4"},
                 "progress": {
                     "path": str(progress_path),

@@ -123,6 +123,27 @@ def test_model_outputs_cannot_escape_attempt_workspace(adapter, tmp_path):
         adapter._inside(workspace / ".." / "unrelated.mp4", workspace)
 
 
+def test_job_intermediates_use_broker_workspace_separate_from_delivery(adapter, tmp_path):
+    attempt = tmp_path / "attempt"
+    workspace = attempt / "workspace"
+    output_root = attempt / "output"
+    workspace.mkdir(parents=True)
+    output_root.mkdir()
+    output = output_root / "presenter.mp4"
+    job = {"workspace": {"path": str(workspace)}}
+    selected = adapter._job_workspace(job, output)
+    assert selected == workspace.resolve()
+    assert selected / "joyvasa" != output_root
+    assert list(output_root.iterdir()) == []
+
+    with pytest.raises(ValueError, match="separate from the delivery"):
+        adapter._job_workspace({"workspace": {"path": str(output_root)}}, output)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    with pytest.raises(ValueError):
+        adapter._job_workspace({"workspace": {"path": str(outside)}}, output)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows verbatim path behavior")
 def test_windows_verbatim_and_normal_paths_share_one_identity(adapter, tmp_path):
     workspace = tmp_path / "attempt"
