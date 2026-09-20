@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMarketingFinishPlan, inspectAnimatedWebp, wrapMarketingCaption } from "./native-marketing-demo-finish.mjs";
+import { balanceMarketingCaption, buildMarketingFinishPlan, inspectAnimatedWebp, wrapMarketingCaption } from "./native-marketing-demo-finish.mjs";
 
 function fixtureManifest(overrides = {}) {
   const manifest = {
@@ -20,6 +20,11 @@ function fixtureManifest(overrides = {}) {
         },
       },
     },
+    teachingCaptions: [
+      { id: "white-light", startSeconds: 0, endSeconds: 5.69, text: "Sunlight looks white, but it carries every visible color." },
+      { id: "molecule-scattering", startSeconds: 5.69, endSeconds: 13.6, text: "In Earth's atmosphere, tiny molecules scatter shorter blue wavelengths much more strongly than red ones." },
+      { id: "viewer-conclusion", startSeconds: 13.6, endSeconds: 22.18, text: "That scattered blue reaches your eyes from every direction, so the daytime sky looks blue." },
+    ],
     productSegments: [
       { id: "native-review", startSeconds: 0, endSeconds: 3.93, text: "This is a real lesson, ready to refine." },
       { id: "native-editor", startSeconds: 3.93, endSeconds: 9.23, text: "Edit the script, timing, captions, and layout in one timeline." },
@@ -66,6 +71,7 @@ test("finishing plan preserves the 45.97 second EDL and readable UI close-ups", 
   assert.equal(plan.mp4.segments.find((segment) => segment.id === "native-editor").captionPlacement, "top-left");
   assert.equal(plan.mp4.segments.find((segment) => segment.id === "native-models").captionPlacement, "top-right");
   assert.equal(plan.audio.teachingHoldSeconds, 0.32);
+  assert.deepEqual(plan.mp4.segments[0].captionLayers.map((caption) => caption.id), ["tutorial-white-light", "tutorial-molecule-scattering", "tutorial-viewer-conclusion"]);
   assert.equal(plan.webp.durationSeconds, 17.28);
   assert.deepEqual(plan.webp.segments.slice(0, 4).map((segment) => segment.presenterStyle), ["realistic-woman", "anime-woman", "realistic-man", "cartoon-woman"]);
 });
@@ -81,6 +87,13 @@ test("caption wrapping stays on a compact two-line plate", () => {
   const lines = wrapMarketingCaption("Edit the script, timing, captions, and layout in one timeline.");
   assert.equal(lines.length, 2);
   assert.ok(lines.every((line) => line.length <= 50));
+});
+
+test("long teaching captions split into two balanced readable lines", () => {
+  const lines = balanceMarketingCaption("In Earth's atmosphere, tiny molecules scatter shorter blue wavelengths much more strongly than red ones.");
+  assert.equal(lines.length, 2);
+  assert.ok(Math.abs(lines[0].length - lines[1].length) <= 14);
+  assert.equal(lines.join(" "), "In Earth's atmosphere, tiny molecules scatter shorter blue wavelengths much more strongly than red ones.");
 });
 
 test("animated WebP inspection uses RIFF frame durations instead of ffprobe", () => {

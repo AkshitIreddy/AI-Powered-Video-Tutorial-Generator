@@ -38,8 +38,23 @@ export function buildMarketingFinishPlan(manifest) {
   const teachingDuration = Number(manifest.assets?.teachingVoice?.durationSeconds);
   const teachingBeatDuration = round3(productBeats[0].in);
   if (!Number.isFinite(teachingDuration) || teachingDuration <= 0 || teachingBeatDuration < teachingDuration) throw new Error("Teaching audio cannot fit the tutorial block");
+  const teachingCaptions = manifest.teachingCaptions;
+  if (!Array.isArray(teachingCaptions) || teachingCaptions.length !== 3 || teachingCaptions.some((caption, index) => (
+    caption.id !== ["white-light", "molecule-scattering", "viewer-conclusion"][index]
+    || !validSourceRange(caption)
+    || typeof caption.text !== "string"
+    || !caption.text.trim()
+  ))) throw new Error("Finishing requires the three exact timed teaching captions");
+  const presenterCaptionSegments = manifest.presenterCaptionSegments ?? teachingCaptions;
+  if (!Array.isArray(presenterCaptionSegments) || ![3, 4].includes(presenterCaptionSegments.length)
+    || presenterCaptionSegments.some((caption) => !validSourceRange(caption) || typeof caption.text !== "string" || !caption.text.trim())
+    || Math.abs(Number(presenterCaptionSegments[0].startSeconds)) > 0.01
+    || Math.abs(Number(presenterCaptionSegments.at(-1).endSeconds) - teachingDuration) > 0.05
+    || presenterCaptionSegments.some((caption, index) => index > 0 && Math.abs(Number(caption.startSeconds) - Number(presenterCaptionSegments[index - 1].endSeconds)) > 0.01)) {
+    throw new Error("Presenter caption segments must cover the teaching narration without gaps");
+  }
   const mp4Segments = [
-    { id: "tutorial", durationSeconds: teachingBeatDuration, source: "nativeTutorialExport", sourceIn: 0, sourceOut: teachingDuration, editorialZoom: 1.035, focusX: 0.5, focusY: 0.5 },
+    { id: "tutorial", durationSeconds: teachingBeatDuration, source: "nativeTutorialExport", sourceIn: 0, sourceOut: teachingDuration, editorialZoom: 1.035, focusX: 0.5, focusY: 0.5, captionLayers: presenterCaptionSegments.map((caption) => ({ id: `tutorial-${caption.id}`, text: caption.text.replaceAll("\n", " "), startSeconds: Number(caption.startSeconds), endSeconds: Number(caption.endSeconds) })) },
     ...productBeats.map((beat) => ({
       id: beat.id,
       durationSeconds: round3(beat.out - beat.in),
@@ -96,6 +111,25 @@ export function wrapMarketingCaption(text, maximumCharacters = 44) {
     else lines[lines.length - 1] = `${lines.at(-1)} ${word}`;
   }
   return lines;
+}
+
+export function balanceMarketingCaption(text, oneLineLimit = 48) {
+  const words = String(text ?? "").trim().split(/\s+/u).filter(Boolean);
+  if (!words.length) throw new Error("Caption text is empty");
+  const complete = words.join(" ");
+  if (complete.length <= oneLineLimit) return [complete];
+  let best = [words[0], words.slice(1).join(" ")];
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < words.length; index += 1) {
+    const left = words.slice(0, index).join(" ");
+    const right = words.slice(index).join(" ");
+    const score = Math.max(left.length, right.length) * 2 + Math.abs(left.length - right.length);
+    if (score < bestScore) {
+      best = [left, right];
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 export function inspectAnimatedWebp(buffer) {
@@ -157,7 +191,9 @@ export async function renderMarketingDemo({ manifestPath, outputDirectory, ffmpe
   for (let index = 0; index < plan.mp4.segments.length; index += 1) {
     const segment = plan.mp4.segments[index];
     const output = path.join(mp4Segments, `${String(index + 1).padStart(2, "0")}-${segment.id}.mp4`);
-    await renderVideoSegment({ ffmpegPath, encoder, manifest, plan, segment, output, captionPath: captionReceipts[segment.id]?.path, width: plan.mp4.width, height: plan.mp4.height, fps: plan.mp4.fps, draftWatermark: plan.draftWatermark });
+    const captionLayers = segment.captionLayers?.map((layer) => ({ ...layer, path: captionReceipts[layer.id]?.path }))
+      ?? (captionReceipts[segment.id] ? [{ path: captionReceipts[segment.id].path }] : []);
+    await renderVideoSegment({ ffmpegPath, encoder, manifest, plan, segment, output, captionLayers, width: plan.mp4.width, height: plan.mp4.height, fps: plan.mp4.fps, draftWatermark: plan.draftWatermark });
     renderedMp4Segments.push({ ...segment, path: output, sha256: await sha256File(output) });
   }
   const silentMaster = path.join(outputDirectory, "alystria-marketing.silent.mp4");
@@ -177,7 +213,8 @@ export async function renderMarketingDemo({ manifestPath, outputDirectory, ffmpe
   for (let index = 0; index < plan.webp.segments.length; index += 1) {
     const segment = plan.webp.segments[index];
     const output = path.join(webpSegments, `${String(index + 1).padStart(2, "0")}-${segment.id}.mp4`);
-    await renderVideoSegment({ ffmpegPath, encoder, manifest, plan, segment, output, captionPath: segment.captionText ? captionReceipts["native-editor-webp"]?.path : null, width: plan.webp.width, height: plan.webp.height, fps: plan.webp.fps, draftWatermark: plan.draftWatermark });
+    const captionLayers = segment.captionText && captionReceipts["native-editor-webp"] ? [{ path: captionReceipts["native-editor-webp"].path }] : [];
+    await renderVideoSegment({ ffmpegPath, encoder, manifest, plan, segment, output, captionLayers, width: plan.webp.width, height: plan.webp.height, fps: plan.webp.fps, draftWatermark: plan.draftWatermark });
     renderedWebpSegments.push({ ...segment, path: output, sha256: await sha256File(output) });
   }
   const webpMaster = path.join(work, "webp-master.mp4");
@@ -212,8 +249,9 @@ export async function renderMarketingDemo({ manifestPath, outputDirectory, ffmpe
 
 async function renderCaptionOverlays({ plan, directory, browserType }) {
   const requested = [
-    ...plan.mp4.segments.filter((segment) => segment.captionText).map((segment) => ({ id: segment.id, text: segment.captionText, width: plan.mp4.width, height: plan.mp4.height, placement: segment.captionPlacement ?? "bottom-center", label: segment.id === "end-card" ? "ALYSTRIA" : "EDITORIAL CLOSE-UP · ACTUAL NATIVE APP" })),
-    { id: "native-editor-webp", text: "Edit every word and beat.", width: plan.webp.width, height: plan.webp.height, placement: "top-left", label: "ACTUAL NATIVE APP" },
+    ...plan.mp4.segments.flatMap((segment) => segment.captionLayers?.map((layer) => ({ id: layer.id, text: layer.text, width: plan.mp4.width, height: plan.mp4.height, placement: "bottom-center" })) ?? []),
+    ...plan.mp4.segments.filter((segment) => segment.captionText).map((segment) => ({ id: segment.id, text: segment.captionText, width: plan.mp4.width, height: plan.mp4.height, placement: segment.captionPlacement ?? "bottom-center" })),
+    { id: "native-editor-webp", text: "Edit every word and beat.", width: plan.webp.width, height: plan.webp.height, placement: "top-left" },
   ];
   const browser = await browserType.launch({ headless: true });
   try {
@@ -222,17 +260,19 @@ async function renderCaptionOverlays({ plan, directory, browserType }) {
       const output = path.join(directory, `${item.id}.png`);
       const page = await browser.newPage({ viewport: { width: item.width, height: item.height }, deviceScaleFactor: 1 });
       const scale = item.width / 1440;
-      const lines = wrapMarketingCaption(item.text, item.width < 1200 ? 34 : 44);
+      const lines = balanceMarketingCaption(item.text, item.width < 1200 ? 36 : 48);
       const longest = Math.max(...lines.map((line) => line.length));
-      const panelWidth = Math.round(Math.min(item.width * marketingCaptionStyle.maximumWidthPercent / 100, Math.max(item.width * 0.38, longest * 21 * scale + 96 * scale)));
-      const lineHeight = 48 * scale;
-      const panelHeight = Math.round(lines.length * lineHeight + 40 * scale);
+      const maximumPanelWidth = item.width * 0.76;
+      const fontSize = Math.min(34 * scale, (maximumPanelWidth - 56 * scale) / Math.max(1, longest * 0.56));
+      const panelWidth = Math.round(Math.min(maximumPanelWidth, Math.max(item.width * 0.24, longest * fontSize * 0.56 + 56 * scale)));
+      const lineHeight = Math.max(fontSize * 1.18, 36 * scale);
+      const panelHeight = Math.round(lines.length * lineHeight + 28 * scale);
       const horizontalMargin = Math.round(48 * scale);
       const panelX = item.placement === "top-left" ? horizontalMargin : item.placement === "top-right" ? item.width - panelWidth - horizontalMargin : Math.round((item.width - panelWidth) / 2);
-      const panelY = item.placement?.startsWith("top") ? Math.round(76 * scale) : Math.round(item.height - panelHeight - 42 * scale);
-      const fontSize = marketingCaptionStyle.fontSizeAt1440x810 * scale;
-      const tspans = lines.map((line, index) => `<tspan x="${panelX + panelWidth / 2}" y="${panelY + 32 * scale + index * lineHeight}">${escapeXml(line)}</tspan>`).join("");
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${item.width}" height="${item.height}"><rect width="100%" height="100%" fill="none"/><text x="${panelX}" y="${panelY - 10 * scale}" fill="${marketingCaptionStyle.accentColor}" font-family="Segoe UI,Arial,sans-serif" font-size="${13 * scale}" font-weight="700" letter-spacing="${2 * scale}">${escapeXml(item.label)}</text><rect x="${panelX}" y="${panelY}" width="${panelWidth}" height="${panelHeight}" rx="${marketingCaptionStyle.cornerRadiusPixels * scale}" fill="${marketingCaptionStyle.panelColor}" fill-opacity="${marketingCaptionStyle.panelOpacity}"/><rect x="${panelX}" y="${panelY}" width="${7 * scale}" height="${panelHeight}" rx="${3.5 * scale}" fill="${marketingCaptionStyle.accentColor}"/><text text-anchor="middle" fill="${marketingCaptionStyle.textColor}" font-family="Segoe UI,Arial,sans-serif" font-size="${fontSize}" font-weight="600">${tspans}</text></svg>`;
+      const panelY = item.placement?.startsWith("top") ? Math.round(58 * scale) : Math.round(item.height - panelHeight - 30 * scale);
+      const baseline = panelY + 20 * scale + fontSize;
+      const tspans = lines.map((line, index) => `<tspan x="${panelX + panelWidth / 2}" y="${baseline + index * lineHeight}">${escapeXml(line)}</tspan>`).join("");
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${item.width}" height="${item.height}"><rect width="100%" height="100%" fill="none"/><rect x="${panelX}" y="${panelY}" width="${panelWidth}" height="${panelHeight}" rx="${14 * scale}" fill="#101522" fill-opacity=".82" stroke="#FFFFFF" stroke-opacity=".12"/><text text-anchor="middle" fill="#FFFDF8" font-family="Segoe UI,Arial,sans-serif" font-size="${fontSize}" font-weight="600">${tspans}</text></svg>`;
       await page.setContent(`<style>html,body{margin:0;background:transparent;overflow:hidden}</style>${svg}`);
       await page.screenshot({ path: output, omitBackground: true });
       await page.close();
@@ -244,7 +284,7 @@ async function renderCaptionOverlays({ plan, directory, browserType }) {
   }
 }
 
-async function renderVideoSegment({ ffmpegPath, encoder, manifest, segment, output, captionPath, width, height, fps, draftWatermark }) {
+async function renderVideoSegment({ ffmpegPath, encoder, manifest, segment, output, captionLayers = [], width, height, fps, draftWatermark }) {
   const source = segment.source === "nativeTutorialExport" ? manifest.assets.nativeTutorialExport.path : manifest.assets.nativeUiCapture.path;
   const inputArgs = segment.source === "nativeUiCaptureStill"
     ? ["-ss", String(segment.sourceSeconds), "-i", source]
@@ -262,16 +302,21 @@ async function renderVideoSegment({ ffmpegPath, encoder, manifest, segment, outp
   filters.push(`tpad=stop_mode=clone:stop_duration=${segment.durationSeconds},trim=duration=${segment.durationSeconds},setpts=PTS-STARTPTS`);
   filters.push(`zoompan=z='${zoomExpression}':x='max(0,min(iw-iw/zoom,${focusX}*iw-iw/zoom/2))':y='max(0,min(ih-ih/zoom,${focusY}*ih-ih/zoom/2))':d=1:s=${width}x${height}:fps=${fps}`);
   const args = ["-hide_banner", "-loglevel", "error", "-y", ...inputArgs];
-  if (captionPath) {
-    args.push("-i", captionPath);
-    filters.push("[base][1:v]overlay=0:0:format=auto[captioned]");
-  }
+  for (const layer of captionLayers) args.push("-loop", "1", "-i", layer.path);
   const watermark = draftWatermark ? `drawbox=x=0:y=0:w=${width}:h=${Math.round(30 * width / 1440)}:color=#9C3140@0.88:t=fill,drawtext=fontfile='C\\:/Windows/Fonts/seguisb.ttf':text='${escapeFilterText(draftWatermark)}':fontcolor=white:fontsize=${Math.round(15 * width / 1440)}:x=(w-text_w)/2:y=${Math.round(7 * width / 1440)}` : null;
-  if (captionPath) {
+  if (captionLayers.length) {
     const chain = filters.slice(0, 3).join(",");
+    const overlays = [];
+    let prior = "base";
+    captionLayers.forEach((layer, index) => {
+      const next = `captioned${index}`;
+      const enable = Number.isFinite(layer.startSeconds) && Number.isFinite(layer.endSeconds) ? `:enable='between(t,${layer.startSeconds},${layer.endSeconds})'` : "";
+      overlays.push(`[${prior}][${index + 1}:v]overlay=0:0:format=auto${enable}[${next}]`);
+      prior = next;
+    });
     const tailFilters = [watermark, segment.id === "end-card" ? `fade=t=out:st=${Math.max(0, segment.durationSeconds - 0.35)}:d=0.35` : null].filter(Boolean);
-    const tail = `;[captioned]${tailFilters.length ? tailFilters.join(",") : "null"}[out]`;
-    args.push("-filter_complex", `[0:v]${chain}[base];${filters[3]}${tail}`, "-map", "[out]");
+    const tail = `[${prior}]${tailFilters.length ? tailFilters.join(",") : "null"}[out]`;
+    args.push("-filter_complex", [`[0:v]${chain}[base]`, ...overlays, tail].join(";"), "-map", "[out]");
   } else {
     if (watermark) filters.push(watermark);
     if (segment.id === "end-card") filters.push(`fade=t=out:st=${Math.max(0, segment.durationSeconds - 0.35)}:d=0.35`);
