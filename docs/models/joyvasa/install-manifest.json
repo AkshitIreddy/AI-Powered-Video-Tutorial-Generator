@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "packId": "alystria-joyvasa-no-crop-offset8-gated-20260920",
+  "packId": "alystria-joyvasa-source-anchored-20260921",
   "sourceRevision": "916a90f8de490e8648fee460c1200bd5d9a795af",
-  "modelRevision": "joyvasa-916a90f8+checkpoints-b8f13fe9+liveportrait-82a4fa67+hubert-fce03754",
+  "modelRevision": "joyvasa-916a90f8+checkpoints-b8f13fe9+liveportrait-82a4fa67+hubert-fce03754+source-anchored-v1",
   "motionProfile": "native-idle",
   "candidateEvidence": {
     "relativePath": "candidate-metadata/candidate-manifest-v2.json",
@@ -721,8 +721,8 @@
       "origin": "repository",
       "sourcePath": "services/pipeline/scripts/joyvasa_presenter_adapter.py",
       "installPath": "worker/joyvasa_presenter_adapter.py",
-      "bytes": 14279,
-      "sha256": "3be34879f818cedd5624c7f0ea295be5b64056d9d0fd7dba82cc986fb7800fb2"
+      "bytes": 18517,
+      "sha256": "14701304552bc4314849892382022130193f33b3515b75a35b78a4067eaaa162"
     }
   ],
   "trees": [

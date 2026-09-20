@@ -1,8 +1,8 @@
 """JoyVASA adapter for the exact-hash presenter worker.
 
-The installed source manifest owns model code/weights. This adapter only selects
-the detector-free path and replaces upstream's shell/imageio encoding with the
-broker's probed FFmpeg encoder. It is imported after worker verification and
+The installed source manifest owns model code/weights. This adapter selects the
+detector-free path, anchors facial animation to the source portrait, and uses
+the broker's probed FFmpeg encoder. It is imported after worker verification and
 network denial; importing this file alone does not load Torch or any models.
 """
 
@@ -155,7 +155,40 @@ def _encoder_command(
     ]
 
 
-def _media_writers(job: Mapping[str, Any], workspace: Path, emit_progress: Callable[..., None]):
+def _face_mask(keypoints: Any, height: int, width: int):
+    """A source-anchored facial envelope in LivePortrait's normalized XY space.
+
+    The two eye groups and mouth determine location, scale and tilt, so this
+    follows the subject rather than assuming a fixed portrait crop. Everything
+    outside the feathered envelope is copied from the original still.
+    """
+    import numpy as np
+
+    points = np.asarray(keypoints, dtype=np.float32).reshape(21, 3)[:, :2]
+    points = (points + 1) * np.array([width, height], dtype=np.float32) / 2
+    left, right, mouth = points[11:14].mean(0), points[14:17].mean(0), points[17:21].mean(0)
+    eye_center = (left + right) / 2
+    eye_distance = float(np.linalg.norm(right - left))
+    if not np.isfinite(points).all() or eye_distance < min(height, width) * 0.03:
+        raise ValueError("Presenter facial keypoints cannot define a stable face region")
+    horizontal = (right - left) / eye_distance
+    vertical = np.array([-horizontal[1], horizontal[0]], dtype=np.float32)
+    if np.dot(mouth - eye_center, vertical) < 0:
+        vertical = -vertical
+    mouth_distance = float(np.dot(mouth - eye_center, vertical))
+    if mouth_distance < eye_distance * 0.2 or mouth_distance > eye_distance * 3:
+        raise ValueError("Presenter facial keypoints have an invalid eye-to-mouth layout")
+    center = eye_center + vertical * mouth_distance * 0.55
+    yy, xx = np.mgrid[:height, :width]
+    delta = np.stack((xx - center[0], yy - center[1]), axis=-1)
+    radius = np.sqrt((delta @ horizontal / (eye_distance * 1.15)) ** 2
+                     + (delta @ vertical / (mouth_distance * 1.25)) ** 2)
+    fade = np.clip((radius - 0.72) / 0.28, 0, 1)
+    return ((1 + np.cos(fade * np.pi)) / 2).astype(np.float32)[..., None]
+
+
+def _media_writers(job: Mapping[str, Any], workspace: Path, emit_progress: Callable[..., None],
+                   source_keypoints: dict[str, Any]):
     encoding = job["encoding"]
     audio = Path(job["inputs"]["audio"]["path"]).resolve(strict=True)
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -169,6 +202,11 @@ def _media_writers(job: Mapping[str, Any], workspace: Path, emit_progress: Calla
         height, width, channels = images[0].shape
         if channels != 3:
             raise ValueError("JoyVASA frames must be RGB")
+        from PIL import Image
+
+        with Image.open(job["inputs"]["portrait"]["path"]) as portrait:
+            source = np.asarray(portrait.convert("RGB").resize((width, height), Image.Resampling.LANCZOS), dtype=np.float32)
+        mask = _face_mask(source_keypoints["value"], height, width)
         emit_progress(
             "encoding", 0.85, "Encoding character animation with the selected H.264 encoder"
         )
@@ -189,6 +227,7 @@ def _media_writers(job: Mapping[str, Any], workspace: Path, emit_progress: Calla
                         raise ValueError("JoyVASA changed frame dimensions during encoding")
                     if kwargs.get("image_mode", "rgb").lower() == "bgr":
                         frame = frame[..., ::-1]
+                    frame = np.rint(source + mask * (frame.astype(np.float32) - source)).clip(0, 255)
                     process.stdin.write(np.ascontiguousarray(frame, dtype=np.uint8).tobytes())
                 process.stdin.close()
                 if process.wait(timeout=300) != 0:
@@ -236,6 +275,37 @@ def _media_writers(job: Mapping[str, Any], workspace: Path, emit_progress: Calla
         )
 
     return images2video, add_audio_to_video
+
+
+def _steady_motion(sequence: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep the source camera/pose; transfer speech and restrained expression.
+
+    Diffusion-generated rotation, translation and scale are not camera motion
+    for a tutorial portrait. Passing them through deforms the entire scene.
+    Smooth only non-mouth expression with a centered filter, avoiding added
+    audio/lip delay. The upstream speech gate remains authoritative.
+    """
+    import numpy as np
+
+    motion = sequence["motion"]
+    if not motion:
+        raise ValueError("JoyVASA returned no motion frames")
+    expressions = np.stack([frame["exp"] for frame in motion])
+    padded = np.pad(expressions, ((4, 4), (0, 0), (0, 0), (0, 0)), mode="edge")
+    weights = (1, 2, 3, 4, 5, 4, 3, 2, 1)
+    smooth = sum(weight * padded[index : index + len(motion)]
+                 for index, weight in enumerate(weights)) / sum(weights)
+    restrained = expressions[0] + 0.35 * (smooth - smooth[0])
+    lips = [6, 12, 14, 17, 19, 20]
+    restrained[:, :, lips, :] = expressions[:, :, lips, :]
+    result = []
+    for index, frame in enumerate(motion):
+        stable = dict(frame, exp=restrained[index])
+        for field in ("R", "R_d", "t", "scale", "pitch", "yaw", "roll"):
+            if field in motion[0]:
+                stable[field] = motion[0][field].copy()
+        result.append(stable)
+    return dict(sequence, motion=result)
 
 
 def run_presenter_job(job: dict[str, Any], emit_progress: Callable[..., None]) -> int:
@@ -348,14 +418,26 @@ def run_presenter_job(job: dict[str, Any], emit_progress: Callable[..., None]) -
             )
         suffix = "_animal" if model == "joyvasa-animal" else ""
         pipeline_module = importlib.import_module(f"src.live_portrait_wmg_pipeline{suffix}")
+        source_keypoints: dict[str, Any] = {}
         pipeline_module.images2video, pipeline_module.add_audio_to_video = _media_writers(
-            job, work, emit_progress
+            job, work, emit_progress, source_keypoints
         )
         pipeline_type = getattr(
             pipeline_module, "LivePortraitPipelineAnimal" if suffix else "LivePortraitPipeline"
         )
         emit_progress("inference", 0.15, "Animating the character from the selected narration")
         pipeline = pipeline_type(inference_cfg=inference_cfg, crop_cfg=crop_cfg)
+        wrapper = getattr(pipeline, "live_portrait_wrapper" + suffix)
+        generate_motion = wrapper.gen_motion_sequence
+        wrapper.gen_motion_sequence = lambda arguments: _steady_motion(generate_motion(arguments))
+        transform_keypoint = wrapper.transform_keypoint
+
+        def capture_source_keypoints(info: Any):
+            points = transform_keypoint(info)
+            source_keypoints["value"] = points.detach().cpu().numpy()
+            return points
+
+        wrapper.transform_keypoint = capture_source_keypoints
         generated = _inside(pipeline.execute(args), work)
         if not generated.is_file() or generated.stat().st_size < 1024:
             raise RuntimeError("JoyVASA produced no playable delivery")

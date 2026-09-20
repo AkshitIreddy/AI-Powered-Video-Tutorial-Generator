@@ -182,3 +182,57 @@ def test_runtime_manifest_paths_are_contained_and_semantically_addressable(adapt
 def test_adapter_rejects_implicit_or_unknown_animation_mode_before_loading_models(adapter):
     with pytest.raises(ValueError, match="explicit human or animal"):
         adapter.run_presenter_job({"model": "joyvasa"}, lambda *_: None)
+
+
+def test_steady_motion_removes_camera_jitter_without_delaying_speech(adapter):
+    np = pytest.importorskip("numpy")
+    frames = []
+    for index in range(20):
+        frames.append({
+            "exp": np.full((1, 21, 3), (-1.0) ** index, dtype=np.float32),
+            "R": np.eye(3)[None] * (1 + index / 10),
+            "t": np.full((1, 3), index / 10),
+            "scale": np.array([[1 + index / 10]]),
+        })
+    original_expressions = np.stack([frame["exp"].copy() for frame in frames])
+    gate = [index % 2 for index in range(20)]
+    result = adapter._steady_motion({"motion": frames, "speech_gate": gate, "n_frames": 20})
+    assert result["speech_gate"] == gate
+    assert result["n_frames"] == 20
+    for index, frame in enumerate(result["motion"]):
+        for field in ("R", "t", "scale"):
+            np.testing.assert_array_equal(frame[field], frames[0][field])
+        # A one-frame consonant impulse must not acquire a smoothing delay.
+        np.testing.assert_array_equal(frame["exp"][:, [6, 12, 14, 17, 19, 20]],
+                                      original_expressions[index][:, [6, 12, 14, 17, 19, 20]])
+    steady = np.stack([frame["exp"] for frame in result["motion"]])
+    assert np.abs(np.diff(steady[:, :, 0], axis=0)).max() < 0.1
+    np.testing.assert_array_equal(np.stack([frame["exp"] for frame in frames]), original_expressions)
+
+
+def test_steady_motion_preserves_single_frame_and_rejects_empty_output(adapter):
+    np = pytest.importorskip("numpy")
+    expression = np.arange(63, dtype=np.float32).reshape(1, 21, 3)
+    result = adapter._steady_motion({"motion": [{"exp": expression}]})
+    np.testing.assert_array_equal(result["motion"][0]["exp"], expression)
+    with pytest.raises(ValueError, match="no motion"):
+        adapter._steady_motion({"motion": []})
+
+
+def test_face_envelope_tracks_subject_and_excludes_background(adapter):
+    np = pytest.importorskip("numpy")
+    points = np.zeros((1, 21, 3), dtype=np.float32)
+    points[:, 11:14, :2] = [-0.2, -0.3]
+    points[:, 14:17, :2] = [0.2, -0.3]
+    points[:, 17:21, :2] = [0.0, 0.1]
+    mask = adapter._face_mask(points, 512, 512)[..., 0]
+    assert mask[281, 256] == 1  # mouth has full generated detail
+    assert mask[0].max() == mask[-1].max() == 0
+    assert mask[:, 0].max() == mask[:, -1].max() == 0
+    assert ((mask > 0) & (mask < 1)).any()  # no hard paste edge
+    shifted = points.copy()
+    shifted[..., 0] += 0.25
+    shifted_mask = adapter._face_mask(shifted, 512, 512)[..., 0]
+    np.testing.assert_allclose(shifted_mask[:, 64:], mask[:, :-64], atol=3e-6)
+    with pytest.raises(ValueError, match="stable face"):
+        adapter._face_mask(np.zeros((1, 21, 3)), 512, 512)
