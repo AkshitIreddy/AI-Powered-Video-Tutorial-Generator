@@ -55,7 +55,7 @@ def test_preview_response_persists_known_cost_without_inventing_tokens(
         assert result.usage.units == {}
     with ProjectStore.create(tmp_path / "preview", name="Preview accounting") as store:
         runtime = SQLiteWorkflowRuntime(store.connection)
-        runtime.enqueue(project_id=store.manifest.project_id, kind="record-preview", parameters={}, budget_micros=0)
+        runtime.enqueue(project_id=store.manifest.project_id, kind="record-preview", parameters={})
 
         def record(context: JobContext, parameters: dict[str, Any]) -> dict[str, Any]:
             _record_structured_provider_usage(context, "preview", result)
