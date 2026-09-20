@@ -195,6 +195,7 @@ import {
   type MasterExportRequest,
   type ModelProfile,
   type ProjectAssetImportReceipt,
+  type ProjectSnapshotReceipt,
   type ProviderSecretRef,
   type TutorialRoutingPolicy,
   type QualityPreset,
@@ -268,7 +269,7 @@ import type {
   Workspace,
 } from "./types";
 import { usePersistentState } from "./usePersistentState";
-import { EditorDocumentSaveQueue, createEditorCloseHandler, mergeGeneralProjectSnapshot, type EditorSaveStatus } from "./editorSaveLifecycle";
+import { EditorDocumentSaveQueue, cancelAutosaveThroughVersion, createEditorCloseHandler, mergeGeneralProjectSnapshot, saveProjectActionSnapshot, type EditorSaveStatus, type PendingProjectAutosave } from "./editorSaveLifecycle";
 
 interface RuntimeState {
   environment: ReturnType<typeof desktopEnvironment>;
@@ -877,7 +878,7 @@ function AppWorkbench() {
   const previousOnboardingStatus = useRef(initialOnboarding?.status ?? "not-started");
   const toastCounter = useRef(0);
   const snapshotSaveSequence = useRef(Promise.resolve());
-  const snapshotAutosaveTimers = useRef(new Map<string, number>());
+  const snapshotAutosaveTimers = useRef(new Map<string, PendingProjectAutosave>());
   const snapshotSaveFailures = useRef(new Map<string, { version: number; error: unknown }>());
   const approvalInFlightProjects = useRef(new Set<string>());
   const durableVersionByProject = useRef(new Map<string, number>());
@@ -1254,8 +1255,8 @@ function AppWorkbench() {
       ...snapshotSaveFailures.current.keys(),
     ]);
     for (const projectKey of pendingGeneralProjectIds) {
-      const timer = snapshotAutosaveTimers.current.get(projectKey);
-      if (timer) window.clearTimeout(timer);
+      const pending = snapshotAutosaveTimers.current.get(projectKey);
+      if (pending) window.clearTimeout(pending.timer);
       snapshotAutosaveTimers.current.delete(projectKey);
       const project = snapshotRef.current.projects.find((item) => item.id === projectKey);
       if (project) await persistGeneralProjectEdits(project, snapshotRef.current.version);
@@ -1268,6 +1269,36 @@ function AppWorkbench() {
   };
   persistGeneralProjectEditsRef.current = persistGeneralProjectEdits;
   flushPendingDurableChangesRef.current = flushPendingDurableChanges;
+
+  const persistProjectForAction = async (projectKey: string, message: string): Promise<ProjectSnapshotReceipt> => {
+    const currentState = snapshotRef.current;
+    const project = currentState.projects.find((item) => item.id === projectKey);
+    const identity = project ? nativeProjectLink(project) : null;
+    if (!project || !identity) throw new Error("Open a saved desktop project before starting this action.");
+    const capturedVersion = currentState.version;
+    const capturedSnapshot = projectSnapshotDocument(project);
+    const pending = snapshotAutosaveTimers.current.get(projectKey);
+    if (cancelAutosaveThroughVersion(pending, capturedVersion, (timer) => window.clearTimeout(timer))) {
+      snapshotAutosaveTimers.current.delete(projectKey);
+    }
+    return saveProjectActionSnapshot({ version: capturedVersion, snapshot: capturedSnapshot }, {
+      runSerialized: enqueueSnapshotSave,
+      getSnapshot: () => projectSnapshotGet(identity),
+      saveSnapshot: (input) => projectSnapshotSave({ ...identity, ...input, message }),
+      markDurable: (version, receipt) => {
+        const savedVersion = durableVersionByProject.current.get(projectKey) ?? -1;
+        durableVersionByProject.current.set(projectKey, Math.max(savedVersion, version));
+        const failure = snapshotSaveFailures.current.get(projectKey);
+        if (failure && failure.version <= version) snapshotSaveFailures.current.delete(projectKey);
+        setSnapshot((state) => ({
+          ...state,
+          projects: state.projects.map((item) => item.id === projectKey
+            ? { ...item, nativeHeadRevisionId: receipt.headRevisionId, nativeRevisionNumber: receipt.revisionNumber }
+            : item),
+        }));
+      },
+    });
+  };
 
   const useBundledAsset = async (asset: BundledAsset) => {
     const project = snapshot.projects.find((item) => item.id === snapshot.recentProjectId) ?? snapshot.projects[0];
@@ -1337,7 +1368,7 @@ function AppWorkbench() {
       for (const entry of customizationEntries.values()) {
         if (entry.timer) window.clearTimeout(entry.timer);
       }
-      for (const timer of autosaveTimers.values()) window.clearTimeout(timer);
+      for (const pending of autosaveTimers.values()) window.clearTimeout(pending.timer);
       editorQueue?.dispose();
     };
   }, []);
@@ -1443,7 +1474,7 @@ function AppWorkbench() {
     }
     if (savedVersion === snapshot.version) return;
     const existingTimer = autosaveTimers.get(project.id);
-    if (existingTimer) window.clearTimeout(existingTimer);
+    if (existingTimer) window.clearTimeout(existingTimer.timer);
     const timer = window.setTimeout(() => {
       autosaveTimers.delete(project.id);
       if (approvalInFlightProjects.current.has(project.id)) return;
@@ -1451,10 +1482,10 @@ function AppWorkbench() {
         notify("Project edits need attention", errorMessage(error), "warning");
       });
     }, Math.max(500, preferences.autosaveSeconds * 1000));
-    autosaveTimers.set(project.id, timer);
+    autosaveTimers.set(project.id, { timer, version: snapshot.version });
     return () => {
       window.clearTimeout(timer);
-      if (autosaveTimers.get(project.id) === timer) autosaveTimers.delete(project.id);
+      if (autosaveTimers.get(project.id)?.timer === timer) autosaveTimers.delete(project.id);
     };
   }, [activeProjectId, approvingProjectIds, snapshot.projects, snapshot.version, preferences.autosaveSeconds, notify]);
 
@@ -1648,7 +1679,7 @@ function AppWorkbench() {
     approvalInFlightProjects.current.add(projectId);
     const scheduledAutosave = snapshotAutosaveTimers.current.get(projectId);
     if (scheduledAutosave) {
-      window.clearTimeout(scheduledAutosave);
+      window.clearTimeout(scheduledAutosave.timer);
       snapshotAutosaveTimers.current.delete(projectId);
     }
     setApprovingProjectIds((current) => current.includes(projectId) ? current : [...current, projectId]);
@@ -1893,6 +1924,7 @@ function AppWorkbench() {
               onSceneUpdate={(sceneId, update) => updateScene(activeProject.id, sceneId, update)}
               onProjectCustomization={(customization, receipt) => updateProjectCustomization(activeProject, customization, receipt)}
               onProjectCreative={(creative) => updateProjectCreative(activeProject.id, creative)}
+              onPersistProjectForAction={persistProjectForAction}
               onProjectEdit={(update, options) => setSnapshot((current) => ({ ...current, projects: current.projects.map((item) => item.id === activeProject.id ? { ...item, ...update, updatedAt: "just now" } : item), version: current.version + (options?.alreadyDurable ? 0 : 1) }))}
               onEditorDocumentChange={(document) => queueEditorDocumentSave(activeProject.id, document)}
               onFlushEditorDocument={() => flushEditorDocument(activeProject.id)}
@@ -2693,6 +2725,7 @@ function ProjectWorkspace(props: {
   onSceneUpdate: (sceneId: string, update: Partial<Scene>) => void;
   onProjectCustomization: (customization: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => void;
   onProjectCreative: (creative: CreativeConfiguration) => void;
+  onPersistProjectForAction: (projectId: string, message: string) => Promise<ProjectSnapshotReceipt>;
   onProjectEdit: (update: Pick<Partial<ProjectRecord>, "scenes" | "sceneCandidates" | "sceneEditCandidates" | "customization" | "presenterSelection" | "editorDocument" | "reviewNotes" | "nativeHeadRevisionId" | "nativeRevisionNumber">, options?: { alreadyDurable?: boolean }) => void;
   onEditorDocumentChange: (document: EditorProject) => void;
   onFlushEditorDocument: () => Promise<void>;
@@ -2773,7 +2806,7 @@ function StoryboardWorkspace({ project, onScene, onRegenerate, onWorkspace, onPr
   </div>;
 }
 
-function StudioWorkspace({ project, activeScene, mode, version, environment, jobs, onSelectScene, onSceneUpdate, onProjectCustomization, onProjectCreative, onRegenerate, onUndo, onRedo, onRenderScene, onNotify, onProjectEdit, onEditorDocumentChange, onFlushEditorDocument, editorSaveStatus, onAddJob }: ProjectWorkspaceProps) {
+function StudioWorkspace({ project, activeScene, mode, version, environment, jobs, onSelectScene, onSceneUpdate, onProjectCustomization, onProjectCreative, onPersistProjectForAction, onRegenerate, onUndo, onRedo, onRenderScene, onNotify, onProjectEdit, onEditorDocumentChange, onFlushEditorDocument, editorSaveStatus, onAddJob }: ProjectWorkspaceProps) {
   const [playing, setPlaying] = useState(false);
   const [previewSeconds, setPreviewSeconds] = useState(0);
   const activeIndex = project.scenes.findIndex((scene) => scene.id === activeScene.id);
@@ -2980,8 +3013,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
     if (environment !== "native" || !identity) { onNotify("Open the desktop app", "New images use your connected image provider or an installed local model. Included assets are available in Library.", "info"); return; }
     setGeneratingVisual(true);
     try {
-      const durable = await projectSnapshotGet(identity);
-      const saved = await projectSnapshotSave({ ...identity, expectedHeadRevisionId: durable.headRevisionId, snapshot: { ...durable.snapshot, creative }, message: "Saved image generation recipe" });
+      const saved = await onPersistProjectForAction(current.id, "Saved image generation recipe");
       onProjectEdit({ nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber }, { alreadyDurable: true });
       const imageModel = role === "presenter" ? creative.presenter.baseModel : creative.slide.imageModel;
       const loras = role === "presenter" ? creative.presenter.loras : creative.slide.loras;

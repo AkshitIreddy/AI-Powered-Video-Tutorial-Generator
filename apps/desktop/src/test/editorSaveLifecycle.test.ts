@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { EditorDocumentSaveQueue, createEditorCloseHandler, mergeGeneralProjectSnapshot, type DurableEditorSaveReceipt } from "../editorSaveLifecycle";
+import { EditorDocumentSaveQueue, cancelAutosaveThroughVersion, createEditorCloseHandler, mergeGeneralProjectSnapshot, saveProjectActionSnapshot, type DurableEditorSaveReceipt } from "../editorSaveLifecycle";
 import { makeSampleProject } from "../editor/test/fixtures";
 
 function receipt(headRevisionId: string, snapshot: Record<string, unknown>): DurableEditorSaveReceipt {
@@ -7,6 +7,95 @@ function receipt(headRevisionId: string, snapshot: Record<string, unknown>): Dur
 }
 
 describe("EditorDocumentSaveQueue", () => {
+  it("cancels the duplicate autosave covered by an action while preserving a later edit", () => {
+    const cancelTimer = vi.fn();
+    expect(cancelAutosaveThroughVersion({ timer: 41, version: 7 }, 7, cancelTimer)).toBe(true);
+    expect(cancelTimer).toHaveBeenCalledWith(41);
+
+    cancelTimer.mockClear();
+    expect(cancelAutosaveThroughVersion({ timer: 42, version: 8 }, 7, cancelTimer)).toBe(false);
+    expect(cancelTimer).not.toHaveBeenCalled();
+  });
+
+  it("serializes an action save, merges it onto the fresh head, and marks only its captured version durable", async () => {
+    const order: string[] = [];
+    let releasePrior!: () => void;
+    const priorWrite = new Promise<void>((resolve) => { releasePrior = resolve; });
+    let sequence = Promise.resolve();
+    const runSerialized = <T,>(operation: () => Promise<T>): Promise<T> => {
+      const running = sequence.then(operation, operation);
+      sequence = running.then(() => undefined, () => undefined);
+      return running;
+    };
+    const prior = runSerialized(async () => {
+      order.push("prior:start");
+      await priorWrite;
+      order.push("prior:end");
+    });
+    const markDurable = vi.fn((version: number, saved: DurableEditorSaveReceipt) => {
+      order.push(`durable:${version}:${saved.headRevisionId}`);
+    });
+    const saveSnapshot = vi.fn(async (input: { expectedHeadRevisionId: string; snapshot: Record<string, unknown> }) => {
+      order.push(`save:${input.expectedHeadRevisionId}`);
+      return receipt("revision-8", input.snapshot);
+    });
+
+    const action = saveProjectActionSnapshot({
+      version: 7,
+      snapshot: {
+        generationId: "generation-1",
+        scenes: [{ id: "scene-1" }],
+        creative: { slide: { prompt: "The exact reviewed image recipe" } },
+      },
+    }, {
+      runSerialized,
+      getSnapshot: async () => {
+        order.push("get");
+        return {
+          headRevisionId: "revision-7",
+          revisionNumber: 7,
+          snapshot: {
+            generationId: "generation-1",
+            stage: "rendered",
+            sceneCandidates: [{ id: "keep-new-candidate" }],
+            scenes: [{ id: "scene-1" }],
+            creative: { slide: { prompt: "Old recipe" } },
+          },
+        };
+      },
+      saveSnapshot,
+      markDurable,
+    });
+
+    const later = runSerialized(async () => { order.push("later-edit"); });
+    releasePrior();
+    await prior;
+    const saved = await action;
+    await later;
+
+    expect(order).toEqual(["prior:start", "prior:end", "get", "save:revision-7", "durable:7:revision-8", "later-edit"]);
+    expect(saveSnapshot).toHaveBeenCalledWith({
+      expectedHeadRevisionId: "revision-7",
+      snapshot: expect.objectContaining({
+        stage: "rendered",
+        sceneCandidates: [{ id: "keep-new-candidate" }],
+        creative: { slide: { prompt: "The exact reviewed image recipe" } },
+      }),
+    });
+    expect(saved.headRevisionId).toBe("revision-8");
+  });
+
+  it("does not mark an action version durable when its compare-and-swap save conflicts", async () => {
+    const markDurable = vi.fn();
+    await expect(saveProjectActionSnapshot({ version: 4, snapshot: { scenes: [] } }, {
+      runSerialized: async (operation) => operation(),
+      getSnapshot: async () => ({ headRevisionId: "revision-4", revisionNumber: 4, snapshot: { scenes: [] } }),
+      saveSnapshot: async () => { throw new Error("REVISION_CONFLICT: another edit advanced the head"); },
+      markDurable,
+    })).rejects.toThrow("REVISION_CONFLICT");
+    expect(markDurable).not.toHaveBeenCalled();
+  });
+
   it("persists edited cast and scene speakers while retaining newer durable canvas settings", () => {
     const selection = { schemaVersion: 1, mode: "on", presenters: [{ presenterId: "daniel", portraitAssetId: "daniel" }, { presenterId: "astrid", portraitAssetId: "astrid" }], sceneAssignments: [{ sceneId: "scene-1", presenterId: "astrid" }] };
     const merged = mergeGeneralProjectSnapshot({

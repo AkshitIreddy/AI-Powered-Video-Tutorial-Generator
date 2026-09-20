@@ -16,6 +16,26 @@ export interface DurableEditorSaveReceipt extends DurableEditorSnapshot {
   projectId: string;
 }
 
+export interface ProjectActionSnapshotCapture {
+  version: number;
+  snapshot: Record<string, unknown>;
+}
+
+export interface PendingProjectAutosave {
+  timer: number;
+  version: number;
+}
+
+export interface ProjectActionSnapshotDependencies<TReceipt extends DurableEditorSaveReceipt = DurableEditorSaveReceipt> {
+  runSerialized: <T>(operation: () => Promise<T>) => Promise<T>;
+  getSnapshot: () => Promise<DurableEditorSnapshot>;
+  saveSnapshot: (input: {
+    expectedHeadRevisionId: string;
+    snapshot: Record<string, unknown>;
+  }) => Promise<TReceipt>;
+  markDurable: (version: number, receipt: TReceipt) => void;
+}
+
 export type EditorSaveStatus =
   | { phase: "saving"; detail: string }
   | { phase: "saved"; detail: string }
@@ -139,6 +159,37 @@ export function mergeGeneralProjectSnapshot(
   });
   merged.payload = { ...durablePayload, storyboard: { ...durableStoryboard, scenes } };
   return merged;
+}
+
+/**
+ * Put a user action behind all earlier writes, then bind it to the exact
+ * revision returned by its own save. The captured UI version is marked
+ * durable only after that save succeeds, so a later edit remains eligible for
+ * autosave and will correctly stale a long-running job based on this receipt.
+ */
+export async function saveProjectActionSnapshot<TReceipt extends DurableEditorSaveReceipt = DurableEditorSaveReceipt>(
+  captured: ProjectActionSnapshotCapture,
+  dependencies: ProjectActionSnapshotDependencies<TReceipt>,
+): Promise<TReceipt> {
+  return dependencies.runSerialized(async () => {
+    const durable = await dependencies.getSnapshot();
+    const saved = await dependencies.saveSnapshot({
+      expectedHeadRevisionId: durable.headRevisionId,
+      snapshot: mergeGeneralProjectSnapshot(durable.snapshot, captured.snapshot),
+    });
+    dependencies.markDurable(captured.version, saved);
+    return saved;
+  });
+}
+
+export function cancelAutosaveThroughVersion(
+  pending: PendingProjectAutosave | undefined,
+  capturedVersion: number,
+  cancelTimer: (timer: number) => void,
+): boolean {
+  if (!pending || pending.version > capturedVersion) return false;
+  cancelTimer(pending.timer);
+  return true;
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | null {
