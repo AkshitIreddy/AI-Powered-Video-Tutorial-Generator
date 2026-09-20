@@ -87,6 +87,8 @@ export type CasualPresenterLipSyncOutcome =
 export interface CasualPresenterLipSyncQualification {
   /** Exact model ID written to the local presenter worker receipt. */
   readonly engineId: CasualPresenterLipSyncEngineId;
+  /** New reviewed runtimes bind qualification to their exact installed revision. */
+  readonly modelRevision?: string;
   readonly displayName: string;
   readonly outcome: CasualPresenterLipSyncOutcome;
   readonly notes: string;
@@ -272,7 +274,7 @@ const JOYVASA_REJECTED_IDS = new Set<CasualPresenterId>([
   "presenter-portrait.animal-lion-leo-v1",
 ]);
 
-function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncReview {
+function legacyLipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncReview {
   if (plan.id === "presenter-portrait.casual-anime-finn-v1") {
     return {
       preferredEngineId: "joyvasa-human",
@@ -343,6 +345,31 @@ function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncRevi
       : "A pinned local route is under bounded visual review. It is not offered as compatible until exact artifacts and rest-mouth behavior are accepted.") + (joyVasaReviewed && !usesAnimalRoute ? " The corrected source-anchored route keeps the original background and body still while the face speaks; earlier full-frame wobble was rejected." : ""),
   };
   return { preferredEngineId: joyVasa.engineId, qualifications: [museTalk, joyVasa] };
+}
+
+const SOULX_REVIEWED_IDS = new Set<CasualPresenterId>([
+  "presenter-portrait.casual-realistic-emma-v1",
+  "presenter-portrait.casual-anime-yuki-v1",
+  "presenter-portrait.casual-realistic-noah-v1",
+  "presenter-portrait.casual-cartoon-chloe-v1",
+  "presenter-portrait.casual-realistic-maya-v1",
+  "presenter-portrait.casual-anime-finn-v2",
+  "presenter-portrait.casual-anime-lena-v1",
+]);
+
+function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncReview {
+  const legacy = legacyLipSyncReviewFor(plan);
+  if (!SOULX_REVIEWED_IDS.has(plan.id)) return legacy;
+  return {
+    preferredEngineId: "soulx-flashhead-pro",
+    qualifications: [{
+      engineId: "soulx-flashhead-pro",
+      modelRevision: "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+      displayName: "SoulX-FlashHead Pro",
+      outcome: "reviewed-compatible",
+      notes: "An eight-second reference narration preserved this portrait's mouth style, closed during the long silence, and produced visible blinks with steady surroundings in frame-sequence review on 2026-09-21. This is bounded portrait evidence; preview new narration before export.",
+    }, ...legacy.qualifications],
+  };
 }
 
 /** Verified static portraits with engine-specific, independently truthful lip-sync qualifications. */

@@ -183,7 +183,8 @@ export function presenterAnimationReadiness(
       blocksSelection: true,
     };
   }
-  if (!effectiveStatus?.configured || effectiveStatus.modelId !== qualification.engineId) {
+  if (!effectiveStatus?.configured || effectiveStatus.modelId !== qualification.engineId
+    || (qualification.modelRevision !== undefined && effectiveStatus.modelRevision !== qualification.modelRevision)) {
     const nativeReason = effectiveStatus?.reason.trim();
     return {
       state: "runtime-required",

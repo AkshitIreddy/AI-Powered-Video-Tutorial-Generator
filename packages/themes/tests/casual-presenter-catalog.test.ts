@@ -65,19 +65,19 @@ describe("casual presenter catalog", () => {
     expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.lipSync.qualifications.some((review) => review.outcome === "reviewed-compatible")).map((entry) => entry.displayName))
       .toEqual(["Emma", "Yuki", "Noah", "Chloe", "Maya", "Finn", "Lena", "Pip", "Milo", "Peaches", "Buddy", "Tavi"]);
     const yukiReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-anime-yuki-v1")?.lipSync;
-    expect(yukiReview?.preferredEngineId).toBe("joyvasa-human");
+    expect(yukiReview?.preferredEngineId).toBe("soulx-flashhead-pro");
     expect(yukiReview?.qualifications).toEqual(expect.arrayContaining([
       expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/dense visual review.+realistic lip patch.+anime linework/i) }),
       expect.objectContaining({ engineId: "joyvasa-human", outcome: "reviewed-compatible", notes: expect.stringMatching(/held-out.+coherent illustrated mouth.+1\.47.+2\.58-second silence/i) }),
     ]));
     const lenaReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-anime-lena-v1")?.lipSync;
-    expect(lenaReview?.preferredEngineId).toBe("joyvasa-human");
+    expect(lenaReview?.preferredEngineId).toBe("soulx-flashhead-pro");
     expect(lenaReview?.qualifications).toEqual(expect.arrayContaining([
       expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/dense visual review.+lip-and-teeth patch.+hand-painted anime style/i) }),
       expect.objectContaining({ engineId: "joyvasa-human", outcome: "reviewed-compatible", notes: expect.stringMatching(/held-out.+coherent painted mouth.+1\.47.+2\.58-second silence/i) }),
     ]));
     const chloeReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-cartoon-chloe-v1")?.lipSync;
-    expect(chloeReview?.preferredEngineId).toBe("joyvasa-human");
+    expect(chloeReview?.preferredEngineId).toBe("soulx-flashhead-pro");
     expect(chloeReview?.qualifications).toEqual(expect.arrayContaining([
       expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/dense visual review.+lips.+distorted/i) }),
       expect.objectContaining({ engineId: "joyvasa-human", outcome: "reviewed-compatible", notes: expect.stringMatching(/held-out.+mouth corners coherent.+silence/i) }),
@@ -95,7 +95,7 @@ describe("casual presenter catalog", () => {
         { engineId: "joyvasa-human", outcome: "incompatible" },
       ].map((entry) => expect.objectContaining(entry))));
     const finnReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-anime-finn-v2")?.lipSync;
-    expect(finnReview?.preferredEngineId).toBe("joyvasa-human");
+    expect(finnReview?.preferredEngineId).toBe("soulx-flashhead-pro");
     expect(finnReview?.qualifications).toEqual(expect.arrayContaining([
       expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible" }),
       expect.objectContaining({ engineId: "joyvasa-human", outcome: "reviewed-compatible" }),
