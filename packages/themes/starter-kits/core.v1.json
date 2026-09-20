@@ -5810,8 +5810,8 @@
     {
       "id": "presenter-portrait.animal-kitten-peaches-v1",
       "kind": "presenter-portrait",
-      "name": "Peaches · clay kitten tutor",
-      "description": "Original fictional kitten teaching mascot with a soft clay style and a pastel craft classroom.",
+      "name": "Peaches · legacy clay kitten tutor",
+      "description": "Legacy fictional kitten teaching mascot retained so existing projects keep their original portrait.",
       "tags": [
         "presenter",
         "animal",
@@ -5819,6 +5819,7 @@
         "clay",
         "craft",
         "young-learners",
+        "legacy",
         "bundled",
         "synthetic"
       ],
@@ -5871,7 +5872,74 @@
       "accessibility": {
         "reducedMotionSafe": true,
         "highContrastSafe": true,
-        "description": "Original fictional kitten teaching mascot with a soft clay style and a pastel craft classroom."
+        "description": "Legacy fictional kitten teaching mascot retained so existing projects keep their original portrait."
+      }
+    },
+    {
+      "id": "presenter-portrait.animal-kitten-peaches-v2",
+      "kind": "presenter-portrait",
+      "name": "Peaches · expressive kitten tutor",
+      "description": "Original fictional kitten teaching mascot with animation-friendly feline anatomy and a cozy pastel craft studio.",
+      "tags": [
+        "presenter",
+        "animal",
+        "kitten",
+        "3d",
+        "craft",
+        "young-learners",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/animal-kitten-peaches-v2.png",
+        "contentHash": "23d27cd73b07b0c405d70956da2009940dd21c6460616161319b1e20d9cefbd2",
+        "byteSize": 2191160
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-21T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-21.json. Lip-sync qualifications: soulx-flashhead-pro reviewed-compatible, liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Original fictional kitten teaching mascot with animation-friendly feline anatomy and a cozy pastel craft studio."
       }
     },
     {

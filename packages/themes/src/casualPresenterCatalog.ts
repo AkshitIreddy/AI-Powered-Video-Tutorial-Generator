@@ -23,6 +23,7 @@ export type CasualPresenterId =
   | "presenter-portrait.casual-cartoon-robot-pip-v1"
   | "presenter-portrait.animal-cat-milo-v1"
   | "presenter-portrait.animal-kitten-peaches-v1"
+  | "presenter-portrait.animal-kitten-peaches-v2"
   | "presenter-portrait.animal-dog-buddy-v1"
   | "presenter-portrait.animal-puppy-poppy-v1"
   | "presenter-portrait.animal-tiger-tavi-v1"
@@ -56,7 +57,8 @@ export const CASUAL_PRESENTER_PLANS = [
   { id: "presenter-portrait.casual-anime-lena-v1", slug: "casual-anime-lena-v1", displayName: "Lena", styleGroup: "Anime" },
   { id: "presenter-portrait.casual-cartoon-robot-pip-v1", slug: "casual-cartoon-robot-pip-v1", displayName: "Pip", styleGroup: "Character" },
   { id: "presenter-portrait.animal-cat-milo-v1", slug: "animal-cat-milo-v1", displayName: "Milo", styleGroup: "Animal" },
-  { id: "presenter-portrait.animal-kitten-peaches-v1", slug: "animal-kitten-peaches-v1", displayName: "Peaches", styleGroup: "Animal" },
+  { id: "presenter-portrait.animal-kitten-peaches-v1", slug: "animal-kitten-peaches-v1", displayName: "Peaches (legacy)", styleGroup: "Animal", galleryVisibility: "legacy-hidden" },
+  { id: "presenter-portrait.animal-kitten-peaches-v2", slug: "animal-kitten-peaches-v2", displayName: "Peaches", styleGroup: "Animal" },
   { id: "presenter-portrait.animal-dog-buddy-v1", slug: "animal-dog-buddy-v1", displayName: "Buddy", styleGroup: "Animal" },
   { id: "presenter-portrait.animal-puppy-poppy-v1", slug: "animal-puppy-poppy-v1", displayName: "Poppy", styleGroup: "Animal" },
   { id: "presenter-portrait.animal-tiger-tavi-v1", slug: "animal-tiger-tavi-v1", displayName: "Tavi", styleGroup: "Animal" },
@@ -231,13 +233,18 @@ export function casualPresenterStarterAsset(presenter: VerifiedCasualPresenter):
 type CasualPresenterCatalogDetails = Omit<
   VerifiedCasualPresenterDetails,
   "fileExtension" | "mediaType" | "width" | "height" | "c2paStatus" | "generationTool" | "generationModel" | "promptRecordPath" | "recordedAt" | "lipSync"
->;
+> & Partial<Pick<VerifiedCasualPresenterDetails, "promptRecordPath" | "recordedAt">>;
 
 function catalogPresenter(id: CasualPresenterId, details: CasualPresenterCatalogDetails): VerifiedCasualPresenter {
   const plan = CASUAL_PRESENTER_PLANS.find((candidate) => candidate.id === id);
   if (!plan) throw new Error(`Missing casual presenter plan for ${id}.`);
+  const {
+    promptRecordPath = "docs/assets/casual-presenter-prompts-2026-09-20.json",
+    recordedAt = "2026-09-20T00:00:00.000Z",
+    ...verifiedDetails
+  } = details;
   return defineCasualPresenter(plan, {
-    ...details,
+    ...verifiedDetails,
     fileExtension: "png",
     mediaType: "image/png",
     width: 1254,
@@ -245,8 +252,8 @@ function catalogPresenter(id: CasualPresenterId, details: CasualPresenterCatalog
     c2paStatus: "present-embedded",
     generationTool: "image_gen",
     generationModel: "OpenAI image_gen (model not exposed)",
-    promptRecordPath: "docs/assets/casual-presenter-prompts-2026-09-20.json",
-    recordedAt: "2026-09-20T00:00:00.000Z",
+    promptRecordPath,
+    recordedAt,
     lipSync: lipSyncReviewFor(plan),
   });
 }
@@ -355,6 +362,7 @@ const SOULX_REVIEWED_IDS = new Set<CasualPresenterId>([
   "presenter-portrait.casual-realistic-maya-v1",
   "presenter-portrait.casual-anime-finn-v2",
   "presenter-portrait.casual-anime-lena-v1",
+  "presenter-portrait.animal-kitten-peaches-v2",
 ]);
 
 function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncReview {
@@ -367,7 +375,9 @@ function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncRevi
       modelRevision: "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
       displayName: "SoulX-FlashHead Pro",
       outcome: "reviewed-compatible",
-      notes: "An eight-second reference narration preserved this portrait's mouth style, closed during the long silence, and produced visible blinks with steady surroundings in frame-sequence review on 2026-09-21. This is bounded portrait evidence; preview new narration before export.",
+      notes: plan.id === "presenter-portrait.animal-kitten-peaches-v2"
+        ? "A bounded eight-second local preview preserved Peaches' kitten morphology, articulated the single mouth, and produced visible blinks at 5.08–5.16 and 7.16–7.32 seconds in frame-sequence review on 2026-09-21. During the quiet interval the mouth stayed thinly parted instead of fully closing; preview each new narration before export."
+        : "An eight-second reference narration preserved this portrait's mouth style, closed during the long silence, and produced visible blinks with steady surroundings in frame-sequence review on 2026-09-21. This is bounded portrait evidence; preview new narration before export.",
     }, ...legacy.qualifications],
   };
 }
@@ -485,15 +495,28 @@ export const CASUAL_PRESENTER_CATALOG = Object.freeze([
     byteSize: 2502495,
   }),
   catalogPresenter("presenter-portrait.animal-kitten-peaches-v1", {
-    label: "Peaches · clay kitten tutor",
-    description: "Original fictional kitten teaching mascot with a soft clay style and a pastel craft classroom.",
-    tags: ["presenter", "animal", "kitten", "clay", "craft", "young-learners", "bundled", "synthetic"],
+    label: "Peaches · legacy clay kitten tutor",
+    description: "Legacy fictional kitten teaching mascot retained so existing projects keep their original portrait.",
+    tags: ["presenter", "animal", "kitten", "clay", "craft", "young-learners", "legacy", "bundled", "synthetic"],
     style: "Soft clay animal character",
     background: "Pastel craft classroom",
     focalPoint: "50% 16%",
     voiceDirection: "Gentle character tutor · bright, encouraging, clearly paced",
     contentHash: "6cb3c5727c422ac6e717f64c8c345abb757f65c5399555e5c0058f7db3524ab1",
     byteSize: 2223881,
+  }),
+  catalogPresenter("presenter-portrait.animal-kitten-peaches-v2", {
+    label: "Peaches · expressive kitten tutor",
+    description: "Original fictional kitten teaching mascot with animation-friendly feline anatomy and a cozy pastel craft studio.",
+    tags: ["presenter", "animal", "kitten", "3d", "craft", "young-learners", "bundled", "synthetic"],
+    style: "Premium 3D animated animal character",
+    background: "Cozy pastel craft studio",
+    focalPoint: "50% 16%",
+    voiceDirection: "Gentle character tutor · bright, encouraging, clearly paced",
+    contentHash: "23d27cd73b07b0c405d70956da2009940dd21c6460616161319b1e20d9cefbd2",
+    byteSize: 2191160,
+    promptRecordPath: "docs/assets/casual-presenter-prompts-2026-09-21.json",
+    recordedAt: "2026-09-21T00:00:00.000Z",
   }),
   catalogPresenter("presenter-portrait.animal-dog-buddy-v1", {
     label: "Buddy · dog workshop tutor",

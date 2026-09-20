@@ -6,6 +6,7 @@ import {
   presenterLipSyncEngineForRouteModel,
   presenterSelectionAnimationIssues,
 } from "../presenterCapabilities";
+import type { PresenterLipSyncRuntimeContext } from "../presenterCapabilities";
 
 const HASH = "a".repeat(64);
 const emma: PresenterChoice = {
@@ -29,10 +30,17 @@ describe("presenter animation capabilities", () => {
   it("requires the reviewed runtime revision for a bundled SoulX presenter", () => {
     const portrait = CASUAL_PRESENTER_CATALOG.find((entry) => entry.displayName === "Yuki")!;
     const choice: PresenterChoice = { ...emma, id: portrait.id, label: portrait.label, portraitArtifactHash: portrait.contentHash, lipSync: portrait.lipSync };
-    const revision = portrait.lipSync.qualifications.find((entry) => entry.engineId === "soulx-flashhead-pro")!.modelRevision;
-    const runtime = { activeEngineId: "soulx-flashhead-pro" as const, portraitStatuses: [{ portraitArtifactHash: null, modelId: "soulx-flashhead-pro", modelRevision: revision, configured: true, reason: "Installed." }] };
+    const revision = portrait.lipSync.qualifications.find((entry) => entry.engineId === "soulx-flashhead-pro")?.modelRevision;
+    expect(revision).toBeTruthy();
+    const runtime: PresenterLipSyncRuntimeContext = {
+      activeEngineId: "soulx-flashhead-pro",
+      portraitStatuses: [{ portraitArtifactHash: null, modelId: "soulx-flashhead-pro", modelRevision: revision!, configured: true, reason: "Installed." }],
+    };
     expect(presenterAnimationReadiness(choice, runtime)).toMatchObject({ state: "ready", blocksSelection: false });
-    expect(presenterAnimationReadiness(choice, { ...runtime, portraitStatuses: [{ ...runtime.portraitStatuses[0], modelRevision: "different-weights" }] })).toMatchObject({ state: "runtime-required", blocksSelection: true });
+    expect(presenterAnimationReadiness(choice, {
+      ...runtime,
+      portraitStatuses: [{ portraitArtifactHash: null, modelId: "soulx-flashhead-pro", modelRevision: "different-weights", configured: true, reason: "Installed." }],
+    })).toMatchObject({ state: "runtime-required", blocksSelection: true });
   });
   it("allows a custom portrait as a still and requires a preview for animation", () => {
     const custom: PresenterChoice = { id: "custom-presenter", label: "Nova", src: "nova.png", focalPoint: "50% 38%", portraitArtifactHash: "d".repeat(64), customPortrait: { animationReview: "notReviewed", source: "upload", libraryEntryId: "custom-presenter" } };

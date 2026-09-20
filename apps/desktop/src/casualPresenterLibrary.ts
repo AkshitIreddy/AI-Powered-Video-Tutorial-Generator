@@ -8,7 +8,8 @@ import type { StudioAssetReference } from "./types";
 
 import animalCatMilo from "./assets/presenters/animal-cat-milo-v1.png";
 import animalDogBuddy from "./assets/presenters/animal-dog-buddy-v1.png";
-import animalKittenPeaches from "./assets/presenters/animal-kitten-peaches-v1.png";
+import animalKittenPeachesV1 from "./assets/presenters/animal-kitten-peaches-v1.png";
+import animalKittenPeachesV2 from "./assets/presenters/animal-kitten-peaches-v2.png";
 import animalLionLeo from "./assets/presenters/animal-lion-leo-v1.png";
 import animalPuppyPoppy from "./assets/presenters/animal-puppy-poppy-v1.png";
 import animalTigerTavi from "./assets/presenters/animal-tiger-tavi-v1.png";
@@ -33,7 +34,8 @@ const SOURCE_BY_ID = {
   "presenter-portrait.casual-anime-lena-v1": casualAnimeLena,
   "presenter-portrait.casual-cartoon-robot-pip-v1": casualCartoonRobotPip,
   "presenter-portrait.animal-cat-milo-v1": animalCatMilo,
-  "presenter-portrait.animal-kitten-peaches-v1": animalKittenPeaches,
+  "presenter-portrait.animal-kitten-peaches-v1": animalKittenPeachesV1,
+  "presenter-portrait.animal-kitten-peaches-v2": animalKittenPeachesV2,
   "presenter-portrait.animal-dog-buddy-v1": animalDogBuddy,
   "presenter-portrait.animal-puppy-poppy-v1": animalPuppyPoppy,
   "presenter-portrait.animal-tiger-tavi-v1": animalTigerTavi,

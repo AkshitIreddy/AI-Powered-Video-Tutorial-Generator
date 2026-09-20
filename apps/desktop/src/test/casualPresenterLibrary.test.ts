@@ -8,7 +8,7 @@ import {
 
 describe("casual presenter desktop library", () => {
   it("keeps the static imports, canonical metadata, and studio assets in lockstep", () => {
-    expect(CASUAL_PRESENTER_IDS).toHaveLength(15);
+    expect(CASUAL_PRESENTER_IDS).toHaveLength(16);
     expect(Object.keys(CASUAL_PRESENTER_PERSONAS)).toEqual(CASUAL_PRESENTER_IDS);
     expect(CASUAL_PRESENTER_ASSETS.map((asset) => asset.id)).toEqual(CASUAL_PRESENTER_IDS);
 
@@ -32,6 +32,16 @@ describe("casual presenter desktop library", () => {
     expect(CASUAL_PRESENTER_SELECTABLE_IDS).toHaveLength(14);
     expect(CASUAL_PRESENTER_PERSONAS["presenter-portrait.casual-anime-finn-v1"].hiddenFromGallery).toBe(true);
     expect(CASUAL_PRESENTER_PERSONAS["presenter-portrait.casual-anime-finn-v2"].hiddenFromGallery).toBeUndefined();
+    expect(CASUAL_PRESENTER_PERSONAS["presenter-portrait.animal-kitten-peaches-v1"].hiddenFromGallery).toBe(true);
+    expect(CASUAL_PRESENTER_PERSONAS["presenter-portrait.animal-kitten-peaches-v2"].hiddenFromGallery).toBeUndefined();
+    expect(CASUAL_PRESENTER_PERSONAS["presenter-portrait.animal-kitten-peaches-v2"].lipSync).toMatchObject({
+      preferredEngineId: "soulx-flashhead-pro",
+      qualifications: expect.arrayContaining([expect.objectContaining({
+        engineId: "soulx-flashhead-pro",
+        modelRevision: "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+        outcome: "reviewed-compatible",
+      })]),
+    });
   });
 
   it("features the requested woman, anime, man, and cartoon sequence first", () => {

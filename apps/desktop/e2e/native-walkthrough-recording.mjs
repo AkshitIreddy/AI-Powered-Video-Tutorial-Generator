@@ -67,8 +67,8 @@ export async function inspectPackagedPresenterPlatform({ starterManifestPath, ru
     && asset.technical.mediaType.startsWith("image/")
   ));
   const readyPortraits = readyVisuals.filter((asset) => asset?.kind === "presenter-portrait");
-  if (readyVisuals.length !== 56 || readyPortraits.length !== 53) {
-    throw new Error(`Packaged starter visual manifest has ${readyVisuals.length} ready images and ${readyPortraits.length} ready portraits instead of 56 and 53`);
+  if (readyVisuals.length !== 57 || readyPortraits.length !== 54) {
+    throw new Error(`Packaged starter visual manifest has ${readyVisuals.length} ready images and ${readyPortraits.length} ready portraits instead of 57 and 54`);
   }
   const catalog = expectedGalleryPresenters.map((expected) => {
     const matches = manifest.assets.filter((asset) => asset?.id === expected.id);
@@ -647,7 +647,7 @@ export async function recordNativeWalkthrough({
   preflight,
   voiceover,
 }) {
-  if (presenterPlatform?.readyVisualCount !== 56 || presenterPlatform?.readyPortraitCount !== 53
+  if (presenterPlatform?.readyVisualCount !== 57 || presenterPlatform?.readyPortraitCount !== 54
     || presenterPlatform?.casualAndAnimalPresenterCount !== expectedGalleryContract.total
     || presenterPlatform?.animationReadyPresenterCount !== expectedGalleryContract.animationReady
     || presenterPlatform?.staticOnlyPresenterCount !== expectedGalleryContract.staticOnly

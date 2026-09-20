@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { inspectStarterKit, validateStarterKitManifest } from "../../contracts/src/index.js";
-import { BUILT_IN_STARTER_KIT, STARTER_ASSET_COUNTS } from "../src/index.js";
+import { BUILT_IN_STARTER_KIT, CASUAL_PRESENTER_CATALOG, STARTER_ASSET_COUNTS } from "../src/index.js";
 
 describe("built-in starter kit", () => {
   it("is schema-valid and relationally complete for all ten themes", () => {
@@ -15,14 +15,14 @@ describe("built-in starter kit", () => {
   it("keeps the checked-in native starter manifest identical to the TypeScript catalog", async () => {
     const manifest = JSON.parse(await readFile(resolve(process.cwd(), "starter-kits/core.v1.json"), "utf8")) as unknown;
     expect(manifest).toEqual(BUILT_IN_STARTER_KIT);
-    expect((manifest as typeof BUILT_IN_STARTER_KIT).assets.filter((asset) => asset.source.availability === "ready" && asset.technical.mediaType.startsWith("image/"))).toHaveLength(56);
-    expect((manifest as typeof BUILT_IN_STARTER_KIT).assets.filter((asset) => asset.kind === "presenter-portrait")).toHaveLength(53);
+    expect((manifest as typeof BUILT_IN_STARTER_KIT).assets.filter((asset) => asset.source.availability === "ready" && asset.technical.mediaType.startsWith("image/"))).toHaveLength(57);
+    expect((manifest as typeof BUILT_IN_STARTER_KIT).assets.filter((asset) => asset.kind === "presenter-portrait")).toHaveLength(54);
   });
 
   it("offers substantial choice with audio remaining opt-in", () => {
     expect(STARTER_ASSET_COUNTS).toMatchObject({
       background: 13, transition: 8, font: 14, "presenter-style": 12,
-      "presenter-portrait": 53, music: 2, "sound-effect": 14,
+      "presenter-portrait": 54, music: 2, "sound-effect": 14,
     });
     const audio = BUILT_IN_STARTER_KIT.assets.filter((asset) => asset.kind === "music" || asset.kind === "sound-effect");
     expect(audio).toHaveLength(16);
@@ -47,7 +47,7 @@ describe("built-in starter kit", () => {
 
   it("binds every bundled generated image to its actual bytes", async () => {
     const bundled = BUILT_IN_STARTER_KIT.assets.filter((asset) => asset.source.delivery === "bundled-file");
-    expect(bundled).toHaveLength(72);
+    expect(bundled).toHaveLength(73);
     for (const asset of bundled) {
       const bytes = await readFile(resolve(process.cwd(), "../..", asset.source.relativePath!));
       expect(bytes.byteLength, asset.id).toBe(asset.source.byteSize);
@@ -56,7 +56,9 @@ describe("built-in starter kit", () => {
         expect(asset.provenance).toMatchObject({ synthetic: true, reviewStatus: "verified" });
         if (asset.id.startsWith("presenter-portrait.casual-") || asset.id.startsWith("presenter-portrait.animal-")) {
           expect(asset.provenance).toMatchObject({ model: "OpenAI image_gen (model not exposed)", promptAvailability: "artifact-recorded" });
-          expect(asset.provenance.notes).toContain("docs/assets/casual-presenter-prompts-2026-09-20.json");
+          const presenter = CASUAL_PRESENTER_CATALOG.find((candidate) => candidate.id === asset.id);
+          expect(presenter, asset.id).toBeDefined();
+          expect(asset.provenance.notes).toContain(presenter!.promptRecordPath);
         } else {
           expect(asset.provenance).toMatchObject({ model: "gpt-image 2.0" });
         }

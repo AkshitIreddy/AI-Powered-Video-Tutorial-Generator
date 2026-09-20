@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-21T00:00:00.000Z",
+  "generationTool": "image_gen",
+  "generationModel": "OpenAI image_gen (model not exposed)",
+  "assets": [
+    {
+      "id": "animal-kitten-peaches-v2",
+      "prompt": "Edit this fictional kitten tutorial host into an animation-friendly talking character variant, preserving Peaches' cute peach-and-cream fur, green eyes, purple hoodie, cozy crafts tutorial studio, front-facing centered square bust composition, detailed premium 3D animation quality. Modify facial anatomy subtly toward an expressive animated-film talking kitten: smaller less spherical muzzle pads and a clearly readable single cartoon mouth under them, a softly defined lower jaw/chin separated from the muzzle. Mouth gently parted by a narrow dark opening at rest, lower lip fur contour visible, not hidden inside the fluffy muzzle. Maintain feline nose/whiskers/ears, do not add realistic human lips or teeth. Eyes with clearly articulated upper and lower lids and visible whites around green irises, fully open. Slightly taller head and less baby-round face but still a young cute kitten; responsive communicative tutor rather than plush toy. The resulting image must look like a cat character who can speak and blink, no rigid smile, no text/logo, no extra characters.",
+      "referenced_image_paths": [
+        "apps/desktop/src/assets/presenters/animal-kitten-peaches-v1.png"
+      ],
+      "sourcePath": "C:/Users/akshi/.codex/generated_images/01a06fb3-fc39-7fe1-baeb-8dea43a738f4/exec-8793010c-23e0-4155-9b36-d7cb320da490.png",
+      "path": "apps/desktop/src/assets/presenters/animal-kitten-peaches-v2.png",
+      "sha256": "23d27cd73b07b0c405d70956da2009940dd21c6460616161319b1e20d9cefbd2",
+      "byteSize": 2191160,
+      "width": 1254,
+      "height": 1254,
+      "supersedes": "animal-kitten-peaches-v1",
+      "reason": "Peaches v2 replaces the selectable v1 portrait with clearer feline mouth and eyelid anatomy for local talking-head animation. V1 remains bundled and addressable for saved projects, but is hidden from new gallery choices.",
+      "reviewEvidence": {
+        "engineId": "soulx-flashhead-pro",
+        "modelRevision": "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+        "videoSha256": "02a5f7d3c78b83fe48b0218d269e94022c400623256ce3240202e6ee98e30039",
+        "durationSeconds": 8,
+        "framesPerSecond": 25,
+        "width": 512,
+        "height": 512,
+        "renderSeconds": 127.505,
+        "outcome": "reviewed-compatible",
+        "notes": "Dense frame review accepted stable kitten morphology, articulated mouth movement, and visible blinks at 5.08–5.16 and 7.16–7.32 seconds. During the quiet interval the mouth remained thinly parted rather than fully closed, so new narration still requires preview before export."
+      }
+    }
+  ]
+}

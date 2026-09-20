@@ -48,11 +48,13 @@ function verifiedDetails() {
 
 describe("casual presenter catalog", () => {
   it("keeps all planned ids unique and leads with woman, anime, man, and cartoon tutors", () => {
-    expect(CASUAL_PRESENTER_IDS).toHaveLength(15);
-    expect(new Set(CASUAL_PRESENTER_IDS).size).toBe(15);
+    expect(CASUAL_PRESENTER_IDS).toHaveLength(16);
+    expect(new Set(CASUAL_PRESENTER_IDS).size).toBe(16);
     expect(CASUAL_PRESENTER_SELECTABLE_IDS).toHaveLength(14);
     expect(CASUAL_PRESENTER_SELECTABLE_IDS).not.toContain("presenter-portrait.casual-anime-finn-v1");
+    expect(CASUAL_PRESENTER_SELECTABLE_IDS).not.toContain("presenter-portrait.animal-kitten-peaches-v1");
     expect(CASUAL_PRESENTER_SELECTABLE_IDS).toContain("presenter-portrait.casual-anime-finn-v2");
+    expect(CASUAL_PRESENTER_SELECTABLE_IDS).toContain("presenter-portrait.animal-kitten-peaches-v2");
     expect(CASUAL_PRESENTER_PLANS.filter((entry) => entry.featuredRank !== undefined)
       .toSorted((left, right) => left.featuredRank! - right.featuredRank!)
       .map((entry) => entry.displayName)).toEqual(["Emma", "Yuki", "Noah", "Chloe"]);
@@ -63,7 +65,7 @@ describe("casual presenter catalog", () => {
     expect(CASUAL_PRESENTER_STARTER_ASSETS.map((entry) => entry.id)).toEqual(CASUAL_PRESENTER_IDS);
     expect(CASUAL_PRESENTER_STARTER_ASSETS.every((entry) => entry.source.availability === "ready")).toBe(true);
     expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.lipSync.qualifications.some((review) => review.outcome === "reviewed-compatible")).map((entry) => entry.displayName))
-      .toEqual(["Emma", "Yuki", "Noah", "Chloe", "Maya", "Finn", "Lena", "Pip", "Milo", "Peaches", "Buddy", "Tavi"]);
+      .toEqual(["Emma", "Yuki", "Noah", "Chloe", "Maya", "Finn", "Lena", "Pip", "Milo", "Peaches (legacy)", "Peaches", "Buddy", "Tavi"]);
     const yukiReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-anime-yuki-v1")?.lipSync;
     expect(yukiReview?.preferredEngineId).toBe("soulx-flashhead-pro");
     expect(yukiReview?.qualifications).toEqual(expect.arrayContaining([
@@ -82,12 +84,28 @@ describe("casual presenter catalog", () => {
       expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/dense visual review.+lips.+distorted/i) }),
       expect.objectContaining({ engineId: "joyvasa-human", outcome: "reviewed-compatible", notes: expect.stringMatching(/held-out.+mouth corners coherent.+silence/i) }),
     ]));
-    expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.styleGroup === "Animal").every((entry) => (
+    expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.styleGroup === "Animal" && entry.id !== "presenter-portrait.animal-kitten-peaches-v2").every((entry) => (
       entry.lipSync.preferredEngineId === "joyvasa-animal"
       && entry.lipSync.qualifications.some((review) => review.engineId === "liveportrait-musetalk-1.5" && review.outcome === "incompatible")
       && entry.lipSync.qualifications.some((review) => review.engineId === "joyvasa-animal"
         && review.outcome === (["Poppy", "Leo"].includes(entry.displayName) ? "incompatible" : "reviewed-compatible"))
     ))).toBe(true);
+    const legacyPeaches = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.animal-kitten-peaches-v1");
+    const peachesReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.animal-kitten-peaches-v2");
+    expect(legacyPeaches?.galleryVisibility).toBe("legacy-hidden");
+    expect(peachesReview?.galleryVisibility).not.toBe("legacy-hidden");
+    expect(peachesReview?.promptRecordPath).toBe("docs/assets/casual-presenter-prompts-2026-09-21.json");
+    expect(peachesReview?.lipSync).toMatchObject({
+      preferredEngineId: "soulx-flashhead-pro",
+      qualifications: expect.arrayContaining([
+        expect.objectContaining({
+          engineId: "soulx-flashhead-pro",
+          modelRevision: "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+          outcome: "reviewed-compatible",
+          notes: expect.stringMatching(/kitten morphology.+5\.08.+7\.32.+thinly parted.+preview each new narration/i),
+        }),
+      ]),
+    });
     const legacyFinn = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-anime-finn-v1");
     expect(legacyFinn?.galleryVisibility).toBe("legacy-hidden");
     expect(legacyFinn?.lipSync.qualifications).toEqual(expect.arrayContaining([
@@ -128,7 +146,7 @@ describe("casual presenter catalog", () => {
   it("uses explicit character and animal groups instead of name heuristics", () => {
     expect(CASUAL_PRESENTER_PLANS.find((entry) => entry.displayName === "Pip")?.styleGroup).toBe("Character");
     expect(CASUAL_PRESENTER_PLANS.filter((entry) => entry.styleGroup === "Animal").map((entry) => entry.displayName))
-      .toEqual(["Milo", "Peaches", "Buddy", "Poppy", "Tavi", "Leo"]);
+      .toEqual(["Milo", "Peaches (legacy)", "Peaches", "Buddy", "Poppy", "Tavi", "Leo"]);
   });
 
   it("derives delivery paths and a ready starter asset only from verified details", () => {
