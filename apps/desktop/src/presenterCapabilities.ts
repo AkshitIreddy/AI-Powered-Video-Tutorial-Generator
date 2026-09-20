@@ -66,6 +66,15 @@ export function presenterAnimationReadiness(
     ? runtime.portraitStatuses.find((entry) => entry.portraitArtifactHash === choice.portraitArtifactHash)
     : undefined;
   const defaultStatus = runtime.portraitStatuses.find((entry) => entry.portraitArtifactHash === null);
+  if (exactStatus && !isLipSyncEngineId(exactStatus.modelId)) {
+    const nativeReason = exactStatus.reason.trim();
+    return {
+      state: "runtime-required",
+      badge: "Runtime required",
+      detail: `This portrait has an exact local route override, but its pinned model configuration is unavailable.${nativeReason ? ` ${nativeReason}` : ""} It will not fall back to the default face model.`,
+      blocksSelection: true,
+    };
+  }
   // The primary config binds exact portrait hashes to child routes. That override
   // wins over the profile's default MuseTalk route even when its child is missing.
   const effectiveStatus = exactStatus ?? defaultStatus;

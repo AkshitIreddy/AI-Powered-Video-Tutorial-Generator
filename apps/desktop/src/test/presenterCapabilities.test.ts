@@ -70,6 +70,17 @@ describe("presenter animation capabilities", () => {
         { portraitArtifactHash: HASH, modelId: "joyvasa-animal", configured: false, reason: "Child config is missing." },
       ],
     })).toMatchObject({ state: "runtime-required", blocksSelection: true });
+    expect(presenterAnimationReadiness(animal, {
+      activeEngineId: "liveportrait-musetalk-1.5",
+      portraitStatuses: [
+        { portraitArtifactHash: null, modelId: "liveportrait-musetalk-1.5", configured: true, reason: "Primary route configured." },
+        { portraitArtifactHash: HASH, modelId: null, configured: false, reason: "Child config could not be read." },
+      ],
+    })).toMatchObject({
+      state: "runtime-required",
+      detail: expect.stringContaining("will not fall back"),
+      blocksSelection: true,
+    });
   });
 
   it("does not turn a configured child route into a compatibility claim before review", () => {
