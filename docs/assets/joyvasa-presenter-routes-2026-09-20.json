@@ -49,6 +49,12 @@
       "profileId": "presenter-portrait.animal-lion-leo-v1",
       "portraitArtifactHash": "7694fb148894a41dcf4df55182bd803946a3d18f9a7a81daaf3cb3987411894e",
       "subjectId": "fictional-synthetic-animal-lion-leo-v1"
+    },
+    {
+      "runtime": "human",
+      "profileId": "presenter-portrait.casual-cartoon-chloe-v1",
+      "portraitArtifactHash": "4afecb9e0141a3bcb933aca577222adfa7819fd3dc49a9b437f1b1bc0f3437ca",
+      "subjectId": "fictional-synthetic-casual-cartoon-chloe-v1"
     }
   ]
 }
