@@ -384,7 +384,7 @@ const SOULX_FLASHHEAD: PackageSpec = PackageSpec {
     license_url: "https://raw.githubusercontent.com/Soul-AILab/SoulX-FlashHead/9bc03de06bb0de82cd6bc477804512ae06144bf2/LICENSE",
     license_sha256: "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
     license_scope: "Pinned SoulX-FlashHead source, Pro weights, Wav2Vec audio features, portable Python, CUDA wheels, and LGPL FFmpeg runtime. Every bundled dependency retains its upstream license.",
-    download_only_reason: "One-click managed presenter install. The desktop downloads 76 exact public artifacts, builds the portable environment offline, and verifies the complete installed-file ledger. Downloading stages SoulX without changing the selected presenter engine; choosing Use model performs the separate verified activation.",
+    download_only_reason: "One-click managed presenter install. The desktop downloads the exact declared artifacts, builds the portable environment offline, and verifies the complete installed-file ledger. Downloading stages SoulX without changing the selected presenter engine; choosing Use model performs the separate verified activation.",
     artifacts: &[],
     managed_files: &[],
     strategy: InstallStrategy::ManagedPresenter {
