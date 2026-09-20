@@ -377,6 +377,9 @@ def run_presenter_job(job: dict[str, Any], emit_progress: Callable[..., None]) -
             animation_mode=model.removeprefix("joyvasa-"),
             motion_seed=seed,
             cfg_scale=2.0,
+            # Human speech coefficients otherwise stretch animal muzzles into
+            # broad lip/teeth patches. Keep animal articulation restrained.
+            driving_multiplier=0.65 if model == "joyvasa-animal" else 1.10,
             flag_do_crop=False,
             flag_pasteback=False,
             flag_normalize_lip=False,

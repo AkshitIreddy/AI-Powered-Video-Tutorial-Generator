@@ -97,7 +97,7 @@ python scripts/prepare-joyvasa-presenter-runtime.py `
 The candidate evidence manifest must hash to
 `cd22d9e2d97162e1a99201a329dd436c19984f3e64123ba4674c3d6ac4df4ff6`.
 The curated install manifest must hash to
-`06db1c4d2a84b53dda1ed96e149c6cd5767e84c6eb67c4c35581c1af985b1562`.
+`e7ceb413154913c5c58df39e21ff3c1456b516ee55056c60e966477777a83a04`.
 This supersedes the first activated manifest (`2d9dc173…`), which omitted two upstream
 `InferenceConfig` resources, and the resource-complete manifest (`06d4efa4…`), whose
 adapter placed intermediate files in the delivery directory. The current manifest pins
