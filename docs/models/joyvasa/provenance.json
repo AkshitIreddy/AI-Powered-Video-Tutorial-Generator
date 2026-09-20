@@ -125,6 +125,14 @@
     "cfgScale": 2.0,
     "motionSeed": 20260920,
     "motionOffsetFrames": 8,
+    "sourceAnchoring": {
+      "poseScaleTranslation": "held at source pose",
+      "nonMouthExpressionGain": 0.35,
+      "nonMouthSmoothingWeights": [1, 2, 3, 4, 5, 4, 3, 2, 1],
+      "mouthSmoothing": false,
+      "drivingMultiplier": { "human": 1.1, "animal": 0.65 },
+      "composite": "Source-keypoint face ellipse with cosine feather over the original still; pixels outside the face envelope retain the source."
+    },
     "speechGate": {
       "enabled": true,
       "floorDb": -55.0,
@@ -141,12 +149,13 @@
     "videoHookContract": "Patch images2video and add_audio_to_video in the selected pipeline module, where they are imported and bound at module scope."
   },
   "qualificationBounds": {
-    "state": "installed-short-sample-pass-with-finn-v2-replacement",
-    "acceptedBounds": "Sampled visual qualification only: correct lower-face animation, stable noses/identity/style, and closed sampled silence frames.",
+    "state": "source-anchored-installed-short-sample-pass-with-two-rejected-animal-routes",
+    "acceptedBounds": "Short-clip evidence only. Earlier anatomy-only acceptance was superseded when native playback exposed background wobble and jitter. The qualification record distinguishes corrected clips from historical receipts.",
     "limitations": [
       "The 8-frame offset was measured on one narration and is not general phoneme-level synchronization proof.",
       "Sampling does not prove every frame or dense full-speed motion quality.",
-      "Installed strict outputs passed for seven animal/character portraits and corrected Finn v2. Finn v2 and Buddy also passed a second narration; full-speed every-frame naturalness and arbitrary-audio phoneme accuracy remain unqualified.",
+      "Animal articulation is restrained after the demo phrase exposed broad muzzle and teeth deformation. A mildly humanized lip style remains; the robot may show a thin bright teeth bar.",
+      "Poppy and Leo remain incompatible: repeated human-like lip and teeth strips distort their muzzles even at reduced articulation. Their still portraits remain available, but the UI blocks those animation routes despite installed runtime status.",
       "The JoyVASA motion-generator checkpoint is executable PyTorch pickle data; keep it pinned and hash-verified."
     ],
     "firstBrokerFinding": "The first activated pack omitted two InferenceConfig resources. Both files are byte-identical to JoyVASA source commit 916a90f8 and are pinned in the superseding curated manifest.",
@@ -170,7 +179,7 @@
     }
   ],
   "repositoryRuntimeSources": {
-    "revision": "04547f1a9d951a9e509074c8b1832bb8eec08c57",
+    "revision": "bf6316091879f957bb27646c4b8d997c4e21bf93",
     "files": [
       {
         "path": "services/pipeline/scripts/local_presenter_worker.py",
@@ -181,11 +190,11 @@
       {
         "path": "services/pipeline/scripts/joyvasa_presenter_adapter.py",
         "installPath": "worker/joyvasa_presenter_adapter.py",
-        "bytes": 14279,
-        "sha256": "3be34879f818cedd5624c7f0ea295be5b64056d9d0fd7dba82cc986fb7800fb2"
+        "bytes": 18747,
+        "sha256": "2e18cdb0179c6ebae69aca0e48bd336ec8cac4149617ab5da0e46704e4b11ef6"
       }
     ],
-    "reason": "Broker workspace identity and adapter intermediate outputs are isolated under the declared job workspace, leaving the delivery directory with only the declared output."
+    "reason": "Broker workspace identity and adapter intermediate outputs remain isolated under the declared job workspace. The adapter also anchors generated pose, translation, and scale to the source, applies centered smoothing only to non-mouth expression, preserves unsmoothed mouth coefficients for timing, and composites the animated face through a feathered envelope over the original still. Animal articulation uses a restrained 0.65 driving multiplier after dense review rejected broad muzzle and teeth deformation at 1.10."
   },
   "portraitRouteMigration": {
     "profileId": "presenter-portrait.casual-anime-finn-v2",
