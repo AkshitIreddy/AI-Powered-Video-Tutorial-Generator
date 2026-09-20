@@ -165,16 +165,13 @@ export function EditorIconButton({
   className = "",
   ...buttonProps
 }: EditorIconButtonProps) {
-  const setAnchorRef = useRef<HTMLElement | null>(null);
   return (
     <EditorTooltip description={tooltip} shortcut={shortcut} disabled={disabled} disabledReason={disabledReason}>
       {({ ref, describedBy, handlers }) => (
         <span
           className="aly-editor-iconbtn-wrap"
-          ref={(element) => {
-            setAnchorRef.current = element;
-            ref(element);
-          }}
+          ref={ref}
+          {...(disabled ? { tabIndex: 0, role: "group", "aria-label": label, "aria-disabled": true, "aria-describedby": describedBy } : {})}
           onMouseEnter={handlers.onMouseEnter}
           onMouseLeave={handlers.onMouseLeave}
           onFocus={handlers.onFocus}
@@ -185,7 +182,7 @@ export function EditorIconButton({
             type="button"
             {...buttonProps}
             aria-label={label}
-            aria-describedby={describedBy}
+            aria-describedby={disabled ? undefined : describedBy}
             aria-pressed={pressed}
             disabled={disabled}
             className={`aly-editor-iconbtn${pressed ? " is-pressed" : ""}${className ? ` ${className}` : ""}`}

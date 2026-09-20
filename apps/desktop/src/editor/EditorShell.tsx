@@ -12,7 +12,6 @@ import {
   Play,
   Redo2,
   Repeat,
-  RotateCcw,
   SkipBack,
   SlidersHorizontal,
   Sparkles,
@@ -30,7 +29,7 @@ import { BrowserMediaImportController, createBrowserClipFromAsset, downloadEdito
 import { EditorCanvas, EditorInspector, MediaBin, ProposalPanel, TranscriptPanel } from "./EditorPanels";
 import { EditorTimeline } from "./EditorTimeline";
 import { EditorIconButton, EditorTooltip } from "./EditorTooltip";
-import { EDITOR_DOCK_MAX, EDITOR_DOCK_MIN, EDITOR_LAYOUT_DEFAULTS, EDITOR_TIMELINE_MAX, EDITOR_TIMELINE_MIN, clampDockWidth, clampTimelineHeight, loadEditorLayout, saveEditorLayout } from "./editorLayout";
+import { EDITOR_DOCK_MIN, EDITOR_LAYOUT_DEFAULTS, EDITOR_TIMELINE_MIN, clampDockWidth, clampTimelineHeight, editorDockMax, editorTimelineMax, loadEditorLayout, saveEditorLayout } from "./editorLayout";
 import { createEditorState, selectedClips } from "./model";
 import { exportOtioLike, parseEditorProject, parseOtioLike } from "./otio";
 import { editorReducer } from "./reducer";
@@ -73,6 +72,12 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
 }
 
+function isInteractiveControlTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const control = target.closest("button, a[href], input, textarea, select, summary, [contenteditable='true'], [role='button'], [role='checkbox'], [role='combobox'], [role='slider'], [role='separator'], [role='tab'], [role='menuitem'], [role='group'][tabindex]");
+  return Boolean(control && !control.classList.contains("aly-editor-clip"));
+}
+
 function TimecodeControl({ value, rate, onCommit }: { value: number; rate: EditorProject["frameRate"]; onCommit: (frame: number) => void }) {
   const [draft, setDraft] = useState(formatTimecode(value, rate));
   useEffect(() => setDraft(formatTimecode(value, rate)), [rate, value]);
@@ -107,8 +112,10 @@ function WorkspaceSplitter({ orientation, label, value, min, max, onChange, inve
       className={`aly-editor-splitter aly-editor-splitter--${orientation}`}
       onKeyDown={(event) => {
         const large = event.shiftKey ? 48 : 12;
-        if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); event.stopPropagation(); onChange(clamp(value - large)); }
-        else if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); event.stopPropagation(); onChange(clamp(value + large)); }
+        const backward = inverted ? large : -large;
+        const forward = inverted ? -large : large;
+        if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); event.stopPropagation(); onChange(clamp(value + backward)); }
+        else if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); event.stopPropagation(); onChange(clamp(value + forward)); }
         else if (event.key === "Home") { event.preventDefault(); event.stopPropagation(); onChange(min); }
         else if (event.key === "End") { event.preventDefault(); event.stopPropagation(); onChange(max); }
       }}
@@ -199,9 +206,13 @@ export function AdvancedVideoEditor({
   const [exportingDocument, setExportingDocument] = useState(false);
   const [documentExportStatus, setDocumentExportStatus] = useState<{ message: string; failed: boolean } | null>(null);
   const [layout, setLayout] = useState(loadEditorLayout);
+  const [layoutBounds, setLayoutBounds] = useState(() => ({ dockMax: editorDockMax(), timelineMax: editorTimelineMax() }));
   useEffect(() => { saveEditorLayout(layout); }, [layout]);
   useEffect(() => {
     const handleResize = () => {
+      const dockMax = editorDockMax();
+      const timelineMax = editorTimelineMax();
+      setLayoutBounds((current) => current.dockMax === dockMax && current.timelineMax === timelineMax ? current : { dockMax, timelineMax });
       setLayout((current) => {
         const dockWidth = clampDockWidth(current.dockWidth);
         const timelineHeight = clampTimelineHeight(current.timelineHeight);
@@ -214,7 +225,7 @@ export function AdvancedVideoEditor({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
   const resetLayout = () => {
-    setLayout((current) => ({ ...current, dockWidth: EDITOR_LAYOUT_DEFAULTS.dockWidth, timelineHeight: EDITOR_LAYOUT_DEFAULTS.timelineHeight, dockCollapsed: false, timelineCollapsed: false }));
+    setLayout((current) => ({ ...current, dockWidth: clampDockWidth(EDITOR_LAYOUT_DEFAULTS.dockWidth), timelineHeight: clampTimelineHeight(EDITOR_LAYOUT_DEFAULTS.timelineHeight), dockCollapsed: false, timelineCollapsed: false }));
   };
   const exportDocument = async (format: "editorJson" | "otio") => {
     if (exportingDocument) return;
@@ -352,6 +363,7 @@ export function AdvancedVideoEditor({
       dispatch({ type: "REDO" });
       return;
     }
+    if (isInteractiveControlTarget(event.target)) return;
     if (event.key === " ") {
       event.preventDefault();
       dispatch({ type: "TRANSPORT_TOGGLE" });
@@ -511,20 +523,6 @@ export function AdvancedVideoEditor({
               </div>
             ) : null}
           </div>
-          <div className="aly-editor-dock__footer">
-            {selectedClip ? (
-              <button type="button" className="aly-editor-dock__inspect" onClick={() => dispatch({ type: "SET_ACTIVE_PANEL", panel: "inspector" })}>
-                Inspect {selectedClip.name}
-              </button>
-            ) : <span className="aly-editor-dock__hint">Select a clip to inspect it</span>}
-            <button
-              type="button"
-              className="aly-editor-dock__reset"
-              onClick={resetLayout}
-            >
-              <RotateCcw size={12} aria-hidden="true" /> Reset layout
-            </button>
-          </div>
         </div>
         {layout.dockCollapsed ? null : (
           <WorkspaceSplitter
@@ -532,7 +530,7 @@ export function AdvancedVideoEditor({
             label="Resize side panel width"
             value={layout.dockWidth}
             min={EDITOR_DOCK_MIN}
-            max={EDITOR_DOCK_MAX}
+            max={layoutBounds.dockMax}
             onChange={(dockWidth) => setLayout((current) => ({ ...current, dockWidth: clampDockWidth(dockWidth) }))}
           />
         )}
@@ -565,7 +563,7 @@ export function AdvancedVideoEditor({
             label="Resize timeline height"
             value={layout.timelineHeight}
             min={EDITOR_TIMELINE_MIN}
-            max={EDITOR_TIMELINE_MAX}
+            max={layoutBounds.timelineMax}
             inverted
             onChange={(timelineHeight) => setLayout((current) => ({ ...current, timelineHeight: clampTimelineHeight(timelineHeight) }))}
           />

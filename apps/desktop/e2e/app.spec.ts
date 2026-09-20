@@ -161,7 +161,7 @@ test("included artwork reaches the shared scene renderer and merges into a saved
   await expect(underlineMedia).toContainText("ready");
   await expect(underlineMedia.getByRole("button", { name: /place teal brush underline at playhead/i })).toBeEnabled();
   await expect.poll(() => underlineMedia.locator("img").evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
-  await page.getByRole("button", { name: "Unmute Music", exact: true }).click();
+  await page.getByRole("button", { name: "Mute Music", exact: true }).click();
   await page.getByRole("button", { name: "Mute Music", exact: true }).click();
   await expect.poll(async () => page.evaluate(() => {
     const snapshot = JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}");

@@ -29,14 +29,20 @@ function viewportHeight(fallback = 900): number {
   return typeof window === "undefined" ? fallback : window.innerHeight || fallback;
 }
 
+export function editorDockMax(viewport = viewportWidth()): number {
+  return Math.max(EDITOR_DOCK_MIN, Math.min(EDITOR_DOCK_MAX, viewport - 520));
+}
+
+export function editorTimelineMax(viewport = viewportHeight()): number {
+  return Math.max(EDITOR_TIMELINE_MIN, Math.min(EDITOR_TIMELINE_MAX, viewport - 380));
+}
+
 export function clampDockWidth(width: number, viewport = viewportWidth()): number {
-  const maxForWindow = Math.max(EDITOR_DOCK_MIN, Math.min(EDITOR_DOCK_MAX, viewport - 520));
-  return Math.min(maxForWindow, Math.max(EDITOR_DOCK_MIN, Math.round(width)));
+  return Math.min(editorDockMax(viewport), Math.max(EDITOR_DOCK_MIN, Math.round(width)));
 }
 
 export function clampTimelineHeight(height: number, viewport = viewportHeight()): number {
-  const maxForWindow = Math.max(EDITOR_TIMELINE_MIN, Math.min(EDITOR_TIMELINE_MAX, viewport - 380));
-  return Math.min(maxForWindow, Math.max(EDITOR_TIMELINE_MIN, Math.round(height)));
+  return Math.min(editorTimelineMax(viewport), Math.max(EDITOR_TIMELINE_MIN, Math.round(height)));
 }
 
 function asNumber(value: unknown, fallback: number): number {
@@ -44,10 +50,11 @@ function asNumber(value: unknown, fallback: number): number {
 }
 
 export function loadEditorLayout(): EditorLayoutPrefs {
-  if (typeof window === "undefined" || !("localStorage" in window)) return { ...EDITOR_LAYOUT_DEFAULTS };
+  const defaults = { ...EDITOR_LAYOUT_DEFAULTS, dockWidth: clampDockWidth(EDITOR_LAYOUT_DEFAULTS.dockWidth), timelineHeight: clampTimelineHeight(EDITOR_LAYOUT_DEFAULTS.timelineHeight) };
+  if (typeof window === "undefined" || !("localStorage" in window)) return defaults;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...EDITOR_LAYOUT_DEFAULTS };
+    if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<EditorLayoutPrefs>;
     return {
       dockWidth: clampDockWidth(asNumber(parsed.dockWidth, EDITOR_LAYOUT_DEFAULTS.dockWidth)),
@@ -57,7 +64,7 @@ export function loadEditorLayout(): EditorLayoutPrefs {
       hideEmptyTracks: parsed.hideEmptyTracks === true,
     };
   } catch {
-    return { ...EDITOR_LAYOUT_DEFAULTS };
+    return defaults;
   }
 }
 

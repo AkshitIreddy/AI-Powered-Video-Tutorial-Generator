@@ -1,3 +1,4 @@
+import { readTranscriptDraft, writeTranscriptDraft } from "./transcriptDrafts";
 import { useEffect, useMemo, useRef, useState, type Dispatch } from "react";
 import { Check, Crosshair, Grid3x3, Pencil, Scan, Type, Upload, User, UserPlus, X } from "lucide-react";
 import { clipCarriesProgrammeAudio, isClipAudible } from "./audioPolicy";
@@ -142,8 +143,8 @@ function MediaPreview({ state, clip, className, canvasScale, muted = true }: { s
 }
 
 export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch: Dispatch<EditorAction> }) {
-  const stageRef = useRef<HTMLDivElement>(null);
-  const [previewSize, setPreviewSize] = useState({ width: state.project.canvas.width, height: state.project.canvas.height });
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [previewSize, setPreviewSize] = useState({ width: 640, height: 360 });
   const slideTrack = state.project.tracks.find((track) => track.kind === "slides");
   const presenterTrack = state.project.tracks.find((track) => track.kind === "presenter");
   const slide = activeClip(state, "slides");
@@ -158,11 +159,12 @@ export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch
   const slideAsset = slide?.assetId ? state.project.assets.find((candidate) => candidate.id === slide.assetId) : null;
   const hasVisibleContent = Boolean(slide || presenter || title || caption);
   useEffect(() => {
-    const stage = stageRef.current;
+    const stage = viewportRef.current;
     if (!stage) return;
     const updateSize = () => {
-      const width = stage.clientWidth;
-      const height = stage.clientHeight;
+      const ratio = state.project.canvas.width / state.project.canvas.height;
+      const width = Math.min(stage.clientWidth, stage.clientHeight * ratio);
+      const height = width / ratio;
       if (width > 0 && height > 0) setPreviewSize((current) => current.width === width && current.height === height ? current : { width, height });
     };
     updateSize();
@@ -186,9 +188,9 @@ export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch
           <EditorIconButton icon={Crosshair} label="Center" tooltip="Mark the canvas center for alignment checks." pressed={state.view.guides.includes("center")} onClick={() => dispatch({ type: "TOGGLE_GUIDE", guide: "center" })} iconSize={14} />
         </div>
       </div>
-      <div ref={stageRef} className="aly-editor-canvas-stage" style={{ aspectRatio: `${state.project.canvas.width} / ${state.project.canvas.height}`, backgroundColor: state.project.canvas.backgroundColor }} data-media-status={slideAsset?.status ?? "none"}>
+      <div ref={viewportRef} className="aly-editor-canvas-viewport"><div className="aly-editor-canvas-stage" style={{ width: previewSize.width, height: previewSize.height, aspectRatio: `${state.project.canvas.width} / ${state.project.canvas.height}`, backgroundColor: state.project.canvas.backgroundColor }} data-media-status={slideAsset?.status ?? "none"}>
         {slide ? <MediaPreview state={state} clip={slide} className="aly-editor-canvas-stage__media" canvasScale={canvasScale} muted={!slideTrack || !isClipAudible(state.project, slideTrack, slide)} /> : null}
-        {slide && (!slideAsset?.previewUrl || slideAsset.status !== "ready") ? <div className="aly-editor-canvas-stage__slide" data-testid="editor-preview-slide"><span>Scene preview</span><strong>{slide.name}</strong><small>{typeof slide.metadata.objective === "string" ? slide.metadata.objective : "Rendered scene media is not attached yet."}</small></div> : null}
+        {slide && (!slideAsset?.previewUrl || slideAsset.status !== "ready") ? <div className="aly-editor-canvas-stage__slide" data-testid="editor-preview-slide"><span>Scene media not generated</span><small>{slide.name}</small></div> : null}
         {presenter ? <MediaPreview state={state} clip={presenter} className="aly-editor-canvas-stage__media aly-editor-canvas-stage__media--presenter" canvasScale={canvasScale} muted={!presenterTrack || !isClipAudible(state.project, presenterTrack, presenter)} /> : null}
         {title?.text ? <div className="aly-editor-canvas-stage__text aly-editor-canvas-stage__text--titles" data-testid="editor-preview-title" title={`Preview and export use Arial; your requested “${resolvedTextStyle(title).fontFamily}” font is saved.`} style={textPreviewStyleAtFrame(title, state.transport.playheadFrame, canvasScale)}>{title.text}</div> : null}
         {caption?.text ? <div className="aly-editor-canvas-stage__text aly-editor-canvas-stage__text--captions" data-testid="editor-preview-caption" title={`Preview and export use Arial; your requested “${resolvedTextStyle(caption).fontFamily}” font is saved.`} style={textPreviewStyleAtFrame(caption, state.transport.playheadFrame, canvasScale)}>{caption.text}</div> : null}
@@ -198,7 +200,7 @@ export function EditorCanvas({ state, dispatch }: { state: EditorState; dispatch
         {state.view.guides.includes("safe-title") ? <div className="aly-editor-canvas-guide aly-editor-canvas-guide--safe-title" aria-hidden="true" /> : null}
         {state.view.guides.includes("thirds") ? <div className="aly-editor-canvas-guide aly-editor-canvas-guide--thirds" aria-hidden="true"><span /><span /><span /><span /></div> : null}
         {state.view.guides.includes("center") ? <div className="aly-editor-canvas-guide aly-editor-canvas-guide--center" aria-hidden="true"><span /><span /></div> : null}
-      </div>
+      </div></div>
     </section>
   );
 }
@@ -283,17 +285,28 @@ export function EditorInspector({ state, dispatch }: { state: EditorState; dispa
 }
 
 function TranscriptCue({ clip, state, dispatch }: { clip: EditorClip; state: EditorState; dispatch: Dispatch<EditorAction> }) {
-  const [text, setText] = useState(clip.text ?? "");
-  const [speaker, setSpeaker] = useState(clip.speaker ?? "");
+  const [draft, setDraft] = useState(() => readTranscriptDraft(state.project.id, clip));
+  const { text, speaker } = draft;
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
   const [editingSpeaker, setEditingSpeaker] = useState(false);
-  useEffect(() => { setText(clip.text ?? ""); setSpeaker(clip.speaker ?? ""); setEditingSpeaker(false); }, [clip.id, clip.speaker, clip.text]);
+  useEffect(() => {
+    setDraft(readTranscriptDraft(state.project.id, { id: clip.id, text: clip.text ?? "", speaker: clip.speaker ?? "" }));
+    setEditingSpeaker(false);
+  }, [state.project.id, clip.id, clip.speaker, clip.text]);
+  const changeDraft = (patch: Partial<typeof draft>) => {
+    const next = { ...draft, ...patch };
+    setDraft(next);
+    setDraftStorageFailed(!writeTranscriptDraft(state.project.id, clip, next));
+  };
   const startTimecode = formatTimecode(clip.timelineRange.startFrame, state.project.frameRate);
   const endTimecode = formatTimecode(clip.timelineRange.startFrame + clip.timelineRange.durationFrames, state.project.frameRate);
   const durationSeconds = framesToSeconds(clip.timelineRange.durationFrames, state.project.frameRate);
   const speakerDirty = speaker !== (clip.speaker ?? "");
   const dirty = text !== (clip.text ?? "") || speakerDirty;
-  const revert = () => { setText(clip.text ?? ""); setSpeaker(clip.speaker ?? ""); setEditingSpeaker(false); };
+  const revert = () => { setDraft({ text: clip.text ?? "", speaker: clip.speaker ?? "" }); setDraftStorageFailed(!writeTranscriptDraft(state.project.id, clip, null)); setEditingSpeaker(false); };
   const save = () => {
+    // Locked cues retain their unfinished draft until the edit can be applied.
+    if (!clip.locked && !state.project.tracks.find((track) => track.id === clip.trackId)?.locked) writeTranscriptDraft(state.project.id, clip, null);
     dispatch(speakerDirty
       ? { type: "SET_TRANSCRIPT", clipId: clip.id, text, speaker }
       : { type: "SET_TRANSCRIPT", clipId: clip.id, text });
@@ -322,18 +335,18 @@ function TranscriptCue({ clip, state, dispatch }: { clip: EditorClip; state: Edi
           )}
         </EditorTooltip>
         <span className="aly-editor-transcript__duration" title={`Cue length ${durationSeconds.toFixed(1)} seconds`}>{durationSeconds.toFixed(1)}s</span>
-        {clip.speaker || editingSpeaker ? (
-          editingSpeaker || !clip.speaker ? (
+        {speaker || editingSpeaker ? (
+          editingSpeaker ? (
             <span className="aly-editor-transcript__speaker-edit">
               <User size={12} aria-hidden="true" />
-              <input aria-label="Speaker" placeholder="Speaker name (optional)" value={speaker} onChange={(event) => setSpeaker(event.target.value)} />
+              <input aria-label="Speaker" placeholder="Speaker name (optional)" value={speaker} onChange={(event) => changeDraft({ speaker: event.target.value })} />
               <EditorIconButton icon={Check} label="Done editing speaker" tooltip="Finish editing the speaker name. Save the cue to keep it." iconSize={13} onClick={() => setEditingSpeaker(false)} />
             </span>
           ) : (
             <span className="aly-editor-transcript__speaker">
               <User size={12} aria-hidden="true" />
-              <strong>{clip.speaker}</strong>
-              <EditorIconButton icon={Pencil} label={`Edit speaker ${clip.speaker}`} tooltip="Change who is credited for this cue. No speaker is ever filled in automatically." iconSize={12} onClick={() => { setSpeaker(clip.speaker ?? ""); setEditingSpeaker(true); }} />
+              <strong>{speaker}</strong>
+              <EditorIconButton icon={Pencil} label={`Edit speaker ${speaker}`} tooltip="Change who is credited for this cue. No speaker is ever filled in automatically." iconSize={12} onClick={() => setEditingSpeaker(true)} />
             </span>
           )
         ) : (
@@ -342,9 +355,9 @@ function TranscriptCue({ clip, state, dispatch }: { clip: EditorClip; state: Edi
           </button>
         )}
       </div>
-      <label className="aly-editor-transcript__cue-text"><span className="aly-editor-sr-only">Transcript</span><textarea value={text} rows={3} onChange={(event) => setText(event.target.value)} /></label>
+      <label className="aly-editor-transcript__cue-text"><span className="aly-editor-sr-only">Transcript</span><textarea value={text} rows={3} onChange={(event) => changeDraft({ text: event.target.value })} /></label>
       <div className="aly-editor-transcript__cue-foot">
-        <span className={`aly-editor-transcript__draft${dirty ? " is-dirty" : ""}`}>{dirty ? "Unsaved changes" : "Saved"}</span>
+        <span className={`aly-editor-transcript__draft${dirty ? " is-dirty" : ""}`}>{dirty ? (draftStorageFailed ? "Draft not stored — save before leaving" : "Draft kept on this device") : "Saved"}</span>
         <button
           type="button"
           className="aly-editor-transcript__revert"

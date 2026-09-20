@@ -7,6 +7,8 @@ import { makeSampleProject } from "./fixtures";
 
 beforeEach(() => {
   window.localStorage.clear();
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 900 });
 });
 
 describe("editor workspace redesign", () => {
@@ -34,7 +36,7 @@ describe("editor workspace redesign", () => {
     const cue = screen.getByDisplayValue("Start with the question.").closest("li")!;
     await user.clear(within(cue).getByRole("textbox", { name: "Transcript" }));
     await user.type(within(cue).getByRole("textbox", { name: "Transcript" }), "Draft that is not saved yet.");
-    expect(within(cue).getByText("Unsaved changes")).toBeInTheDocument();
+    expect(within(cue).getByText("Draft kept on this device")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Media" }));
     expect(screen.queryAllByRole("textbox", { name: "Transcript" })).toHaveLength(0);
@@ -97,8 +99,51 @@ describe("editor workspace redesign", () => {
     await user.click(screen.getByRole("button", { name: "Expand side panel" }));
     expect(screen.getByRole("separator", { name: "Resize side panel width" })).toHaveAttribute("aria-valuenow", String(after));
 
-    await user.click(screen.getByRole("button", { name: "Reset layout" }));
+    await user.click(screen.getByRole("button", { name: "Reset panel layout" }));
     expect(screen.getByRole("separator", { name: "Resize side panel width" })).toHaveAttribute("aria-valuenow", String(EDITOR_LAYOUT_DEFAULTS.dockWidth));
+  });
+
+  it("keeps focused buttons keyboard-operable instead of running editor shortcuts", async () => {
+    const user = userEvent.setup();
+    render(<AdvancedVideoEditor project={makeSampleProject()} />);
+    const transcript = screen.getByRole("button", { name: "Transcript" });
+    transcript.focus();
+
+    await user.keyboard(" ");
+
+    expect(screen.getByRole("heading", { name: "Transcript" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+  });
+
+  it("makes disabled icon explanations keyboard reachable", async () => {
+    render(<AdvancedVideoEditor project={makeSampleProject()} />);
+    const undo = screen.getByRole("button", { name: "Undo last edit" });
+    expect(undo).toBeDisabled();
+    const tooltipAnchor = undo.closest(".aly-editor-iconbtn-wrap");
+    expect(tooltipAnchor).toHaveAttribute("tabindex", "0");
+
+    fireEvent.focus(tooltipAnchor!);
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("There is nothing to undo yet.");
+  });
+
+  it("uses visual splitter direction and exposes viewport-clamped bounds", () => {
+    render(<AdvancedVideoEditor project={makeSampleProject()} />);
+    const timeline = screen.getByRole("separator", { name: "Resize timeline height" });
+    const before = Number(timeline.getAttribute("aria-valuenow"));
+    timeline.focus();
+    fireEvent.keyDown(timeline, { key: "ArrowUp" });
+    expect(screen.getByRole("separator", { name: "Resize timeline height" })).toHaveAttribute("aria-valuenow", String(before + 12));
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 800 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 600 });
+    fireEvent(window, new Event("resize"));
+
+    const dock = screen.getByRole("separator", { name: "Resize side panel width" });
+    expect(dock).toHaveAttribute("aria-valuemax", "280");
+    expect(dock).toHaveAttribute("aria-valuenow", "280");
+    expect(screen.getByRole("separator", { name: "Resize timeline height" })).toHaveAttribute("aria-valuemax", "220");
+    expect(screen.getByRole("separator", { name: "Resize timeline height" })).toHaveAttribute("aria-valuenow", "220");
   });
 
   it("collapses and reopens the timeline without losing clips", async () => {

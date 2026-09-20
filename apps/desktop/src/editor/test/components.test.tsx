@@ -52,7 +52,7 @@ describe("AdvancedVideoEditor", () => {
     expect(screen.queryByTestId("editor-preview-title")).not.toBeInTheDocument();
     await waitFor(() => expect(delivered).toHaveBeenCalledOnce());
     expect(delivered.mock.calls[0]?.[0].tracks.find((track: { kind: string }) => track.kind === "titles")).toMatchObject({ hidden: true });
-    expect(screen.getByRole("button", { name: "Show Titles" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide Titles" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps an imported document bound to the open native project identity", async () => {
@@ -81,8 +81,10 @@ describe("AdvancedVideoEditor", () => {
   it("supports keyboard split plus reversible undo and redo", async () => {
     const user = userEvent.setup();
     render(<AdvancedVideoEditor project={makeSampleProject()} />);
-    await user.click(screen.getByRole("button", { name: /Opening slide, slides/ }));
+    const openingSlide = screen.getByRole("button", { name: /Opening slide, slides/ });
+    await user.click(openingSlide);
     await user.click(screen.getByRole("button", { name: "Step forward one frame" }));
+    openingSlide.focus();
     await user.keyboard("s");
     expect(screen.getByRole("status")).toHaveTextContent("1 clip split");
     expect(screen.getByRole("button", { name: "Undo last edit" })).toBeEnabled();
@@ -161,7 +163,10 @@ describe("AdvancedVideoEditor", () => {
     const preview = screen.getByTestId("editor-preview-title");
     expect(preview).toHaveTextContent("Why this works in two steps");
     expect(preview).toHaveStyle({ left: "5%", top: "5%", color: "#FF3355" });
-    expect(preview.style.fontSize).toBe("72px");
+    // The 1920px canvas fits a 640px preview in the layout-free test DOM.
+    // Editing remains in export pixels; preview text follows canvas scale.
+    expect(textSize).toHaveValue(72);
+    expect(preview.style.fontSize).toBe("24px");
     expect(preview.style.whiteSpace).toBe("pre");
     expect(preview).toHaveAttribute("title", expect.stringContaining("Preview and export use Arial"));
     expect(screen.getByText(/keep only explicit line breaks/i)).toBeInTheDocument();
@@ -190,7 +195,10 @@ describe("AdvancedVideoEditor", () => {
     await user.click(screen.getByRole("button", { name: "Solo Narration" }));
     expect(slideVideo.muted).toBe(true);
     expect(presenterVideo.muted).toBe(true);
-    await user.click(screen.getByRole("button", { name: "Unsolo Narration" }));
+    const soloNarration = screen.getByRole("button", { name: "Solo Narration" });
+    expect(soloNarration).toHaveAttribute("aria-pressed", "true");
+    await user.click(soloNarration);
+    expect(screen.getByRole("button", { name: "Solo Narration" })).toHaveAttribute("aria-pressed", "false");
 
     await user.click(screen.getByRole("button", { name: /Opening slide, slides/ }));
     await user.click(screen.getByRole("button", { name: "Inspector" }));

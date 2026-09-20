@@ -54,7 +54,7 @@ function TrackControls({ track, dispatch }: { track: EditorTrack; dispatch: Disp
       <div className="aly-editor-track__toggles">
         <EditorIconButton
           icon={track.locked ? Lock : LockOpen}
-          label={`${track.locked ? "Unlock" : "Lock"} ${track.name}`}
+          label={`Lock ${track.name}`}
           tooltip={track.locked ? `Unlock the ${track.name} track so its clips can be edited again.` : `Lock the ${track.name} track to protect its clips from edits.`}
           pressed={track.locked}
           iconSize={13}
@@ -62,7 +62,7 @@ function TrackControls({ track, dispatch }: { track: EditorTrack; dispatch: Disp
         />
         <EditorIconButton
           icon={track.hidden ? EyeOff : Eye}
-          label={`${track.hidden ? "Show" : "Hide"} ${track.name}`}
+          label={`Hide ${track.name}`}
           tooltip={track.hidden ? `Show the ${track.name} track in the preview and renders.` : `Hide the ${track.name} track from the preview and renders. Clips are kept.`}
           pressed={track.hidden}
           iconSize={13}
@@ -71,7 +71,7 @@ function TrackControls({ track, dispatch }: { track: EditorTrack; dispatch: Disp
         {canCarryAudio ? (
           <EditorIconButton
             icon={track.muted ? VolumeX : Volume2}
-            label={`${track.muted ? "Unmute" : "Mute"} ${track.name}`}
+            label={`Mute ${track.name}`}
             tooltip={track.muted ? `Unmute the ${track.name} track.` : `Mute the ${track.name} track in preview and renders. Clips are kept.`}
             pressed={track.muted}
             iconSize={13}
@@ -81,7 +81,7 @@ function TrackControls({ track, dispatch }: { track: EditorTrack; dispatch: Disp
         {canCarryAudio ? (
           <EditorIconButton
             icon={track.solo ? Ear : EarOff}
-            label={`${track.solo ? "Unsolo" : "Solo"} ${track.name}`}
+            label={`Solo ${track.name}`}
             tooltip={track.solo ? `Stop soloing the ${track.name} track; other audible tracks return.` : `Solo the ${track.name} track to hear only it in preview and renders.`}
             pressed={track.solo}
             iconSize={13}
@@ -182,7 +182,7 @@ export function EditorTimeline({ state, dispatch, waveforms = {}, collapsed = fa
         <div className="aly-editor-timeline__mode-tools" role="group" aria-label="Timeline modes">
           <EditorIconButton icon={Magnet} label="Snap" tooltip="Snap edits to clip edges and the playhead." pressed={state.view.snappingEnabled} onClick={() => dispatch({ type: "TOGGLE_SNAPPING" })} />
           {onToggleEmptyTracks ? (
-            <EditorIconButton icon={ListFilter} label={hideEmptyTracks ? `Show empty tracks (${emptyTracks.length} hidden)` : "Hide empty tracks"} tooltip={hideEmptyTracks ? `Bring back the ${emptyTracks.length} hidden empty tracks. No track data was deleted.` : "Hide tracks that have no clips to give the timeline room. Tracks and their settings are kept."} pressed={hideEmptyTracks} onClick={onToggleEmptyTracks} />
+            <EditorIconButton icon={ListFilter} label="Hide empty tracks" tooltip={hideEmptyTracks ? `Bring back the ${emptyTracks.length} hidden empty tracks. No track data was deleted.` : "Hide tracks that have no clips to give the timeline room. Tracks and their settings are kept."} pressed={hideEmptyTracks} onClick={onToggleEmptyTracks} />
           ) : null}
           <label className="aly-editor-timeline__zoom">Zoom
             <input type="range" min="12" max="240" value={state.view.pixelsPerSecond} aria-label="Timeline zoom" onChange={(event) => dispatch({ type: "SET_ZOOM", pixelsPerSecond: Number(event.target.value) })} />
