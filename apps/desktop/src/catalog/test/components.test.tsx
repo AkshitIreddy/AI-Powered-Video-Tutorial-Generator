@@ -187,6 +187,30 @@ describe("catalog selection controls", () => {
     expect(within(card).getByText(/Verifying artifact/)).toBeVisible();
   });
 
+  it("shows the native install phase instead of inferring verification from 100% downloaded", () => {
+    const item = catalogFixture({ name: "Installing presenter runtime", availability: "downloadable" });
+    render(
+      <ModelLibrary
+        items={[item]}
+        compatibilityContext={contextFixture()}
+        onDownload={vi.fn()}
+        downloadState={() => ({
+          label: "Installing · view progress",
+          disabled: false,
+          detail: "Building the portable environment from the verified local wheelhouse.",
+          progressPercent: 100,
+          phase: "installing",
+        })}
+      />,
+    );
+
+    const card = screen.getByRole("heading", { name: "Installing presenter runtime" }).closest<HTMLElement>(".aly-catalog-card")!;
+    expect(within(card).getByText("Installing model")).toBeVisible();
+    expect(within(card).getByText("Download complete · installing locally")).toBeVisible();
+    expect(within(card).queryByText("Verifying package")).not.toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "View progress" })).toBeEnabled();
+  });
+
   it("never offers a download action for a cloud-only model", () => {
     const cloud = catalogFixture({
       name: "Cloud model",

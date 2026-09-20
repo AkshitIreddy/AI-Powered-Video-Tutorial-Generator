@@ -26,6 +26,7 @@ import {
 } from "./types";
 import { selectionFromCatalogItem } from "./routing";
 import { isCloudWritingProfileCandidate } from "./writingProfile";
+import type { ModelDownloadPhase } from "../native";
 
 export interface ModelLibraryProps {
   items: readonly CatalogItem[];
@@ -44,6 +45,7 @@ export interface CatalogDownloadActionState {
   disabled: boolean;
   detail?: string;
   progressPercent?: number;
+  phase?: ModelDownloadPhase | "queued" | "starting";
 }
 
 const compatibilityLabels: Readonly<Record<CompatibilityLevel, string>> = {
@@ -395,7 +397,11 @@ function choosePrimaryAction({
 function downloadStateSummary(state: CatalogDownloadActionState): string {
   if (state.progressPercent !== undefined) {
     const percent = Math.round(Math.max(0, Math.min(100, state.progressPercent)));
-    return percent >= 100 ? "Download complete · checking files" : `${percent}% downloaded`;
+    if (percent < 100) return `${percent}% downloaded`;
+    if (state.phase === "installing") return "Download complete · installing locally";
+    if (state.phase === "activating") return "Download complete · preparing model";
+    if (state.phase === "repairing") return "Download complete · repairing install";
+    return "Download complete · checking files";
   }
   if (/installed|ready|verified/i.test(state.label)) return "Available on this device";
   if (state.disabled) return "Open technical details for the setup reason";
@@ -403,6 +409,18 @@ function downloadStateSummary(state: CatalogDownloadActionState): string {
 }
 
 function downloadStatusLabel(state: CatalogDownloadActionState): string {
+  switch (state.phase) {
+    case "queued": return "Queued";
+    case "starting": return "Starting download";
+    case "downloading": return "Downloading";
+    case "verifying": return "Verifying package";
+    case "installing": return "Installing model";
+    case "activating": return "Preparing model";
+    case "repairing": return "Repairing model";
+    case "cancelling": return "Cancelling download";
+    case "removing": return "Removing model";
+    default: break;
+  }
   if (state.progressPercent !== undefined && state.progressPercent >= 100) return "Verifying package";
   const phase = state.label.split("·", 1)[0]?.replace(/\s+\d+%.*$/u, "").trim();
   return phase || "Download status";

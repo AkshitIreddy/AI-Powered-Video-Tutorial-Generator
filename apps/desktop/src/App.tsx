@@ -2614,13 +2614,17 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     const entry = findModelDownloadEntry(item, downloadCatalog);
     if (!entry?.available) return { label: "Download unavailable", disabled: true, detail: downloads.loading ? "Loading download packages…" : "This model has no downloadable package yet." };
     const status = downloadStatuses.find((value) => value.modelId === entry.modelId);
-    const active = isDownloadActive(status?.phase) || downloads.startingModelIds.has(entry.modelId);
+    const starting = downloads.startingModelIds.has(entry.modelId);
+    const active = isDownloadActive(status?.phase) || starting;
     const queued = downloads.queuedModelIds.includes(entry.modelId);
     const complete = isDownloadComplete(status?.phase);
+    const phase = queued ? "queued" as const : starting && !isDownloadActive(status?.phase) ? "starting" as const : status?.phase;
+    const activeLabel = phase === "starting" ? "Starting" : modelDownloadPhaseLabel(status?.phase);
     return {
-      label: queued ? "Queued · view progress" : active ? "Downloading · view progress" : complete ? modelDownloadPhaseLabel(status?.phase) : status?.downloadedBytes ? "Resume download" : "Download",
+      label: queued ? "Queued · view progress" : active ? `${activeLabel} · view progress` : complete ? modelDownloadPhaseLabel(status?.phase) : status?.downloadedBytes ? "Resume download" : "Download",
       disabled: false,
       detail: complete ? status?.detail : `Download under the ${entry.licenseId} license.`,
+      ...(phase ? { phase } : {}),
       ...(active && status?.totalBytes ? { progressPercent: Math.min(100, status.downloadedBytes / status.totalBytes * 100) } : {}),
     };
   };
