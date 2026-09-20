@@ -90,6 +90,7 @@ def test_wheel_install_is_offline_hash_required_and_uses_embedded_python(
     pip_wheel.parent.mkdir(parents=True)
     with zipfile.ZipFile(pip_wheel, "w") as bundle:
         bundle.writestr("pip/__init__.py", b"__version__='test'\n")
+        bundle.writestr("pip/__pycache__/__init__.cpython-310.pyc", b"packaged cache")
     manifest = {
         "python": {
             "executable": "python-base/python.exe",
@@ -112,6 +113,17 @@ def test_wheel_install_is_offline_hash_required_and_uses_embedded_python(
     def fake_run(arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         observed["arguments"] = arguments
         observed["environment"] = kwargs["env"]
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        pip_temporary = Path(str(environment["TEMP"]))
+        assert pip_temporary.is_dir()
+        (pip_temporary / "wheel-unpack.tmp").write_bytes(b"temporary extraction")
+        bundled_cache = (
+            stage / "venv" / "Lib" / "site-packages" / "numpy" / "distutils" / "__pycache__"
+        )
+        bundled_cache.mkdir(parents=True)
+        (bundled_cache / "conv_template.cpython-310.pyc").write_bytes(b"wheel bytecode")
+        (bundled_cache.parent / "conv_template.py").write_text("source = True\n")
         return subprocess.CompletedProcess(arguments, 0, b"", b"")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -125,6 +137,13 @@ def test_wheel_install_is_offline_hash_required_and_uses_embedded_python(
     environment = observed["environment"]
     assert isinstance(environment, dict)
     assert environment["PIP_NO_INDEX"] == "1"
+    assert environment["TEMP"] == environment["TMP"] == environment["TMPDIR"]
+    assert not Path(str(environment["TEMP"])).exists()
+    assert not list((stage / "venv" / "Lib" / "site-packages").rglob("*.pyc"))
+    assert not list((stage / "venv" / "Lib" / "site-packages").rglob("__pycache__"))
+    assert (
+        stage / "venv" / "Lib" / "site-packages" / "numpy" / "distutils" / "conv_template.py"
+    ).is_file()
     requirements = (stage / "manifests" / "requirements-windows-cu128.hashed.txt").read_text()
     assert requirements == f"pip==25.2 --hash=sha256:{'a' * 64}\n"
 
@@ -207,8 +226,21 @@ def test_runtime_ledger_rejects_unexpected_cache_file(tmp_path: Path) -> None:
     (runtime / "worker" / "worker.py").write_text("ok", encoding="utf-8")
     declaration = installer._write_runtime_ledger(runtime)
     (runtime / "worker" / "stale.pyc").write_bytes(b"cache")
-    with pytest.raises(installer.PresenterRuntimeInstallError, match="mutable file"):
+    with pytest.raises(
+        installer.PresenterRuntimeInstallError, match=r"mutable file: worker/stale\.pyc"
+    ):
         installer._verify_runtime_ledger(runtime, declaration)
+
+
+def test_runtime_ledger_reports_unexpected_cache_directory_path(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    cache = runtime / "venv" / "Lib" / "site-packages" / "numpy" / "__pycache__"
+    cache.mkdir(parents=True)
+    with pytest.raises(
+        installer.PresenterRuntimeInstallError,
+        match=r"mutable directory: venv/Lib/site-packages/numpy/__pycache__",
+    ):
+        installer._runtime_files(runtime)
 
 
 def test_invalid_existing_primary_fails_closed(tmp_path: Path) -> None:

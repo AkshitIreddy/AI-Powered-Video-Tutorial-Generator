@@ -542,6 +542,60 @@ def _hidden_subprocess_flags() -> int:
     return 0x08000000 if os.name == "nt" else 0
 
 
+def _verified_tree_entries(root: Path, label: str) -> tuple[list[Path], list[Path]]:
+    if _is_reparse(root) or not root.is_dir():
+        raise PresenterRuntimeInstallError(f"{label} must be a regular directory")
+    resolved_root = root.resolve(strict=True)
+    directories: list[Path] = []
+    files: list[Path] = []
+    for current, names, filenames in os.walk(resolved_root, topdown=True, followlinks=False):
+        current_path = Path(current)
+        for name in (*names, *filenames):
+            path = current_path / name
+            relative = path.relative_to(resolved_root).as_posix()
+            if _is_reparse(path):
+                raise PresenterRuntimeInstallError(f"{label} contains a reparse point: {relative}")
+            try:
+                path.resolve(strict=True).relative_to(resolved_root)
+            except (OSError, ValueError) as error:
+                raise PresenterRuntimeInstallError(
+                    f"{label} contains an escaping or missing path: {relative}"
+                ) from error
+            if path.is_dir():
+                directories.append(path)
+            elif path.is_file():
+                files.append(path)
+            else:
+                raise PresenterRuntimeInstallError(
+                    f"{label} contains a non-regular path: {relative}"
+                )
+    return directories, files
+
+
+def _remove_verified_tree(root: Path, label: str) -> None:
+    _verified_tree_entries(root, label)
+    shutil.rmtree(root)
+
+
+def _remove_packaged_bytecode(site_packages: Path) -> None:
+    directories, files = _verified_tree_entries(site_packages, "SoulX site-packages")
+    cache_directories = sorted(
+        (path for path in directories if path.name == "__pycache__"),
+        key=lambda path: len(path.parts),
+    )
+    cache_roots: list[Path] = []
+    for path in cache_directories:
+        if not any(parent in path.parents for parent in cache_roots):
+            cache_roots.append(path)
+    for path in files:
+        if path.suffix.casefold() == ".pyc" and not any(
+            cache in path.parents for cache in cache_roots
+        ):
+            path.unlink()
+    for cache in cache_roots:
+        shutil.rmtree(cache)
+
+
 def _install_wheels(manifest: Mapping[str, Any], downloads: Path, stage: Path) -> None:
     python = _child(stage, _relative(manifest["python"]["executable"], "python executable"))
     site_packages = _child(stage, _relative(manifest["python"]["sitePackages"], "site packages"))
@@ -562,36 +616,49 @@ def _install_wheels(manifest: Mapping[str, Any], downloads: Path, stage: Path) -
         "PIP_NO_INPUT": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
-    completed = subprocess.run(
-        [
-            str(python),
-            "-B",
-            "-m",
-            "pip",
-            "install",
-            "--no-index",
-            "--no-deps",
-            "--require-hashes",
-            "--only-binary=:all:",
-            "--no-compile",
-            "--target",
-            str(site_packages),
-            "--find-links",
-            str(downloads / "wheelhouse"),
-            "--requirement",
-            str(requirements),
-        ],
-        cwd=stage,
-        env=environment,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        check=False,
-        creationflags=_hidden_subprocess_flags(),
-        timeout=1800,
+    pip_temporary = stage / ".pip-temp"
+    pip_temporary.mkdir(exist_ok=False)
+    environment.update(
+        {
+            "TEMP": str(pip_temporary),
+            "TMP": str(pip_temporary),
+            "TMPDIR": str(pip_temporary),
+        }
     )
+    try:
+        completed = subprocess.run(
+            [
+                str(python),
+                "-B",
+                "-m",
+                "pip",
+                "install",
+                "--no-index",
+                "--no-deps",
+                "--require-hashes",
+                "--only-binary=:all:",
+                "--no-compile",
+                "--target",
+                str(site_packages),
+                "--find-links",
+                str(downloads / "wheelhouse"),
+                "--requirement",
+                str(requirements),
+            ],
+            cwd=stage,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            check=False,
+            creationflags=_hidden_subprocess_flags(),
+            timeout=1800,
+        )
+    finally:
+        _remove_verified_tree(pip_temporary, "SoulX pip temporary directory")
     if completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", errors="replace")[-2000:]
         raise PresenterRuntimeInstallError(f"Offline SoulX wheel installation failed: {detail}")
+    _remove_packaged_bytecode(site_packages)
 
 
 def _copy_resources(manifest: Mapping[str, Any], stage: Path) -> None:
@@ -692,8 +759,9 @@ def _runtime_files(root: Path) -> dict[PurePosixPath, Path]:
             if _is_reparse(path):
                 raise PresenterRuntimeInstallError("SoulX runtime contains a reparse directory")
             if path.name in EXCLUDED_PARTS:
+                directory_relative = path.relative_to(root).as_posix()
                 raise PresenterRuntimeInstallError(
-                    "SoulX runtime contains an undeclared mutable directory"
+                    f"SoulX runtime contains an undeclared mutable directory: {directory_relative}"
                 )
             continue
         relative = PurePosixPath(path.relative_to(root).as_posix())
@@ -712,7 +780,9 @@ def _runtime_files(root: Path) -> dict[PurePosixPath, Path]:
         if any(part in EXCLUDED_PARTS for part in relative.parts) or path.name.endswith(
             (".pyc", ".log")
         ):
-            raise PresenterRuntimeInstallError("SoulX runtime contains an undeclared mutable file")
+            raise PresenterRuntimeInstallError(
+                f"SoulX runtime contains an undeclared mutable file: {relative.as_posix()}"
+            )
         files[relative] = path
     return files
 
