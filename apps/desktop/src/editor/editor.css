@@ -281,8 +281,9 @@
 .aly-editor-track__toggles .aly-editor-iconbtn { width: 24px; height: 24px; border-radius: 6px; }
 .aly-editor-track__lane { position: relative; min-width: var(--aly-editor-timeline-width); background: repeating-linear-gradient(90deg, transparent 0, transparent 71px, rgba(255, 255, 255, 0.026) 72px); }
 .aly-editor-track__empty { position: absolute; top: 50%; left: 12px; color: rgba(255, 255, 255, 0.24); font-size: 9px; transform: translateY(-50%); }
-.aly-editor-timeline__hidden-note { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; margin: 0; padding: 7px 12px; border-top: 1px solid var(--aly-editor-line); color: var(--aly-editor-muted); font-size: 10px; }
-.aly-editor-timeline__hidden-note button { padding: 4px 8px; border: 1px solid var(--aly-editor-line); border-radius: 6px; background: transparent; cursor: pointer; font-size: 10px; }
+.aly-editor-timeline__hidden-note { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-width: 0; margin: 0; padding: 7px 12px; border-top: 1px solid var(--aly-editor-line); color: var(--aly-editor-muted); background: #0b0e14; font-size: 10px; }
+.aly-editor-timeline__hidden-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aly-editor-timeline__hidden-note button { flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--aly-editor-line); border-radius: 6px; background: transparent; cursor: pointer; font-size: 10px; }
 .aly-editor-clip { --aly-editor-clip-color: #5b4fc4; position: absolute; top: 5px; bottom: 5px; display: grid; grid-template-columns: 4px minmax(0, 1fr) 4px; min-width: 12px; padding: 0; border: 1px solid color-mix(in srgb, var(--aly-editor-clip-color) 74%, white 12%); border-radius: 6px; color: white; background: linear-gradient(180deg, color-mix(in srgb, var(--aly-editor-clip-color) 78%, white 9%), var(--aly-editor-clip-color)); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22); cursor: pointer; overflow: hidden; text-align: left; }
 .aly-editor-clip--presenter { --aly-editor-clip-color: #6a4aa5; }
 .aly-editor-clip--titles { --aly-editor-clip-color: #984d77; }

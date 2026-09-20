@@ -61,7 +61,33 @@ test.describe("editor workspace redesign", () => {
     await page.locator(".aly-editor-dock").screenshot({ path: `${output}-inspector.png` });
 
     await expect(page.getByRole("button", { name: "Hide empty tracks" })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByText(/empty tracks? hidden/)).toBeVisible();
+    const hiddenTracksNote = page.getByRole("status").filter({ hasText: /empty tracks? hidden/ });
+    await expect(hiddenTracksNote).toBeVisible();
+    await page.getByLabel("Timeline zoom").fill("240");
+    const scroll = page.locator(".aly-editor-timeline__scroll");
+    await expect.poll(() => scroll.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+    await scroll.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
+    const footerGeometry = await page.locator(".aly-editor-timeline").evaluate((timeline) => {
+      const scroll = timeline.querySelector<HTMLElement>(".aly-editor-timeline__scroll")!;
+      const footer = timeline.querySelector<HTMLElement>(".aly-editor-timeline__hidden-note")!;
+      const timelineRect = timeline.getBoundingClientRect();
+      const scrollRect = scroll.getBoundingClientRect();
+      const footerRect = footer.getBoundingClientRect();
+      return {
+        scrollLeft: scroll.scrollLeft,
+        timelineLeft: timelineRect.left,
+        timelineRight: timelineRect.right,
+        scrollBottom: scrollRect.bottom,
+        footerLeft: footerRect.left,
+        footerRight: footerRect.right,
+        footerTop: footerRect.top,
+      };
+    });
+    expect(footerGeometry.scrollLeft).toBeGreaterThan(0);
+    expect(Math.abs(footerGeometry.footerLeft - footerGeometry.timelineLeft)).toBeLessThanOrEqual(1);
+    expect(Math.abs(footerGeometry.footerRight - footerGeometry.timelineRight)).toBeLessThanOrEqual(1);
+    expect(footerGeometry.footerTop).toBeGreaterThanOrEqual(footerGeometry.scrollBottom - 1);
+    await expect(page.getByRole("button", { name: "Show empty tracks", exact: true })).toBeInViewport();
     await page.locator(".aly-editor-timeline").screenshot({ path: `${output}-empty-hidden.png` });
     await page.getByRole("button", { name: "Show empty tracks", exact: true }).click();
     await expect(page.getByRole("group", { name: "Slides track" })).toBeVisible();

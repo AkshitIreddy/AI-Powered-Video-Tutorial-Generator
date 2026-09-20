@@ -194,37 +194,39 @@ export function EditorTimeline({ state, dispatch, waveforms = {}, collapsed = fa
         </div>
       </div>
       {collapsed ? null : (
-      <div className="aly-editor-timeline__scroll" style={{ "--aly-editor-timeline-width": `${Math.max(900, seconds * state.view.pixelsPerSecond)}px` } as TimelineScrollStyle}>
-        <div className="aly-editor-timeline__labels-spacer" aria-hidden="true" />
-        <div className="aly-editor-ruler" aria-label="Time ruler">
-          {ticks.map((second) => {
-            const frame = Math.round(second * fps);
-            return <button key={second} type="button" className="aly-editor-ruler__tick" style={{ left: `${frame / duration * 100}%` }} aria-label={`Move playhead to ${formatTimecode(frame, state.project.frameRate)}`} onClick={() => dispatch({ type: "SET_PLAYHEAD", frame })}><span>{formatTimecode(frame, state.project.frameRate).slice(0, 8)}</span></button>;
-          })}
-        </div>
-        <div className="aly-editor-timeline__tracks">
-          <div className="aly-editor-playhead" style={{ left: `calc(var(--aly-editor-track-label-width, 216px) + (100% - var(--aly-editor-track-label-width, 216px)) * ${playheadLeft / 100})` }} aria-hidden="true"><span /></div>
-          {visibleTracks.map((track) => (
-            <div key={track.id} className={`aly-editor-track aly-editor-track--${track.kind}${track.hidden ? " aly-editor-track--hidden" : ""}${track.clips.length === 0 ? " aly-editor-track--empty" : ""}`} data-track-id={track.id}>
-              <TrackControls track={track} dispatch={dispatch} />
-              <div className="aly-editor-track__lane" role="group" aria-label={`${track.name} track`} onDoubleClick={(event) => {
-                if (event.target !== event.currentTarget) return;
-                const rect = event.currentTarget.getBoundingClientRect();
-                dispatch({ type: "SET_PLAYHEAD", frame: Math.round((event.clientX - rect.left) / rect.width * duration), snap: true });
-              }}>
-                {!track.hidden ? track.clips.map((clip) => <TimelineClip key={clip.id} clip={clip} state={state} dispatch={dispatch} {...(clip.assetId && waveforms[clip.assetId] ? { waveform: waveforms[clip.assetId] } : {})} />) : null}
-                {!track.clips.length ? <span className="aly-editor-track__empty">Empty · clips placed at the playhead land here</span> : null}
+      <>
+        <div className="aly-editor-timeline__scroll" style={{ "--aly-editor-timeline-width": `${Math.max(900, seconds * state.view.pixelsPerSecond)}px` } as TimelineScrollStyle}>
+          <div className="aly-editor-timeline__labels-spacer" aria-hidden="true" />
+          <div className="aly-editor-ruler" aria-label="Time ruler">
+            {ticks.map((second) => {
+              const frame = Math.round(second * fps);
+              return <button key={second} type="button" className="aly-editor-ruler__tick" style={{ left: `${frame / duration * 100}%` }} aria-label={`Move playhead to ${formatTimecode(frame, state.project.frameRate)}`} onClick={() => dispatch({ type: "SET_PLAYHEAD", frame })}><span>{formatTimecode(frame, state.project.frameRate).slice(0, 8)}</span></button>;
+            })}
+          </div>
+          <div className="aly-editor-timeline__tracks">
+            <div className="aly-editor-playhead" style={{ left: `calc(var(--aly-editor-track-label-width, 216px) + (100% - var(--aly-editor-track-label-width, 216px)) * ${playheadLeft / 100})` }} aria-hidden="true"><span /></div>
+            {visibleTracks.map((track) => (
+              <div key={track.id} className={`aly-editor-track aly-editor-track--${track.kind}${track.hidden ? " aly-editor-track--hidden" : ""}${track.clips.length === 0 ? " aly-editor-track--empty" : ""}`} data-track-id={track.id}>
+                <TrackControls track={track} dispatch={dispatch} />
+                <div className="aly-editor-track__lane" role="group" aria-label={`${track.name} track`} onDoubleClick={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  dispatch({ type: "SET_PLAYHEAD", frame: Math.round((event.clientX - rect.left) / rect.width * duration), snap: true });
+                }}>
+                  {!track.hidden ? track.clips.map((clip) => <TimelineClip key={clip.id} clip={clip} state={state} dispatch={dispatch} {...(clip.assetId && waveforms[clip.assetId] ? { waveform: waveforms[clip.assetId] } : {})} />) : null}
+                  {!track.clips.length ? <span className="aly-editor-track__empty">Empty · clips placed at the playhead land here</span> : null}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
         {hideEmptyTracks && emptyTracks.length ? (
-          <p className="aly-editor-timeline__hidden-note" role="status">
-            {emptyTracks.length} empty {emptyTracks.length === 1 ? "track" : "tracks"} hidden ({emptyTracks.map((track) => track.name).join(", ")}).
+          <footer className="aly-editor-timeline__hidden-note" role="status">
+            <span>{emptyTracks.length} empty {emptyTracks.length === 1 ? "track" : "tracks"} hidden.</span>
             {onToggleEmptyTracks ? <button type="button" onClick={onToggleEmptyTracks}>Show empty tracks</button> : null}
-          </p>
+          </footer>
         ) : null}
-      </div>
+      </>
       )}
     </section>
   );
