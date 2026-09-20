@@ -7,6 +7,15 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+function Get-ArtifactSha256([string]$Path) {
+    # Use the runtime API so a Windows PowerShell child can verify files even
+    # when its inherited module path does not expose Get-FileHash.
+    $Hasher = [Security.Cryptography.SHA256]::Create()
+    $Stream = [IO.File]::OpenRead($Path)
+    try { return [BitConverter]::ToString($Hasher.ComputeHash($Stream)).Replace('-', '').ToLowerInvariant() }
+    finally { $Stream.Dispose(); $Hasher.Dispose() }
+}
+
 $PortableRoot = [IO.Path]::GetFullPath($PortableRoot)
 if (-not (Test-Path -LiteralPath $PortableRoot -PathType Container)) { throw "Portable root not found." }
 if ($ImportCredentialFile) {
@@ -40,7 +49,7 @@ if ($ForcedAlignerConfigPath) {
             if (-not $ArtifactPath.StartsWith($AllowedPrefix, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $ArtifactPath -PathType Leaf)) {
                 throw "Forced aligner $Role artifact is missing or escapes runtimeRoot."
             }
-            $ActualHash = (Get-FileHash -LiteralPath $ArtifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $ActualHash = Get-ArtifactSha256 $ArtifactPath
             if ($ActualHash -ne [string]$Entry.sha256) {
                 throw "Forced aligner $Role artifact failed its SHA-256 pin."
             }
@@ -169,7 +178,7 @@ $Route = {
 }
 $WorkerPath = Join-Path $PortableRoot "Runtime\alystria-pipeline.exe"
 if (-not (Test-Path -LiteralPath $WorkerPath -PathType Leaf)) { throw "Packaged worker not found." }
-$WorkerFingerprint = (Get-FileHash -LiteralPath $WorkerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$WorkerFingerprint = Get-ArtifactSha256 $WorkerPath
 $WorkerRevision = "packaged-worker-" + $WorkerFingerprint.Substring(0, 16)
 $PresenterConfigPath = Join-Path $PortableRoot "Models\presenter-runtime.json"
 $PresenterConfig = if (Test-Path -LiteralPath $PresenterConfigPath -PathType Leaf) {
