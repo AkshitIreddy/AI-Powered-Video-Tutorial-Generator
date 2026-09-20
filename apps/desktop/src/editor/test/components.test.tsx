@@ -191,6 +191,7 @@ describe("AdvancedVideoEditor", () => {
     const presenterVideo = screen.getByLabelText("Preview of Presenter recording") as HTMLVideoElement;
     expect(slideVideo.muted).toBe(false);
     expect(presenterVideo.muted).toBe(false);
+    expect(presenterVideo).toHaveStyle({ inset: "0", width: "100%", height: "100%", objectFit: "contain" });
 
     await user.click(screen.getByRole("button", { name: "Solo Narration" }));
     expect(slideVideo.muted).toBe(true);

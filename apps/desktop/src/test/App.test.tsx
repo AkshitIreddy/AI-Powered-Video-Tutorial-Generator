@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import App from "../App";
@@ -668,6 +668,13 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("button", { name: /^open project$/i }));
     const projectNav = within(screen.getByRole("navigation", { name: /project workspace/i }));
     await user.click(projectNav.getByRole("button", { name: /studio/i }));
+    const canvasZoom = screen.getByRole("slider", { name: /canvas zoom/i });
+    expect(canvasZoom).toHaveValue("100");
+    expect(canvasZoom).toHaveAttribute("max", "100");
+    fireEvent.change(canvasZoom, { target: { value: "55" } });
+    expect(canvasZoom).toHaveValue("55");
+    await user.click(screen.getByRole("button", { name: /^fit$/i }));
+    expect(canvasZoom).toHaveValue("100");
     await user.click(screen.getByRole("button", { name: "Design" }));
 
     expect(screen.queryByLabelText(/project type scale/i)).not.toBeInTheDocument();

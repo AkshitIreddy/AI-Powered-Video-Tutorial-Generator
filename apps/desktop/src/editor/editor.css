@@ -161,7 +161,7 @@
 .aly-editor-canvas-toolbar > div { display: flex; gap: 4px; }
 .aly-editor-canvas-stage { position: relative; flex: 0 0 auto; max-width: 100%; max-height: 100%; margin: auto; border: 1px solid var(--aly-editor-line-strong); border-radius: 8px; box-shadow: 0 22px 55px rgba(0, 0, 0, 0.42); overflow: hidden; }
 .aly-editor-canvas-stage__media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.aly-editor-canvas-stage__media--presenter { z-index: 2; inset: auto 3% 3% auto; width: 28%; height: 58%; border-radius: 12px; object-fit: cover; transform-origin: bottom right; }
+.aly-editor-canvas-stage__media--presenter { z-index: 2; }
 .aly-editor-canvas-stage__audio { display: none; }
 .aly-editor-canvas-stage__slide { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 3%; background: radial-gradient(ellipse at 50% 40%, rgba(124, 108, 255, .08), transparent 70%); pointer-events: none; }
 .aly-editor-canvas-stage__slide span { color: var(--aly-editor-muted); font-size: 10px; letter-spacing: .04em; }
