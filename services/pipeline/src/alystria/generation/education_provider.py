@@ -52,6 +52,9 @@ _SCENE_TYPES = {
 # Author 123 wpm, synthesize at a natural 0.86 speed, then let the measured MP3
 # frame duration—not a text estimate—set every scene's final timing.
 NARRATION_WORDS_PER_SECOND = 2.05
+MAX_WEB_RESEARCH_RAW_TEXT_CHARS = 16_384
+MAX_WEB_RESEARCH_RAW_CITATIONS = 32
+MAX_WEB_RESEARCH_RAW_CITATION_BYTES = 65_536
 
 _SCENE_SEMANTICS = {
     "question": ("question", "editorial_type", "question-hold"),
@@ -282,27 +285,233 @@ def _validate_outline_references(
 
 @dataclass(frozen=True, slots=True)
 class WebResearchOutcome:
-    """Compact grounded findings plus the provider result used for accounting."""
+    """One unnormalized provider response retained before local validation."""
 
     query: str
-    findings: tuple[Mapping[str, str], ...]
-    citations: tuple[Mapping[str, str], ...]
     provider_result: ProviderResult[TextOutput]
 
-    def public_payload(self) -> dict[str, Any]:
+    def raw_payload(self) -> dict[str, Any]:
         result = self.provider_result
-        return {
+        raw_text = result.value.text
+        stored_text = raw_text[:MAX_WEB_RESEARCH_RAW_TEXT_CHARS]
+        raw_citations: list[Any] = []
+        citations_truncated = len(result.value.citations) > MAX_WEB_RESEARCH_RAW_CITATIONS
+        for item in result.value.citations[:MAX_WEB_RESEARCH_RAW_CITATIONS]:
+            try:
+                serialized = json.dumps(
+                    item, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+            except (TypeError, ValueError):
+                citations_truncated = True
+                continue
+            candidate = [*raw_citations, json.loads(serialized)]
+            candidate_bytes = len(
+                json.dumps(
+                    candidate, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ).encode()
+            )
+            if candidate_bytes > MAX_WEB_RESEARCH_RAW_CITATION_BYTES:
+                citations_truncated = True
+                break
+            raw_citations = candidate
+        return validate_web_research_raw_payload({
+            "schemaVersion": 1,
+            "kind": "web-research-raw-response",
             "providerId": result.provider_id,
             "model": result.usage.model,
             "responseModel": result.model,
             "requestId": result.raw_id,
             "query": self.query,
-            "resultCount": len(self.findings),
-            "citationCount": len(self.citations),
-            "provenanceScope": "response",
-            "findings": [dict(item) for item in self.findings],
-            "citations": [dict(item) for item in self.citations],
+            "rawText": stored_text,
+            "rawTextLength": len(raw_text),
+            "rawTextSha256": hashlib.sha256(raw_text.encode()).hexdigest(),
+            "storedTextSha256": hashlib.sha256(stored_text.encode()).hexdigest(),
+            "rawTextTruncated": len(stored_text) != len(raw_text),
+            "citations": raw_citations,
+            "citationsObserved": len(result.value.citations),
+            "citationsTruncated": citations_truncated,
+        })
+
+    def public_payload(self) -> dict[str, Any]:
+        return normalize_web_research_raw_payload(self.raw_payload())
+
+
+def validate_web_research_raw_payload(value: object) -> dict[str, Any]:
+    """Validate a bounded response receipt without interpreting its research content."""
+
+    if not isinstance(value, Mapping):
+        raise ValueError("Web research raw checkpoint is not an object")
+    if value.get("schemaVersion") != 1 or value.get("kind") != "web-research-raw-response":
+        raise ValueError("Web research raw checkpoint schema is invalid")
+    provider_id = _clean_text(value.get("providerId"), "research provider", 80)
+    model = _clean_text(value.get("model"), "research model", 160)
+    response_model = _clean_text(
+        value.get("responseModel", model), "research response model", 160
+    )
+    raw_request_id = value.get("requestId")
+    request_id = (
+        _clean_text(raw_request_id, "research request ID", 240)
+        if isinstance(raw_request_id, str) and raw_request_id.strip()
+        else None
+    )
+    query = value.get("query")
+    if not isinstance(query, str) or not query or len(query) > 8_000:
+        raise ValueError("Web research raw checkpoint query is invalid")
+    raw_text = value.get("rawText")
+    raw_text_length = value.get("rawTextLength")
+    if (
+        not isinstance(raw_text, str)
+        or len(raw_text) > MAX_WEB_RESEARCH_RAW_TEXT_CHARS
+        or not isinstance(raw_text_length, int)
+        or isinstance(raw_text_length, bool)
+        or raw_text_length < len(raw_text)
+    ):
+        raise ValueError("Web research raw checkpoint text is invalid")
+    raw_text_sha256 = value.get("rawTextSha256")
+    if not isinstance(raw_text_sha256, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", raw_text_sha256
+    ):
+        raise ValueError("Web research raw checkpoint text hash is invalid")
+    stored_text_sha256 = value.get("storedTextSha256")
+    if (
+        not isinstance(stored_text_sha256, str)
+        or stored_text_sha256 != hashlib.sha256(raw_text.encode()).hexdigest()
+        or (
+            raw_text_length == len(raw_text)
+            and raw_text_sha256 != stored_text_sha256
+        )
+    ):
+        raise ValueError("Web research raw checkpoint stored text hash is invalid")
+    raw_text_truncated = value.get("rawTextTruncated")
+    if not isinstance(raw_text_truncated, bool) or raw_text_truncated != (
+        raw_text_length != len(raw_text)
+    ):
+        raise ValueError("Web research raw checkpoint truncation state is invalid")
+    raw_citations = value.get("citations")
+    citations_observed = value.get("citationsObserved")
+    citations_truncated = value.get("citationsTruncated")
+    if (
+        not isinstance(raw_citations, list)
+        or len(raw_citations) > MAX_WEB_RESEARCH_RAW_CITATIONS
+        or not isinstance(citations_observed, int)
+        or isinstance(citations_observed, bool)
+        or citations_observed < len(raw_citations)
+        or not isinstance(citations_truncated, bool)
+        or citations_truncated != (citations_observed != len(raw_citations))
+    ):
+        raise ValueError("Web research raw checkpoint citations are invalid")
+    try:
+        citation_bytes = len(
+            json.dumps(
+                raw_citations, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode()
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("Web research raw checkpoint citations are invalid") from error
+    if citation_bytes > MAX_WEB_RESEARCH_RAW_CITATION_BYTES:
+        raise ValueError("Web research raw checkpoint citations exceed their size limit")
+    return {
+        "schemaVersion": 1,
+        "kind": "web-research-raw-response",
+        "providerId": provider_id,
+        "model": model,
+        "responseModel": response_model,
+        "requestId": request_id,
+        "query": query,
+        "rawText": raw_text,
+        "rawTextLength": raw_text_length,
+        "rawTextSha256": raw_text_sha256,
+        "storedTextSha256": stored_text_sha256,
+        "rawTextTruncated": raw_text_truncated,
+        "citations": copy.deepcopy(raw_citations),
+        "citationsObserved": citations_observed,
+        "citationsTruncated": citations_truncated,
+    }
+
+
+def normalize_web_research_raw_payload(value: object) -> dict[str, Any]:
+    """Interpret a previously accepted raw response without contacting its provider."""
+
+    if isinstance(value, Mapping) and "kind" not in value:
+        return validate_web_research_payload(value)
+    raw = validate_web_research_raw_payload(value)
+    if raw["requestId"] is None:
+        raise ProviderFailure(
+            FailureCode.MALFORMED_RESPONSE,
+            "Web-research provider omitted its request identity",
+            provider_id=str(raw["providerId"]),
+        )
+    if raw["rawTextTruncated"]:
+        raise ProviderFailure(
+            FailureCode.MALFORMED_RESPONSE,
+            "Web-research provider response exceeded the durable checkpoint limit",
+            provider_id=str(raw["providerId"]),
+            request_id=str(raw["requestId"]),
+        )
+    payload = _parsed_object(raw["rawText"], "web research")
+    raw_findings = _object_list(payload.get("findings"), "web research findings")
+    if len(raw_findings) > 8:
+        raise ProviderFailure(
+            FailureCode.MALFORMED_RESPONSE,
+            "Web-research provider returned too many findings",
+            provider_id=str(raw["providerId"]),
+            request_id=str(raw["requestId"]),
+        )
+    findings = [
+        {
+            "statement": _clean_text(item.get("statement"), "research finding", 500),
+            "teachingUse": _clean_text(
+                item.get("teachingUse"), "research teaching use", 240
+            ),
         }
+        for item in raw_findings
+    ]
+    citations: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+    for item in raw["citations"]:
+        if not isinstance(item, Mapping) or not isinstance(item.get("url"), str):
+            continue
+        url = str(item["url"]).strip()
+        if (
+            not re.fullmatch(r"https?://[^\s]+", url, flags=re.IGNORECASE)
+            or url in seen_urls
+        ):
+            continue
+        seen_urls.add(url)
+        title_value = item.get("title")
+        citations.append(
+            {
+                "url": url,
+                "title": (
+                    re.sub(r"\s+", " ", title_value).strip()[:300]
+                    if isinstance(title_value, str) and title_value.strip()
+                    else url
+                ),
+            }
+        )
+        if len(citations) == 16:
+            break
+    if not citations:
+        raise ProviderFailure(
+            FailureCode.MALFORMED_RESPONSE,
+            "Web-research provider returned findings without citation provenance",
+            provider_id=str(raw["providerId"]),
+            request_id=str(raw["requestId"]),
+        )
+    return validate_web_research_payload(
+        {
+            "providerId": raw["providerId"],
+            "model": raw["model"],
+            "responseModel": raw["responseModel"],
+            "requestId": raw["requestId"],
+            "query": raw["query"],
+            "resultCount": len(findings),
+            "citationCount": len(citations),
+            "provenanceScope": "response",
+            "findings": findings,
+            "citations": citations,
+        }
+    )
 
 
 def validate_web_research_payload(value: object) -> dict[str, Any]:
@@ -420,7 +629,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
         locale: str,
         idempotency_key: str,
     ) -> WebResearchOutcome:
-        """Run one approved search call and locally parse its bounded JSON prose."""
+        """Run one approved search call and return its unnormalized response."""
 
         if self.research_model is None:
             raise ValueError("No approved web-research route is configured")
@@ -461,70 +670,7 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
             ),
             idempotency_key=idempotency_key,
         )
-        if result.raw_id is None or not result.raw_id.strip():
-            raise ProviderFailure(
-                FailureCode.MALFORMED_RESPONSE,
-                "Web-research provider omitted its request identity",
-                provider_id=result.provider_id,
-            )
-        payload = _parsed_object(
-            result.value.parsed
-            if isinstance(result.value.parsed, Mapping)
-            else result.value.text,
-            "web research",
-        )
-        raw_findings = _object_list(payload.get("findings"), "web research findings")
-        if len(raw_findings) > 8:
-            raise ProviderFailure(
-                FailureCode.MALFORMED_RESPONSE,
-                "Web-research provider returned too many findings",
-                provider_id=result.provider_id,
-                request_id=result.raw_id,
-            )
-        findings = tuple(
-            {
-                "statement": _clean_text(item.get("statement"), "research finding", 500),
-                "teachingUse": _clean_text(
-                    item.get("teachingUse"), "research teaching use", 240
-                ),
-            }
-            for item in raw_findings
-        )
-        citations: list[Mapping[str, str]] = []
-        seen_urls: set[str] = set()
-        for item in result.value.citations:
-            if not isinstance(item, Mapping) or not isinstance(item.get("url"), str):
-                continue
-            url = str(item["url"]).strip()
-            if (
-                not re.fullmatch(r"https?://[^\s]+", url, flags=re.IGNORECASE)
-                or url in seen_urls
-            ):
-                continue
-            seen_urls.add(url)
-            title_value = item.get("title")
-            citations.append(
-                {
-                    "url": url,
-                    "title": (
-                        re.sub(r"\s+", " ", title_value).strip()[:300]
-                        if isinstance(title_value, str) and title_value.strip()
-                        else url
-                    ),
-                }
-            )
-            if len(citations) == 16:
-                break
-        if not citations:
-            raise ProviderFailure(
-                FailureCode.MALFORMED_RESPONSE,
-                "Web-research provider returned findings without citation provenance",
-                provider_id=result.provider_id,
-                request_id=result.raw_id,
-            )
-        outcome = WebResearchOutcome(query, findings, tuple(citations), result)
-        validate_web_research_payload(outcome.public_payload())
-        return outcome
+        return WebResearchOutcome(query, result)
 
     def with_research_context(
         self, value: Mapping[str, Any]

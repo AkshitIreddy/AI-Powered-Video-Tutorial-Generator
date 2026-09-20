@@ -103,7 +103,7 @@ from .education_provider import (
     StructuredWritingEducationalProvider,
     WebResearchOutcome,
     capture_structured_writing_usage,
-    validate_web_research_payload,
+    normalize_web_research_raw_payload,
 )
 from .forced_alignment import AlignmentInput, ForcedAlignmentClient
 from .models import (
@@ -228,7 +228,7 @@ def _record_web_research_acceptance(
     idempotency_key: str,
     outcome: WebResearchOutcome,
 ) -> dict[str, Any]:
-    """Atomically retain one accepted search response and its actual usage."""
+    """Atomically retain one raw search response and its actual usage."""
 
     result = outcome.provider_result
     usage = result.usage
@@ -269,7 +269,7 @@ def _record_web_research_acceptance(
         )
     assert isinstance(input_tokens, int | float)
     assert isinstance(output_tokens, int | float)
-    payload = validate_web_research_payload(outcome.public_payload())
+    payload = outcome.raw_payload()
     return context.record_provider_acceptance(
         idempotency_key=idempotency_key,
         provider=result.provider_id,
@@ -289,8 +289,11 @@ def _record_web_research_acceptance(
             "providerRequestId": result.raw_id,
             "researchRequestId": idempotency_key,
             "querySha256": hashlib.sha256(outcome.query.encode()).hexdigest(),
-            "resultCount": len(outcome.findings),
-            "citationCount": len(outcome.citations),
+            "rawResponseChars": payload["rawTextLength"],
+            "rawResponseSha256": payload["rawTextSha256"],
+            "rawResponseTruncated": payload["rawTextTruncated"],
+            "rawCitationCount": payload["citationsObserved"],
+            "rawCitationsTruncated": payload["citationsTruncated"],
             "usageComplete": True,
         },
     )
@@ -804,16 +807,14 @@ class GenerationWorkflow:
             query = _web_research_query(request)
             research_key = f"education-web-research-{_fingerprint(query)[:32]}"
             accepted = context.provider_acceptance(research_key)
-            if accepted is not None:
-                web_research = validate_web_research_payload(accepted["result"])
-            else:
+            if accepted is None:
                 outcome = self.educational_provider.research_web(
                     query,
                     locale=request.locale,
                     idempotency_key=research_key,
                 )
                 accepted = _record_web_research_acceptance(context, research_key, outcome)
-                web_research = validate_web_research_payload(accepted["result"])
+            web_research = normalize_web_research_raw_payload(accepted["result"])
             research_source_id = _stable_id(
                 "source-web-research",
                 web_research["providerId"],

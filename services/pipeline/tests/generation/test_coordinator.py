@@ -35,10 +35,12 @@ from alystria.generation.forced_alignment import AlignmentInput
 from alystria.generation.workflow import (
     _apply_presenter_selection,
     _caption_alignment_quality_gate,
+    _fingerprint,
     _presenter_direction,
     _presenter_fit,
     _presenters_for_render,
     _provider_neutral_word_timings,
+    _web_research_query,
 )
 from alystria.jobs import JobState
 from alystria.presenters import PresenterPlacement
@@ -142,6 +144,43 @@ class GroundedResearchTextClient:
         )
 
 
+class MalformedGroundedResearchTextClient:
+    def __init__(self, text: str, citations: tuple[dict[str, str], ...]) -> None:
+        self.text = text
+        self.citations = citations
+        self.requests: list[TextRequest] = []
+
+    def generate(
+        self, request: TextRequest, *, idempotency_key: str
+    ) -> ProviderResult[TextOutput]:
+        assert idempotency_key.startswith("education-web-research-")
+        self.requests.append(request)
+        return ProviderResult(
+            "gemini",
+            "gemini-2.5-flash-001",
+            TextOutput(self.text, citations=self.citations),
+            Usage(
+                "gemini",
+                "gemini-2.5-flash",
+                {"input_tokens": 70, "output_tokens": 12, "search_requests": 1},
+                91,
+                request_id="malformed-research-response-1",
+            ),
+            raw_id="malformed-research-response-1",
+        )
+
+
+class NoCallResearchTextClient:
+    def __init__(self) -> None:
+        self.requests: list[TextRequest] = []
+
+    def generate(
+        self, request: TextRequest, *, idempotency_key: str
+    ) -> ProviderResult[TextOutput]:
+        self.requests.append(request)
+        raise AssertionError("legacy normalized checkpoint must prevent a provider call")
+
+
 def test_grounded_ingest_consumes_web_research_once_with_durable_usage(
     tmp_path: Path,
 ) -> None:
@@ -196,6 +235,198 @@ def test_grounded_ingest_consumes_web_research_once_with_durable_usage(
         assert metadata["usageComplete"] is True
         assert metadata["searchRequests"] == 1
         assert metadata["providerRequestId"] == "research-response-1"
+        checkpoint = store.connection.execute(
+            "SELECT result_json FROM provider_acceptance_checkpoints WHERE job_id=?",
+            (ingest.job_id,),
+        ).fetchone()
+        assert checkpoint is not None
+        raw = json.loads(str(checkpoint["result_json"]))
+        assert raw["kind"] == "web-research-raw-response"
+        assert raw["requestId"] == "research-response-1"
+        assert raw["rawTextTruncated"] is False
+        assert "findings" not in raw
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    ("raw_text", "citations", "expect_citation_truncation"),
+    (
+        ("not valid research JSON", (), False),
+        (
+            json.dumps(
+                {
+                    "findings": [
+                        {
+                            "statement": "Binary search halves a sorted interval.",
+                            "teachingUse": "Explain logarithmic narrowing.",
+                        }
+                    ]
+                }
+            ),
+            (),
+            False,
+        ),
+        (
+            json.dumps(
+                {
+                    "findings": [
+                        {
+                            "statement": "Binary search halves a sorted interval.",
+                            "teachingUse": "Explain logarithmic narrowing.",
+                        }
+                    ]
+                }
+            ),
+            tuple({"blob": "x" * 4_000} for _ in range(20)),
+            True,
+        ),
+    ),
+)
+def test_malformed_grounded_research_retry_reuses_raw_checkpoint_and_usage(
+    tmp_path: Path,
+    raw_text: str,
+    citations: tuple[dict[str, str], ...],
+    expect_citation_truncation: bool,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Malformed research", name="Malformed research")
+    client = MalformedGroundedResearchTextClient(raw_text, citations)
+    coordinator = GenerationCoordinator(
+        store,
+        educational_provider=StructuredWritingEducationalProvider(
+            client, model="writer-v1", research_model="gemini-2.5-flash"
+        ),
+    )
+    try:
+        generation_id = coordinator.start(
+            GenerationRequest(
+                topic="Binary search invariants",
+                audience="Beginning computer-science learners",
+                duration_seconds=60,
+                grounding_mode=GroundingMode.GROUNDED,
+            )
+        ).generation_id
+
+        first = coordinator.runtime.run_once(coordinator.workflow.handlers)
+        assert first is not None and first.state is JobState.FAILED
+        assert len(client.requests) == 1
+        ingest = next(
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters["stage"] == GenerationStage.INGEST_RESEARCH.value
+        )
+        checkpoint = coordinator.runtime.provider_acceptance(
+            ingest.job_id,
+            next(
+                str(row["idempotency_key"])
+                for row in store.connection.execute(
+                    "SELECT idempotency_key FROM provider_acceptance_checkpoints WHERE job_id=?",
+                    (ingest.job_id,),
+                )
+            ),
+        )
+        assert checkpoint is not None
+        assert checkpoint["result"]["rawText"] == raw_text
+        assert checkpoint["result"]["citationsTruncated"] is expect_citation_truncation
+        assert (
+            len(
+                json.dumps(
+                    checkpoint["result"]["citations"],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            )
+            <= 65_536
+        )
+        first_usage = coordinator.runtime.usage_summary(ingest.job_id)
+        assert first_usage.records == 1
+        assert first_usage.total_cost_micros == 91
+
+        coordinator.retry(generation_id)
+        second = coordinator.runtime.run_once(coordinator.workflow.handlers)
+        assert second is not None and second.state is JobState.FAILED
+        assert len(client.requests) == 1
+        second_usage = coordinator.runtime.usage_summary(ingest.job_id)
+        assert second_usage.records == 1
+        assert second_usage.total_cost_micros == 91
+        assert (
+            store.connection.execute(
+                "SELECT COUNT(*) FROM provider_acceptance_checkpoints WHERE job_id=?",
+                (ingest.job_id,),
+            ).fetchone()[0]
+            == 1
+        )
+    finally:
+        store.close()
+
+
+def test_grounded_ingest_reuses_legacy_normalized_checkpoint_without_provider_call(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Legacy research", name="Legacy research")
+    client = NoCallResearchTextClient()
+    coordinator = GenerationCoordinator(
+        store,
+        educational_provider=StructuredWritingEducationalProvider(
+            client, model="writer-v1", research_model="gemini-2.5-flash"
+        ),
+    )
+    request_value = GenerationRequest(
+        topic="Binary search invariants",
+        audience="Beginning computer-science learners",
+        duration_seconds=60,
+        grounding_mode=GroundingMode.GROUNDED,
+    )
+    try:
+        generation_id = coordinator.start(request_value).generation_id
+        ingest = next(
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters["stage"] == GenerationStage.INGEST_RESEARCH.value
+        )
+        query = _web_research_query(request_value)
+        research_key = f"education-web-research-{_fingerprint(query)[:32]}"
+        legacy_result = {
+            "providerId": "gemini",
+            "model": "gemini-2.5-flash",
+            "responseModel": "gemini-2.5-flash-001",
+            "requestId": "legacy-research-response-1",
+            "query": query,
+            "resultCount": 1,
+            "citationCount": 1,
+            "provenanceScope": "response",
+            "findings": [
+                {
+                    "statement": "Binary search halves a sorted interval.",
+                    "teachingUse": "Explain logarithmic narrowing.",
+                }
+            ],
+            "citations": [
+                {
+                    "url": "https://example.test/binary-search",
+                    "title": "Binary search reference",
+                }
+            ],
+        }
+        coordinator.runtime.record_provider_acceptance(
+            ingest.job_id,
+            idempotency_key=research_key,
+            provider="gemini",
+            model="gemini-2.5-flash",
+            provider_request_id="legacy-research-response-1",
+            result=legacy_result,
+            unit="tokens",
+            quantity=145,
+            cost_micros=165,
+            usage_metadata={"kind": "web-research", "usageComplete": True},
+        )
+
+        ran = coordinator.runtime.run_once(coordinator.workflow.handlers)
+        assert ran is not None and ran.state is JobState.SUCCEEDED
+        assert client.requests == []
+        assert ran.result is not None
+        assert ran.result["payload"]["webResearch"] == legacy_result
     finally:
         store.close()
 

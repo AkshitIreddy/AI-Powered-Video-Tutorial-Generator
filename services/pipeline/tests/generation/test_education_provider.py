@@ -9,6 +9,7 @@ import pytest
 
 from alystria.generation.education_provider import (
     StructuredWritingEducationalProvider,
+    WebResearchOutcome,
     _pacing_word_count,
     capture_structured_writing_usage,
 )
@@ -147,15 +148,41 @@ def test_structured_provider_rejects_research_without_citation_provenance() -> N
         research_model="gemini-2.5-flash",
     )
 
+    outcome = provider.research_web(
+        "Research Karatsuba.",
+        locale="en-US",
+        idempotency_key="education-web-research-test",
+    )
     with pytest.raises(ProviderFailure) as raised:
-        provider.research_web(
-            "Research Karatsuba.",
-            locale="en-US",
-            idempotency_key="education-web-research-test",
-        )
+        outcome.public_payload()
 
     assert raised.value.code is FailureCode.MALFORMED_RESPONSE
     assert "citation provenance" in str(raised.value)
+
+
+def test_raw_web_research_checkpoint_bounds_provider_text_before_validation() -> None:
+    raw_text = "x" * 20_000
+    result = ProviderResult(
+        "gemini",
+        "gemini-2.5-flash-001",
+        TextOutput(raw_text),
+        Usage(
+            "gemini",
+            "gemini-2.5-flash",
+            {"input_tokens": 10, "output_tokens": 2, "search_requests": 1},
+            3,
+        ),
+        raw_id="oversized-research-1",
+    )
+
+    outcome = WebResearchOutcome("Research a bounded topic.", result)
+    checkpoint = outcome.raw_payload()
+
+    assert len(checkpoint["rawText"]) == 16_384
+    assert checkpoint["rawTextLength"] == len(raw_text)
+    assert checkpoint["rawTextTruncated"] is True
+    with pytest.raises(ProviderFailure, match="checkpoint limit"):
+        outcome.public_payload()
 
 
 class EducationSequenceTransport:
