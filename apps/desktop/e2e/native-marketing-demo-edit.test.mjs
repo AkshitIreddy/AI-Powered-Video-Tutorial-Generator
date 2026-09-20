@@ -10,6 +10,7 @@ import {
   deriveMarketingPresenterTransform,
   deriveSentenceSegmentsFromAsr,
   deriveAdaptiveMarketingEdit,
+  marketingCaptionStyle,
   marketingTeachingScript,
   rayleighVisuals,
   validateMarketingAssetManifest,
@@ -74,6 +75,17 @@ test("animated WebP samples all four presenter styles in order before the native
   assert.deepEqual(edit.webp.beats.map((beat) => beat.presenterStyle ?? beat.id), ["realistic-woman", "anime-woman", "realistic-man", "cartoon-woman", "actual-native-editor"]);
   assert.deepEqual(edit.webp.beats.slice(0, 4).map((beat) => [beat.sourceIn, beat.sourceOut]), [[0, 3.5], [5.69, 9.19], [13.6, 17.1], [18.8, 22.18]]);
   assert.equal(edit.webp.beats.at(-1).out, edit.webp.durationSeconds);
+});
+
+test("product UI beats use readable close-ups and a branded two-line caption plate", () => {
+  const edit = deriveAdaptiveMarketingEdit({ teachingDurationSeconds: 12.4, teachingSegments: teachingCaptions, productSegments });
+  const productBeats = edit.mp4.beats.slice(3, 8);
+  assert.deepEqual(productBeats.map((beat) => beat.focusRegion), ["review-player", "editor-transcript-dock-timeline", "presenter-gallery-and-teaching-library", "model-card-and-download-panel", "review-export"]);
+  assert.ok(productBeats.slice(1, 4).every((beat) => beat.editorialZoom >= 1.2 && beat.editorialZoom <= 1.4));
+  assert.equal(marketingCaptionStyle.maximumLines, 2);
+  assert.equal(marketingCaptionStyle.maximumWidthPercent, 72);
+  assert.equal(marketingCaptionStyle.panelColor, "#151A2D");
+  assert.equal(marketingCaptionStyle.accentColor, "#21A39A");
 });
 
 test("native tutorial project uses three factual scenes and exact phrase captions", () => {

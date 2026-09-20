@@ -15,6 +15,19 @@ export const marketingDemoTitle = "Why the daytime sky looks blue";
 export const marketingTeachingScript = "Sunlight looks white, but it carries every visible color. In Earth's atmosphere, tiny molecules scatter shorter blue wavelengths much more strongly than red ones. That scattered blue reaches your eyes from every direction, so the daytime sky looks blue.";
 export const marketingProductScript = "This is a real lesson, ready to refine. Edit the script, timing, captions, and layout in one timeline. Choose a presenter, or start with included teaching visuals. Use cloud providers or downloadable local models. Then review and export the finished tutorial.";
 export const marketingFrameRate = 30;
+export const marketingCaptionStyle = Object.freeze({
+  fontFamily: "Segoe UI Semibold",
+  fontSizeAt1440x810: 38,
+  textColor: "#FFF9F2",
+  panelColor: "#151A2D",
+  accentColor: "#21A39A",
+  panelOpacity: 0.9,
+  maximumWidthPercent: 72,
+  cornerRadiusPixels: 18,
+  horizontalPaddingPixels: 24,
+  verticalPaddingPixels: 14,
+  maximumLines: 2,
+});
 
 export const rayleighVisuals = Object.freeze([
   {
@@ -38,11 +51,11 @@ export const rayleighVisuals = Object.freeze([
 ]);
 
 const productBeatContract = Object.freeze([
-  { id: "native-review", minimumSeconds: 2.4, source: "actual-native-tutorial-review", motion: "pull-1.06-to-1.00" },
-  { id: "native-editor", minimumSeconds: 4.2, source: "actual-native-ui-capture", motion: "transcript-panel-and-timeline-resize" },
-  { id: "native-assets", minimumSeconds: 3.4, source: "actual-native-ui-capture", motion: "presenter-gallery-to-teaching-library" },
-  { id: "native-models", minimumSeconds: 3.2, source: "actual-native-ui-capture", motion: "models-and-minimized-download-panel" },
-  { id: "native-export", minimumSeconds: 3.2, source: "actual-native-ui-capture", motion: "export-to-review" },
+  { id: "native-review", minimumSeconds: 2.4, source: "actual-native-tutorial-review", motion: "context-pull-1.08-to-1.00", editorialZoom: 1.08, focusRegion: "review-player" },
+  { id: "native-editor", minimumSeconds: 4.2, source: "actual-native-ui-capture", motion: "ease-into-transcript-dock-and-timeline-resize", editorialZoom: 1.34, focusRegion: "editor-transcript-dock-timeline" },
+  { id: "native-assets", minimumSeconds: 3.4, source: "actual-native-ui-capture", motion: "settled-presenter-gallery-to-library-close-up", editorialZoom: 1.26, focusRegion: "presenter-gallery-and-teaching-library" },
+  { id: "native-models", minimumSeconds: 3.2, source: "actual-native-ui-capture", motion: "settled-model-card-and-download-panel-close-up", editorialZoom: 1.3, focusRegion: "model-card-and-download-panel" },
+  { id: "native-export", minimumSeconds: 3.2, source: "actual-native-ui-capture", motion: "context-return-to-review-and-export", editorialZoom: 1.08, focusRegion: "review-export" },
 ]);
 
 const tutorialCueIds = ["white-light", "molecule-scattering", "viewer-conclusion"];
