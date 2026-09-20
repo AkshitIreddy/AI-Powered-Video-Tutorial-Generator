@@ -16,7 +16,8 @@ export type DesktopEnvironment = "native" | "browser-demo";
 
 /** Configuration discovery only; the worker verifies complete runtime hashes before rendering. */
 export interface LocalPresenterPortraitRuntimeStatus {
-  portraitArtifactHash: string;
+  /** Null is the primary runtime; exact portrait entries override it. */
+  portraitArtifactHash: string | null;
   modelId: string | null;
   modelRevision: string | null;
   installFingerprint: string | null;
@@ -1064,7 +1065,7 @@ export function projectAssetImport(input: ProjectAssetImportRequest): Promise<Pr
       artifact: { id: artifactId, kind: input.kind, sha256, byteSize, mediaType: input.mimeType, originalFilename: input.filename, state: "quarantined" },
       provenance: {
         id: `prov_${sha256.slice(0, 20)}`,
-        origin: "User upload · browser demo",
+        origin: "User upload Â· browser demo",
         rightsStatus: input.rights.status,
         ...(input.rights.creator ? { creator: input.rights.creator } : {}),
         ...(input.rights.license ? { license: input.rights.license } : {}),

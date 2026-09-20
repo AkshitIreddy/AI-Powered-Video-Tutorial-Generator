@@ -20,7 +20,8 @@ const JOY_ROLES: [&str; 8] = [
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresenterPortraitRuntimeStatus {
-    pub portrait_artifact_hash: String,
+    /// None identifies the primary runtime used when no exact portrait override exists.
+    pub portrait_artifact_hash: Option<String>,
     pub model_id: Option<String>,
     pub model_revision: Option<String>,
     pub install_fingerprint: Option<String>,
@@ -96,10 +97,10 @@ fn pin_present(root: &Path, value: &Value) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn inspect_child(models: &Path, child: &Path) -> Result<Value, &'static str> {
+fn inspect_config(models: &Path, child: &Path, is_primary: bool) -> Result<Value, &'static str> {
     let config = json_file(child)?;
     if config.get("schemaVersion").and_then(Value::as_u64) != Some(1)
-        || config.get("portraitRuntimeOverrides").is_some()
+        || (!is_primary && config.get("portraitRuntimeOverrides").is_some())
     {
         return Err("The character runtime configuration has an unsupported schema.");
     }
@@ -107,7 +108,14 @@ fn inspect_child(models: &Path, child: &Path) -> Result<Value, &'static str> {
         .get("modelId")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if !matches!(model, "joyvasa-human" | "joyvasa-animal") {
+    if !matches!(
+        model,
+        "joyvasa-human"
+            | "joyvasa-animal"
+            | "musetalk"
+            | "musetalk-1.5"
+            | "liveportrait-musetalk-1.5"
+    ) {
         return Err("The selected character animation engine is not supported.");
     }
     let root_value = config
@@ -124,7 +132,13 @@ fn inspect_child(models: &Path, child: &Path) -> Result<Value, &'static str> {
         return Err("The character animation runtime is outside the model installation.");
     }
     let contract = &config["workerContract"];
-    if contract.get("contractId").and_then(Value::as_str) != Some("alystria.joyvasa.worker.v1") {
+    let is_joy = model.starts_with("joyvasa-");
+    let expected_contract = if is_joy {
+        "alystria.joyvasa.worker.v1"
+    } else {
+        "alystria.musetalk.worker.v1"
+    };
+    if contract.get("contractId").and_then(Value::as_str) != Some(expected_contract) {
         return Err("The character animation runtime has no supported worker contract.");
     }
     let fingerprint = config
@@ -150,7 +164,7 @@ fn inspect_child(models: &Path, child: &Path) -> Result<Value, &'static str> {
         .iter()
         .filter_map(|file| file["role"].as_str())
         .collect();
-    if files.len() != JOY_ROLES.len() || roles != JOY_ROLES.into_iter().collect() {
+    if is_joy && (files.len() != JOY_ROLES.len() || roles != JOY_ROLES.into_iter().collect()) {
         return Err("The character animation runtime file declarations are incomplete.");
     }
     for file in files {
@@ -169,20 +183,25 @@ pub fn inspect(models: &Path) -> Vec<PresenterPortraitRuntimeStatus> {
     if primary.get("schemaVersion").and_then(Value::as_u64) != Some(1) {
         return vec![];
     }
-    let Some(routes) = primary
+    let mut statuses = Vec::new();
+    if primary.get("modelId").and_then(Value::as_str).is_some() {
+        statuses.push(status(
+            None,
+            inspect_config(&models, &models.join("presenter-runtime.json"), true),
+        ));
+    }
+    if let Some(routes) = primary
         .get("portraitRuntimeOverrides")
         .and_then(Value::as_array)
-    else {
-        return vec![];
-    };
-    routes
-        .iter()
-        .take(256)
-        .filter_map(|route| {
-            let hash = route.get("portraitArtifactHash")?.as_str()?;
-            if !digest(hash) {
-                return None;
-            }
+    {
+        for route in routes.iter().take(256) {
+            let Some(hash) = route
+                .get("portraitArtifactHash")
+                .and_then(Value::as_str)
+                .filter(|hash| digest(hash))
+            else {
+                continue;
+            };
             let result = relative_file(
                 &models,
                 route
@@ -190,31 +209,37 @@ pub fn inspect(models: &Path) -> Vec<PresenterPortraitRuntimeStatus> {
                     .and_then(Value::as_str)
                     .unwrap_or_default(),
             )
-            .and_then(|path| inspect_child(&models, &path));
-            let mut status = PresenterPortraitRuntimeStatus {
-                portrait_artifact_hash: hash.into(),
-                model_id: None,
-                model_revision: None,
-                install_fingerprint: None,
-                configured: false,
-                reason: String::new(),
-            };
-            match result {
-                Ok(config) => {
-                    status.model_id = config["modelId"].as_str().map(str::to_owned);
-                    status.model_revision = config["modelRevision"].as_str().map(str::to_owned);
-                    status.install_fingerprint =
-                        config["installFingerprint"].as_str().map(str::to_owned);
-                    status.configured = true;
-                    status.reason =
-                        "Character runtime configured. File integrity is checked before rendering."
-                            .into();
-                }
-                Err(reason) => status.reason = reason.into(),
-            }
-            Some(status)
-        })
-        .collect()
+            .and_then(|path| inspect_config(&models, &path, false));
+            statuses.push(status(Some(hash), result));
+        }
+    }
+    statuses
+}
+
+fn status(
+    hash: Option<&str>,
+    result: Result<Value, &'static str>,
+) -> PresenterPortraitRuntimeStatus {
+    let mut status = PresenterPortraitRuntimeStatus {
+        portrait_artifact_hash: hash.map(str::to_owned),
+        model_id: None,
+        model_revision: None,
+        install_fingerprint: None,
+        configured: false,
+        reason: String::new(),
+    };
+    match result {
+        Ok(config) => {
+            status.model_id = config["modelId"].as_str().map(str::to_owned);
+            status.model_revision = config["modelRevision"].as_str().map(str::to_owned);
+            status.install_fingerprint = config["installFingerprint"].as_str().map(str::to_owned);
+            status.configured = true;
+            status.reason =
+                "Presenter runtime configured. File integrity is checked before rendering.".into();
+        }
+        Err(reason) => status.reason = reason.into(),
+    }
+    status
 }
 
 #[cfg(test)]
@@ -259,6 +284,27 @@ mod tests {
         assert!(!inspect(temp.path())[0].configured);
         let root = temp.path().canonicalize().unwrap();
         assert!(relative_file(&root, "../animal.json").is_err());
+    }
+
+    #[test]
+    fn discovers_default_runtime_even_without_portrait_overrides() {
+        let temp = setup();
+        let mut config = json_file(&temp.path().join("animal.json")).unwrap();
+        config["modelId"] = json!("liveportrait-musetalk-1.5");
+        config["workerContract"]["contractId"] = json!("alystria.musetalk.worker.v1");
+        fs::write(
+            temp.path().join("presenter-runtime.json"),
+            config.to_string(),
+        )
+        .unwrap();
+        let statuses = inspect(temp.path());
+        assert_eq!(statuses.len(), 1);
+        assert!(statuses[0].configured);
+        assert_eq!(statuses[0].portrait_artifact_hash, None);
+        assert_eq!(
+            statuses[0].model_id.as_deref(),
+            Some("liveportrait-musetalk-1.5")
+        );
     }
 
     #[test]
