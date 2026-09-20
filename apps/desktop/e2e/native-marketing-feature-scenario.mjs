@@ -198,16 +198,28 @@ export function assertSoulxManagedStart({ catalog, statuses, cachePreflight }) {
     throw new Error("The packaged native SoulX managed download declaration is unavailable");
   }
   const status = statuses?.find((entry) => entry.modelId === soulxModelContract.modelId);
-  const complete = status && status.downloadedBytes === packageEntry.totalBytes
+  const statusMatchesPackage = status?.immutableRevision === packageEntry.immutableRevision
+    && status.totalBytes === packageEntry.totalBytes && status.artifactCount === packageEntry.artifactCount;
+  const complete = statusMatchesPackage && status.downloadedBytes === packageEntry.totalBytes
     && status.totalBytes === packageEntry.totalBytes && status.verifiedArtifacts === packageEntry.artifactCount
     && ["downloadedQuarantined", "ready", "inUse"].includes(status.phase);
-  const verifiedManifestOnly = status?.phase === "manifestRequired" && status.downloadedBytes === 0
+  const verifiedManifestOnly = statusMatchesPackage && status.phase === "manifestRequired" && status.downloadedBytes === 0
     && status.verifiedArtifacts === 0 && status.totalBytes === packageEntry.totalBytes
     && status.artifactCount === packageEntry.artifactCount;
-  if (!complete && !verifiedManifestOnly) {
+  const verifiedFailedInstall = statusMatchesPackage && status.phase === "failed"
+    && status.downloadedBytes === packageEntry.totalBytes && status.verifiedArtifacts === packageEntry.artifactCount
+    && status.activationBlocked === true && status.runtimeRevision == null && status.installFingerprint == null
+    && typeof status.licenseAcceptedAt === "string" && Boolean(status.licenseAcceptedAt.trim())
+    && typeof status.detail === "string" && Boolean(status.detail.trim());
+  if (!complete && !verifiedManifestOnly && !verifiedFailedInstall) {
     throw new Error(`SoulX managed setup refuses an incomplete or unverified cache state: ${JSON.stringify(status ?? null)}`);
   }
-  return { packageEntry, status, requiresNativeDownloadStart: Boolean(verifiedManifestOnly) };
+  return {
+    packageEntry,
+    status,
+    requiresNativeDownloadStart: Boolean(verifiedManifestOnly || verifiedFailedInstall),
+    startMode: verifiedManifestOnly ? "initial-download" : verifiedFailedInstall ? "retry-failed-install" : "already-complete",
+  };
 }
 
 export async function runSoulxSetupOnly({ page, invokeNativeWithoutInput, runRoot, cachePreflight, actionTimeoutMs = 60_000, jobTimeoutMs = 1_200_000 }) {
@@ -354,7 +366,7 @@ async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, ru
   await expect(page.getByRole("heading", { name: "Models & providers", exact: true })).toBeVisible({ timeout: actionTimeoutMs });
   const catalog = await invokeNativeWithoutInput(page, "local_model_download_catalog");
   const initialStatuses = await invokeNativeWithoutInput(page, "local_model_download_status");
-  const { packageEntry, status: initial, requiresNativeDownloadStart } = assertSoulxManagedStart({
+  const { packageEntry, status: initial, requiresNativeDownloadStart, startMode } = assertSoulxManagedStart({
     catalog,
     statuses: initialStatuses,
     cachePreflight,
@@ -362,26 +374,41 @@ async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, ru
   const card = page.locator(".aly-catalog-card").filter({ has: page.getByRole("heading", { name: soulxModelContract.uiHeading, exact: true }) });
   await expect(card).toBeVisible({ timeout: actionTimeoutMs });
   const managedAction = card.locator(".aly-catalog-card__actions button").first();
-  await expect(managedAction).toHaveText(requiresNativeDownloadStart ? /^Download$/iu : /Files downloaded|Installed/iu);
-  await managedAction.click();
+  let failedInstallScreenshot = null;
+  if (startMode === "retry-failed-install") {
+    await expect(managedAction).toHaveText(/^Resume download$/iu);
+    await page.getByRole("button", { name: /^Downloads(?: \(\d+ active\))?$/u }).click();
+  } else {
+    await expect(managedAction).toHaveText(startMode === "initial-download" ? /^Download$/iu : /Files downloaded|Installed/iu);
+    await managedAction.click();
+  }
   const downloads = page.getByRole("region", { name: "Model downloads" });
   await expect(downloads).toBeVisible({ timeout: actionTimeoutMs });
   const item = downloads.getByRole("article", { name: soulxModelContract.catalogDisplayName });
+  if (startMode === "retry-failed-install") {
+    await expect(item).toContainText("Needs attention", { timeout: actionTimeoutMs });
+    failedInstallScreenshot = path.join(runRoot, "feature-00-soulx-failed-install-before-retry.png");
+    await page.screenshot({ path: failedInstallScreenshot, fullPage: true });
+    await item.getByRole("button", { name: "Resume download", exact: true }).click();
+  }
   if (requiresNativeDownloadStart) {
     const downloadDeadline = Date.now() + jobTimeoutMs;
     let downloaded = initial;
+    let nativeStartObserved = false;
     while (Date.now() < downloadDeadline) {
       const statuses = await invokeNativeWithoutInput(page, "local_model_download_status");
       downloaded = statuses.find((entry) => entry.modelId === soulxModelContract.modelId) ?? downloaded;
-      if (["downloadedQuarantined", "ready", "inUse"].includes(downloaded.phase)
+      nativeStartObserved ||= downloaded.phase !== initial.phase
+        || (startMode === "retry-failed-install" && downloaded.updatedAt !== initial.updatedAt);
+      if (nativeStartObserved && ["downloadedQuarantined", "ready", "inUse"].includes(downloaded.phase)
         && downloaded.downloadedBytes === packageEntry.totalBytes
         && downloaded.verifiedArtifacts === packageEntry.artifactCount) break;
-      if (["failed", "corrupt", "incompatible", "cancelled"].includes(downloaded.phase)) {
+      if (nativeStartObserved && ["failed", "corrupt", "incompatible", "cancelled"].includes(downloaded.phase)) {
         throw new Error(`SoulX cached native download/install failed: ${JSON.stringify(downloaded)}`);
       }
       await page.waitForTimeout(750);
     }
-    if (!["downloadedQuarantined", "ready", "inUse"].includes(downloaded.phase)
+    if (!nativeStartObserved || !["downloadedQuarantined", "ready", "inUse"].includes(downloaded.phase)
       || downloaded.downloadedBytes !== packageEntry.totalBytes
       || downloaded.verifiedArtifacts !== packageEntry.artifactCount) {
       throw new Error(`Timed out waiting for native SoulX cache consumption and install: ${JSON.stringify(downloaded)}`);
@@ -423,8 +450,11 @@ async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, ru
     initialPhase: initial.phase,
     initialDownloadedBytes: initial.downloadedBytes,
     initialVerifiedArtifacts: initial.verifiedArtifacts,
+    initialFailureDetail: startMode === "retry-failed-install" ? initial.detail : null,
     activationInvokedThroughModelsUi: true,
     modelDownloadStartInvoked: requiresNativeDownloadStart,
+    modelDownloadStartMode: startMode,
+    failedInstallScreenshot,
     cachePreflight,
     providerCalls: 0,
     hydratedScreenshot,

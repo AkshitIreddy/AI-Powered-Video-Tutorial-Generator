@@ -27,6 +27,7 @@ function readyInput() {
     }],
     statuses: [{
       modelId: soulxModelContract.modelId,
+      immutableRevision: revision,
       phase: "ready",
       downloadedBytes: soulxInstallContract.totalBytes,
       totalBytes: soulxInstallContract.totalBytes,
@@ -80,6 +81,7 @@ test("SoulX setup permits initial manifest-only status after exact offline cache
     catalog: [fixture.catalog],
     statuses: [{
       modelId: soulxModelContract.modelId,
+      immutableRevision: fixture.catalog.immutableRevision,
       phase: "manifestRequired",
       downloadedBytes: 0,
       totalBytes: fixture.totalBytes,
@@ -113,6 +115,43 @@ test("SoulX setup accepts a complete native status without restarting Download",
   });
   assert.equal(start.status.phase, "downloadedQuarantined");
   assert.equal(start.requiresNativeDownloadStart, false);
+  assert.equal(start.startMode, "already-complete");
+});
+
+test("SoulX setup retries an exact fully cached failed install through native UI", () => {
+  const input = readyInput();
+  Object.assign(input.statuses[0], {
+    phase: "failed",
+    activationBlocked: true,
+    runtimeRevision: null,
+    installFingerprint: null,
+    licenseAcceptedAt: "2026-09-21T12:34:56.000Z",
+    detail: "Portable SoulX installation failed after all cached artifacts were verified.",
+  });
+  const start = assertSoulxManagedStart({
+    catalog: input.catalog,
+    statuses: input.statuses,
+    cachePreflight: reviewedCacheReceipt(),
+  });
+  assert.equal(start.requiresNativeDownloadStart, true);
+  assert.equal(start.startMode, "retry-failed-install");
+});
+
+test("SoulX setup refuses a failed status without the persisted accepted-license receipt", () => {
+  const input = readyInput();
+  Object.assign(input.statuses[0], {
+    phase: "failed",
+    activationBlocked: true,
+    runtimeRevision: null,
+    installFingerprint: null,
+    licenseAcceptedAt: null,
+    detail: "Portable installation failed.",
+  });
+  assert.throws(() => assertSoulxManagedStart({
+    catalog: input.catalog,
+    statuses: input.statuses,
+    cachePreflight: reviewedCacheReceipt(),
+  }), /incomplete or unverified cache state/);
 });
 
 test("SoulX setup refuses partial native status even when the offline cache is verified", () => {
