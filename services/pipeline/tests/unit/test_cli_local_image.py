@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 
 from alystria.cli import main
-from alystria.providers.comfyui_local import SDXL_MODEL_ID, ComfyBundleInstaller
+from alystria.providers.comfyui_local import (
+    COMFYUI_RUNTIME_REVISION,
+    SDXL_MODEL_ID,
+    ComfyBundleInstaller,
+)
 
 
 def _output(capsys: object) -> dict[str, object]:
@@ -64,6 +68,46 @@ def test_local_image_install_runs_pinned_installer_then_emits_preflight(
         "recipeId": "comfy-sdxl-1.0-portrait-v1",
         "executable": True,
         "files": [{"path": "model.safetensors", "verified": True}],
+    }
+
+
+def test_local_image_runtime_install_does_not_download_model_weights(
+    tmp_path: Path, monkeypatch: object, capsys: object
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        ComfyBundleInstaller,
+        "install_runtime",
+        lambda self: calls.append("runtime"),
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        ComfyBundleInstaller,
+        "install_bundle",
+        lambda self, model_id: calls.append(f"bundle:{model_id}"),
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        ComfyBundleInstaller,
+        "preflight",
+        lambda self, model_id: calls.append(f"preflight:{model_id}"),
+    )
+
+    exit_code = main(
+        [
+            "local-image",
+            "install-runtime",
+            "--runtime-root",
+            str(tmp_path),
+        ]
+    )
+
+    assert exit_code == 0
+    assert calls == ["runtime"]
+    assert _output(capsys) == {
+        "ok": True,
+        "operation": "install-runtime",
+        "runtimeRoot": str(tmp_path.resolve()),
+        "runtimeReady": True,
+        "runtimeRevision": COMFYUI_RUNTIME_REVISION,
     }
 
 

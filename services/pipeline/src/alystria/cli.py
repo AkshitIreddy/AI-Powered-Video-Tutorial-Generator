@@ -10,7 +10,7 @@ from typing import Any
 
 from .desktop_worker import run_desktop_worker
 from .ipc import handle_request, serve
-from .providers.comfyui_local import ComfyBundleInstaller
+from .providers.comfyui_local import COMFYUI_RUNTIME_REVISION, ComfyBundleInstaller
 from .service import PipelineService
 
 
@@ -30,9 +30,9 @@ def _parser() -> argparse.ArgumentParser:
     local_image = subcommands.add_parser(
         "local-image", help="install or inspect a pinned local image bundle"
     )
-    local_image_commands = local_image.add_subparsers(
-        dest="local_image_operation", required=True
-    )
+    local_image_commands = local_image.add_subparsers(dest="local_image_operation", required=True)
+    runtime = local_image_commands.add_parser("install-runtime")
+    runtime.add_argument("--runtime-root", required=True)
     for operation in ("install", "preflight"):
         command = local_image_commands.add_parser(operation)
         command.add_argument("--runtime-root", required=True)
@@ -42,13 +42,14 @@ def _parser() -> argparse.ArgumentParser:
 
 def _run_local_image(arguments: argparse.Namespace) -> int:
     operation = str(arguments.local_image_operation)
-    model_id = str(arguments.model_id)
+    raw_model_id = getattr(arguments, "model_id", None)
+    model_id = str(raw_model_id) if raw_model_id is not None else None
     runtime_root = Path(str(arguments.runtime_root))
     if not runtime_root.is_absolute():
         payload: dict[str, Any] = {
             "ok": False,
             "operation": operation,
-            "modelId": model_id,
+            **({"modelId": model_id} if model_id is not None else {}),
             "error": {
                 "code": "absolute_runtime_root_required",
                 "message": "Local image runtime root must be an absolute path",
@@ -59,21 +60,32 @@ def _run_local_image(arguments: argparse.Namespace) -> int:
 
     installer = ComfyBundleInstaller(runtime_root)
     try:
-        if operation == "install":
+        if operation == "install-runtime":
             installer.install_runtime()
-            installer.install_bundle(model_id)
-        preflight = installer.preflight(model_id)
-        payload = {
-            "ok": True,
-            "operation": operation,
-            "runtimeRoot": str(runtime_root.resolve()),
-            **preflight,
-        }
+            payload = {
+                "ok": True,
+                "operation": operation,
+                "runtimeRoot": str(runtime_root.resolve()),
+                "runtimeReady": True,
+                "runtimeRevision": COMFYUI_RUNTIME_REVISION,
+            }
+        else:
+            assert model_id is not None
+            if operation == "install":
+                installer.install_runtime()
+                installer.install_bundle(model_id)
+            preflight = installer.preflight(model_id)
+            payload = {
+                "ok": True,
+                "operation": operation,
+                "runtimeRoot": str(runtime_root.resolve()),
+                **preflight,
+            }
     except (OSError, RuntimeError, ValueError) as error:
         payload = {
             "ok": False,
             "operation": operation,
-            "modelId": model_id,
+            **({"modelId": model_id} if model_id is not None else {}),
             "runtimeRoot": str(runtime_root.resolve()),
             "error": {
                 "code": f"local_image_{operation}_failed",

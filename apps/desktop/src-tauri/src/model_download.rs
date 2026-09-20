@@ -43,6 +43,7 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InstallStrategy {
     Quarantine,
+    ManagedComfyRuntime,
     ManagedComfy {
         bundle_bytes: u64,
         artifact_count: usize,
@@ -90,6 +91,22 @@ const COMFYUI_RUNTIME_FILE: ManagedManifestFile = ManagedManifestFile {
     source_url: "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.9.2/ComfyUI_windows_portable_nvidia.7z",
     size_bytes: COMFYUI_RUNTIME_BYTES,
     sha256: COMFYUI_RUNTIME_SHA256,
+};
+
+const COMFYUI_RUNTIME: PackageSpec = PackageSpec {
+    model_id: "runtime/comfyui-0.9.2",
+    display_name: "ComfyUI 0.9.2 portable runtime",
+    immutable_revision: "comfyui-8f40b43e0204d5b9780f3e9618e140e929e80594",
+    code_revision: COMFYUI_RUNTIME_REVISION,
+    weight_revision: "runtime-only",
+    license_id: "GPL-3.0",
+    license_url: "https://raw.githubusercontent.com/Comfy-Org/ComfyUI/8f40b43e0204d5b9780f3e9618e140e929e80594/LICENSE",
+    license_sha256: "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    license_scope: "Pinned ComfyUI source and portable NVIDIA runtime archive. Bundled Python, PyTorch, CUDA, and other dependencies retain their own upstream terms.",
+    download_only_reason: "Standalone shared execution runtime for managed local image packs. It contains no model weights and cannot generate images until a reviewed model recipe is also installed.",
+    artifacts: &[],
+    managed_files: &[],
+    strategy: InstallStrategy::ManagedComfyRuntime,
 };
 
 const SDXL_MANIFEST_FILES: &[ManagedManifestFile] = &[
@@ -358,10 +375,11 @@ const ACCEPTANCE_DOWNLOAD_FIXTURE: PackageSpec = PackageSpec {
 };
 
 #[cfg(not(feature = "portable-debug-runtime"))]
-const PACKAGES: &[PackageSpec] = &[MUSETALK, SDXL, FLUX_KLEIN, Z_IMAGE];
+const PACKAGES: &[PackageSpec] = &[MUSETALK, COMFYUI_RUNTIME, SDXL, FLUX_KLEIN, Z_IMAGE];
 #[cfg(feature = "portable-debug-runtime")]
 const PACKAGES: &[PackageSpec] = &[
     MUSETALK,
+    COMFYUI_RUNTIME,
     SDXL,
     FLUX_KLEIN,
     Z_IMAGE,
@@ -429,30 +447,27 @@ impl ModelDownloadManager {
         if input.license_sha256 != spec.license_sha256 || !input.license_accepted {
             return Err(CommandError::new(
                 "LICENSE_NOT_ACCEPTED",
-                "Accept the displayed immutable license record before downloading this model pack.",
+                "Accept the displayed immutable license record before downloading this package.",
                 false,
             ));
         }
         if self.statuses.read().values().any(|status| {
             active_download_phase(&status.phase)
                 && (status.model_id == spec.model_id
-                    || matches!(spec.strategy, InstallStrategy::ManagedComfy { .. })
-                        && package(&status.model_id).is_ok_and(|active| {
-                            matches!(active.strategy, InstallStrategy::ManagedComfy { .. })
-                        }))
+                    || is_managed_comfy(spec.strategy)
+                        && package(&status.model_id)
+                            .is_ok_and(|active| is_managed_comfy(active.strategy)))
         }) {
             return Err(CommandError::conflict(
-                "This model pack download is already running.",
+                "This managed package download is already running.",
             ));
         }
-        if matches!(spec.strategy, InstallStrategy::ManagedComfy { .. })
-            && self.installer_executable.is_none()
-        {
+        if is_managed_comfy(spec.strategy) && self.installer_executable.is_none() {
             return Err(CommandError::unavailable(
                 "The verified pipeline runtime required for local image installation",
             ));
         }
-        let managed = matches!(spec.strategy, InstallStrategy::ManagedComfy { .. });
+        let managed = is_managed_comfy(spec.strategy);
         let downloaded_bytes = if managed {
             managed_progress(&self.comfy_root, spec).downloaded_bytes
         } else {
@@ -503,9 +518,16 @@ impl ModelDownloadManager {
     fn run(&self, spec: &'static PackageSpec) {
         let result = match spec.strategy {
             InstallStrategy::Quarantine => self.download(spec),
+            InstallStrategy::ManagedComfyRuntime => self.install_comfy_runtime(spec),
             InstallStrategy::ManagedComfy { .. } => self.install_comfy(spec),
         };
         if let Err(error) = result {
+            if matches!(spec.strategy, InstallStrategy::ManagedComfy { .. }) {
+                // The shared runtime can complete before a later model file or
+                // preflight fails. Publish its independent receipt so another
+                // model does not pretend that the verified runtime is missing.
+                self.publish_runtime_receipt_if_ready();
+            }
             let mut status = self.current(spec);
             status.phase = ModelDownloadPhase::Failed;
             status.install_fingerprint = None;
@@ -519,25 +541,74 @@ impl ModelDownloadManager {
 
     fn install_comfy(&self, spec: &'static PackageSpec) -> Result<(), CommandError> {
         validate_spec(spec)?;
+        self.download_managed_files(spec)?;
+        self.record_managed_progress(spec);
+        let result = self.run_comfy_installer(spec, "install", Some(spec.model_id))?;
+        validate_comfy_result(spec, &self.comfy_root, &result)?;
+        self.publish_runtime_receipt_if_ready();
+
+        let InstallStrategy::ManagedComfy { executable, .. } = spec.strategy else {
+            unreachable!("managed install strategy was checked above")
+        };
+        let validated_identity = if executable {
+            Some(validated_managed_identity(spec, &self.comfy_root, true)?)
+        } else {
+            validate_managed_runtime(&self.comfy_root)?;
+            None
+        };
+        let mut ready = self.current(spec);
+        ready.phase = if executable {
+            ModelDownloadPhase::Ready
+        } else {
+            ModelDownloadPhase::DownloadedQuarantined
+        };
+        ready.downloaded_bytes = ready.total_bytes;
+        ready.verified_artifacts = ready.artifact_count;
+        ready.activation_blocked = !executable;
+        ready.runtime_revision = validated_identity.as_ref().map(|value| value.0.clone());
+        ready.install_fingerprint = validated_identity.map(|value| value.1);
+        ready.detail = if executable {
+            "The pinned ComfyUI archive and SDXL model files passed their exact hash checks, and the extracted runtime entry points are present. The reviewed recipe is ready for local generation.".into()
+        } else {
+            "Every pinned runtime and model file passed verification. This candidate remains unavailable for generation because no hardware-reviewed recipe is installed.".into()
+        };
+        ready.updated_at = Utc::now();
+        self.update(ready);
+        Ok(())
+    }
+
+    fn install_comfy_runtime(&self, spec: &'static PackageSpec) -> Result<(), CommandError> {
+        validate_spec(spec)?;
+        self.download_managed_files(spec)?;
+        self.record_managed_progress(spec);
+        let result = self.run_comfy_installer(spec, "install-runtime", None)?;
+        validate_comfy_runtime_result(&self.comfy_root, &result)?;
+        let (runtime_revision, install_fingerprint) = validated_runtime_identity(&self.comfy_root)?;
+        self.commit_runtime_ready(runtime_revision, install_fingerprint);
+        Ok(())
+    }
+
+    fn run_comfy_installer(
+        &self,
+        spec: &'static PackageSpec,
+        operation: &str,
+        model_id: Option<&str>,
+    ) -> Result<serde_json::Value, CommandError> {
         let executable = self.installer_executable.as_ref().ok_or_else(|| {
             CommandError::unavailable(
                 "The verified pipeline runtime required for local image installation",
             )
         })?;
-        self.download_managed_files(spec)?;
-        self.record_managed_progress(spec);
-
-        let mut child = hidden_command(executable)
-            .args([
-                "local-image",
-                "install",
-                "--runtime-root",
-                self.comfy_root
-                    .to_str()
-                    .ok_or_else(|| CommandError::invalid("models root", "is not valid Unicode"))?,
-                "--model-id",
-                spec.model_id,
-            ])
+        let runtime_root = self
+            .comfy_root
+            .to_str()
+            .ok_or_else(|| CommandError::invalid("models root", "is not valid Unicode"))?;
+        let mut command = hidden_command(executable);
+        command.args(["local-image", operation, "--runtime-root", runtime_root]);
+        if let Some(model_id) = model_id {
+            command.args(["--model-id", model_id]);
+        }
+        let mut child = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -588,39 +659,30 @@ impl ModelDownloadManager {
                 "The managed local image installer returned too much output.",
             ));
         }
-        let result: serde_json::Value = serde_json::from_slice(&stdout.bytes).map_err(|_| {
+        serde_json::from_slice(&stdout.bytes).map_err(|_| {
             download_error("The managed local image installer returned an invalid result.")
-        })?;
-        validate_comfy_result(spec, &self.comfy_root, &result)?;
+        })
+    }
 
-        let InstallStrategy::ManagedComfy { executable, .. } = spec.strategy else {
-            unreachable!("managed install strategy was checked above")
-        };
-        let validated_identity = if executable {
-            Some(validated_managed_identity(spec, &self.comfy_root, true)?)
-        } else {
-            validate_managed_runtime(&self.comfy_root)?;
-            None
-        };
-        let mut ready = self.current(spec);
-        ready.phase = if executable {
-            ModelDownloadPhase::Ready
-        } else {
-            ModelDownloadPhase::DownloadedQuarantined
-        };
+    fn publish_runtime_receipt_if_ready(&self) {
+        if let Ok((runtime_revision, install_fingerprint)) =
+            validated_runtime_identity(&self.comfy_root)
+        {
+            self.commit_runtime_ready(runtime_revision, install_fingerprint);
+        }
+    }
+
+    fn commit_runtime_ready(&self, runtime_revision: String, install_fingerprint: String) {
+        let mut ready = self.current(&COMFYUI_RUNTIME);
+        ready.phase = ModelDownloadPhase::Ready;
         ready.downloaded_bytes = ready.total_bytes;
         ready.verified_artifacts = ready.artifact_count;
-        ready.activation_blocked = !executable;
-        ready.runtime_revision = validated_identity.as_ref().map(|value| value.0.clone());
-        ready.install_fingerprint = validated_identity.map(|value| value.1);
-        ready.detail = if executable {
-            "The pinned ComfyUI archive and SDXL model files passed their exact hash checks, and the extracted runtime entry points are present. The reviewed recipe is ready for local generation.".into()
-        } else {
-            "Every pinned runtime and model file passed verification. This candidate remains unavailable for generation because no hardware-reviewed recipe is installed.".into()
-        };
+        ready.activation_blocked = false;
+        ready.runtime_revision = Some(runtime_revision);
+        ready.install_fingerprint = Some(install_fingerprint);
+        ready.detail = "The pinned ComfyUI archive passed its exact size and SHA-256 check, and the extracted Python and ComfyUI entry points are ready for compatible local image packs.".into();
         ready.updated_at = Utc::now();
         self.update(ready);
-        Ok(())
     }
 
     fn download_managed_files(&self, spec: &PackageSpec) -> Result<(), CommandError> {
@@ -845,7 +907,7 @@ impl ModelDownloadManager {
                     | ModelDownloadPhase::Installing
             ) {
                 status.phase = ModelDownloadPhase::Failed;
-                status.detail = if matches!(spec.strategy, InstallStrategy::ManagedComfy { .. }) {
+                status.detail = if is_managed_comfy(spec.strategy) {
                     "The previous app session ended during installation. Start again to verify existing files and finish setup.".into()
                 } else {
                     "The previous app session ended during download. Start again to resume the existing .part files.".into()
@@ -873,13 +935,26 @@ impl ModelDownloadManager {
     }
 
     fn revalidate_loaded_ready_installs(&self) {
+        // Migrate older installs that predate the standalone runtime catalog
+        // row. This validates the shared archive and extracted entry points;
+        // it does not infer runtime readiness from an SDXL receipt.
+        if self.current(&COMFYUI_RUNTIME).phase != ModelDownloadPhase::Ready {
+            let manager = self.clone();
+            let _ = std::thread::Builder::new()
+                .name("model-revalidate-comfyui-runtime".into())
+                .spawn(move || manager.publish_runtime_receipt_if_ready());
+        }
         for spec in PACKAGES {
-            let InstallStrategy::ManagedComfy {
-                executable: true, ..
-            } = spec.strategy
-            else {
+            if !matches!(
+                spec.strategy,
+                InstallStrategy::ManagedComfyRuntime
+                    | InstallStrategy::ManagedComfy {
+                        executable: true,
+                        ..
+                    }
+            ) {
                 continue;
-            };
+            }
             let Some(saved) = self.statuses.read().get(spec.model_id).cloned() else {
                 continue;
             };
@@ -927,7 +1002,13 @@ impl ModelDownloadManager {
         spec: &'static PackageSpec,
         expected_identity: (Option<String>, Option<String>),
     ) {
-        let result = validated_managed_identity(spec, &self.comfy_root, true);
+        let result = match spec.strategy {
+            InstallStrategy::ManagedComfyRuntime => validated_runtime_identity(&self.comfy_root),
+            InstallStrategy::ManagedComfy {
+                executable: true, ..
+            } => validated_managed_identity(spec, &self.comfy_root, true),
+            _ => return,
+        };
         let mut status = self.current(spec);
         match result {
             Ok((runtime_revision, install_fingerprint))
@@ -946,14 +1027,22 @@ impl ModelDownloadManager {
                 status.activation_blocked = false;
                 status.downloaded_bytes = status.total_bytes;
                 status.verified_artifacts = status.artifact_count;
-                status.detail = "The pinned ComfyUI archive and SDXL model files passed their exact hash checks, and the extracted runtime entry points are present. The reviewed recipe is ready for local generation.".into();
+                status.detail = if matches!(spec.strategy, InstallStrategy::ManagedComfyRuntime) {
+                    "The pinned ComfyUI archive passed its exact size and SHA-256 check, and the extracted runtime entry points are ready for compatible local image packs.".into()
+                } else {
+                    "The pinned ComfyUI archive and SDXL model files passed their exact hash checks, and the extracted runtime entry points are present. The reviewed recipe is ready for local generation.".into()
+                };
             }
             _ => {
                 status.phase = ModelDownloadPhase::Failed;
                 status.runtime_revision = None;
                 status.install_fingerprint = None;
                 status.activation_blocked = true;
-                status.detail = "The installed local image bundle no longer matches its verified archive and model-file receipt. Start the verified installation again.".into();
+                status.detail = if matches!(spec.strategy, InstallStrategy::ManagedComfyRuntime) {
+                    "The installed ComfyUI runtime no longer matches its verified archive and entry-point receipt. Start the verified installation again.".into()
+                } else {
+                    "The installed local image bundle no longer matches its verified archive and model-file receipt. Start the verified installation again.".into()
+                };
             }
         }
         status.updated_at = Utc::now();
@@ -1165,7 +1254,10 @@ fn validate_spec(spec: &PackageSpec) -> Result<(), CommandError> {
     if !spec.license_url.starts_with("https://")
         || !is_sha256(spec.license_sha256)
         || !is_git_revision(spec.code_revision)
-        || !is_git_revision(spec.weight_revision)
+        || match spec.strategy {
+            InstallStrategy::ManagedComfyRuntime => spec.weight_revision != "runtime-only",
+            _ => !is_git_revision(spec.weight_revision),
+        }
         || spec.license_scope.trim().is_empty()
     {
         return Err(download_error(
@@ -1176,6 +1268,13 @@ fn validate_spec(spec: &PackageSpec) -> Result<(), CommandError> {
         InstallStrategy::Quarantine if spec.artifacts.is_empty() => {
             return Err(download_error(
                 "The curated quarantine declaration has no artifacts.",
+            ));
+        }
+        InstallStrategy::ManagedComfyRuntime
+            if !spec.artifacts.is_empty() || !spec.managed_files.is_empty() =>
+        {
+            return Err(download_error(
+                "The standalone ComfyUI runtime declaration must not contain model artifacts.",
             ));
         }
         InstallStrategy::ManagedComfy {
@@ -1284,6 +1383,7 @@ fn package(model_id: &str) -> Result<&'static PackageSpec, CommandError> {
 fn total_bytes(spec: &PackageSpec) -> u64 {
     match spec.strategy {
         InstallStrategy::Quarantine => spec.artifacts.iter().map(|value| value.size_bytes).sum(),
+        InstallStrategy::ManagedComfyRuntime => COMFYUI_RUNTIME_BYTES,
         InstallStrategy::ManagedComfy { bundle_bytes, .. } => {
             COMFYUI_RUNTIME_BYTES.saturating_add(bundle_bytes)
         }
@@ -1292,8 +1392,16 @@ fn total_bytes(spec: &PackageSpec) -> u64 {
 fn artifact_count(spec: &PackageSpec) -> usize {
     match spec.strategy {
         InstallStrategy::Quarantine => spec.artifacts.len(),
+        InstallStrategy::ManagedComfyRuntime => 1,
         InstallStrategy::ManagedComfy { artifact_count, .. } => artifact_count,
     }
+}
+
+fn is_managed_comfy(strategy: InstallStrategy) -> bool {
+    matches!(
+        strategy,
+        InstallStrategy::ManagedComfyRuntime | InstallStrategy::ManagedComfy { .. }
+    )
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1355,15 +1463,19 @@ fn managed_progress(runtime_root: &Path, spec: &PackageSpec) -> ManagedProgress 
                 human_bytes(total)
             ),
         )
-    } else if downloaded_bytes >= total {
-        (
-            ModelDownloadPhase::Verifying,
-            "Verifying the pinned runtime and model files before they can be used.".into(),
-        )
     } else if runtime_bytes == COMFYUI_RUNTIME_BYTES && !runtime_ready {
         (
             ModelDownloadPhase::Installing,
             "Extracting the pinned ComfyUI runtime. No GPU is used during installation.".into(),
+        )
+    } else if downloaded_bytes >= total {
+        (
+            ModelDownloadPhase::Verifying,
+            if matches!(spec.strategy, InstallStrategy::ManagedComfyRuntime) {
+                "Verifying the pinned ComfyUI runtime before it can be used.".into()
+            } else {
+                "Verifying the pinned runtime and model files before they can be used.".into()
+            },
         )
     } else if runtime_ready && downloaded_bytes > COMFYUI_RUNTIME_BYTES {
         (
@@ -1604,6 +1716,40 @@ fn validate_comfy_result(
     Ok(())
 }
 
+fn validate_comfy_runtime_result(
+    runtime_root: &Path,
+    value: &serde_json::Value,
+) -> Result<(), CommandError> {
+    let object = value.as_object().ok_or_else(|| {
+        download_error("The managed ComfyUI runtime installer result is not an object.")
+    })?;
+    let expected_root = runtime_root
+        .canonicalize()
+        .map_err(|_| download_error("The managed local image root was not created."))?;
+    let returned_root = object
+        .get("runtimeRoot")
+        .and_then(serde_json::Value::as_str)
+        .map(PathBuf::from)
+        .and_then(|path| path.canonicalize().ok());
+    if object.get("ok").and_then(serde_json::Value::as_bool) != Some(true)
+        || object.get("operation").and_then(serde_json::Value::as_str) != Some("install-runtime")
+        || object
+            .get("runtimeReady")
+            .and_then(serde_json::Value::as_bool)
+            != Some(true)
+        || object
+            .get("runtimeRevision")
+            .and_then(serde_json::Value::as_str)
+            != Some(COMFYUI_RUNTIME_REVISION)
+        || returned_root.as_deref() != Some(expected_root.as_path())
+    {
+        return Err(download_error(
+            "The managed ComfyUI runtime installer result did not match the pinned declaration.",
+        ));
+    }
+    Ok(())
+}
+
 fn validated_managed_identity(
     spec: &PackageSpec,
     runtime_root: &Path,
@@ -1728,6 +1874,31 @@ fn validated_managed_identity(
         spec.immutable_revision.into(),
         format!("{:x}", fingerprint.finalize()),
     ))
+}
+
+fn validated_runtime_identity(runtime_root: &Path) -> Result<(String, String), CommandError> {
+    validate_managed_runtime(runtime_root)?;
+    Ok((
+        COMFYUI_RUNTIME.immutable_revision.into(),
+        runtime_install_fingerprint(),
+    ))
+}
+
+fn runtime_install_fingerprint() -> String {
+    let mut fingerprint = Sha256::new();
+    for value in [
+        "alystria-managed-comfy-runtime-install-v1",
+        COMFYUI_RUNTIME.model_id,
+        COMFYUI_RUNTIME.immutable_revision,
+        COMFYUI_RUNTIME.code_revision,
+        COMFYUI_RUNTIME_ARCHIVE,
+        &COMFYUI_RUNTIME_BYTES.to_string(),
+        COMFYUI_RUNTIME_SHA256,
+    ] {
+        fingerprint.update(value.as_bytes());
+        fingerprint.update([0]);
+    }
+    format!("{:x}", fingerprint.finalize())
 }
 
 fn validate_managed_runtime(runtime_root: &Path) -> Result<PathBuf, CommandError> {
@@ -2134,6 +2305,88 @@ mod tests {
         assert_eq!(SDXL.model_id, "local/sdxl-base-1.0");
         assert_eq!(FLUX_KLEIN.model_id, "local/flux.2-klein-4b-fp8");
         assert_eq!(Z_IMAGE.model_id, "local/z-image-turbo-int8");
+    }
+
+    #[test]
+    fn standalone_comfy_runtime_catalog_has_no_model_weight_payload() {
+        validate_spec(&COMFYUI_RUNTIME).expect("valid standalone runtime declaration");
+        let unavailable = catalog_entry(&COMFYUI_RUNTIME, false);
+        let available = catalog_entry(&COMFYUI_RUNTIME, true);
+        assert!(!unavailable.available);
+        assert!(available.available);
+        assert_eq!(available.model_id, "runtime/comfyui-0.9.2");
+        assert_eq!(available.display_name, "ComfyUI 0.9.2 portable runtime");
+        assert_eq!(available.total_bytes, COMFYUI_RUNTIME_BYTES);
+        assert_eq!(available.artifact_count, 1);
+        assert_eq!(available.license_id, "GPL-3.0");
+        assert!(COMFYUI_RUNTIME.managed_files.is_empty());
+        assert_eq!(total_bytes(&SDXL), COMFYUI_RUNTIME_BYTES + 6_987_631_938);
+        assert!(is_sha256(&runtime_install_fingerprint()));
+    }
+
+    #[test]
+    fn runtime_installer_result_requires_exact_revision_and_contained_root() {
+        let directory = tempdir().expect("tempdir");
+        let runtime_root = directory.path().join("comfyui-local");
+        fs::create_dir_all(&runtime_root).expect("runtime root");
+        let result = serde_json::json!({
+            "ok": true,
+            "operation": "install-runtime",
+            "runtimeRoot": runtime_root.canonicalize().unwrap(),
+            "runtimeReady": true,
+            "runtimeRevision": COMFYUI_RUNTIME_REVISION,
+        });
+        validate_comfy_runtime_result(&runtime_root, &result).expect("valid runtime result");
+
+        let mut wrong_revision = result;
+        wrong_revision["runtimeRevision"] = serde_json::json!("untrusted");
+        assert_eq!(
+            validate_comfy_runtime_result(&runtime_root, &wrong_revision)
+                .expect_err("wrong runtime revision")
+                .code,
+            "MODEL_DOWNLOAD_FAILED"
+        );
+    }
+
+    #[test]
+    fn standalone_runtime_receipt_is_durable_and_distinct_from_sdxl_readiness() {
+        let directory = tempdir().expect("tempdir");
+        let manager = ModelDownloadManager::at(directory.path().to_path_buf()).expect("manager");
+        let fingerprint = runtime_install_fingerprint();
+        manager.commit_runtime_ready(
+            COMFYUI_RUNTIME.immutable_revision.into(),
+            fingerprint.clone(),
+        );
+        assert_eq!(
+            manager.current(&COMFYUI_RUNTIME).phase,
+            ModelDownloadPhase::Ready
+        );
+        assert_eq!(
+            manager.current(&COMFYUI_RUNTIME).install_fingerprint,
+            Some(fingerprint.clone())
+        );
+        assert_eq!(
+            manager.current(&SDXL).phase,
+            ModelDownloadPhase::ManifestRequired
+        );
+
+        let restarted = ModelDownloadManager {
+            statuses: Arc::new(RwLock::new(BTreeMap::new())),
+            ..manager.clone()
+        };
+        restarted.load_statuses();
+        assert_eq!(
+            restarted.current(&COMFYUI_RUNTIME).phase,
+            ModelDownloadPhase::Ready
+        );
+        assert_eq!(
+            restarted.current(&COMFYUI_RUNTIME).install_fingerprint,
+            Some(fingerprint)
+        );
+        assert_eq!(
+            restarted.current(&SDXL).phase,
+            ModelDownloadPhase::ManifestRequired
+        );
     }
 
     #[test]
