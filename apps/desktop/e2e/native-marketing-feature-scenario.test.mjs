@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assertSoulxNativeReadiness, soulxModelContract } from "./native-marketing-feature-scenario.mjs";
+import { assertSoulxHydratedPackage, assertSoulxNativeReadiness, soulxModelContract } from "./native-marketing-feature-scenario.mjs";
 
 function readyInput() {
   const fingerprint = "a".repeat(64);
@@ -61,4 +61,21 @@ test("SoulX readiness never treats a completed download as selected setup", () =
   const input = readyInput();
   input.setup.lipSyncModelId = "local/musetalk-1.5";
   assert.throws(() => assertSoulxNativeReadiness(input), /not selected for both presenter motion and lip-sync/);
+});
+
+test("SoulX setup accepts a complete quarantined cache without claiming activation", () => {
+  const input = readyInput();
+  input.statuses[0].phase = "downloadedQuarantined";
+  input.statuses[0].activationBlocked = true;
+  input.statuses[0].runtimeRevision = null;
+  input.statuses[0].installFingerprint = null;
+  const hydrated = assertSoulxHydratedPackage(input);
+  assert.equal(hydrated.status.phase, "downloadedQuarantined");
+  assert.equal(hydrated.status.downloadedBytes, hydrated.packageEntry.totalBytes);
+});
+
+test("SoulX setup refuses missing cached bytes instead of allowing a network fetch", () => {
+  const input = readyInput();
+  input.statuses[0].downloadedBytes -= 1;
+  assert.throws(() => assertSoulxHydratedPackage(input), /complete hydrated package/);
 });

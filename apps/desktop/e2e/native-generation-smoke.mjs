@@ -25,6 +25,7 @@ import {
 import {
   preflightNativeMarketingFeatureScenario,
   runNativeMarketingFeatureScenario,
+  runSoulxSetupOnly,
 } from "./native-marketing-feature-scenario.mjs";
 
 // Opt-in real native acceptance. The cloud path uses the product's smallest
@@ -160,7 +161,7 @@ try {
   bootstrapLaunch = undefined;
   await rotateExistingPath(readyPath, "bootstrap-ready");
   await configurePortableTestProfile();
-  const alignmentRuntime = parsed.localImageOnly || parsed.marketingFeatureScenario ? null : await assertInstalledAlignmentRuntime();
+  const alignmentRuntime = parsed.localImageOnly || parsed.marketingFeatureScenario || parsed.soulxSetupOnly ? null : await assertInstalledAlignmentRuntime();
 
   launch = await startNative("desktop");
   const { page } = launch;
@@ -176,7 +177,7 @@ try {
     });
     if (message.type() === "error") consoleErrors.push(message.text());
   });
-  const recordingWindow = parsed.recordWalkthrough || parsed.recordMarketingDemo
+  const recordingWindow = parsed.recordWalkthrough || parsed.recordMarketingDemo || parsed.soulxSetupOnly
     ? await prepareNativeRecordingWindow({ page, desktopPid: launch.child.pid })
     : null;
 
@@ -207,7 +208,46 @@ try {
     : null;
   await page.screenshot({ path: path.join(runRoot, "01-native-home.png"), fullPage: true });
 
-  if (parsed.marketingFeatureScenario) {
+  if (parsed.soulxSetupOnly) {
+    const setup = await runSoulxSetupOnly({
+      page,
+      invokeNativeWithoutInput,
+      runRoot,
+      actionTimeoutMs: parsed.actionTimeoutMs,
+      jobTimeoutMs: parsed.jobTimeoutMs,
+    });
+    if (pageErrors.length || consoleErrors.length) {
+      throw new Error(`Native WebView emitted errors: ${JSON.stringify({ pageErrors, consoleErrors })}`);
+    }
+    const packageManifestText = await readFile(packageManifestPath, "utf8");
+    const packageManifest = JSON.parse(packageManifestText);
+    await writeFile(path.join(runRoot, "test-area-manifest.json"), packageManifestText, "utf8");
+    report = {
+      schemaVersion: 1,
+      state: "passed",
+      evidenceClass: setup.evidenceClass,
+      actualNativeWebView: true,
+      visibleSecondaryMonitorWindow: true,
+      realProviderCalls: false,
+      networkModelDownloads: 0,
+      localGpuGeneration: false,
+      recordingWindow,
+      soulxSetup: setup,
+      packageManifest: {
+        createdAt: packageManifest.createdAt,
+        desktop: packageManifest.desktop,
+        pipelineWorker: packageManifest.pipelineWorker,
+        rendererRuntime: packageManifest.rendererRuntime,
+      },
+      executableSha256: await sha256File(executable),
+      workerSha256: await sha256File(workerExecutable),
+      bootstrapDesktopPid,
+      bootstrapWorkerPid,
+      desktopPid: launch.child.pid,
+      workerPid: launch.workerPid,
+      finishedAtUtc: new Date().toISOString(),
+    };
+  } else if (parsed.marketingFeatureScenario) {
     const feature = await runNativeMarketingFeatureScenario({
       page,
       projectsPath,
@@ -667,8 +707,10 @@ if (report && !workError && !cleanupError) {
   report.isolatedProjectsEvidencePath = isolatedProjectsEvidencePath;
   report.ownerStateRestored = ownerStateRestored;
   report.ownerProjectsRestored = ownerProjectsRestored;
-  report.projectEvidenceDirectory = path.join(isolatedProjectsEvidencePath, report.relativeProjectDirectory);
-  report.mediaEvidencePath = path.join(report.projectEvidenceDirectory, report.relativeMediaPath);
+  if (report.relativeProjectDirectory) {
+    report.projectEvidenceDirectory = path.join(isolatedProjectsEvidencePath, report.relativeProjectDirectory);
+    if (report.relativeMediaPath) report.mediaEvidencePath = path.join(report.projectEvidenceDirectory, report.relativeMediaPath);
+  }
   if (report.relativeExportPath) report.exportEvidencePath = path.join(report.projectEvidenceDirectory, report.relativeExportPath);
   if (report.editorSmoke?.relativeOutputPath) {
     report.editorSmoke.outputEvidencePath = path.join(report.projectEvidenceDirectory, report.editorSmoke.relativeOutputPath);
@@ -699,6 +741,8 @@ if (workError || cleanupError) {
       ? "actual-native-gifsmith-walkthrough"
       : parsed.marketingFeatureScenario
       ? "actual-native-marketing-feature-scenario"
+      : parsed.soulxSetupOnly
+      ? "actual-native-soulx-managed-setup"
       : parsed.localImageOnly
       ? parsed.resumeLocalImageRun
         ? "bounded-real-native-local-sdxl-image-continuation"
@@ -2007,6 +2051,7 @@ function parseArguments(arguments_) {
     recoverySmoke: false,
     recordWalkthrough: false,
     marketingFeatureScenario: false,
+    soulxSetupOnly: false,
     recordMarketingDemo: false,
     marketingManifest: null,
     customPortrait: null,
@@ -2049,6 +2094,10 @@ function parseArguments(arguments_) {
     }
     if (name === "--marketing-feature-scenario") {
       result.marketingFeatureScenario = true;
+      continue;
+    }
+    if (name === "--soulx-setup-only") {
+      result.soulxSetupOnly = true;
       continue;
     }
     if (name === "--record-marketing-demo") {
@@ -2147,6 +2196,13 @@ function parseArguments(arguments_) {
     if (!/^[0-9a-f]{64}$/u.test(result.customPortraitSha256)) throw new Error("--custom-portrait-sha256 must be one lowercase SHA-256");
     if (!["curious", "focused", "calm", "hopeful", "playful", "reflective", "energetic"].includes(result.musicMood)) {
       throw new Error("--music-mood must be one MusicBrowser mood");
+    }
+  }
+  if (result.soulxSetupOnly) {
+    if (result.marketingFeatureScenario || result.localImageOnly || result.creativeOnly || result.recordWalkthrough
+      || result.recordMarketingDemo || result.editorSmoke || result.recoverySmoke || result.resumeCreativeRun
+      || result.resumeCompletedRun || result.resumeLocalImageRun) {
+      throw new Error("--soulx-setup-only cannot be combined with generation, marketing, walkthrough, editor, or recovery modes");
     }
   }
   if (result.recordMarketingDemo && !result.gifsmithRoot) throw new Error("--record-marketing-demo requires --gifsmith-root");
@@ -3441,7 +3497,7 @@ function nativeLaunchEnvironment(port) {
     ...process.env,
     ALYSTRIA_HEADLESS_ACCEPTANCE: "1",
     ALYSTRIA_HEADLESS_ACCEPTANCE_CDP_PORT: String(port),
-    ...(parsed.recordWalkthrough || parsed.recordMarketingDemo ? {
+    ...(parsed.recordWalkthrough || parsed.recordMarketingDemo || parsed.soulxSetupOnly ? {
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-allow-origins=*`,
     } : {}),
     ...(parsed.gpuCoordinationPath ? { ALYSTRIA_GPU_LOCK_PATH: parsed.gpuCoordinationPath } : {}),

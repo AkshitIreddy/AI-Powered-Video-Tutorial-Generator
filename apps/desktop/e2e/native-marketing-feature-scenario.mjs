@@ -56,7 +56,9 @@ export async function preflightNativeMarketingFeatureScenario({
     soulx: soulxModelContract,
     gpuCoordinationPath: path.resolve(gpuCoordinationPath),
     permitsProviderCalls: false,
-    permitsModelDownloads: false,
+    permitsManagedInstallationActivation: true,
+    requiresHydratedManagedPackage: true,
+    permitsNetworkModelDownload: false,
     permitsLocalInference: true,
     expectedLocalInferenceCalls: 1,
     expectedMusicSearches: 1,
@@ -105,6 +107,35 @@ export function assertSoulxNativeReadiness({ catalog, statuses, setup, runtimeSt
   };
 }
 
+export function assertSoulxHydratedPackage({ catalog, statuses }) {
+  const packageEntry = catalog?.find((entry) => entry.modelId === soulxModelContract.modelId);
+  if (!packageEntry?.available || packageEntry.displayName !== soulxModelContract.catalogDisplayName) {
+    throw new Error("The packaged native SoulX managed download declaration is unavailable");
+  }
+  const status = statuses?.find((entry) => entry.modelId === soulxModelContract.modelId);
+  if (!status || status.downloadedBytes !== packageEntry.totalBytes || status.totalBytes !== packageEntry.totalBytes
+    || status.verifiedArtifacts !== packageEntry.artifactCount
+    || !["downloadedQuarantined", "ready", "inUse"].includes(status.phase)) {
+    throw new Error(`SoulX managed setup requires the complete hydrated package and will not fetch model bytes: ${JSON.stringify(status ?? null)}`);
+  }
+  return { packageEntry, status };
+}
+
+export async function runSoulxSetupOnly({ page, invokeNativeWithoutInput, runRoot, actionTimeoutMs = 60_000, jobTimeoutMs = 1_200_000 }) {
+  await mkdir(runRoot, { recursive: true });
+  const activation = await activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, runRoot, actionTimeoutMs, jobTimeoutMs });
+  const modelEvidence = await captureSoulxModelEvidence(page, runRoot, activation.soulx, actionTimeoutMs);
+  return {
+    schemaVersion: 1,
+    evidenceClass: "actual-native-soulx-managed-setup",
+    actualNativeWebView: true,
+    providerCalls: 0,
+    networkModelDownloads: 0,
+    managedPackageActivation: activation,
+    modelEvidence,
+  };
+}
+
 export async function runNativeMarketingFeatureScenario({
   page,
   projectsPath,
@@ -123,25 +154,8 @@ export async function runNativeMarketingFeatureScenario({
 }) {
   if (!preflight?.portrait || preflight.assetManifest !== assetManifest) throw new Error("Run the exact marketing feature preflight before native work");
   await mkdir(runRoot, { recursive: true });
-  const catalog = await invokeNativeWithoutInput(page, "local_model_download_catalog");
-  const statuses = await invokeNativeWithoutInput(page, "local_model_download_status");
-  const runtimeStatuses = await invokeNativeWithoutInput(page, "local_presenter_runtime_status");
-  const setupBefore = await invokeNativeWithoutInput(page, "local_model_setup_get");
-  const selectionChanged = setupBefore.lipSyncModelId !== soulxModelContract.modelId
-    || setupBefore.portraitAnimationModelId !== soulxModelContract.modelId
-    || !setupBefore.selectedModelIds?.includes(soulxModelContract.modelId);
-  const setup = selectionChanged ? await invokeNative(page, "local_model_setup_save", {
-    activeProfileId: setupBefore.activeProfileId,
-    selectedModelIds: [...new Set([...(setupBefore.selectedModelIds ?? []), soulxModelContract.modelId])],
-    lipSyncModelId: soulxModelContract.modelId,
-    portraitAnimationModelId: soulxModelContract.modelId,
-    existingModelDirectory: setupBefore.existingModelDirectory ?? null,
-    profiles: setupBefore.profiles,
-  }) : setupBefore;
-  const soulx = {
-    ...assertSoulxNativeReadiness({ catalog, statuses, setup, runtimeStatuses }),
-    selectionChangedThroughNativeSetup: selectionChanged,
-  };
+  const activation = await activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, runRoot, actionTimeoutMs, jobTimeoutMs });
+  const soulx = activation.soulx;
   const modelEvidence = await captureSoulxModelEvidence(page, runRoot, soulx, actionTimeoutMs);
   const tutorial = await prepareMarketingTutorialInNativeEditor({
     page,
@@ -225,6 +239,7 @@ export async function runNativeMarketingFeatureScenario({
       captionsPreservedInProject: tutorial.captionsPreservedInProject,
     },
     soulx,
+    managedPackageActivation: activation,
     modelEvidence,
     presenter,
     music,
@@ -238,6 +253,63 @@ export async function runNativeMarketingFeatureScenario({
       requiredViews: ["Review", "Studio advanced editor", "Plan presenters", "Models & providers", "Export"],
       note: "Pass this receipt and the validated final asset manifest to buildMarketingNativeCaptureTimeline. It is not a recorded or published final by itself.",
     },
+  };
+}
+
+async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, runRoot, actionTimeoutMs, jobTimeoutMs }) {
+  await clickGlobalNavigation(page, "Models & providers");
+  await expect(page.getByRole("heading", { name: "Models & providers", exact: true })).toBeVisible({ timeout: actionTimeoutMs });
+  const catalog = await invokeNativeWithoutInput(page, "local_model_download_catalog");
+  const initialStatuses = await invokeNativeWithoutInput(page, "local_model_download_status");
+  const { packageEntry, status: initial } = assertSoulxHydratedPackage({ catalog, statuses: initialStatuses });
+  const card = page.locator(".aly-catalog-card").filter({ has: page.getByRole("heading", { name: soulxModelContract.uiHeading, exact: true }) });
+  await expect(card).toBeVisible({ timeout: actionTimeoutMs });
+  const managedAction = card.locator(".aly-catalog-card__actions button").first();
+  await expect(managedAction).toHaveText(/Files downloaded|Installed/iu);
+  await managedAction.click();
+  const downloads = page.getByRole("region", { name: "Model downloads" });
+  await expect(downloads).toBeVisible({ timeout: actionTimeoutMs });
+  const item = downloads.getByRole("article", { name: soulxModelContract.catalogDisplayName });
+  await expect(item).toContainText(/Files downloaded|Installed/iu);
+  const hydratedScreenshot = path.join(runRoot, "feature-00-soulx-hydrated-package.png");
+  await page.screenshot({ path: hydratedScreenshot, fullPage: true });
+  await page.getByRole("button", { name: "Minimize downloads", exact: true }).click();
+  const useModel = page.getByRole("button", { name: "Use model", exact: true });
+  await useModel.scrollIntoViewIfNeeded();
+  await expect(useModel).toBeEnabled({ timeout: actionTimeoutMs });
+  await useModel.click();
+  const deadline = Date.now() + jobTimeoutMs;
+  let finalStatus = initial;
+  while (Date.now() < deadline) {
+    const statuses = await invokeNativeWithoutInput(page, "local_model_download_status");
+    finalStatus = statuses.find((entry) => entry.modelId === soulxModelContract.modelId) ?? finalStatus;
+    if (readyDownloadPhases.has(finalStatus.phase) && finalStatus.activationBlocked === false
+      && /^[0-9a-f]{64}$/u.test(finalStatus.installFingerprint ?? "") && finalStatus.runtimeRevision?.trim()) break;
+    if (["failed", "corrupt", "incompatible", "cancelled"].includes(finalStatus.phase)) {
+      throw new Error(`SoulX managed activation failed: ${JSON.stringify(finalStatus)}`);
+    }
+    await page.waitForTimeout(750);
+  }
+  if (!readyDownloadPhases.has(finalStatus.phase) || finalStatus.activationBlocked !== false
+    || !/^[0-9a-f]{64}$/u.test(finalStatus.installFingerprint ?? "") || !finalStatus.runtimeRevision?.trim()) {
+    throw new Error(`Timed out waiting for verified SoulX activation: ${JSON.stringify(finalStatus)}`);
+  }
+  await expect(page.getByRole("button", { name: "SoulX selected", exact: true })).toBeVisible({ timeout: actionTimeoutMs });
+  const [statuses, setup, runtimeStatuses] = await Promise.all([
+    invokeNativeWithoutInput(page, "local_model_download_status"),
+    invokeNativeWithoutInput(page, "local_model_setup_get"),
+    invokeNativeWithoutInput(page, "local_presenter_runtime_status"),
+  ]);
+  const soulx = assertSoulxNativeReadiness({ catalog, statuses, setup, runtimeStatuses });
+  return {
+    soulx,
+    initialPhase: initial.phase,
+    initialDownloadedBytes: initial.downloadedBytes,
+    initialVerifiedArtifacts: initial.verifiedArtifacts,
+    activationInvokedThroughModelsUi: true,
+    modelDownloadStartInvoked: false,
+    providerCalls: 0,
+    hydratedScreenshot,
   };
 }
 
