@@ -16,6 +16,8 @@ import {
   catalogSources,
   emptyCatalogFilters,
   type CapabilityRouteSelection,
+  type CatalogAvailability,
+  type CatalogCapability,
   type CatalogFilterState,
   type CatalogItem,
   type CatalogSort,
@@ -62,6 +64,38 @@ const sourceLabels = {
   local: "Local",
   cloud: "Cloud",
 } as const;
+
+const capabilityLabels: Readonly<Record<CatalogCapability, string>> = {
+  "llm.text": "Writing",
+  "llm.structured": "Structured output",
+  "research.web": "Web research",
+  "vlm.review": "Visual review",
+  "vlm.chat": "Image chat",
+  "media.licensed.search": "Licensed media",
+  "retrieval.embed": "Semantic search",
+  "image.generate": "Image generation",
+  "image.edit": "Image editing",
+  "image.inpaint": "Image repair",
+  "image.control": "Guided images",
+  "image.reference": "Reference images",
+  "image.upscale": "Image upscaling",
+  "video.generate": "Video generation",
+  "audio.tts": "Text to speech",
+  "audio.transcribe": "Transcription",
+  "audio.align": "Speech alignment",
+  "presenter.generate": "Presenter creation",
+  "portrait.animate": "Portrait animation",
+  "lipsync.generate": "Lip sync",
+};
+
+const availabilityLabels: Readonly<Record<CatalogAvailability, string>> = {
+  available: "Available",
+  installed: "Installed",
+  downloadable: "Download available",
+  gated: "Terms required",
+  unavailable: "Unavailable",
+  unknown: "Not verified",
+};
 
 const RESULT_BATCH_SIZE = 6;
 
@@ -222,6 +256,18 @@ export function ModelLibrary({
             const resolvedDownloadState = isLocalModel && (onDownload || downloadState)
               ? downloadState?.(item) ?? defaultDownloadState(item)
               : null;
+            const primaryAction = choosePrimaryAction({
+              resolvedDownloadState,
+              canStageWritingProfile,
+              canSelect: compatibility.canSelect,
+              hasRouteAction: Boolean(onAddToRoute),
+              hasSelectAction: Boolean(onSelect),
+            });
+            const actionClass = (action: CatalogCardAction) => `aly-catalog-button${primaryAction === action ? "" : " aly-catalog-button--quiet"}`;
+            const cardFacts = catalogCardFacts(item, compatibility.level, isLocalModel);
+            const technicalFacts = catalogTechnicalFacts(item, isLocalModel);
+            const hasTechnicalDetails = technicalFacts.length > 0 || Boolean(compatibility.reasons[0] || resolvedDownloadState?.detail);
+            const hasVisibleActions = Boolean((resolvedDownloadState && !resolvedDownloadState.disabled) || onAddToRoute || canStageWritingProfile || onSelect);
             return (
             <li className="aly-catalog-card" key={`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`}>
               <div className="aly-catalog-card__topline">
@@ -236,34 +282,43 @@ export function ModelLibrary({
                 <h3>{item.identity.name}</h3>
                 <p>{item.presentation.description || "No catalog description was supplied."}</p>
                 <div className="aly-catalog-tag-row">
-                  {item.classification.capabilities.slice(0, 3).map((capability) => <span key={capability}>{capability}</span>)}
+                  {item.classification.capabilities.slice(0, 3).map((capability) => <span key={capability}>{capabilityLabels[capability]}</span>)}
                 </div>
               </div>
               <dl className="aly-catalog-metrics">
-                <div><dt>{compatibility.selectedBoundary === "cloud" ? <Cloud size={14} aria-hidden="true" /> : <HardDrive size={14} aria-hidden="true" />} Usable path</dt><dd>{compatibility.selectedBoundary ?? "None yet"}</dd></div>
-                <div><dt>VRAM estimate</dt><dd>{formatBytes(item.requirements.estimatedVramBytes)}</dd></div>
-                <div><dt>License</dt><dd>{item.license.identifier ?? item.license.status}</dd></div>
+                {cardFacts.map((fact) => <div key={fact.label}><dt>{fact.icon === "cloud" ? <Cloud size={14} aria-hidden="true" /> : fact.icon === "local" ? <HardDrive size={14} aria-hidden="true" /> : null}{fact.label}</dt><dd>{fact.value}</dd></div>)}
               </dl>
               {compatibility.reasons[0] && <p className="aly-catalog-card__reason">{compatibility.reasons[0].message}</p>}
-              <details>
-                <summary>Model details</summary>
-                <p>{item.identity.revision ? `Revision ${item.identity.revision}` : "No immutable revision is listed."}</p>
-                <p>{item.requirements.downloadBytes === null ? "Download size is not listed." : `${formatBytes(item.requirements.downloadBytes)} download size.`}</p>
-              </details>
-              {resolvedDownloadState?.detail && <p className="aly-catalog-card__reason" role="status">{resolvedDownloadState.detail}</p>}
-              {resolvedDownloadState?.progressPercent !== undefined && (
-                <progress
-                  aria-label={`${item.identity.name} download progress`}
-                  max={100}
-                  value={Math.max(0, Math.min(100, resolvedDownloadState.progressPercent))}
-                />
+              {resolvedDownloadState && (
+                <div className={`aly-catalog-download-state${resolvedDownloadState.progressPercent === undefined ? "" : " is-active"}`} role="status">
+                  <span><strong>{resolvedDownloadState.label}</strong><small>{downloadStateSummary(resolvedDownloadState)}</small></span>
+                  {resolvedDownloadState.progressPercent !== undefined && (
+                    <progress
+                      aria-label={`${item.identity.name} download progress`}
+                      max={100}
+                      value={Math.max(0, Math.min(100, resolvedDownloadState.progressPercent))}
+                    />
+                  )}
+                </div>
               )}
-              <div className="aly-catalog-card__actions">
-                {resolvedDownloadState && <button type="button" className="aly-catalog-button" disabled={resolvedDownloadState.disabled || !onDownload} onClick={() => onDownload?.(item)}>{resolvedDownloadState.label}</button>}
-                {onAddToRoute && <button type="button" className="aly-catalog-button aly-catalog-button--quiet" disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Add this ready item to a capability route" : "Resolve compatibility checks before routing this item"} onClick={() => onAddToRoute(selectionFromCatalogItem(item))}>Add to route</button>}
-                {canStageWritingProfile && <button type="button" className="aly-catalog-button" disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Stage this exact model in the active writing profile; use Save setup below to keep it" : "Connect the provider and resolve its compatibility checks before using it"} onClick={() => onUseForWritingProfile?.(item)}>Use in writing profile</button>}
-                {onSelect && <button type="button" className="aly-catalog-button" disabled={!compatibility.canSelect} onClick={() => onSelect(item)}>Select model</button>}
-              </div>
+              {hasTechnicalDetails && (
+                <details className="aly-catalog-card__details">
+                  <summary><span><strong>Technical details</strong><small>{isLocalModel ? "Version, package, and setup notes" : "Version and setup notes"}</small></span><ChevronDown size={16} aria-hidden="true" /></summary>
+                  <div className="aly-catalog-card__details-body">
+                    {technicalFacts.length > 0 && <dl>{technicalFacts.map((fact) => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}</dl>}
+                    {compatibility.reasons[0] && <section><h4>Setup check</h4><p>{compatibility.reasons[0].message}</p></section>}
+                    {resolvedDownloadState?.detail && <section><h4>Package note</h4><p>{resolvedDownloadState.detail}</p></section>}
+                  </div>
+                </details>
+              )}
+              {hasVisibleActions && (
+                <div className="aly-catalog-card__actions">
+                  {resolvedDownloadState && !resolvedDownloadState.disabled && <button type="button" className={actionClass("download")} disabled={!onDownload} onClick={() => onDownload?.(item)}>{resolvedDownloadState.label}</button>}
+                  {onAddToRoute && <button type="button" className={actionClass("route")} disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Add this ready item to a capability route" : "Resolve compatibility checks before routing this item"} onClick={() => onAddToRoute(selectionFromCatalogItem(item))}>Add to route</button>}
+                  {canStageWritingProfile && <button type="button" className={actionClass("writing")} disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Stage this exact model in the active writing profile; use Save setup below to keep it" : "Connect the provider and resolve its compatibility checks before using it"} onClick={() => onUseForWritingProfile?.(item)}>Use in writing profile</button>}
+                  {onSelect && <button type="button" className={actionClass("select")} disabled={!compatibility.canSelect} onClick={() => onSelect(item)}>Select model</button>}
+                </div>
+              )}
             </li>
           );})}
         </ul>
@@ -282,6 +337,62 @@ export function ModelLibrary({
       )}
     </section>
   );
+}
+
+type CatalogCardAction = "download" | "route" | "writing" | "select";
+type CatalogCardFact = { label: string; value: string; icon?: "cloud" | "local" };
+
+function catalogCardFacts(item: CatalogItem, compatibilityLevel: CompatibilityLevel, isLocalModel: boolean): CatalogCardFact[] {
+  const license = item.license.identifier ?? (item.license.status === "custom" ? "Custom terms" : "Not verified");
+  if (!isLocalModel) {
+    return [
+      { label: "Access", value: "Cloud API", icon: "cloud" },
+      { label: "Availability", value: availabilityLabels[item.availability] },
+      { label: "Setup", value: compatibilityLabels[compatibilityLevel] },
+    ];
+  }
+
+  return [
+    { label: "Availability", value: availabilityLabels[item.availability], icon: "local" },
+    ...(item.requirements.estimatedVramBytes === null ? [] : [{ label: "VRAM", value: formatBytes(item.requirements.estimatedVramBytes) }]),
+    { label: "License", value: license },
+  ];
+}
+
+function catalogTechnicalFacts(item: CatalogItem, isLocalModel: boolean): CatalogCardFact[] {
+  return [
+    ...(item.identity.revision ? [{ label: "Revision", value: item.identity.revision }] : []),
+    ...(isLocalModel && item.requirements.downloadBytes !== null ? [{ label: "Download", value: formatBytes(item.requirements.downloadBytes) }] : []),
+    ...(isLocalModel && item.requirements.installedBytes !== null ? [{ label: "Installed size", value: formatBytes(item.requirements.installedBytes) }] : []),
+    ...(isLocalModel && item.execution.runtimes.length > 0 ? [{ label: "Runtime", value: item.execution.runtimes.join(", ") }] : []),
+  ];
+}
+
+function choosePrimaryAction({
+  resolvedDownloadState,
+  canStageWritingProfile,
+  canSelect,
+  hasRouteAction,
+  hasSelectAction,
+}: {
+  resolvedDownloadState: CatalogDownloadActionState | null;
+  canStageWritingProfile: boolean;
+  canSelect: boolean;
+  hasRouteAction: boolean;
+  hasSelectAction: boolean;
+}): CatalogCardAction | null {
+  if (resolvedDownloadState && !resolvedDownloadState.disabled) return "download";
+  if (canStageWritingProfile && canSelect) return "writing";
+  if (hasSelectAction && canSelect) return "select";
+  if (hasRouteAction && canSelect) return "route";
+  return null;
+}
+
+function downloadStateSummary(state: CatalogDownloadActionState): string {
+  if (state.progressPercent !== undefined) return `${Math.round(Math.max(0, Math.min(100, state.progressPercent)))}% complete`;
+  if (/installed|ready|verified/i.test(state.label)) return "Available on this device";
+  if (state.disabled) return "Open technical details for the setup reason";
+  return "Managed package available";
 }
 
 function defaultDownloadState(item: CatalogItem): CatalogDownloadActionState {

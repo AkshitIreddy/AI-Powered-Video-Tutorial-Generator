@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ModelLibrary } from "../ModelLibrary";
@@ -109,7 +109,7 @@ describe("catalog selection controls", () => {
 
     expect(screen.queryByRole("button", { name: "Select model" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Inspect details" })).not.toBeInTheDocument();
-    expect(screen.getByText("Model details")).toBeInTheDocument();
+    expect(screen.getByText("Technical details")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Download" }));
     expect(onDownload).toHaveBeenCalledWith(item);
 
@@ -118,7 +118,9 @@ describe("catalog selection controls", () => {
     expect(screen.queryByRole("button", { name: "Select model" })).not.toBeInTheDocument();
   });
 
-  it("shows managed progress and an unavailable download without implying success", () => {
+  it("keeps managed progress compact and moves long package notes into technical details", async () => {
+    const user = userEvent.setup();
+    const longPackageNote = "Verified artifact C:\\Users\\Akshit\\AppData\\Local\\Alystria\\models\\stable-diffusion-xl-base-1.0\\sd_xl_base_1.0_0.9vae.safetensors is ready.";
     const downloading = catalogFixture({ name: "Downloading model", sourceId: "local/downloading", availability: "downloadable" });
     const unavailable = catalogFixture({ name: "Unmanaged model", sourceId: "local/unmanaged", availability: "downloadable" });
     render(
@@ -127,28 +129,50 @@ describe("catalog selection controls", () => {
         compatibilityContext={contextFixture()}
         onDownload={vi.fn()}
         downloadState={(item) => item.identity.sourceId === "local/downloading"
-          ? { label: "Downloading 42%", disabled: true, detail: "2.1 GB of 5 GB", progressPercent: 42 }
+          ? { label: "Downloading 42%", disabled: true, detail: longPackageNote, progressPercent: 42 }
           : { label: "Download unavailable", disabled: true, detail: "No verified package exists for this model." }}
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Downloading 42%" })).toBeDisabled();
+    expect(screen.getByText("Downloading 42%")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Downloading 42%" })).not.toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "Downloading model download progress" })).toHaveAttribute("value", "42");
-    expect(screen.getByRole("button", { name: "Download unavailable" })).toBeDisabled();
-    expect(screen.getByText("No verified package exists for this model.")).toBeInTheDocument();
+    expect(screen.getByText(longPackageNote)).not.toBeVisible();
+    expect(screen.getByText("Download unavailable")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Download unavailable" })).not.toBeInTheDocument();
+    const packageNote = screen.getByText("No verified package exists for this model.");
+    expect(packageNote).not.toBeVisible();
+    const unavailableCard = screen.getByRole("heading", { name: "Unmanaged model" }).closest<HTMLElement>(".aly-catalog-card")!;
+    await user.click(within(unavailableCard).getByText("Technical details"));
+    expect(packageNote).toBeVisible();
   });
 
   it("never offers a download action for a cloud-only model", () => {
+    const cloud = catalogFixture({
+      name: "Cloud model",
+      providerId: "groq",
+      capabilities: ["llm.text", "llm.structured"],
+      boundaries: ["cloud"],
+      availability: "available",
+    });
     render(
       <ModelLibrary
-        items={[catalogFixture({ name: "Cloud model", boundaries: ["cloud"], availability: "available" })]}
-        compatibilityContext={contextFixture()}
+        items={[cloud]}
+        compatibilityContext={contextFixture({ capability: null, hardware: hardwareFixture({ providerConnectionIds: ["groq"] }) })}
         onDownload={vi.fn()}
         downloadState={() => ({ label: "Download", disabled: false })}
       />,
     );
 
+    const card = screen.getByRole("heading", { name: "Cloud model" }).closest<HTMLElement>(".aly-catalog-card")!;
     expect(screen.queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
+    expect(within(card).getByText("Writing")).toBeVisible();
+    expect(within(card).getByText("Structured output")).toBeVisible();
+    expect(within(card).queryByText("llm.text")).not.toBeInTheDocument();
+    expect(within(card).getByText("Cloud API")).toBeVisible();
+    expect(within(card).queryByText("VRAM estimate")).not.toBeInTheDocument();
+    expect(within(card).queryByText("Usable path")).not.toBeInTheDocument();
+    expect(within(card).queryByText("Size not listed")).not.toBeInTheDocument();
   });
 
   it("stages a compatible connected cloud writing model and blocks it without the connection", async () => {
@@ -216,7 +240,9 @@ describe("catalog selection controls", () => {
     );
 
     expect(screen.getByRole("button", { name: "Add to route" })).toBeDisabled();
-    expect(screen.getByText("This catalog item has no verified local installation.")).toBeInTheDocument();
+    const setupReasons = screen.getAllByText("This catalog item has no verified local installation.");
+    expect(setupReasons).toHaveLength(2);
+    expect(setupReasons[0]).toBeVisible();
   });
 
   it("labels and disables route choices that have not passed compatibility", () => {

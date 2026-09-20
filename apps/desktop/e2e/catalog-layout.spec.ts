@@ -33,11 +33,34 @@ test("keeps catalog discovery visible and exposes only working model actions", a
   }
 
   await expect(page.getByRole("button", { name: "Inspect details" })).toHaveCount(0);
-  await firstCard.locator("summary").filter({ hasText: "Model details" }).click();
+  await firstCard.locator("summary").filter({ hasText: "Technical details" }).click();
   await expect(firstCard.locator("details")).toHaveAttribute("open", "");
-  // A browser preview cannot download native packages; it must explain that
-  // boundary instead of presenting a successful inspection as installation.
-  await expect(catalog.getByRole("button", { name: "Download unavailable" }).first()).toBeDisabled();
+  await expect(firstCard.locator(".aly-catalog-card__details-body")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport!.width);
+  if (evidenceDir) {
+    await page.screenshot({ path: `${evidenceDir}/catalog-details-${testInfo.project.name}.png`, fullPage: true });
+  }
+  // A card presents at most one visually primary action. Browser previews may
+  // omit native-only download actions entirely, while native builds keep them.
+  const primaryActionCounts = await catalog.locator(".aly-catalog-card").evaluateAll((cards) => cards.map((card) => card.querySelectorAll(".aly-catalog-card__actions .aly-catalog-button:not(.aly-catalog-button--quiet)").length));
+  expect(primaryActionCounts.every((count) => count <= 1)).toBe(true);
+  const unavailableDownloads = catalog.getByRole("button", { name: "Download unavailable" });
+  for (let index = 0; index < await unavailableDownloads.count(); index += 1) {
+    await expect(unavailableDownloads.nth(index)).toBeDisabled();
+  }
+
+  await search.fill('"Stable Diffusion XL Base 1.0"');
+  const localCard = catalog.locator(".aly-catalog-card").filter({ has: page.getByRole("heading", { name: "Stable Diffusion XL Base 1.0", exact: true }) });
+  await expect(localCard).toBeVisible();
+  await expect(localCard.getByText("Image generation")).toBeVisible();
+  await expect(localCard.getByText("VRAM")).toBeVisible();
+  await expect(localCard.getByText("Usable path")).toHaveCount(0);
+  await localCard.locator("summary").filter({ hasText: "Technical details" }).click();
+  await expect(localCard.locator(".aly-catalog-card__details-body")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport!.width);
+  if (evidenceDir) {
+    await page.screenshot({ path: `${evidenceDir}/catalog-local-details-${testInfo.project.name}.png`, fullPage: true });
+  }
 });
 
 test("stages an eligible writing model and persists it only through the saved profile action", async ({ page }, testInfo) => {
