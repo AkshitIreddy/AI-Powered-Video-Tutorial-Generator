@@ -23,6 +23,7 @@ import {
   recordNativeWalkthrough,
 } from "./native-walkthrough-recording.mjs";
 import {
+  preflightSoulxHydratedCache,
   preflightNativeMarketingFeatureScenario,
   runNativeMarketingFeatureScenario,
   runSoulxSetupOnly,
@@ -54,6 +55,7 @@ const ffprobePath = path.join(portableRoot, "Runtime", "ffmpeg", "ffprobe.exe");
 const starterVisualManifestPath = path.join(portableRoot, "Runtime", "assets", "starter", "visuals", "packages", "themes", "starter-kits", "core.v1.json");
 const appDataPath = path.join(portableRoot, "App Data");
 const projectsPath = path.join(portableRoot, "Projects");
+const modelsPath = path.join(portableRoot, "Models");
 const readyPath = path.join(portableRoot, "Evidence", "native-headless-ready.json");
 const evidenceRoot = path.join(portableRoot, "Evidence", "native-generation-smoke");
 const runId = `${new Date().toISOString().replace(/[^0-9]/gu, "")}-${process.pid}`;
@@ -65,6 +67,7 @@ const latestReportPath = path.join(evidenceRoot, "report.json");
 const latestFailurePath = path.join(evidenceRoot, "failure.json");
 const packageManifestPath = path.join(portableRoot, "test-area-manifest.json");
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const soulxInstallManifestPath = path.join(repoRoot, "services", "pipeline", "src", "alystria", "presenter_runtime_assets", "soulx-flashhead-install-manifest.json");
 const editorSmokeScript = path.join(repoRoot, "apps", "desktop", "e2e", "native-editor-smoke.mjs");
 const recoverySmokeScript = path.join(repoRoot, "apps", "desktop", "e2e", "native-recovery.mjs");
 const projectTitle = titleFromTopic(parsed.topic);
@@ -141,6 +144,12 @@ const marketingFeaturePreflight = parsed.marketingFeatureScenario
     recordCapture: parsed.recordMarketingDemo,
   })
   : null;
+const soulxCachePreflight = parsed.soulxSetupOnly || parsed.marketingFeatureScenario
+  ? await preflightSoulxHydratedCache({
+    modelsRoot: modelsPath,
+    manifestPath: soulxInstallManifestPath,
+  })
+  : null;
 await rotateExistingPath(readyPath);
 
 try {
@@ -213,6 +222,7 @@ try {
       page,
       invokeNativeWithoutInput,
       runRoot,
+      cachePreflight: soulxCachePreflight,
       actionTimeoutMs: parsed.actionTimeoutMs,
       jobTimeoutMs: parsed.jobTimeoutMs,
     });
@@ -256,6 +266,7 @@ try {
       ffprobePath,
       assetManifest: marketingFeaturePreflight.assetManifest,
       preflight: marketingFeaturePreflight,
+      cachePreflight: soulxCachePreflight,
       runRoot,
       customPresenterName: parsed.customPresenterName,
       musicQuery: parsed.musicQuery,
@@ -280,10 +291,10 @@ try {
       state: "passed",
       evidenceClass: feature.evidenceClass,
       actualNativeWebView: true,
-      hiddenLaunch: true,
+      hiddenLaunch: !parsed.recordMarketingDemo,
       realProviderCalls: false,
       localGpuGeneration: true,
-      modelDownloadsStarted: 0,
+      modelDownloadsStarted: feature.modelDownloadsStarted,
       projectId: feature.project.id,
       relativeProjectDirectory: containedRelativePath(projectsPath, feature.project.directory, "native marketing feature project"),
       relativeMediaPath: containedRelativePath(feature.project.directory, feature.project.cleanEditorRenderPath, "native marketing feature render"),

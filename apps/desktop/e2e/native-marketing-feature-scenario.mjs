@@ -2,7 +2,7 @@ import { expect } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { lstat, mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -25,6 +25,13 @@ export const soulxModelContract = Object.freeze({
   uiHeading: "SoulX-FlashHead Pro",
   minimumPreviewMs: 4_000,
   maximumPreviewMs: 7_000,
+});
+
+export const soulxInstallContract = Object.freeze({
+  manifestSha256: "b8e3e9859911e798c18054f4921d637800afd5a45717015c3c20cc4203537106",
+  immutableRevision: "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+  artifactCount: 75,
+  totalBytes: 10_394_156_663,
 });
 
 const readyDownloadPhases = new Set(["ready", "inUse"]);
@@ -107,23 +114,105 @@ export function assertSoulxNativeReadiness({ catalog, statuses, setup, runtimeSt
   };
 }
 
-export function assertSoulxHydratedPackage({ catalog, statuses }) {
+export async function preflightSoulxHydratedCache({
+  modelsRoot,
+  manifestPath,
+  expectedManifestSha256 = soulxInstallContract.manifestSha256,
+  expectedIdentity = soulxInstallContract,
+}) {
+  const manifestBytes = await readFile(manifestPath);
+  const manifestSha256 = createHash("sha256").update(manifestBytes).digest("hex");
+  if (manifestSha256 !== expectedManifestSha256) {
+    throw new Error(`SoulX install manifest hash mismatch: expected ${expectedManifestSha256}, received ${manifestSha256}`);
+  }
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  if (manifest.schemaVersion !== 1 || manifest.modelId !== soulxModelContract.modelId
+    || manifest.displayName !== soulxModelContract.catalogDisplayName || !Array.isArray(manifest.artifacts)
+    || manifest.immutableRevision !== expectedIdentity.immutableRevision
+    || manifest.artifacts.length !== expectedIdentity.artifactCount) {
+    throw new Error("SoulX install manifest identity does not match the reviewed managed package");
+  }
+  const artifacts = manifest.artifacts.map((artifact, index) => normalizeSoulxArtifact(artifact, index));
+  const totalBytes = artifacts.reduce((sum, artifact) => sum + artifact.bytes, 0);
+  if (!Number.isSafeInteger(totalBytes) || totalBytes !== expectedIdentity.totalBytes) {
+    throw new Error(`SoulX install manifest byte total mismatch: expected ${expectedIdentity.totalBytes}, received ${totalBytes}`);
+  }
+  const cacheRoot = path.join(
+    path.resolve(modelsRoot),
+    "download-quarantine",
+    manifest.modelId.replaceAll("/", "--"),
+    manifest.immutableRevision,
+  );
+  const preparationPath = path.join(cacheRoot, "root-cache-preparation.json");
+  const preparation = JSON.parse(await readFile(preparationPath, "utf8"));
+  const preparedFiles = Array.isArray(preparation.files) ? preparation.files : [];
+  const preparedPaths = preparedFiles.map((entry) => entry?.file);
+  const expectedPaths = artifacts.map((artifact) => artifact.relativePath);
+  if (preparation.manifestSha256 !== manifestSha256 || preparation.state !== "cache-prepared-not-installed"
+    || preparation.artifactCount !== artifacts.length || preparation.bytes !== totalBytes
+    || preparedPaths.length !== expectedPaths.length || new Set(preparedPaths).size !== expectedPaths.length
+    || preparedFiles.some((entry) => entry?.source !== "verified-cache")
+    || expectedPaths.some((relativePath) => !preparedPaths.includes(relativePath))) {
+    throw new Error("SoulX root cache preparation receipt does not cover the exact reviewed manifest");
+  }
+  const ledger = createHash("sha256");
+  for (const artifact of artifacts) {
+    const artifactPath = path.join(cacheRoot, "files", ...artifact.relativePath.split("/"));
+    assertContainedPath(path.join(cacheRoot, "files"), artifactPath, `SoulX cache artifact ${artifact.relativePath}`);
+    const artifactStat = await lstat(artifactPath).catch(() => null);
+    if (!artifactStat?.isFile() || artifactStat.isSymbolicLink() || artifactStat.size !== artifact.bytes) {
+      throw new Error(`SoulX cached artifact is missing or has the wrong byte count: ${artifact.relativePath}`);
+    }
+    const actualSha256 = await sha256File(artifactPath);
+    if (actualSha256 !== artifact.sha256) {
+      throw new Error(`SoulX cached artifact hash mismatch: ${artifact.relativePath}`);
+    }
+    ledger.update(`${artifact.relativePath}\0${artifact.bytes}\0${actualSha256}\n`);
+  }
+  return {
+    schemaVersion: 1,
+    evidenceClass: "source-manifest-and-file-verified-soulx-cache",
+    verifiedOfflineCache: true,
+    modelId: manifest.modelId,
+    displayName: manifest.displayName,
+    immutableRevision: manifest.immutableRevision,
+    manifestPath: path.resolve(manifestPath),
+    manifestSha256,
+    cacheRoot,
+    preparationReceiptPath: preparationPath,
+    artifactCount: artifacts.length,
+    totalBytes,
+    artifactLedgerSha256: ledger.digest("hex"),
+  };
+}
+
+export function assertSoulxManagedStart({ catalog, statuses, cachePreflight }) {
   const packageEntry = catalog?.find((entry) => entry.modelId === soulxModelContract.modelId);
-  if (!packageEntry?.available || packageEntry.displayName !== soulxModelContract.catalogDisplayName) {
+  if (!packageEntry?.available || packageEntry.displayName !== soulxModelContract.catalogDisplayName
+    || packageEntry.immutableRevision !== cachePreflight?.immutableRevision
+    || packageEntry.totalBytes !== cachePreflight?.totalBytes
+    || packageEntry.artifactCount !== cachePreflight?.artifactCount
+    || cachePreflight?.modelId !== soulxModelContract.modelId
+    || cachePreflight?.evidenceClass !== "source-manifest-and-file-verified-soulx-cache"
+    || cachePreflight?.verifiedOfflineCache !== true) {
     throw new Error("The packaged native SoulX managed download declaration is unavailable");
   }
   const status = statuses?.find((entry) => entry.modelId === soulxModelContract.modelId);
-  if (!status || status.downloadedBytes !== packageEntry.totalBytes || status.totalBytes !== packageEntry.totalBytes
-    || status.verifiedArtifacts !== packageEntry.artifactCount
-    || !["downloadedQuarantined", "ready", "inUse"].includes(status.phase)) {
-    throw new Error(`SoulX managed setup requires the complete hydrated package and will not fetch model bytes: ${JSON.stringify(status ?? null)}`);
+  const complete = status && status.downloadedBytes === packageEntry.totalBytes
+    && status.totalBytes === packageEntry.totalBytes && status.verifiedArtifacts === packageEntry.artifactCount
+    && ["downloadedQuarantined", "ready", "inUse"].includes(status.phase);
+  const verifiedManifestOnly = status?.phase === "manifestRequired" && status.downloadedBytes === 0
+    && status.verifiedArtifacts === 0 && status.totalBytes === packageEntry.totalBytes
+    && status.artifactCount === packageEntry.artifactCount;
+  if (!complete && !verifiedManifestOnly) {
+    throw new Error(`SoulX managed setup refuses an incomplete or unverified cache state: ${JSON.stringify(status ?? null)}`);
   }
-  return { packageEntry, status };
+  return { packageEntry, status, requiresNativeDownloadStart: Boolean(verifiedManifestOnly) };
 }
 
-export async function runSoulxSetupOnly({ page, invokeNativeWithoutInput, runRoot, actionTimeoutMs = 60_000, jobTimeoutMs = 1_200_000 }) {
+export async function runSoulxSetupOnly({ page, invokeNativeWithoutInput, runRoot, cachePreflight, actionTimeoutMs = 60_000, jobTimeoutMs = 1_200_000 }) {
   await mkdir(runRoot, { recursive: true });
-  const activation = await activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, runRoot, actionTimeoutMs, jobTimeoutMs });
+  const activation = await activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, runRoot, cachePreflight, actionTimeoutMs, jobTimeoutMs });
   const modelEvidence = await captureSoulxModelEvidence(page, runRoot, activation.soulx, actionTimeoutMs);
   return {
     schemaVersion: 1,
@@ -131,6 +220,7 @@ export async function runSoulxSetupOnly({ page, invokeNativeWithoutInput, runRoo
     actualNativeWebView: true,
     providerCalls: 0,
     networkModelDownloads: 0,
+    cachePreflight,
     managedPackageActivation: activation,
     modelEvidence,
   };
@@ -144,6 +234,7 @@ export async function runNativeMarketingFeatureScenario({
   ffprobePath,
   assetManifest,
   preflight,
+  cachePreflight,
   runRoot,
   customPresenterName,
   musicQuery,
@@ -154,7 +245,7 @@ export async function runNativeMarketingFeatureScenario({
 }) {
   if (!preflight?.portrait || preflight.assetManifest !== assetManifest) throw new Error("Run the exact marketing feature preflight before native work");
   await mkdir(runRoot, { recursive: true });
-  const activation = await activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, runRoot, actionTimeoutMs, jobTimeoutMs });
+  const activation = await activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, runRoot, cachePreflight, actionTimeoutMs, jobTimeoutMs });
   const soulx = activation.soulx;
   const modelEvidence = await captureSoulxModelEvidence(page, runRoot, soulx, actionTimeoutMs);
   const tutorial = await prepareMarketingTutorialInNativeEditor({
@@ -228,7 +319,9 @@ export async function runNativeMarketingFeatureScenario({
     providerCalls: 0,
     openverseSearches: 1,
     externalMediaDownloadBound: "one search with at most three rights-eligible candidates",
-    modelDownloadsStarted: 0,
+    modelDownloadsStarted: activation.modelDownloadStartInvoked ? 1 : 0,
+    networkModelDownloads: 0,
+    cachePreflight,
     localPresenterPreviewInferenceCalls: 1,
     project: {
       id: tutorial.identity.projectId,
@@ -256,21 +349,45 @@ export async function runNativeMarketingFeatureScenario({
   };
 }
 
-async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, runRoot, actionTimeoutMs, jobTimeoutMs }) {
+async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, runRoot, cachePreflight, actionTimeoutMs, jobTimeoutMs }) {
   await clickGlobalNavigation(page, "Models & providers");
   await expect(page.getByRole("heading", { name: "Models & providers", exact: true })).toBeVisible({ timeout: actionTimeoutMs });
   const catalog = await invokeNativeWithoutInput(page, "local_model_download_catalog");
   const initialStatuses = await invokeNativeWithoutInput(page, "local_model_download_status");
-  const { packageEntry, status: initial } = assertSoulxHydratedPackage({ catalog, statuses: initialStatuses });
+  const { packageEntry, status: initial, requiresNativeDownloadStart } = assertSoulxManagedStart({
+    catalog,
+    statuses: initialStatuses,
+    cachePreflight,
+  });
   const card = page.locator(".aly-catalog-card").filter({ has: page.getByRole("heading", { name: soulxModelContract.uiHeading, exact: true }) });
   await expect(card).toBeVisible({ timeout: actionTimeoutMs });
   const managedAction = card.locator(".aly-catalog-card__actions button").first();
-  await expect(managedAction).toHaveText(/Files downloaded|Installed/iu);
+  await expect(managedAction).toHaveText(requiresNativeDownloadStart ? /^Download$/iu : /Files downloaded|Installed/iu);
   await managedAction.click();
   const downloads = page.getByRole("region", { name: "Model downloads" });
   await expect(downloads).toBeVisible({ timeout: actionTimeoutMs });
   const item = downloads.getByRole("article", { name: soulxModelContract.catalogDisplayName });
-  await expect(item).toContainText(/Files downloaded|Installed/iu);
+  if (requiresNativeDownloadStart) {
+    const downloadDeadline = Date.now() + jobTimeoutMs;
+    let downloaded = initial;
+    while (Date.now() < downloadDeadline) {
+      const statuses = await invokeNativeWithoutInput(page, "local_model_download_status");
+      downloaded = statuses.find((entry) => entry.modelId === soulxModelContract.modelId) ?? downloaded;
+      if (["downloadedQuarantined", "ready", "inUse"].includes(downloaded.phase)
+        && downloaded.downloadedBytes === packageEntry.totalBytes
+        && downloaded.verifiedArtifacts === packageEntry.artifactCount) break;
+      if (["failed", "corrupt", "incompatible", "cancelled"].includes(downloaded.phase)) {
+        throw new Error(`SoulX cached native download/install failed: ${JSON.stringify(downloaded)}`);
+      }
+      await page.waitForTimeout(750);
+    }
+    if (!["downloadedQuarantined", "ready", "inUse"].includes(downloaded.phase)
+      || downloaded.downloadedBytes !== packageEntry.totalBytes
+      || downloaded.verifiedArtifacts !== packageEntry.artifactCount) {
+      throw new Error(`Timed out waiting for native SoulX cache consumption and install: ${JSON.stringify(downloaded)}`);
+    }
+  }
+  await expect(item).toContainText(/Files downloaded|Installed/iu, { timeout: jobTimeoutMs });
   const hydratedScreenshot = path.join(runRoot, "feature-00-soulx-hydrated-package.png");
   await page.screenshot({ path: hydratedScreenshot, fullPage: true });
   await page.getByRole("button", { name: "Minimize downloads", exact: true }).click();
@@ -307,7 +424,8 @@ async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, ru
     initialDownloadedBytes: initial.downloadedBytes,
     initialVerifiedArtifacts: initial.verifiedArtifacts,
     activationInvokedThroughModelsUi: true,
-    modelDownloadStartInvoked: false,
+    modelDownloadStartInvoked: requiresNativeDownloadStart,
+    cachePreflight,
     providerCalls: 0,
     hydratedScreenshot,
   };
@@ -607,6 +725,24 @@ async function inspectPortrait(file, expectedSha256) {
   const sha256 = await sha256File(resolved);
   if (sha256 !== expectedSha256) throw new Error("Custom portrait hash does not match the reviewed input");
   return { path: resolved, sha256, byteSize: details.size };
+}
+
+function normalizeSoulxArtifact(artifact, index) {
+  const relativePath = artifact?.relativePath;
+  if (typeof relativePath !== "string" || !relativePath || relativePath.includes("\\")
+    || path.isAbsolute(relativePath) || relativePath.split("/").some((part) => !part || part === "." || part === "..")
+    || !Number.isSafeInteger(artifact?.bytes) || artifact.bytes <= 0
+    || !/^[0-9a-f]{64}$/u.test(artifact?.sha256 ?? "")) {
+    throw new Error(`SoulX install manifest artifact ${index + 1} is unsafe or incomplete`);
+  }
+  return { relativePath, bytes: artifact.bytes, sha256: artifact.sha256 };
+}
+
+function assertContainedPath(root, candidate, label) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`${label} escaped the managed cache root`);
+  }
 }
 
 async function sha256File(file) {

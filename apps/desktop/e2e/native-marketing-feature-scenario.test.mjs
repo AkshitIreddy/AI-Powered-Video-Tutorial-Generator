@@ -1,27 +1,37 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
-import { assertSoulxHydratedPackage, assertSoulxNativeReadiness, soulxModelContract } from "./native-marketing-feature-scenario.mjs";
+import {
+  assertSoulxManagedStart,
+  assertSoulxNativeReadiness,
+  preflightSoulxHydratedCache,
+  soulxInstallContract,
+  soulxModelContract,
+} from "./native-marketing-feature-scenario.mjs";
 
 function readyInput() {
   const fingerprint = "a".repeat(64);
-  const revision = "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128";
+  const revision = soulxInstallContract.immutableRevision;
   return {
     catalog: [{
       modelId: soulxModelContract.modelId,
       displayName: soulxModelContract.catalogDisplayName,
       immutableRevision: revision,
-      totalBytes: 10_464_991_863,
-      artifactCount: 76,
+      totalBytes: soulxInstallContract.totalBytes,
+      artifactCount: soulxInstallContract.artifactCount,
       available: true,
     }],
     statuses: [{
       modelId: soulxModelContract.modelId,
       phase: "ready",
-      downloadedBytes: 10_464_991_863,
-      totalBytes: 10_464_991_863,
-      verifiedArtifacts: 76,
-      artifactCount: 76,
+      downloadedBytes: soulxInstallContract.totalBytes,
+      totalBytes: soulxInstallContract.totalBytes,
+      verifiedArtifacts: soulxInstallContract.artifactCount,
+      artifactCount: soulxInstallContract.artifactCount,
       activationBlocked: false,
       runtimeRevision: revision,
       installFingerprint: fingerprint,
@@ -45,7 +55,7 @@ function readyInput() {
 test("SoulX readiness mirrors the native download, setup, and presenter-status DTOs", () => {
   const receipt = assertSoulxNativeReadiness(readyInput());
   assert.equal(receipt.displayName, "SoulX-FlashHead Pro 1.3B");
-  assert.equal(receipt.totalBytes, 10_464_991_863);
+  assert.equal(receipt.totalBytes, soulxInstallContract.totalBytes);
   assert.equal(receipt.selectedForPortraitAnimation, true);
   assert.equal(receipt.selectedForLipSync, true);
   assert.equal(receipt.runtimeStatusCount, 1);
@@ -63,19 +73,129 @@ test("SoulX readiness never treats a completed download as selected setup", () =
   assert.throws(() => assertSoulxNativeReadiness(input), /not selected for both presenter motion and lip-sync/);
 });
 
-test("SoulX setup accepts a complete quarantined cache without claiming activation", () => {
+test("SoulX setup permits initial manifest-only status after exact offline cache verification", async (context) => {
+  const fixture = await createHydratedCacheFixture(context);
+  const cachePreflight = await preflightSoulxHydratedCache(fixture.preflightInput);
+  const start = assertSoulxManagedStart({
+    catalog: [fixture.catalog],
+    statuses: [{
+      modelId: soulxModelContract.modelId,
+      phase: "manifestRequired",
+      downloadedBytes: 0,
+      totalBytes: fixture.totalBytes,
+      verifiedArtifacts: 0,
+      artifactCount: fixture.artifactCount,
+      activationBlocked: true,
+    }],
+    cachePreflight,
+  });
+  assert.equal(start.requiresNativeDownloadStart, true);
+  assert.equal(cachePreflight.verifiedOfflineCache, true);
+  assert.equal(cachePreflight.artifactCount, 2);
+});
+
+test("SoulX cache preflight rejects one missing file before native Download can be clicked", async (context) => {
+  const fixture = await createHydratedCacheFixture(context);
+  await rm(fixture.artifactPaths[1]);
+  await assert.rejects(() => preflightSoulxHydratedCache(fixture.preflightInput), /missing or has the wrong byte count/);
+});
+
+test("SoulX setup accepts a complete native status without restarting Download", () => {
   const input = readyInput();
   input.statuses[0].phase = "downloadedQuarantined";
   input.statuses[0].activationBlocked = true;
   input.statuses[0].runtimeRevision = null;
   input.statuses[0].installFingerprint = null;
-  const hydrated = assertSoulxHydratedPackage(input);
-  assert.equal(hydrated.status.phase, "downloadedQuarantined");
-  assert.equal(hydrated.status.downloadedBytes, hydrated.packageEntry.totalBytes);
+  const start = assertSoulxManagedStart({
+    catalog: input.catalog,
+    statuses: input.statuses,
+    cachePreflight: reviewedCacheReceipt(),
+  });
+  assert.equal(start.status.phase, "downloadedQuarantined");
+  assert.equal(start.requiresNativeDownloadStart, false);
 });
 
-test("SoulX setup refuses missing cached bytes instead of allowing a network fetch", () => {
+test("SoulX setup refuses partial native status even when the offline cache is verified", () => {
   const input = readyInput();
+  input.statuses[0].phase = "downloading";
   input.statuses[0].downloadedBytes -= 1;
-  assert.throws(() => assertSoulxHydratedPackage(input), /complete hydrated package/);
+  assert.throws(() => assertSoulxManagedStart({
+    catalog: input.catalog,
+    statuses: input.statuses,
+    cachePreflight: reviewedCacheReceipt(),
+  }), /incomplete or unverified cache state/);
 });
+
+function reviewedCacheReceipt() {
+  return {
+    evidenceClass: "source-manifest-and-file-verified-soulx-cache",
+    verifiedOfflineCache: true,
+    modelId: soulxModelContract.modelId,
+    immutableRevision: soulxInstallContract.immutableRevision,
+    artifactCount: soulxInstallContract.artifactCount,
+    totalBytes: soulxInstallContract.totalBytes,
+  };
+}
+
+async function createHydratedCacheFixture(context) {
+  const root = await mkdtemp(path.join(tmpdir(), "alystria-soulx-cache-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const artifacts = [
+    { relativePath: "archives/runtime.zip", bytes: 3, sha256: sha256(Buffer.from("zip")) },
+    { relativePath: "models/weights.bin", bytes: 4, sha256: sha256(Buffer.from("data")) },
+  ];
+  const manifest = {
+    schemaVersion: 1,
+    modelId: soulxModelContract.modelId,
+    displayName: soulxModelContract.catalogDisplayName,
+    immutableRevision: "fixture-revision",
+    artifacts,
+  };
+  const manifestBytes = Buffer.from(JSON.stringify(manifest));
+  const manifestSha256 = sha256(manifestBytes);
+  const manifestPath = path.join(root, "manifest.json");
+  await writeFile(manifestPath, manifestBytes);
+  const modelsRoot = path.join(root, "Models");
+  const cacheRoot = path.join(modelsRoot, "download-quarantine", "local--soulx-flashhead-pro", manifest.immutableRevision);
+  const artifactPaths = artifacts.map((artifact) => path.join(cacheRoot, "files", ...artifact.relativePath.split("/")));
+  await Promise.all(artifactPaths.map((artifactPath) => mkdir(path.dirname(artifactPath), { recursive: true })));
+  await Promise.all([
+    writeFile(artifactPaths[0], "zip"),
+    writeFile(artifactPaths[1], "data"),
+  ]);
+  const totalBytes = artifacts.reduce((sum, artifact) => sum + artifact.bytes, 0);
+  await writeFile(path.join(cacheRoot, "root-cache-preparation.json"), JSON.stringify({
+    manifestSha256,
+    state: "cache-prepared-not-installed",
+    artifactCount: artifacts.length,
+    bytes: totalBytes,
+    files: artifacts.map((artifact) => ({ file: artifact.relativePath, source: "verified-cache" })),
+  }));
+  return {
+    artifactCount: artifacts.length,
+    totalBytes,
+    artifactPaths,
+    catalog: {
+      modelId: soulxModelContract.modelId,
+      displayName: soulxModelContract.catalogDisplayName,
+      immutableRevision: manifest.immutableRevision,
+      totalBytes,
+      artifactCount: artifacts.length,
+      available: true,
+    },
+    preflightInput: {
+      modelsRoot,
+      manifestPath,
+      expectedManifestSha256: manifestSha256,
+      expectedIdentity: {
+        immutableRevision: manifest.immutableRevision,
+        artifactCount: artifacts.length,
+        totalBytes,
+      },
+    },
+  };
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
