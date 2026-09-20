@@ -15,7 +15,10 @@ import {
   copySupplementalProject,
   inspectPackagedPresenterPlatform,
   inspectPresenterAcceptance,
+  inspectReadmeVoiceover,
   installSupplementalProject,
+  preflightNativeWalkthroughRecording,
+  prepareNativeRecordingWindow,
   preparePresenterComparison,
   recordNativeWalkthrough,
 } from "./native-walkthrough-recording.mjs";
@@ -28,7 +31,14 @@ import {
 const execFileAsync = promisify(execFile);
 const completedWalkthroughRunId = "20260920082752680-25172";
 const localImageWalkthroughRunId = "20260920083800359-5800";
-const defaultPresenterAcceptanceRoot = "E:\\temp\\AI Video Tutorial Generator Test Sandbox\\Presenter Acceptance\\casual-four-20260920-161859";
+const presenterAcceptanceBase = "E:\\temp\\AI Video Tutorial Generator Test Sandbox\\Presenter Acceptance";
+const defaultPresenterAcceptanceRoots = Object.freeze({
+  emma: path.join(presenterAcceptanceBase, "readme-emma-gemini-20260920"),
+  yuki: path.join(presenterAcceptanceBase, "installed-steady-yuki-20260921"),
+  noah: path.join(presenterAcceptanceBase, "readme-noah-gemini-20260920"),
+  chloe: path.join(presenterAcceptanceBase, "installed-steady-chloe-20260921"),
+});
+const defaultReadmeVoiceoverManifest = "E:\\temp\\AI Video Tutorial Generator\\readme-demo-20260920\\voiceover\\recorder-voiceover-manifest.json";
 const defaultGifsmithRoot = "C:\\Users\\akshi\\Desktop\\Code Palace\\gifsmith";
 const parsed = parseArguments(process.argv.slice(2));
 const portableRoot = path.resolve(parsed.portableRoot);
@@ -103,7 +113,17 @@ const walkthroughLocalImageSource = parsed.recordWalkthrough
   ? await inspectAcceptedLocalImageSource(parsed.walkthroughLocalImageRun)
   : null;
 const presenterAcceptance = parsed.recordWalkthrough
-  ? await inspectPresenterAcceptance({ root: parsed.presenterAcceptanceRoot, ffprobePath })
+  ? await inspectPresenterAcceptance({ roots: parsed.presenterAcceptanceRoots, ffmpegPath, ffprobePath })
+  : null;
+const readmeVoiceover = parsed.recordWalkthrough
+  ? await inspectReadmeVoiceover({ manifestPath: parsed.readmeVoiceoverManifest, ffprobePath })
+  : null;
+const walkthroughPreflight = parsed.recordWalkthrough
+  ? await preflightNativeWalkthroughRecording({
+    gifsmithRoot: parsed.gifsmithRoot,
+    comparisonDurationSeconds: presenterAcceptance.durationSeconds,
+    voiceoverDurationsSeconds: readmeVoiceover.durationsSecondsById,
+  })
   : null;
 await rotateExistingPath(readyPath);
 
@@ -141,6 +161,9 @@ try {
     });
     if (message.type() === "error") consoleErrors.push(message.text());
   });
+  const recordingWindow = parsed.recordWalkthrough
+    ? await prepareNativeRecordingWindow({ page, desktopPid: launch.child.pid })
+    : null;
 
   if (!resumeSource && !resumeLocalImageSource) {
     await page.evaluate(({ onboarding, workspace }) => {
@@ -309,7 +332,7 @@ try {
   await page.screenshot({ path: path.join(runRoot, "05-generated-review.png"), fullPage: true });
 
   if (parsed.recordWalkthrough) {
-    if (!presenterAcceptance || !walkthroughLocalProject || !walkthroughLocalImageSource) {
+    if (!presenterAcceptance || !readmeVoiceover || !walkthroughLocalProject || !walkthroughLocalImageSource) {
       throw new Error("Walkthrough recording prerequisites were not loaded");
     }
     const presenterPlatform = await inspectPackagedPresenterPlatform({
@@ -324,11 +347,20 @@ try {
       actionTimeoutMs: parsed.actionTimeoutMs,
       jobTimeoutMs: parsed.jobTimeoutMs,
       ffprobePath,
+      reviewScreenshotPath: path.join(runRoot, "06-presenter-comparison-final-frame.png"),
       onIdentity: (nextIdentity) => {
         activeProjectIdentity = nextIdentity;
         activeGenerationId = undefined;
       },
     });
+    await installSupplementalProject({
+      page,
+      source: walkthroughLocalImageSource,
+      projectDirectory: walkthroughLocalProject.nativeProjectDirectory,
+      invokeNative,
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.locator(".runtime-badge")).toContainText("Worker ready", { timeout: parsed.actionTimeoutMs });
     walkthroughEvidence = await recordNativeWalkthrough({
       page,
       cdpPort: launch.port,
@@ -336,10 +368,12 @@ try {
       runRoot,
       ffmpegPath,
       ffprobePath,
-      skyProjectTitle: planned.project.title,
       localImageProjectTitle: walkthroughLocalProject.title,
       comparison,
       presenterPlatform,
+      recordingWindow,
+      preflight: walkthroughPreflight,
+      voiceover: readmeVoiceover,
     });
     assertUsageRecordsMatch(
       walkthroughLocalImageSource.baselineUsage,
@@ -374,12 +408,22 @@ try {
       localInferenceCalls: 0,
     };
     walkthroughEvidence.presenterAcceptance = {
-      reportPath: presenterAcceptance.reportPath,
-      reportSha256: presenterAcceptance.reportSha256,
-      sourceAudioSha256: presenterAcceptance.audioSha256,
-      modelId: presenterAcceptance.modelId,
-      runtimeRevision: presenterAcceptance.runtimeRevision,
-      clips: presenterAcceptance.clips.map((clip) => ({ slug: clip.slug, profileId: clip.profileId, sha256: clip.videoSha256 })),
+      reports: presenterAcceptance.reports,
+      sourceAudioSha256ByPresenter: presenterAcceptance.audioSha256ByPresenter,
+      engines: presenterAcceptance.engines,
+      clips: presenterAcceptance.clips.map((clip) => ({ slug: clip.slug, profileId: clip.profileId, sha256: clip.videoSha256, modelId: clip.modelId, runtimeRevision: clip.runtimeRevision })),
+      backgroundStability: presenterAcceptance.clips.map((clip) => ({ slug: clip.slug, ...clip.backgroundStability })),
+    };
+    walkthroughEvidence.readmeVoiceover = {
+      manifestPath: readmeVoiceover.manifestPath,
+      manifestSha256: readmeVoiceover.manifestSha256,
+      voice: readmeVoiceover.voice,
+      model: readmeVoiceover.model,
+      provider: readmeVoiceover.provider,
+      asrProvider: readmeVoiceover.asrProvider,
+      asrModel: readmeVoiceover.asrModel,
+      asrExactNormalizedWordMatch: readmeVoiceover.asrExactNormalizedWordMatch,
+      segments: readmeVoiceover.segments.map((segment) => ({ id: segment.id, cue: segment.cue, sha256: segment.wavSha256, trimInSeconds: segment.trimInSeconds, trimOutSeconds: segment.trimOutSeconds, durationSeconds: segment.durationSeconds })),
     };
   }
 
@@ -1884,7 +1928,8 @@ function parseArguments(arguments_) {
     recoverySmoke: false,
     recordWalkthrough: false,
     walkthroughLocalImageRun: localImageWalkthroughRunId,
-    presenterAcceptanceRoot: defaultPresenterAcceptanceRoot,
+    presenterAcceptanceRoots: { ...defaultPresenterAcceptanceRoots },
+    readmeVoiceoverManifest: defaultReadmeVoiceoverManifest,
     gifsmithRoot: defaultGifsmithRoot,
     gpuCoordinationPath: null,
     alignmentConfigPath: null,
@@ -1924,7 +1969,11 @@ function parseArguments(arguments_) {
     else if (name === "--resume-completed-run") result.resumeCompletedRun = requiredText(value, name, 80);
     else if (name === "--resume-local-image-run") result.resumeLocalImageRun = requiredText(value, name, 80);
     else if (name === "--walkthrough-local-image-run") result.walkthroughLocalImageRun = requiredText(value, name, 80);
-    else if (name === "--presenter-acceptance-root") result.presenterAcceptanceRoot = path.resolve(requiredText(value, name, 500));
+    else if (name === "--presenter-emma-root") result.presenterAcceptanceRoots.emma = path.resolve(requiredText(value, name, 500));
+    else if (name === "--presenter-yuki-root") result.presenterAcceptanceRoots.yuki = path.resolve(requiredText(value, name, 500));
+    else if (name === "--presenter-noah-root") result.presenterAcceptanceRoots.noah = path.resolve(requiredText(value, name, 500));
+    else if (name === "--presenter-chloe-root") result.presenterAcceptanceRoots.chloe = path.resolve(requiredText(value, name, 500));
+    else if (name === "--readme-voiceover-manifest") result.readmeVoiceoverManifest = path.resolve(requiredText(value, name, 500));
     else if (name === "--gifsmith-root") result.gifsmithRoot = path.resolve(requiredText(value, name, 500));
     else if (name === "--topic") result.topic = requiredText(value, name, 240);
     else if (name === "--startup-timeout-ms") result.startupTimeoutMs = positiveNumber(value, name);

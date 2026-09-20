@@ -8,6 +8,30 @@ The deterministic fixtures under `fixtures/canonical` are the common inputs for 
 
 ## Canonical suite
 
+### Speech fixtures and demo narration
+
+Routine development uses local speech, inexpensive explicitly selected API routes,
+or licensed test WAV files. A duration fixture may repeat or pad a test recording
+to match a script's estimated length; label it as fixture audio and retain its
+source attribution. It can test playback, timing, persistence, and export, but
+cannot establish script pronunciation, transcript alignment, or provider quality.
+Do not silently substitute it for a user's requested narration.
+
+Reserve expressive premium voices for final demonstration renders. Keep live
+checks short, record the selected provider and model, reuse accepted audio, and
+verify the resulting transcript. Shared Deepgram, Inworld, and Cartesia keys are
+not routine test resources; any connectivity check is limited to ten seconds.
+
+For screencast narration, timeline-script time is not proof of encoded media
+time. Persist the completed silent capture and raw cue measurements before later
+assertions or encoding. Treat a monotonic wall-clock mux as provisional when the
+recorder does not expose its absolute capture clock, then accept audiovisual
+sync only after matching narration and presenter audio to visible states in the
+encoded frames. Validate animated WebP duration from its RIFF `ANIM`/`ANMF`
+chunks when ffprobe does not report a container duration.
+
+### Authored test cases
+
 - Twelve-minute undergraduate Karatsuba flagship, including `1234 × 5678`.
 - Binary search with execution trace and edge cases.
 - Algebraic derivation with symbolic verification.
