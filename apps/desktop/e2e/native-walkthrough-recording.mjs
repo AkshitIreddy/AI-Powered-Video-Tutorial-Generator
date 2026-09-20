@@ -1,4 +1,4 @@
-/* global document, HTMLButtonElement, HTMLVideoElement, localStorage, setTimeout, window */
+/* global document, Event, HTMLButtonElement, HTMLElement, HTMLSelectElement, HTMLVideoElement, localStorage, setTimeout, window */
 
 import { expect } from "@playwright/test";
 import { execFile } from "node:child_process";
@@ -19,6 +19,88 @@ const expectedPresenters = Object.freeze([
   { slug: "noah", label: "Noah · realistic", profileId: "presenter-portrait.casual-noah-v1", videoSha256: "45487cb1f5868c78ad43ab3ea566f83527292201b70c54380d3b56205b262839" },
   { slug: "chloe", label: "Chloe · cartoon", profileId: "presenter-portrait.casual-chloe-v1", videoSha256: "a451cac003cbc7aebaa091dec9ba2691ee9b9b7cb79b36acd2c8e9fa339f89d5" },
 ]);
+const expectedGalleryPresenters = Object.freeze([
+  { id: "presenter-portrait.casual-realistic-emma-v1", label: "Emma · casual home-studio tutor", hash: "27ac749dc0b30c2676d327e2a14fd05f873aee401d4b97bdd684eaab7c42a7f7", runtimeModel: "liveportrait-musetalk-1.5" },
+  { id: "presenter-portrait.casual-anime-yuki-v1", label: "Yuki · casual anime coding tutor", hash: "54f695769e64273cc3a6e7f12742df8b8bfb7b6e844f302daabbf270e6a3aebb", runtimeModel: "liveportrait-musetalk-1.5" },
+  { id: "presenter-portrait.casual-realistic-noah-v1", label: "Noah · casual maker tutor", hash: "6f83257ec713c8d0df42ebb1506b9be32735bec9934aa5c2e946e24cbed8c0bd", runtimeModel: "liveportrait-musetalk-1.5" },
+  { id: "presenter-portrait.casual-cartoon-chloe-v1", label: "Chloe · cartoon science creator", hash: "4afecb9e0141a3bcb933aca577222adfa7819fd3dc49a9b437f1b1bc0f3437ca", runtimeModel: "liveportrait-musetalk-1.5" },
+  { id: "presenter-portrait.casual-realistic-maya-v1", label: "Maya · casual science tutor", hash: "62ee0fd94a0e92114e000e89a6420e9ce0c7726e5b4b8ec2165c041f2252e79b", runtimeModel: "liveportrait-musetalk-1.5" },
+  { id: "presenter-portrait.casual-anime-finn-v1", label: "Finn · retro anime maker tutor", hash: "98ff859669a316dcbf2f1b8edd30941b355ee244308a3b755ffd51e4630a8494", runtimeModel: "joyvasa-human" },
+  { id: "presenter-portrait.casual-anime-lena-v1", label: "Lena · hand-painted anime nature tutor", hash: "280c530e69c08737698c0fff8b0a582ac76fb9799cf0ad6a780d540c68f667f1", runtimeModel: "liveportrait-musetalk-1.5" },
+  { id: "presenter-portrait.casual-cartoon-robot-pip-v1", label: "Pip · cartoon robot tutor", hash: "b0163d6e3250d345c97e1c261fa3ff69cf0dcab70f248cad27a06dfe5e818d29", runtimeModel: "joyvasa-animal" },
+  { id: "presenter-portrait.animal-cat-milo-v1", label: "Milo · cat science tutor", hash: "f47095f9b54b54d53fecfa49a93241544869aa359d8ce3273b38a8575965bafd", runtimeModel: "joyvasa-animal", animal: true },
+  { id: "presenter-portrait.animal-kitten-peaches-v1", label: "Peaches · clay kitten tutor", hash: "6cb3c5727c422ac6e717f64c8c345abb757f65c5399555e5c0058f7db3524ab1", runtimeModel: "joyvasa-animal", animal: true },
+  { id: "presenter-portrait.animal-dog-buddy-v1", label: "Buddy · dog workshop tutor", hash: "68fa5cd79ebb50e9b0a5b00d2c28d2d636bee695f0b579f1a36afaa62aa25062", runtimeModel: "joyvasa-animal", animal: true },
+  { id: "presenter-portrait.animal-puppy-poppy-v1", label: "Poppy · storybook puppy tutor", hash: "704dce7be0612822ff0dc10ebfce8627cd808e63a0b3e158fa070fe19f8d633a", runtimeModel: "joyvasa-animal", animal: true },
+  { id: "presenter-portrait.animal-tiger-tavi-v1", label: "Tavi · tiger science tutor", hash: "e8fb1f4d917377a68d379ffd734463f97b20ef2238b7f9d32fff389c86000ae5", runtimeModel: "joyvasa-animal", animal: true },
+  { id: "presenter-portrait.animal-lion-leo-v1", label: "Leo · clay lion tutor", hash: "7694fb148894a41dcf4df55182bd803946a3d18f9a7a81daaf3cb3987411894e", runtimeModel: "joyvasa-animal", animal: true },
+]);
+
+export async function inspectPackagedPresenterPlatform({ starterManifestPath, runtimeStatuses }) {
+  await assertRegularFile(starterManifestPath, "packaged starter visual manifest");
+  const manifest = JSON.parse(await readFile(starterManifestPath, "utf8"));
+  if (!Array.isArray(manifest.assets)) throw new Error("Packaged starter visual manifest has no asset catalog");
+  const readyVisuals = manifest.assets.filter((asset) => (
+    asset?.source?.availability === "ready"
+    && typeof asset?.technical?.mediaType === "string"
+    && asset.technical.mediaType.startsWith("image/")
+  ));
+  if (readyVisuals.length !== 55) {
+    throw new Error(`Packaged starter visual manifest has ${readyVisuals.length} ready images instead of 55`);
+  }
+  const catalog = expectedGalleryPresenters.map((expected) => {
+    const matches = manifest.assets.filter((asset) => asset?.id === expected.id);
+    const asset = matches[0];
+    if (matches.length !== 1 || asset.kind !== "presenter-portrait" || asset.name !== expected.label
+      || asset.source?.availability !== "ready" || asset.source?.delivery !== "bundled-file"
+      || asset.source?.contentHash !== expected.hash || asset.technical?.mediaType !== "image/png"
+      || asset.technical?.dimensions?.width !== 1254 || asset.technical?.dimensions?.height !== 1254) {
+      throw new Error(`Packaged starter manifest does not contain the exact ready presenter ${expected.id}`);
+    }
+    return { id: asset.id, label: asset.name, sha256: asset.source.contentHash, mediaType: asset.technical.mediaType };
+  });
+
+  if (!Array.isArray(runtimeStatuses)) throw new Error("Native presenter runtime status did not return an array");
+  const primary = runtimeStatuses.filter((status) => status?.portraitArtifactHash === null);
+  const overrides = runtimeStatuses.filter((status) => typeof status?.portraitArtifactHash === "string");
+  if (runtimeStatuses.length !== 9 || primary.length !== 1 || overrides.length !== 8
+    || primary[0].configured !== true || primary[0].modelId !== "liveportrait-musetalk-1.5") {
+    throw new Error(`Native presenter runtime status does not contain one configured MuseTalk primary and eight exact overrides: ${JSON.stringify(runtimeStatuses)}`);
+  }
+  const expectedOverrides = expectedGalleryPresenters.filter((presenter) => presenter.runtimeModel.startsWith("joyvasa-"));
+  const routes = expectedOverrides.map((expected) => {
+    const matches = overrides.filter((status) => status.portraitArtifactHash === expected.hash);
+    const status = matches[0];
+    if (matches.length !== 1 || status.configured !== true || status.modelId !== expected.runtimeModel
+      || !isDigest(status.installFingerprint) || typeof status.modelRevision !== "string" || !status.modelRevision.trim()) {
+      throw new Error(`Native presenter runtime status is not configured for ${expected.id}`);
+    }
+    return {
+      presenterId: expected.id,
+      portraitArtifactHash: status.portraitArtifactHash,
+      modelId: status.modelId,
+      modelRevision: status.modelRevision,
+      installFingerprint: status.installFingerprint,
+    };
+  });
+  if (!isDigest(primary[0].installFingerprint) || typeof primary[0].modelRevision !== "string" || !primary[0].modelRevision.trim()) {
+    throw new Error("Native primary presenter runtime has no pinned installation identity");
+  }
+  return {
+    starterManifestPath,
+    starterManifestSha256: await sha256File(starterManifestPath),
+    readyVisualCount: readyVisuals.length,
+    casualAndAnimalPresenterCount: catalog.length,
+    catalog,
+    runtimeStatusCount: runtimeStatuses.length,
+    primaryRuntime: {
+      modelId: primary[0].modelId,
+      modelRevision: primary[0].modelRevision,
+      installFingerprint: primary[0].installFingerprint,
+    },
+    exactJoyRoutes: routes,
+  };
+}
 
 export async function inspectPresenterAcceptance({ root, ffprobePath }) {
   const resolvedRoot = path.resolve(root);
@@ -272,7 +354,12 @@ export async function recordNativeWalkthrough({
   skyProjectTitle,
   localImageProjectTitle,
   comparison,
+  presenterPlatform,
 }) {
+  if (presenterPlatform?.readyVisualCount !== 55 || presenterPlatform?.casualAndAnimalPresenterCount !== 14
+    || presenterPlatform?.runtimeStatusCount !== 9 || presenterPlatform?.exactJoyRoutes?.length !== 8) {
+    throw new Error("Presenter platform evidence was not validated before native walkthrough capture");
+  }
   const recordingWindow = await showRecordingWindow(page);
   await navigateGlobal(page, "Home");
   const gifsmithEntry = path.join(path.resolve(gifsmithRoot), "dist", "index.js");
@@ -283,6 +370,7 @@ export async function recordNativeWalkthrough({
   let comparisonPlayingEventMediaTime = null;
   let editorLayoutBefore = null;
   let editorLayoutAfter = null;
+  let presenterGalleryEvidence = null;
   const walkthrough = timeline((t) => {
     t.waitFor(".app-shell", { timeoutMs: 30_000 });
     t.cue("Home");
@@ -310,10 +398,30 @@ export async function recordNativeWalkthrough({
       await waitText(gifPage, ctx, "h1", "Library");
     }, { name: "Open included asset library", seconds: 1 });
     t.cue("Included teaching assets");
-    t.hold(8);
-    t.scroll(".main-content", 520, 2);
-    t.hold(4);
-    t.call(async (gifPage, ctx) => { await clickAria(gifPage, ctx, "Projects"); await waitText(gifPage, ctx, "h1", "Projects"); }, { name: "Return to project gallery", seconds: 1 });
+    t.hold(5);
+    t.scroll(".main-content", 420, 1.5);
+    t.hold(2);
+    t.call(async (gifPage, ctx) => {
+      await clickAria(gifPage, ctx, "Projects");
+      await waitText(gifPage, ctx, "h1", "Projects");
+      await clickProjectCard(gifPage, ctx, comparison.title);
+      await clickAria(gifPage, ctx, "Plan");
+      await clickTextButton(gifPage, ctx, "Presenters");
+      await ctx.settle(gifPage.waitForSelector(".presenter-picker__gallery", { visible: true }), { label: "presenter gallery" });
+      presenterGalleryEvidence = {
+        allStyles: await ctx.settle(readPresenterGallery(gifPage, expectedGalleryPresenters, false), { label: "read all casual presenter cards" }),
+      };
+    }, { name: "Open actual presenter cast gallery", seconds: 2 });
+    t.cue("Fourteen casual and animal presenters");
+    t.hold(5);
+    t.call(async (gifPage, ctx) => {
+      await selectAriaOption(gifPage, ctx, "Presenter visual style", "Animal");
+      const animals = expectedGalleryPresenters.filter((presenter) => presenter.animal);
+      presenterGalleryEvidence.animals = await ctx.settle(readPresenterGallery(gifPage, animals, true), { label: "read animal presenter cards" });
+    }, { name: "Filter presenter gallery to animals", seconds: 1 });
+    t.cue("Animal presenter collection");
+    t.hold(7);
+    t.call(async (gifPage, ctx) => { await clickCss(gifPage, ctx, ".project-switcher"); await waitText(gifPage, ctx, "h1", "Projects"); }, { name: "Return to project gallery", seconds: 1 });
     t.call(async (gifPage, ctx) => { await clickProjectCard(gifPage, ctx, localImageProjectTitle); await clickAria(gifPage, ctx, "Studio"); }, { name: "Open accepted local artwork", seconds: 1 });
     t.cue("Accepted local SDXL artwork");
     t.hold(10);
@@ -400,6 +508,9 @@ export async function recordNativeWalkthrough({
     throw new Error("Gifsmith recording did not observe the comparison Review playing event");
   }
   if (!editorLayoutBefore || !editorLayoutAfter) throw new Error("Gifsmith recording did not verify the editor panel resizes");
+  if (!presenterGalleryEvidence?.allStyles || !presenterGalleryEvidence?.animals) {
+    throw new Error("Gifsmith recording did not verify the actual casual and animal presenter gallery");
+  }
   const silentOutput = result.outputs.find((output) => output.format === "mp4")?.path ?? silentPath;
   const gifOutput = result.outputs.find((output) => output.format === "gif")?.path;
   const finalPath = path.join(runRoot, "alystria-native-walkthrough.mp4");
@@ -431,6 +542,8 @@ export async function recordNativeWalkthrough({
     providerCalls: 0,
     localInferenceCalls: 0,
     completedTutorialKeptSeparate: true,
+    presenterPlatform,
+    presenterGalleryEvidence,
     recordingWindow,
     editorResizeEvidence: { before: editorLayoutBefore, after: editorLayoutAfter },
     comparisonAudioSource: "exact native editor comparison export",
@@ -471,9 +584,15 @@ function comparisonProjectDocument() {
     privacy: "Local only",
     scenes: [{ id: "presenter-style-comparison", index: 1, title: comparisonTitle, kind: "comparison", duration: 32.8, narration: "The same reference phrase is repeated once by each presenter style.", objective: "Compare four actual local lip-sync outputs without mixing them into an unrelated tutorial.", status: "approved", visual: "summary", citations: 0, locked: false }],
     sources: [],
-    presenterSelection: { schemaVersion: 1, mode: "off", presenters: [], sceneAssignments: [] },
+    presenterSelection: { schemaVersion: 1, mode: "on", presenters: [], sceneAssignments: [] },
     sceneCandidates: [],
-    providerRoutingPolicy: { version: 1, privacyMode: "local", dataClassification: "project", approvals: [], routes: [] },
+    providerRoutingPolicy: {
+      version: 1,
+      privacyMode: "local",
+      dataClassification: "project",
+      approvals: [],
+      routes: [{ capability: "lipsync.generate", model: "local/musetalk-1.5", providerIds: ["local-runtime"], voice: null }],
+    },
   };
 }
 
@@ -587,6 +706,56 @@ async function clickProjectCard(gifPage, ctx, title) {
   await ctx.advance(500);
 }
 
+async function selectAriaOption(gifPage, ctx, label, value) {
+  await ctx.settle(gifPage.evaluate(({ accessibleName, selectedValue }) => {
+    const element = [...document.querySelectorAll("select")].find((select) => select.getAttribute("aria-label") === accessibleName);
+    if (!(element instanceof HTMLSelectElement)) throw new Error(`Select with aria-label ${accessibleName} is missing`);
+    const option = [...element.options].find((candidate) => candidate.value === selectedValue);
+    if (!option) throw new Error(`Select ${accessibleName} has no option ${selectedValue}`);
+    element.value = selectedValue;
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }, { accessibleName: label, selectedValue: value }), { label: `select ${value} in ${label}` });
+  await ctx.advance(350);
+}
+
+function readPresenterGallery(gifPage, expected, exact) {
+  return gifPage.evaluate(async ({ expectedCards, requireExact }) => {
+    const gallery = document.querySelector(".presenter-picker__gallery");
+    if (!(gallery instanceof HTMLElement)) throw new Error("Presenter gallery is missing");
+    const buttons = [...gallery.querySelectorAll("button")];
+    if (requireExact && buttons.length !== expectedCards.length) {
+      throw new Error(`Presenter gallery contains ${buttons.length} cards instead of ${expectedCards.length}`);
+    }
+    const cards = [];
+    for (const expectedCard of expectedCards) {
+      const button = buttons.find((candidate) => candidate.getAttribute("aria-label") === `Select ${expectedCard.label}`);
+      if (!(button instanceof HTMLButtonElement)) throw new Error(`Presenter card ${expectedCard.label} is missing`);
+      const image = button.querySelector("img");
+      if (!image) throw new Error(`Presenter card ${expectedCard.label} has no portrait`);
+      await image.decode().catch(() => {});
+      if (!image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+        throw new Error(`Presenter portrait ${expectedCard.label} did not decode`);
+      }
+      const capability = button.querySelector(".presenter-picker__capability");
+      const state = ["ready", "static", "checking", "runtime-required", "pending-review", "incompatible"]
+        .find((candidate) => capability?.classList.contains(candidate));
+      if (!capability || !state || state === "checking" || state === "runtime-required") {
+        throw new Error(`Presenter capability for ${expectedCard.label} did not settle against an installed runtime`);
+      }
+      cards.push({
+        id: expectedCard.id,
+        label: expectedCard.label,
+        imageWidth: image.naturalWidth,
+        imageHeight: image.naturalHeight,
+        capabilityState: state,
+        capabilityBadge: capability.textContent?.trim() ?? "",
+        disabled: button.disabled,
+      });
+    }
+    return { visibleCardCount: buttons.length, expectedCardCount: expectedCards.length, cards };
+  }, { expectedCards: expected, requireExact: exact });
+}
+
 function readEditorLayout(gifPage) {
   return gifPage.evaluate(() => {
     const dock = document.querySelector('[role="separator"][aria-label="Resize side panel width"]');
@@ -636,6 +805,10 @@ async function sha256File(file) {
     stream.once("error", reject);
   });
   return hash.digest("hex");
+}
+
+function isDigest(value) {
+  return typeof value === "string" && /^[0-9a-f]{64}$/u.test(value);
 }
 
 async function assertRegularFile(file, label) {

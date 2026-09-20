@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
   copySupplementalProject,
+  inspectPackagedPresenterPlatform,
   inspectPresenterAcceptance,
   installSupplementalProject,
   preparePresenterComparison,
@@ -35,6 +36,7 @@ const executable = path.join(portableRoot, "App", "AI Video Tutorial Generator.e
 const workerExecutable = path.join(portableRoot, "Runtime", "alystria-pipeline.exe");
 const ffmpegPath = path.join(portableRoot, "Runtime", "ffmpeg", "ffmpeg.exe");
 const ffprobePath = path.join(portableRoot, "Runtime", "ffmpeg", "ffprobe.exe");
+const starterVisualManifestPath = path.join(portableRoot, "Runtime", "assets", "starter", "visuals", "packages", "themes", "starter-kits", "core.v1.json");
 const appDataPath = path.join(portableRoot, "App Data");
 const projectsPath = path.join(portableRoot, "Projects");
 const readyPath = path.join(portableRoot, "Evidence", "native-headless-ready.json");
@@ -310,6 +312,10 @@ try {
     if (!presenterAcceptance || !walkthroughLocalProject || !walkthroughLocalImageSource) {
       throw new Error("Walkthrough recording prerequisites were not loaded");
     }
+    const presenterPlatform = await inspectPackagedPresenterPlatform({
+      starterManifestPath: starterVisualManifestPath,
+      runtimeStatuses: await invokeNativeWithoutInput(page, "local_presenter_runtime_status"),
+    });
     const comparison = await preparePresenterComparison({
       page,
       presenterAcceptance,
@@ -333,6 +339,7 @@ try {
       skyProjectTitle: planned.project.title,
       localImageProjectTitle: walkthroughLocalProject.title,
       comparison,
+      presenterPlatform,
     });
     assertUsageRecordsMatch(
       walkthroughLocalImageSource.baselineUsage,
