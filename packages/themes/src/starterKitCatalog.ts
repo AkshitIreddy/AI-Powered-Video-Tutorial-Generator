@@ -7,6 +7,7 @@ import type {
   StarterThemePack,
   UserAssetSlot,
 } from "@alystria/contracts";
+import { CASUAL_PRESENTER_STARTER_ASSETS } from "./casualPresenterCatalog.js";
 
 const RECORDED_AT = "2026-08-29T00:00:00.000Z";
 
@@ -327,7 +328,7 @@ export const BUILT_IN_STARTER_KIT: StarterKitManifest = {
   name: "Alystria Core Starter Kit",
   description: "A rights-aware local starter library for ten themes, with deterministic surfaces and transitions, open-font choices, presenter direction presets, audio creative briefs, and safe user-import slots.",
   defaults: { musicEnabled: false, effectsEnabled: false, remoteFetchDuringRender: false, unknownRightsBlockExport: true },
-  assets: [...backgrounds, ...generatedBackgrounds, ...overlays, ...transitions, ...fonts, ...presenterStyles, ...generatedPresenters, ...surfaceStyles, ...music, ...soundEffects],
+  assets: [...backgrounds, ...generatedBackgrounds, ...overlays, ...transitions, ...fonts, ...presenterStyles, ...generatedPresenters, ...CASUAL_PRESENTER_STARTER_ASSETS, ...surfaceStyles, ...music, ...soundEffects],
   themePacks,
   userAssetSlots,
 };

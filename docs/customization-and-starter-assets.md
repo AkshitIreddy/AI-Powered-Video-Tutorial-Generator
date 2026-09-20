@@ -35,11 +35,14 @@ The core catalog describes ten coordinated theme packs and includes:
 - deterministic procedural backgrounds, overlays, transitions, lower thirds, and caption styles that can render without external files;
 - fourteen OFL-licensed local font families, with renderer-safe fallbacks and no remote font fetches;
 - twelve presenter direction styles, including voice-only and user-supplied modes;
-- six bundled fictional synthetic presenter portraits—including dedicated science and mathematics guides—and three bundled theme backgrounds, each bound to the exact PNG bytes by SHA-256 and carrying generator, model, synthetic-origin, C2PA, owner-rights, and license data;
+- fifty-two bundled fictional synthetic presenter portraits, of which forty-six are in the curated picker, plus three bundled theme backgrounds; every file is bound to its exact bytes by SHA-256 and records its available generator, synthetic-origin, C2PA, owner-rights, and license evidence;
+- explicit presenter filters for realistic, anime, cartoon, illustration, character, and animal designs; the featured gallery begins with Emma, Yuki, Noah, and Chloe while retained portrait IDs continue to open existing projects;
 - two seamless music loops, four intro/outro stingers, and ten semantic sound-effect variants; all sixteen are deterministic 48 kHz/24-bit PCM masters, hash-bound, verified, MIT-licensed, and authored without third-party samples or generative AI;
 - separate import slots for backgrounds, overlays, fonts, music, effects, synthetic portraits, real-person portraits, presenter video, logos, lower thirds, and caption styles.
 
 Music and sound effects remain off by default. Enabling them is an explicit project choice, narration ducking remains active, meaningful sounds receive caption labels, and any asset with unknown or pending rights blocks export.
+
+Static portrait readiness and lip-sync readiness are separate. A verified portrait can be selected, placed, and exported as a still image while its animation compatibility remains under review. The app must only advertise or route lip-sync when the exact portrait and runtime combination has passed the relevant runtime check; the fourteen casual, character, and animal portraits added on 2026-09-20 remain explicitly pending until that qualification is recorded.
 
 ## Presenter imports and consent
 

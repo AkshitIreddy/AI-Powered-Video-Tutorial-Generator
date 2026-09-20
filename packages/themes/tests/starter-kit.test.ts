@@ -15,7 +15,7 @@ describe("built-in starter kit", () => {
   it("offers substantial choice with audio remaining opt-in", () => {
     expect(STARTER_ASSET_COUNTS).toMatchObject({
       background: 13, transition: 8, font: 14, "presenter-style": 12,
-      "presenter-portrait": 38, music: 2, "sound-effect": 14,
+      "presenter-portrait": 52, music: 2, "sound-effect": 14,
     });
     const audio = BUILT_IN_STARTER_KIT.assets.filter((asset) => asset.kind === "music" || asset.kind === "sound-effect");
     expect(audio).toHaveLength(16);
@@ -40,13 +40,19 @@ describe("built-in starter kit", () => {
 
   it("binds every bundled generated image to its actual bytes", async () => {
     const bundled = BUILT_IN_STARTER_KIT.assets.filter((asset) => asset.source.delivery === "bundled-file");
-    expect(bundled).toHaveLength(57);
+    expect(bundled).toHaveLength(71);
     for (const asset of bundled) {
       const bytes = await readFile(resolve(process.cwd(), "../..", asset.source.relativePath!));
       expect(bytes.byteLength, asset.id).toBe(asset.source.byteSize);
       expect(createHash("sha256").update(bytes).digest("hex"), asset.id).toBe(asset.source.contentHash);
       if (asset.technical.mediaType === "image/png" || asset.technical.mediaType === "image/webp") {
-        expect(asset.provenance).toMatchObject({ model: "gpt-image 2.0", synthetic: true, reviewStatus: "verified" });
+        expect(asset.provenance).toMatchObject({ synthetic: true, reviewStatus: "verified" });
+        if (asset.id.startsWith("presenter-portrait.casual-") || asset.id.startsWith("presenter-portrait.animal-")) {
+          expect(asset.provenance).toMatchObject({ model: "OpenAI image_gen (model not exposed)", promptAvailability: "artifact-recorded" });
+          expect(asset.provenance.notes).toContain("docs/assets/casual-presenter-prompts-2026-09-20.json");
+        } else {
+          expect(asset.provenance).toMatchObject({ model: "gpt-image 2.0" });
+        }
         if (asset.provenance.origin === "derived") {
           expect(asset.provenance).toMatchObject({ creationMethod: "derived-edit", tool: "ImageMagick 7.1.1-43", c2paStatus: "absent" });
           expect(asset.provenance.sourceRevision).toMatch(/^OpenAI built-in imagegen source sha256 [0-9a-f]{64};/);

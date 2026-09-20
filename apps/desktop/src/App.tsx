@@ -239,9 +239,10 @@ import {
   type SceneEditFocus,
 } from "./sceneEdits";
 import { BundledAssetLibrary } from "./BundledAssetLibrary";
-import { presenterCollection } from "./presenterCollection";
-import { PresenterPicker } from "./PresenterPicker";
+import { LEGACY_PRESENTER_STYLE_GROUPS, presenterCollection } from "./presenterCollection";
+import { PresenterPicker, type PresenterStyleGroup } from "./PresenterPicker";
 import { NEW_PRESENTER_ASSETS, NEW_PRESENTER_PERSONAS } from "./presenterLibrary";
+import { CASUAL_PRESENTER_ASSETS, CASUAL_PRESENTER_PERSONAS } from "./casualPresenterLibrary";
 import { BUILT_IN_STARTER_KIT } from "@alystria/themes";
 import { watchRuntimeBootstrap } from "./runtimeBootstrap";
 import { bundledAssets, importBundledAsset, type BundledAsset } from "./bundledAssets";
@@ -513,6 +514,7 @@ const DEFAULT_CANVAS_CUSTOMIZATION: CanvasCustomization = {
     narrationDucking: 72,
   },
   assets: [
+    ...CASUAL_PRESENTER_ASSETS,
     ...NEW_PRESENTER_ASSETS,
     starterAsset("presenter-portrait.educator-maya-v2", "presenter", "Maya · mathematics educator", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "15d33bfa90ec87899c949eb8a79aa9ddc83659e960769843f5bab2933de4ee02", 99766, "image/webp"),
     starterAsset("presenter-portrait.software-daniel-v1", "presenter", "Daniel · software instructor", `${PRODUCT_NAME} image generation`, "LicenseRef-USER-OWNED", "1d255bf5667329819cb7783d799a32adf2185efe643436e1e3e2d7651bc597ce", 32826, "image/webp"),
@@ -578,9 +580,13 @@ interface PresenterPersona {
   readonly idleReady?: boolean;
   readonly style?: string;
   readonly background?: string;
+  readonly styleGroup?: PresenterStyleGroup;
+  readonly filterTags?: readonly string[];
+  readonly featuredRank?: number;
 }
 
 const STARTER_PRESENTER_PREVIEWS: Record<string, PresenterPersona> = {
+  ...CASUAL_PRESENTER_PERSONAS,
   ...NEW_PRESENTER_PERSONAS,
   "presenter-portrait.educator-maya-v2": { src: educatorMaya, focalPoint: "50% 20%", voiceDirection: "Warm, assured adult mathematics educator · clear medium pace", elevenLabsVoiceId: "Xb7hH8MSUJpSbSDYk0k2", idleReady: true },
   "presenter-portrait.software-daniel-v1": { src: softwareDaniel, focalPoint: "50% 20%" },
@@ -618,8 +624,19 @@ const PRESENTER_CHOICES = DEFAULT_CANVAS_CUSTOMIZATION.assets
   .filter((asset) => asset.kind === "presenter" && presenterCollection.has(asset.id))
   .flatMap((asset) => {
     const persona = STARTER_PRESENTER_PREVIEWS[asset.id];
-    return persona ? [{ id: asset.id, label: asset.label, src: persona.src, focalPoint: persona.focalPoint, style: persona.style ?? asset.label.split(" · ")[1] ?? "Presenter", ...(persona.background ? { background: persona.background } : {}) }] : [];
-  });
+    return persona ? [{
+      id: asset.id,
+      label: asset.label,
+      src: persona.src,
+      focalPoint: persona.focalPoint,
+      style: persona.style ?? asset.label.split(" · ")[1] ?? "Presenter",
+      styleGroup: persona.styleGroup ?? LEGACY_PRESENTER_STYLE_GROUPS[asset.id as keyof typeof LEGACY_PRESENTER_STYLE_GROUPS] ?? "Other",
+      filterTags: persona.filterTags ?? [],
+      ...(persona.featuredRank === undefined ? {} : { featuredRank: persona.featuredRank }),
+      ...(persona.background ? { background: persona.background } : {}),
+    }] : [];
+  })
+  .sort((left, right) => (left.featuredRank ?? Number.MAX_SAFE_INTEGER) - (right.featuredRank ?? Number.MAX_SAFE_INTEGER));
 
 function presenterVoiceMatch(assetId: string | null, label?: string): Pick<CanvasCustomization["presenter"], "voiceDirection" | "preferredVoiceId"> {
   const persona = assetId ? STARTER_PRESENTER_PREVIEWS[assetId] : undefined;

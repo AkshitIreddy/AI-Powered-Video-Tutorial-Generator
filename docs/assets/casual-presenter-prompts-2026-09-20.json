@@ -1,0 +1,90 @@
+{
+  "generator": "OpenAI image_gen built-in",
+  "createdAt": "2026-09-20",
+  "assets": [
+    {
+      "id": "casual-realistic-emma-v1",
+      "prompt": "Use case: photorealistic-natural. Asset type: square tutorial video presenter portrait. Create one original fictional adult white European woman in her early thirties, shoulder-length dark blonde hair tucked behind ears, hazel eyes, relaxed rust-orange knit sweater, no blazer. She is an approachable home-studio tutorial creator. Chest-up centered frontal portrait, level shoulders, looking directly at camera, entire head with generous margin, face large and clearly readable, unobscured lips gently closed in a natural friendly neutral expression, no broad grin. Warm softly blurred home creative workspace with a wooden shelf, plant and muted desk lamp. Natural photographic skin texture, believable anatomy, soft flattering daylight. Professional camera quality but casual, authentic teaching personality. Square 1024x1024 composition. No writing, captions, watermark, logos, suits, ties, news studio, religious symbols or religious clothing. Single subject only.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-81abc580-e439-4600-8284-089c2820afa2.png",
+      "path": "apps/desktop/src/assets/presenters/casual-realistic-emma-v1.png"
+    },
+    {
+      "id": "casual-anime-yuki-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square tutorial video presenter portrait. Original fictional adult East Asian anime woman tutor, age 25, short straight dark hair with blue highlights, warm brown eyes with moderate anime proportions, casual teal hoodie, friendly attentive expression. Polished contemporary hand-drawn anime with crisp delicate lines and controlled cel shading. Chest-up centered frontal portrait facing viewer, level shoulders, full head generous margin, face large and clearly readable, anatomically placed nose and gently closed visible lips, no hair over eyes or mouth. Background: softly simplified sunny home coding workspace, shelves, monitor with no readable text, lavender and cream accents. Designed as a knowledgeable tutorial creator rather than celebrity or news anchor. Square 1024x1024. Single character. No text, watermark, brand logos, suit, religious symbols/clothing, oversized eyes, exaggerated grin, hands near face.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-1cb45ea3-bc8e-4e9a-9a86-e2cfb814f872.png",
+      "path": "apps/desktop/src/assets/presenters/casual-anime-yuki-v1.png"
+    },
+    {
+      "id": "casual-realistic-noah-v1",
+      "prompt": "Use case: photorealistic-natural. Asset type: square tutorial presenter portrait. One original fictional adult white European man age 32, short slightly wavy brown hair, clean-shaven, friendly thoughtful blue eyes, casual soft forest-green crewneck t-shirt under an unbuttoned charcoal overshirt, no suit. Approachable maker and software tutorial creator in a softly blurred home workshop with wood shelving, simple tools and warm lamps. Photographic natural skin detail and believable anatomy. Chest-up front-facing centered, level head and shoulders, direct eye contact, whole head generous margin, face clearly visible, lips gently closed, mouth unobscured, neutral relaxed expression, hands out of frame. Soft daylight. Square 1024x1024, no text/watermark/brands/religious symbols/clothing or broadcast/news styling.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-13f86ecd-e2c8-462a-9672-cd3d0f2bf44a.png",
+      "path": "apps/desktop/src/assets/presenters/casual-realistic-noah-v1.png"
+    },
+    {
+      "id": "casual-cartoon-chloe-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square tutorial presenter portrait. One original fictional white adult woman tutorial host, short wavy auburn bob, green eyes, casual mustard sweatshirt, approachable intelligent expression. Polished 3D animated-film cartoon design with softly sculpted shapes and appealing rounded proportions, NOT photoreal, no existing franchise likeness. Front-facing chest-up, centered level head and shoulders, entire head with margin, visible natural proportioned nose, clearly defined gently closed lips and chin, moderate eye size, no huge grin. Background a colorful softly blurred art and science hobby room with coral and aqua shelves, warm daylight. Single character, square 1024x1024, no writing or watermark, no suits, no religious clothing or symbols.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-747ed70d-884b-4ebc-9a8e-87aa6f58db99.png",
+      "path": "apps/desktop/src/assets/presenters/casual-cartoon-chloe-v1.png"
+    },
+    {
+      "id": "casual-realistic-maya-v1",
+      "prompt": "Use case: photorealistic-natural. Asset type: square tutorial presenter portrait. One original fictional adult Black woman age 30, rich brown skin, natural tightly curled shoulder-length hair framing but not obscuring her face, warm dark eyes, casual lavender cotton crewneck. An approachable science and creativity tutorial maker in a softly blurred bright home study with plants and pale wood bookshelves. Direct front-facing chest-up portrait, level head and shoulders, complete head with margin, visible mouth/chin, lips gently closed, relaxed attentive expression, hands out of frame. Authentic photographic skin texture, natural window light, professional home-studio image. Square 1024x1024. No text/watermarks/logos/suit/news desk/religious attire or symbols.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-a5cf8427-8612-472d-9036-9d58c609ffce.png",
+      "path": "apps/desktop/src/assets/presenters/casual-realistic-maya-v1.png"
+    },
+    {
+      "id": "casual-anime-finn-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square tutorial presenter portrait. One original fictional white adult man age 26 in distinctive retro 1990s cel anime style: tousled sandy blond hair, clear blue eyes, casually dressed in a navy hoodie over pale tee. Friendly engineering tutorial maker. Precise hand-drawn lines, rich cel shadows, subtle painted background of a sunlit maker workspace with a small robot model on a shelf and unmarked electronics. Front-facing chest-up centered level shoulders, complete head with margin, moderate anime proportions, well defined unobscured nose and gently closed mouth, calm confident expression. Square 1024x1024. No text/logo/watermark/religious attire or symbols/suit, no exaggerated grin.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-09f776d4-00e4-4454-b736-221356d2c614.png",
+      "path": "apps/desktop/src/assets/presenters/casual-anime-finn-v1.png"
+    },
+    {
+      "id": "casual-anime-lena-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square tutorial presenter portrait. Original fictional adult white European woman age 28, straight chestnut hair with blunt fringe above eyebrows and tied back, grey-green eyes, casual sky-blue sweatshirt. A warm natural-science tutor. Distinctive cozy hand-painted anime film aesthetic, delicate ink outlines, soft gouache-like color, believable adult facial proportions. Centered front-facing chest-up, level head, entire head with margin, clear unobscured nose, gently closed visible lips, calm attentive expression, no hands by face. Background a conservatory home learning nook with warm terracotta pots and soft morning sky. Square1024x1024. No text/watermark/logos/suit/religious symbols or clothing.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-35225e74-ef7f-4c30-b52b-b266c6db74d5.png",
+      "path": "apps/desktop/src/assets/presenters/casual-anime-lena-v1.png"
+    },
+    {
+      "id": "casual-cartoon-robot-pip-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square tutorial character presenter portrait. One original friendly small robot teaching assistant named Pip, appealing polished 3D cartoon, cream ceramic rounded head and orange accents, two expressive dark oval eyes, small round nose, a clearly visible simple closed curved mouth seam in the lower face designed to animate into speech shapes, no mouth grille. Rounded torso in teal casual hoodie. NOT any existing franchise robot. Front-facing chest-up centered with entire head and small side ears visible, level symmetrical head, no hands by face. Background playful but orderly home electronics craft desk with soft pastel objects and warm light, no writing. Square1024x1024, no logos/watermark/text/religious symbols.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-9970956a-6a8e-4b19-97f8-afeb7bbda50c.png",
+      "path": "apps/desktop/src/assets/presenters/casual-cartoon-robot-pip-v1.png"
+    },
+    {
+      "id": "animal-cat-milo-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square animal tutorial presenter portrait. One original anthropomorphic orange tabby CAT, friendly adult animal tutor in a casual teal crewneck sweater. Polished 3D animated-family-film style with soft detailed fur, warm amber eyes, cat nose and short rounded muzzle, a clearly readable gently CLOSED feline mouth below nose, no teeth or tongue showing. Intelligent welcoming expression, no huge grin. Front-facing chest-up centered level head and shoulders, full head and both ears with margin, mouth unobscured, paws out of frame. Cozy softly blurred reading and science nook with wood shelves and small globe. Natural soft light, square1024x1024. Clearly a cat not a human with cat ears. Single character, no writing/watermark/logo/suit/religious symbols.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-e3fca2af-2118-46e6-8a4e-a96ef20456a1.png",
+      "path": "apps/desktop/src/assets/presenters/animal-cat-milo-v1.png"
+    },
+    {
+      "id": "animal-kitten-peaches-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square animal tutorial presenter portrait. One original adorable cream-and-peach KITTEN teaching mascot wearing a tiny lavender hoodie. Delightful soft clay-animation style with tactile velvety fur-like surface, expressive green eyes, recognizable triangular kitten ears and short muzzle, small pink nose, clearly visible gently CLOSED mouth line, no tongue/teeth. Front-facing chest-up centered level head, entire ears in frame with generous margins, paws out of frame. Cozy pastel craft classroom backdrop, soft blocks and round shelf shapes with warm light. Cute animal proportions without huge distorted eyes, high craft quality. Square1024x1024. Single character, no text/watermark/logo/suit/religious symbols.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-b3032ef2-c3e2-4432-8187-ed1ab38fb1bf.png",
+      "path": "apps/desktop/src/assets/presenters/animal-kitten-peaches-v1.png"
+    },
+    {
+      "id": "animal-dog-buddy-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square animal tutorial presenter portrait. One original friendly golden retriever DOG tutor in a casual denim-blue crewneck, polished stylized 3D animated-film character with soft golden fur, folded ears, warm brown expressive eyes, recognizable short dog muzzle and black nose. Mouth fully gently CLOSED below nose, no tongue or teeth showing, calm intelligent welcoming expression. Front-facing chest-up centered level head and shoulders, complete head with margin, paws out of frame. Background softly blurred sunny home woodworking and practical-learning corner with wood shelves and green plants. Single animal character, natural soft lighting, square1024x1024. No writing/watermark/logos/suits/religious symbols. Not a human face with dog ears.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-5d713d3e-8a1a-487e-aa59-5e79e0516398.png",
+      "path": "apps/desktop/src/assets/presenters/animal-dog-buddy-v1.png"
+    },
+    {
+      "id": "animal-puppy-poppy-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square animal tutorial presenter portrait. One original cute corgi PUPPY teaching mascot, cream and caramel fur, upright triangular ears, rounded short muzzle with small black nose and a clearly visible gently CLOSED mouth, curious friendly dark eyes. Wearing a casual mint-green hoodie. Distinctive hand-painted storybook cartoon illustration with delicate outlines, softly brushed colors and tactile paper warmth, NOT photo. Front-facing chest-up centered level head, complete ears with generousmargin, paws out of frame. Background cozy simplified pastel classroom craft shelves and warm window daylight. Single puppy, square1024x1024. No teeth or tongue, no writing/watermark/logos/suits/religious symbols.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-46532b54-ae87-4129-a52c-6c078bab1097.png",
+      "path": "apps/desktop/src/assets/presenters/animal-puppy-poppy-v1.png"
+    },
+    {
+      "id": "animal-tiger-tavi-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square animal tutorial presenter portrait. One original friendly anthropomorphic TIGER tutorial host, rich orange striped fur, rounded ears, amber eyes, cream rounded short muzzle with dark pink nose, clear gently CLOSED feline mouth below nose. Calm approachable expression not snarling. Casual charcoal blue hoodie, no costume or suit. Beautiful polished 3D cartoon family-animation style, realistic fur detail with appealing shapes. Front-facing chest-up centered level head and shoulders, whole head and ears with margin, paws out of frame. Background warm softly blurred natural-science study with leafy plants, terracotta shelves and an unmarked globe. Single tiger, square1024x1024. No exposed teeth/tongue, no text/watermark/logos/religious symbols.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-d9fbcacd-f113-4140-98b3-4eb8d6c05ca3.png",
+      "path": "apps/desktop/src/assets/presenters/animal-tiger-tavi-v1.png"
+    },
+    {
+      "id": "animal-lion-leo-v1",
+      "prompt": "Use case: stylized-concept. Asset type: square animal tutorial presenter portrait. One original friendly anthropomorphic LION tutor with warm golden fur and a tidy rounded chestnut mane, expressive amber-brown eyes, recognizable cream muzzle and broad brown nose, clearly readable gently CLOSED mouth below nose, calm thoughtful expression. Casual sage-green crewneck sweater. Distinctive high-end soft sculpted clay-animation aesthetic, tactile felt-like mane and warm matte surfaces, appealing adult animal mentor personality. Front-facing chest-up centered with level head/shoulders, entire mane with generousmargin, paws out of frame. Softly simplified cozy library-study background with warm ochre shelves, blue books without writing and daylight. Single lion, square1024x1024. No roar/teeth/tongue, no text/logos/watermark/suits/religious symbols.",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-6158b248-474d-4771-829b-517e2fab0357.png",
+      "path": "apps/desktop/src/assets/presenters/animal-lion-leo-v1.png"
+    }
+  ]
+}
