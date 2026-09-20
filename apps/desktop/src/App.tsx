@@ -165,6 +165,8 @@ import {
   jobStatus,
   localModelSetupGet,
   localModelSetupSave,
+  localModelDownloadStatus,
+  localModelPresenterActivate,
   loadLocalPresenterRuntimeStatus,
   masterExport,
   musicCandidateAccept,
@@ -205,6 +207,7 @@ import {
   type LocalPresenterPortraitRuntimeStatus,
   type MasterExportRequest,
   type ModelProfile,
+  type ModelDownloadStatus,
   type ProjectAssetImportReceipt,
   type PresenterAnimationPreview,
   type ProjectSnapshotReceipt,
@@ -367,6 +370,7 @@ const CAPTION_DELIVERY_OPTIONS: Array<{
 ];
 
 const PRODUCT_NAME = "AI Video Tutorial Generator";
+const SOULX_PRESENTER_MODEL_ID = "local/soulx-flashhead-pro";
 
 const providerConfigs = [
   { id: "local", name: "Local models", icon: HardDrive, detail: "Qwen · Whisper · Kokoro", tone: "teal", local: true },
@@ -441,6 +445,7 @@ const lipSyncModelOptions = [
 ] as const;
 
 const portraitAnimationModelOptions = [
+  { id: SOULX_PRESENTER_MODEL_ID, name: "SoulX-FlashHead Pro", detail: "Unified custom-portrait motion, natural blinks, expression, and narration-driven speech", tag: "Managed custom portraits" },
   { id: "local/liveportrait", name: "LivePortrait", detail: "Native gaze, blink, expression, head and shoulder motion", tag: "Best local default" },
   { id: "local/longcat-avatar-1.5", name: "LongCat Video Avatar 1.5", detail: "Unified audio-driven avatar · 13.6B INT8 · large install", tag: "High-compute option" },
   { id: "local/echomimicv3-flash", name: "EchoMimicV3 Flash", detail: "Committed about 46 GB RAM and never reached frame one here", tag: "Blocked on this PC" },
@@ -2506,6 +2511,9 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   const downloadStatuses = downloads.statuses;
   const [selectedImageModelId, setSelectedImageModelId] = useState<string | null>(null);
   const [downloadSelectionId, setDownloadSelectionId] = useState<string | null>(null);
+  const [presenterActivationStatus, setPresenterActivationStatus] = useState<ModelDownloadStatus | null>(null);
+  const [presenterActivationBusy, setPresenterActivationBusy] = useState(false);
+  const [presenterActivationError, setPresenterActivationError] = useState<string | null>(null);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>(() => [...alystriaCatalogItems]);
   const [catalogCursors, setCatalogCursors] = useState<Partial<Record<SyncableCatalogSource, string | null>>>({});
   const [catalogSyncing, setCatalogSyncing] = useState<SyncableCatalogSource | null>(null);
@@ -2578,8 +2586,16 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   const selectPortraitAnimation = (modelId: string) => mutateSetup((current) => ({ ...current, portraitAnimationModelId: modelId, selectedModelIds: [...new Set([...current.selectedModelIds, modelId])] }));
   const selectedDownload = downloadCatalog.find((entry) => entry.modelId === selectedDownloadModelId) ?? null;
   const selectedDownloadStatus = downloadStatuses.find((status) => status.modelId === selectedDownload?.modelId) ?? null;
+  const displayedDownloadStatus = presenterActivationStatus?.modelId === selectedDownload?.modelId
+    ? presenterActivationStatus
+    : selectedDownloadStatus;
   const selectedImageOption = localImageModelOptions.find((model) => model.id === selectedDownloadModelId) ?? null;
-  const downloadComplete = selectedDownloadStatus?.phase === "ready" || selectedDownloadStatus?.phase === "inUse" || selectedDownloadStatus?.phase === "downloadedQuarantined";
+  const downloadComplete = displayedDownloadStatus?.phase === "ready" || displayedDownloadStatus?.phase === "inUse" || displayedDownloadStatus?.phase === "downloadedQuarantined";
+  const soulxDownloaded = selectedDownload?.modelId === SOULX_PRESENTER_MODEL_ID
+    && displayedDownloadStatus !== null
+    && displayedDownloadStatus.downloadedBytes === displayedDownloadStatus.totalBytes
+    && displayedDownloadStatus.totalBytes > 0
+    && (displayedDownloadStatus.phase === "ready" || displayedDownloadStatus.phase === "downloadedQuarantined");
   const sdxlInstallReceiptReady = comfyVersion !== null
     && selectedDownloadStatus?.modelId === "local/sdxl-base-1.0"
     && selectedDownloadStatus.phase === "ready"
@@ -2646,6 +2662,79 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     }));
     toggleLocalModel("local/sdxl-base-1.0", true);
     onNotify("Local image route staged", `SDXL is staged in ${activeProfile.name}. Save setup below to keep this profile choice.`, "success");
+  };
+  const activateVerifiedSoulxForPresenters = async () => {
+    if (!setup || !activeProfile || !soulxDownloaded || presenterActivationBusy) return;
+    setPresenterActivationBusy(true);
+    setPresenterActivationError(null);
+    setPresenterActivationStatus(displayedDownloadStatus ? {
+      ...displayedDownloadStatus,
+      phase: "verifying",
+      detail: "Verifying the complete SoulX runtime ledger before selecting this presenter engine.",
+      updatedAt: new Date().toISOString(),
+    } : null);
+    let pollBusy = false;
+    const poll = window.setInterval(() => {
+      if (pollBusy) return;
+      pollBusy = true;
+      void localModelDownloadStatus()
+        .then((statuses) => {
+          const current = statuses.find((status) => status.modelId === SOULX_PRESENTER_MODEL_ID);
+          if (current) setPresenterActivationStatus(current);
+        })
+        .catch(() => undefined)
+        .finally(() => { pollBusy = false; });
+    }, 750);
+    try {
+      const activated = await localModelPresenterActivate({ modelId: SOULX_PRESENTER_MODEL_ID });
+      setPresenterActivationStatus(activated);
+      if (
+        activated.modelId !== SOULX_PRESENTER_MODEL_ID
+        || activated.phase !== "ready"
+        || !activated.runtimeRevision?.trim()
+        || !/^[a-f0-9]{64}$/u.test(activated.installFingerprint ?? "")
+      ) throw new Error(activated.detail || "SoulX activation did not return a verified ready identity.");
+      const runtimeRevision = activated.runtimeRevision.trim();
+      const installFingerprint = activated.installFingerprint!;
+      const routeIdentity = {
+        providerId: "local-runtime",
+        modelId: SOULX_PRESENTER_MODEL_ID,
+        modelRevision: runtimeRevision,
+        installFingerprint,
+      };
+      const saved = await localModelSetupSave({
+        activeProfileId: setup.activeProfileId,
+        selectedModelIds: [...new Set([...setup.selectedModelIds, SOULX_PRESENTER_MODEL_ID])],
+        lipSyncModelId: SOULX_PRESENTER_MODEL_ID,
+        portraitAnimationModelId: SOULX_PRESENTER_MODEL_ID,
+        existingModelDirectory: setup.existingModelDirectory,
+        profiles: setup.profiles.map((profile) => profile.id === activeProfile.id ? {
+          ...profile,
+          routes: {
+            ...profile.routes,
+            presenter: { ...profile.routes.presenter, ...routeIdentity },
+            portraitAnimation: { ...profile.routes.portraitAnimation, ...routeIdentity },
+            lipSync: { ...profile.routes.lipSync, ...routeIdentity },
+          },
+        } : profile),
+      });
+      setSetup(saved);
+      await downloads.refresh();
+      onNotify("SoulX presenter model selected", `SoulX-FlashHead Pro is verified and active in ${activeProfile.name}.`, "success");
+    } catch (error) {
+      const message = errorMessage(error);
+      try {
+        const statuses = await localModelDownloadStatus();
+        setPresenterActivationStatus(statuses.find((status) => status.modelId === SOULX_PRESENTER_MODEL_ID) ?? selectedDownloadStatus);
+      } catch {
+        setPresenterActivationStatus(selectedDownloadStatus);
+      }
+      setPresenterActivationError(message);
+      onNotify("SoulX could not be selected", message, "warning");
+    } finally {
+      window.clearInterval(poll);
+      setPresenterActivationBusy(false);
+    }
   };
   const saveSetup = async () => {
     if (!setup) return;
@@ -2748,11 +2837,12 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       <div className="lipsync-chooser"><div><span className="section-kicker">Narration mouth stage</span><h3>Choose your local lip-sync model</h3><p>This stage follows portrait animation and may be disabled for presenter-free scenes. Choosing a pack saves a preference; downloading remains a separate explicit step and inference stays blocked until activation review.</p></div><div className="lipsync-options">{lipSyncModelOptions.map((model) => <label className={setup?.lipSyncModelId === model.id ? "selected" : ""} key={model.id}><input type="radio" name="lipsync-model" checked={setup?.lipSyncModelId === model.id} disabled={!setup} onClick={() => setDownloadSelectionId(model.id)} onChange={() => selectLipSync(model.id)} /><span><b>{model.name}</b><small>{model.detail}</small></span><em>{downloadCatalog.some((entry) => entry.modelId === model.id) ? "Download declaration ready" : model.tag}</em></label>)}</div></div>
       <div className="model-download-panel" aria-live="polite">
         {selectedDownload ? <>
-          <div className="download-record"><span className="download-record-mark"><PackageCheck size={19} /></span><div><b>{selectedDownload.displayName} · {selectedImageOption?.executionReady ? "managed image model" : "download-only pack"}</b><small>{formatBytes(selectedDownload.totalBytes)} across {selectedDownload.artifactCount} artifacts · revision <code>{selectedDownload.immutableRevision}</code></small><p>{selectedDownload.downloadOnlyReason}</p></div><span className={`download-phase ${selectedDownloadStatus?.phase ?? "manifestRequired"}`}>{modelDownloadPhaseLabel(selectedDownloadStatus?.phase)}</span></div>
-          <div className="download-progress" aria-label={`${selectedDownload.displayName} download progress`}><i style={{ width: `${selectedDownloadStatus?.totalBytes ? Math.min(100, (selectedDownloadStatus.downloadedBytes / selectedDownloadStatus.totalBytes) * 100) : 0}%` }} /></div>
-          <div className="download-detail"><span>{selectedDownloadStatus?.detail ?? "Ready to download."}</span><span>{formatBytes(selectedDownloadStatus?.downloadedBytes ?? 0)} / {formatBytes(selectedDownload.totalBytes)} · {selectedDownloadStatus?.verifiedArtifacts ?? 0}/{selectedDownload.artifactCount} hashes verified</span></div>
+          <div className="download-record"><span className="download-record-mark"><PackageCheck size={19} /></span><div><b>{selectedDownload.displayName} · {selectedImageOption?.executionReady ? "managed image model" : selectedDownload.modelId === SOULX_PRESENTER_MODEL_ID ? "managed presenter model" : "download-only pack"}</b><small>{formatBytes(selectedDownload.totalBytes)} across {selectedDownload.artifactCount} artifacts · revision <code>{selectedDownload.immutableRevision}</code></small><p>{selectedDownload.downloadOnlyReason}</p></div><span className={`download-phase ${displayedDownloadStatus?.phase ?? "manifestRequired"}`}>{modelDownloadPhaseLabel(displayedDownloadStatus?.phase)}</span></div>
+          <div className="download-progress" aria-label={`${selectedDownload.displayName} download progress`}><i style={{ width: `${displayedDownloadStatus?.totalBytes ? Math.min(100, (displayedDownloadStatus.downloadedBytes / displayedDownloadStatus.totalBytes) * 100) : 0}%` }} /></div>
+          <div className="download-detail"><span>{displayedDownloadStatus?.detail ?? "Ready to download."}</span><span>{formatBytes(displayedDownloadStatus?.downloadedBytes ?? 0)} / {formatBytes(selectedDownload.totalBytes)} · {displayedDownloadStatus?.verifiedArtifacts ?? 0}/{selectedDownload.artifactCount} hashes verified</span></div>
           <p className="model-license-notice">Download under the <a href={selectedDownload.licenseUrl} target="_blank" rel="noreferrer">{selectedDownload.licenseId}</a> license.</p>
-          <div className="model-setup-actions"><button className="primary-button" disabled={!selectedDownload.available} onClick={beginModelDownload}><Download size={16} /> {downloadComplete ? "View download" : isDownloadActive(selectedDownloadStatus?.phase) || downloads.queuedModelIds.includes(selectedDownload.modelId) ? "View progress" : selectedDownloadStatus?.downloadedBytes ? "Resume download" : "Download"}</button>{selectedImageOption?.executionReady && selectedDownloadStatus?.phase === "ready" && <button type="button" className="secondary-button" disabled={!activeProfile || !sdxlInstallReceiptReady} onClick={useVerifiedSdxlForImages}><Image size={16} /> Use SDXL in active profile</button>}<small>Downloading accepts the linked model license. Progress stays in Downloads while you keep working.</small></div>
+          <div className="model-setup-actions"><button className="primary-button" disabled={!selectedDownload.available || presenterActivationBusy} onClick={beginModelDownload}><Download size={16} /> {downloadComplete ? "View download" : isDownloadActive(displayedDownloadStatus?.phase) || downloads.queuedModelIds.includes(selectedDownload.modelId) ? "View progress" : displayedDownloadStatus?.downloadedBytes ? "Resume download" : "Download"}</button>{selectedImageOption?.executionReady && selectedDownloadStatus?.phase === "ready" && <button type="button" className="secondary-button" disabled={!activeProfile || !sdxlInstallReceiptReady} onClick={useVerifiedSdxlForImages}><Image size={16} /> Use SDXL in active profile</button>}{selectedDownload.modelId === SOULX_PRESENTER_MODEL_ID && <button type="button" className="secondary-button" disabled={!activeProfile || !soulxDownloaded || presenterActivationBusy || setup?.portraitAnimationModelId === SOULX_PRESENTER_MODEL_ID} aria-busy={presenterActivationBusy} onClick={() => { void activateVerifiedSoulxForPresenters(); }}>{presenterActivationBusy ? <RefreshCw className="spin" size={16} /> : <UserRoundCheck size={16} />}{presenterActivationBusy ? "Verifying model…" : setup?.portraitAnimationModelId === SOULX_PRESENTER_MODEL_ID ? "SoulX selected" : "Use model"}</button>}<small>Downloading accepts the linked model license. Progress stays in Downloads while you keep working.</small></div>
+          {presenterActivationError && selectedDownload.modelId === SOULX_PRESENTER_MODEL_ID && <p className="model-setup-error" role="alert">{presenterActivationError}</p>}
         </> : <div className="download-empty"><ShieldCheck size={18} /><div><b>{selectedImageOption ? `${selectedImageOption.name} has a pinned native declaration` : "No immutable download declaration for this choice"}</b><small>{selectedImageOption ? "Open the packaged Windows app to inspect its exact files, size, license, and current installation state. Browser preview never downloads model bytes." : "Keep the preference or choose an existing folder. The app will not fetch a mutable repository snapshot or guess a license."}</small></div></div>}
       </div>
     </section> : <ProviderSectionPlaceholder title="Local model setup" detail="Reading installed and available model packs without blocking the rest of this page." />}
