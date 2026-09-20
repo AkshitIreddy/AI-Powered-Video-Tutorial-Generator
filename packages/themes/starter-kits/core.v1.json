@@ -5989,7 +5989,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal reviewed-compatible."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal incompatible."
       },
       "technical": {
         "mediaType": "image/png",
@@ -6123,7 +6123,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal reviewed-compatible."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal incompatible."
       },
       "technical": {
         "mediaType": "image/png",
