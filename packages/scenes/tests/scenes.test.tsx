@@ -69,6 +69,46 @@ describe("built-in scene catalog", () => {
     expect(preflightScene(spec!, landscape).ok).toBe(true);
   });
 
+  it("uses the authored lesson title when a definition has no explicit term label", () => {
+    const spec = sceneSpecFromStoryboard({
+      id: "sky-definition",
+      type: "definition",
+      title: "Why the Sky is Blue",
+      durationTicks: TIMEBASE_TICKS_PER_SECOND * 12,
+      onScreenText: ["Sunlight contains many colors", "Short blue wavelengths scatter more"],
+      visualBeat: {
+        schemaVersion: 1,
+        semanticIntent: "define",
+        compositionFamily: "object_stage",
+        focalAnchor: "sunlight-scattering",
+        continuityKey: "sky-color",
+        informationUnits: [
+          { id: "sunlight", role: "concept", text: "Sunlight is a mix of colors with different wavelengths" },
+          { id: "scattering", role: "result", text: "Blue light is redirected in all directions, coloring the sky" },
+        ],
+        attentionCue: "sunlight-scattering",
+        motionIntent: ["reveal-primary"],
+        textRoles: {
+          title: "Why the Sky is Blue",
+          focus: "Sunlight is a mix of colors with different wavelengths",
+          support: "Sunlight contains many colors",
+        },
+        avoidRegions: [],
+      },
+    });
+    if (spec?.content.kind !== "definition") throw new Error("Expected a definition scene");
+
+    expect(spec.content.term).toBe("Why the Sky is Blue");
+    expect(spec.content.definition).toBe("Sunlight is a mix of colors with different wavelengths");
+    const rendered = renderToStaticMarkup(createElement(SceneView, {
+      scene: compileScene(spec, landscape),
+      frame: { tick: spec.durationTicks, reducedMotion: true },
+    }));
+    expect(rendered).toContain("Why the Sky is Blue");
+    expect(rendered).toContain("Sunlight is a mix of colors with different wavelengths");
+    expect(rendered).not.toContain("sorted input");
+  });
+
   it("lays out approved whiteboard math as readable progressive writing", () => {
     const spec = sceneSpecFromStoryboard({
       id: "cross-term-board",

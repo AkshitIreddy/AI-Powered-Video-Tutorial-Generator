@@ -1105,7 +1105,14 @@ export function resolveBuiltinSceneSpec(scene: AuthoredResolvedScene, suppliedBe
         const ordered = sequenceText(semantic.sequence);
         const middle = semantic.comparisons[0] ? targetAwareInformationLabel(semantic.comparisons[0], semantic) : undefined;
         const causal = unitText(semantic.principle);
-        const label = semantic.beat.textRoles.label ?? "sorted input";
+        // `label` is optional in the authored visual-beat contract. Do not
+        // substitute a lesson-specific specimen phrase when a provider omits
+        // it: that leaked "sorted input" into unrelated definition scenes.
+        // The authored title is the next strongest term-level label, followed
+        // by the scene title already reviewed by the user.
+        const label = semantic.beat.textRoles.label
+          ?? semantic.beat.textRoles.title
+          ?? compactDisplayLabel(scene.content.title, 58);
         const symbolicValues = semantic.sequence?.values?.map(displayScalar);
         const concreteValues = semantic.comparisons[0]?.values?.map(displayScalar);
         const placeValueRelationship = symbolicValues?.length === 2 && concreteValues?.length === 2 && causal
