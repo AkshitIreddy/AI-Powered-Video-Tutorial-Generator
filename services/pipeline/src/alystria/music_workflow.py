@@ -295,7 +295,7 @@ def accept_music_candidate(store: ProjectStore, params: Mapping[str, Any]) -> di
         "provenanceId": provenance_id,
         "createdAt": now,
     }
-    provenance = {
+    provenance: dict[str, Any] = {
         "id": provenance_id,
         "assetId": asset_id,
         "origin": "licensedMedia",
