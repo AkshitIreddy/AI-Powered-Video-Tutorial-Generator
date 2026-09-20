@@ -129,5 +129,6 @@ it.each([
   await user.click(screen.getByRole("button", { name: /models & providers/i }));
   const useButton = await screen.findByRole("button", { name: /use sdxl in active profile/i }, { timeout: 5000 });
   expect(useButton).toBeDisabled();
-  expect(await screen.findByLabelText(/images model$/i)).not.toHaveValue("local/sdxl-base-1.0");
+  // Profile setup and installed-package status resolve independently.
+  expect(await screen.findByLabelText(/images model$/i, {}, { timeout: 5000 })).not.toHaveValue("local/sdxl-base-1.0");
 });

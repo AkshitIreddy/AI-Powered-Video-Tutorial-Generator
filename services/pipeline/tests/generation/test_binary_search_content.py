@@ -135,8 +135,8 @@ def test_srt_and_vtt_use_storyboard_scene_starts_not_audio_lengths(tmp_path: Pat
     request = GenerationRequest(
         topic="Caption scene clock",
         audience="Test learners",
-        # The default deterministic workflow authors three ten-second scenes,
-        # while each synthesized narration is at most four seconds long.
+        # The workflow authors three scenes, then fits their shared storyboard
+        # clock to measured narration plus bounded visual tails.
         duration_seconds=30,
         sources=(
             SourceSpec(
@@ -165,15 +165,62 @@ def test_srt_and_vtt_use_storyboard_scene_starts_not_audio_lengths(tmp_path: Pat
             for job in coordinator._jobs(generation_id)
             if job.parameters["stage"] == GenerationStage.CAPTIONS.value
         )
+        narration_job = next(
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters["stage"] == GenerationStage.NARRATION.value
+        )
         assert caption_job.result is not None
+        assert narration_job.result is not None
         payload = caption_job.result["payload"]
+        narration_payload = narration_job.result["payload"]
+        scenes = narration_payload["storyboard"]["scenes"]
         with store.cas.open(payload["srtArtifactHash"]) as stream:
             srt = stream.read().decode("utf-8")
         with store.cas.open(payload["vttArtifactHash"]) as stream:
             vtt = stream.read().decode("utf-8")
 
-        assert "00:00:10,000 -->" in srt
-        assert "00:00:10.000 -->" in vtt
-        assert "00:00:04,000 -->" not in srt
+        def timestamp(milliseconds: int, separator: str) -> str:
+            hours, remainder = divmod(milliseconds, 3_600_000)
+            minutes, remainder = divmod(remainder, 60_000)
+            seconds, millis = divmod(remainder, 1_000)
+            return f"{hours:02}:{minutes:02}:{seconds:02}{separator}{millis:03}"
+
+        srt_intervals = [line for line in srt.splitlines() if " --> " in line]
+        vtt_intervals = [line for line in vtt.splitlines() if " --> " in line]
+        expected_srt: list[str] = []
+        expected_vtt: list[str] = []
+        offset_ticks = 0
+        for scene in scenes:
+            offset_ms = round(offset_ticks * 1_000 / TICKS_PER_SECOND)
+            for cue in payload["byScene"][scene["id"]]:
+                start_ms = offset_ms + cue["start_ms"]
+                end_ms = offset_ms + cue["end_ms"]
+                expected_srt.append(
+                    f"{timestamp(start_ms, ',')} --> {timestamp(end_ms, ',')}"
+                )
+                expected_vtt.append(
+                    f"{timestamp(start_ms, '.')} --> {timestamp(end_ms, '.')}"
+                )
+            offset_ticks += scene["durationTicks"]
+
+        assert srt_intervals == expected_srt
+        assert vtt_intervals == expected_vtt
+        # The global second-scene cue derives from the fitted storyboard
+        # boundary plus its local aligned start, rather than concatenating the
+        # preceding audio file's measured duration.
+        second_scene_first_cue = payload["byScene"][scenes[1]["id"]][0]
+        first_boundary_ms = round(
+            scenes[0]["durationTicks"] * 1_000 / TICKS_PER_SECOND
+        )
+        first_audio_ms = next(
+            item["durationMs"]
+            for item in narration_payload["narration"]
+            if item["sceneId"] == scenes[0]["id"]
+        )
+        assert first_boundary_ms > first_audio_ms
+        assert expected_srt[len(payload["byScene"][scenes[0]["id"]])].startswith(
+            timestamp(first_boundary_ms + second_scene_first_cue["start_ms"], ",")
+        )
     finally:
         store.close()
