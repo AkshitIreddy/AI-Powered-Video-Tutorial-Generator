@@ -1069,17 +1069,17 @@ impl ModelDownloadManager {
         drop(self.active_installer.lock().take());
         let stdout = finish_installer_output(stdout_reader)?;
         let stderr = finish_installer_output(stderr_reader)?;
-        if !exit_status.success() {
-            let detail = String::from_utf8_lossy(&stderr.bytes);
-            return Err(download_error(if detail.trim().is_empty() {
-                "The SoulX installer rejected the verified runtime bundle."
-            } else {
-                "The SoulX installer rejected the verified runtime bundle; see diagnostics."
-            }));
-        }
         if stdout.exceeded_limit || stderr.exceeded_limit {
             return Err(download_error(
                 "The SoulX installer returned too much output.",
+            ));
+        }
+        if !exit_status.success() {
+            if let Some(error) = presenter_installer_failure(&stdout.bytes, operation) {
+                return Err(error);
+            }
+            return Err(download_error(
+                "The SoulX installer exited without a valid structured failure report.",
             ));
         }
         serde_json::from_slice(&stdout.bytes)
@@ -2794,6 +2794,34 @@ fn finish_installer_output(
     Ok(output)
 }
 
+fn presenter_installer_failure(bytes: &[u8], operation: &str) -> Option<CommandError> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let object = value.as_object()?;
+    let error = object.get("error")?.as_object()?;
+    let expected_code = format!("presenter_runtime_{operation}_failed");
+    if object.get("ok").and_then(serde_json::Value::as_bool) != Some(false)
+        || object.get("operation").and_then(serde_json::Value::as_str) != Some(operation)
+        || object.get("modelId").and_then(serde_json::Value::as_str)
+            != Some(SOULX_FLASHHEAD.model_id)
+        || error.get("code").and_then(serde_json::Value::as_str) != Some(expected_code.as_str())
+    {
+        return None;
+    }
+    let raw_message = error.get("message")?.as_str()?.trim();
+    if raw_message.is_empty() || raw_message.chars().count() > 500 {
+        return None;
+    }
+    let message = raw_message.split_whitespace().collect::<Vec<_>>().join(" ");
+    let action = match operation {
+        "install" => "installation",
+        "activate" => "activation",
+        _ => "operation",
+    };
+    Some(download_error(&format!(
+        "SoulX {action} failed: {message} ({expected_code})."
+    )))
+}
+
 fn cleanup_presenter_stages(models_root: &Path) -> Result<(), CommandError> {
     let presenter = models_root.join("Presenter");
     if !presenter.exists() {
@@ -4222,5 +4250,68 @@ mod tests {
         install.as_object_mut().unwrap().remove("activeConfig");
         validate_presenter_installer_result(directory.path(), &install, "install")
             .expect("exact install result");
+    }
+
+    #[test]
+    fn presenter_installer_failure_surfaces_only_matching_structured_detail() {
+        let valid = serde_json::json!({
+            "ok": false,
+            "operation": "install",
+            "modelId": SOULX_FLASHHEAD.model_id,
+            "error": {
+                "code": "presenter_runtime_install_failed",
+                "message": "The pinned runtime encoder\nfile is missing."
+            }
+        });
+        let failure = presenter_installer_failure(
+            &serde_json::to_vec(&valid).expect("failure payload"),
+            "install",
+        )
+        .expect("valid structured failure");
+        assert_eq!(failure.code, "MODEL_DOWNLOAD_FAILED");
+        assert_eq!(
+            failure.message,
+            "SoulX installation failed: The pinned runtime encoder file is missing. \
+(presenter_runtime_install_failed)."
+        );
+
+        for changed in [
+            serde_json::json!({
+                "ok": false,
+                "operation": "activate",
+                "modelId": SOULX_FLASHHEAD.model_id,
+                "error": {
+                    "code": "presenter_runtime_install_failed",
+                    "message": "wrong operation"
+                }
+            }),
+            serde_json::json!({
+                "ok": false,
+                "operation": "install",
+                "modelId": "local/other-model",
+                "error": {
+                    "code": "presenter_runtime_install_failed",
+                    "message": "wrong model"
+                }
+            }),
+            serde_json::json!({
+                "ok": false,
+                "operation": "install",
+                "modelId": SOULX_FLASHHEAD.model_id,
+                "error": {
+                    "code": "unexpected_internal_error",
+                    "message": "untrusted code"
+                }
+            }),
+        ] {
+            assert!(
+                presenter_installer_failure(
+                    &serde_json::to_vec(&changed).expect("changed payload"),
+                    "install"
+                )
+                .is_none()
+            );
+        }
+        assert!(presenter_installer_failure(b"not json", "install").is_none());
     }
 }
