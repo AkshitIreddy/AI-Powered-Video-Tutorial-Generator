@@ -46,10 +46,11 @@ const productBeatContract = Object.freeze([
 ]);
 
 const tutorialCueIds = ["white-light", "molecule-scattering", "viewer-conclusion"];
-const requiredPreflightAssetKeys = ["teachingVoice", "productVoice", "presenterVideo", "music"];
+const requiredPreflightAssetKeys = ["teachingVoice", "productVoice", "music"];
+export const marketingPresenterOrder = Object.freeze(["realistic-woman", "anime-woman", "realistic-man", "cartoon-woman"]);
 
-export function deriveAdaptiveMarketingEdit({ teachingDurationSeconds, productSegments }) {
-  assertDuration(teachingDurationSeconds, "teaching narration", 7, 22);
+export function deriveAdaptiveMarketingEdit({ teachingDurationSeconds, teachingSegments, presenterSegments, productSegments }) {
+  assertDuration(teachingDurationSeconds, "teaching narration", 7, 25);
   if (!Array.isArray(productSegments) || productSegments.length !== productBeatContract.length) {
     throw new Error(`Product narration needs exactly ${productBeatContract.length} timed segments`);
   }
@@ -79,12 +80,19 @@ export function deriveAdaptiveMarketingEdit({ teachingDurationSeconds, productSe
     throw new Error(`Adaptive marketing edit is ${totalDurationSeconds}s; expected 35–50s`);
   }
 
-  const tutorialCueDurations = proportionalDurations(teachingDurationSeconds, [10, 16, 12]);
-  let tutorialCursor = 0;
-  const tutorialBeats = tutorialCueDurations.map((durationSeconds, index) => {
-    const start = tutorialCursor;
-    const end = index === tutorialCueDurations.length - 1 ? tutorialEnd : start + durationSeconds;
-    tutorialCursor = end;
+  const tutorialTiming = Array.isArray(teachingSegments)
+    ? verifiedTeachingTiming(teachingSegments, teachingDurationSeconds, tutorialEnd)
+    : (() => {
+        const durations = proportionalDurations(teachingDurationSeconds, [10, 16, 12]);
+        let cursor = 0;
+        return durations.map((durationSeconds, index) => {
+          const start = cursor;
+          const end = index === durations.length - 1 ? tutorialEnd : start + durationSeconds;
+          cursor = end;
+          return { start, end };
+        });
+      })();
+  const tutorialBeats = tutorialTiming.map(({ start, end }, index) => {
     return {
       id: `tutorial-${tutorialCueIds[index]}`,
       in: round3(start),
@@ -94,7 +102,12 @@ export function deriveAdaptiveMarketingEdit({ teachingDurationSeconds, productSe
       motion: index === 0 ? "speaking-presenter-plus-push-1.00-to-1.035" : index === 1 ? "push-1.00-to-1.06-on-blue-rays" : "resolve-and-0.32s-hold",
     };
   });
-  const webpDurationSeconds = round3(Math.min(20, Math.max(12, teachingDurationSeconds + 2.4)));
+  const presenterWebp = Array.isArray(presenterSegments) ? derivePresenterWebpBeats(presenterSegments, teachingDurationSeconds) : null;
+  const webpDurationSeconds = presenterWebp?.durationSeconds ?? round3(Math.min(20, Math.max(12, teachingDurationSeconds + 2.4)));
+  const webpEditorStart = presenterWebp?.editorStart ?? round3(webpDurationSeconds - 3.4);
+  const webpTutorialCuts = presenterWebp ? null : (Array.isArray(teachingSegments)
+    ? [Number(teachingSegments[0].endSeconds), Number(teachingSegments[1].endSeconds)].map((value) => round3(Math.min(value, webpEditorStart)))
+    : [round3(Math.min(teachingDurationSeconds, Math.max(4.2, teachingDurationSeconds * 0.42))), round3(Math.min(teachingDurationSeconds, webpEditorStart))]);
   return {
     schemaVersion: 2,
     timingBasis: "verified-source-audio-durations",
@@ -113,13 +126,91 @@ export function deriveAdaptiveMarketingEdit({ teachingDurationSeconds, productSe
       height: 540,
       fps: 10,
       startsWithVisibleMotion: true,
-      beats: [
-        { id: "tutorial-speaking-hook", in: 0, out: round3(Math.min(teachingDurationSeconds, Math.max(4.2, teachingDurationSeconds * 0.42))) },
-        { id: "tutorial-scattering", in: round3(Math.min(teachingDurationSeconds, Math.max(4.2, teachingDurationSeconds * 0.42))), out: round3(Math.min(teachingDurationSeconds, webpDurationSeconds - 3.4)) },
-        { id: "actual-native-editor", in: round3(Math.min(teachingDurationSeconds, webpDurationSeconds - 3.4)), out: webpDurationSeconds },
+      beats: presenterWebp ? [...presenterWebp.beats, { id: "actual-native-editor", in: webpEditorStart, out: webpDurationSeconds }] : [
+        { id: "tutorial-speaking-hook", in: 0, out: webpTutorialCuts[0] },
+        { id: "tutorial-scattering", in: webpTutorialCuts[0], out: webpTutorialCuts[1] },
+        { id: "tutorial-viewer-conclusion", in: webpTutorialCuts[1], out: webpEditorStart },
+        { id: "actual-native-editor", in: webpEditorStart, out: webpDurationSeconds },
       ],
     },
   };
+}
+
+function derivePresenterWebpBeats(segments, narrationDurationSeconds) {
+  if (segments.length !== marketingPresenterOrder.length) throw new Error("Animated WebP needs the four ordered presenter segments");
+  let sourceCursor = 0;
+  let outputCursor = 0;
+  const beats = segments.map((segment, index) => {
+    const start = Number(segment.startSeconds);
+    const end = Number(segment.endSeconds);
+    if (segment.style !== marketingPresenterOrder[index] || !Number.isFinite(start) || !Number.isFinite(end)
+      || Math.abs(start - sourceCursor) > 0.08 || end <= start) {
+      throw new Error(`Animated WebP presenter segment ${index + 1} breaks the ordered source timeline`);
+    }
+    const sampleDuration = Math.min(3.5, end - start);
+    const outputStart = outputCursor;
+    outputCursor += sampleDuration;
+    sourceCursor = end;
+    return { id: `tutorial-${segment.style}`, presenterStyle: segment.style, in: round3(outputStart), out: round3(outputCursor), sourceIn: round3(start), sourceOut: round3(start + sampleDuration) };
+  });
+  if (Math.abs(sourceCursor - narrationDurationSeconds) > 0.08) throw new Error("Animated WebP presenter segments do not cover the verified teaching narration");
+  const editorSeconds = 3.4;
+  const durationSeconds = round3(outputCursor + editorSeconds);
+  assertDuration(durationSeconds, "animated WebP", 12, 20);
+  return { beats, editorStart: round3(outputCursor), durationSeconds };
+}
+
+function verifiedTeachingTiming(segments, narrationDurationSeconds, tutorialEndSeconds) {
+  if (segments.length !== tutorialCueIds.length) throw new Error("Teaching narration needs exactly three timed segments");
+  let previousEnd = 0;
+  return segments.map((segment, index) => {
+    if (segment.id !== tutorialCueIds[index] || !Number.isFinite(segment.startSeconds) || !Number.isFinite(segment.endSeconds)
+      || Math.abs(segment.startSeconds - previousEnd) > 0.08 || segment.endSeconds <= segment.startSeconds) {
+      throw new Error(`Teaching segment ${index + 1} does not preserve a contiguous verified phrase boundary`);
+    }
+    const start = Number(segment.startSeconds);
+    const end = index === segments.length - 1 ? tutorialEndSeconds : Number(segment.endSeconds);
+    previousEnd = Number(segment.endSeconds);
+    if (index === segments.length - 1 && Math.abs(previousEnd - narrationDurationSeconds) > 0.08) throw new Error("Teaching segments do not reach the verified narration duration");
+    return { start, end };
+  });
+}
+
+export function deriveSentenceSegmentsFromAsr({ asr, sentences, ids }) {
+  if (asr?.state !== "verified" || asr.exactNormalizedTranscript !== true || !Array.isArray(asr.words) || !Number.isFinite(asr.durationSeconds)) {
+    throw new Error("Sentence timing requires an exact verified ASR receipt with word timestamps");
+  }
+  if (!Array.isArray(sentences) || !Array.isArray(ids) || sentences.length === 0 || sentences.length !== ids.length) throw new Error("Sentence timing needs matching sentence and ID arrays");
+  if (normalizeText(sentences.join(" ")) !== normalizeText(asr.expectedText)) throw new Error("Sentence text does not reconstruct the ASR expected transcript exactly");
+  const expectedTokens = sentences.map((sentence) => transcriptTokens(sentence));
+  const actualTokens = asr.words.map((entry) => transcriptTokens(entry.word)[0]).filter(Boolean);
+  const flattenedExpected = expectedTokens.flat();
+  if (flattenedExpected.length !== actualTokens.length || flattenedExpected.some((token, index) => token !== actualTokens[index])) {
+    throw new Error("ASR word timestamps do not match the expected sentence tokens");
+  }
+  const segments = [];
+  let tokenCursor = 0;
+  let startSeconds = 0;
+  for (let index = 0; index < sentences.length; index += 1) {
+    tokenCursor += expectedTokens[index].length;
+    const isLast = index === sentences.length - 1;
+    const previousWord = asr.words[tokenCursor - 1];
+    const nextWord = asr.words[tokenCursor];
+    const endSeconds = isLast ? Number(asr.durationSeconds) : (Number(previousWord.end) + Number(nextWord.start)) / 2;
+    if (!Number.isFinite(endSeconds) || endSeconds <= startSeconds) throw new Error(`ASR sentence ${ids[index]} has an invalid silence boundary`);
+    segments.push({
+      id: ids[index],
+      startSeconds: round3(startSeconds),
+      endSeconds: round3(endSeconds),
+      durationSeconds: round3(endSeconds - startSeconds),
+      firstWordSeconds: Number(asr.words[tokenCursor - expectedTokens[index].length].start),
+      lastWordSeconds: Number(previousWord.end),
+      text: sentences[index],
+      boundaryMethod: isLast ? "verified-media-duration" : "midpoint-between-adjacent-sentence-word-timestamps",
+    });
+    startSeconds = endSeconds;
+  }
+  return segments;
 }
 
 export async function renderRayleighVisuals(outputDirectory, { browserType = chromium } = {}) {
@@ -161,6 +252,24 @@ export async function validateMarketingAssetManifest(manifestPath, { ffprobePath
     await validateHashedFile(asset, key);
     if (finalMode && asset.placeholder === true) throw new Error(`Final marketing manifest cannot use placeholder ${key}`);
   }
+  const presenterClips = manifest.assets?.presenterClips;
+  if (!Array.isArray(presenterClips) || presenterClips.length < 1) throw new Error(`${finalMode ? "Final" : "Draft"} marketing manifest needs presenter clips`);
+  for (let index = 0; index < presenterClips.length; index += 1) await validateHashedFile(presenterClips[index], `presenterClips[${index}]`);
+  if (finalMode) {
+    if (presenterClips.length !== marketingPresenterOrder.length) throw new Error("Final marketing manifest needs four ordered presenter clips");
+    let previousEnd = 0;
+    for (let index = 0; index < presenterClips.length; index += 1) {
+      const clip = presenterClips[index];
+      if (clip.style !== marketingPresenterOrder[index] || clip.publicDemoCleared !== true || clip.temporalReviewPassed !== true || clip.naturalBlinkVerified !== true) {
+        throw new Error(`Presenter clip ${index + 1} does not satisfy the reviewed ${marketingPresenterOrder[index]} contract`);
+      }
+      if (!Number.isFinite(clip.startSeconds) || !Number.isFinite(clip.endSeconds) || Math.abs(clip.startSeconds - previousEnd) > 0.08 || clip.endSeconds <= clip.startSeconds) {
+        throw new Error(`Presenter clip ${index + 1} does not preserve a contiguous narration range`);
+      }
+      previousEnd = clip.endSeconds;
+    }
+    if (Math.abs(previousEnd - manifest.assets.teachingVoice.durationSeconds) > 0.08) throw new Error("Presenter clips do not cover the complete teaching narration");
+  }
   const visuals = manifest.assets?.visuals;
   if (!Array.isArray(visuals) || visuals.length !== rayleighVisuals.length) throw new Error("Marketing asset manifest must contain exactly three Rayleigh visuals");
   for (const expected of rayleighVisuals) {
@@ -173,10 +282,9 @@ export async function validateMarketingAssetManifest(manifestPath, { ffprobePath
   if (normalizeText(manifest.assets.teachingVoice.transcript) !== normalizeText(marketingTeachingScript)) throw new Error("Teaching voice transcript does not match the approved factual script");
   if (normalizeText(manifest.assets.productVoice.transcript) !== normalizeText(marketingProductScript)) throw new Error("Product voice transcript does not match the approved edit script");
   if (finalMode) {
-    for (const key of ["teachingVoice", "productVoice", "presenterVideo"]) {
+    for (const key of ["teachingVoice", "productVoice"]) {
       if (manifest.assets[key].publicDemoCleared !== true) throw new Error(`${key} is not cleared for a public demo`);
     }
-    if (manifest.assets.presenterVideo.temporalReviewPassed !== true || manifest.assets.presenterVideo.naturalBlinkVerified !== true) throw new Error("Final presenter has not passed temporal and blink review");
     if (stage === "final-edit" && (manifest.assets.nativeUiCapture.actualNativeWebView !== true || manifest.assets.nativeUiCapture.fixtureUi === true)) throw new Error("Final UI capture is not an actual native WebView capture");
   }
   if (!Array.isArray(manifest.teachingCaptions) || manifest.teachingCaptions.length !== 3) throw new Error("Teaching captions need three phrase-aligned cues");
@@ -186,22 +294,22 @@ export async function validateMarketingAssetManifest(manifestPath, { ffprobePath
     if (manifest.productSegments[index].id !== productBeatContract[index].id || typeof manifest.productSegments[index].text !== "string") throw new Error(`Product segment ${index + 1} does not match ${productBeatContract[index].id}`);
   }
   if (normalizeText(manifest.productSegments.map((segment) => segment.text).join(" ")) !== normalizeText(marketingProductScript)) throw new Error("Product segment text does not reconstruct the approved narration exactly");
-  const edit = deriveAdaptiveMarketingEdit({ teachingDurationSeconds: manifest.assets.teachingVoice.durationSeconds, productSegments: manifest.productSegments });
+  const edit = deriveAdaptiveMarketingEdit({ teachingDurationSeconds: manifest.assets.teachingVoice.durationSeconds, teachingSegments: manifest.teachingCaptions, presenterSegments: presenterClips, productSegments: manifest.productSegments });
   const probes = {};
   if (ffprobePath) {
     probes.teachingVoice = await probeMedia(ffprobePath, manifest.assets.teachingVoice.path);
     probes.productVoice = await probeMedia(ffprobePath, manifest.assets.productVoice.path);
-    probes.presenterVideo = await probeMedia(ffprobePath, manifest.assets.presenterVideo.path);
+    probes.presenterClips = await Promise.all(presenterClips.map((clip) => probeMedia(ffprobePath, clip.path)));
     if (stage === "final-edit") probes.nativeUiCapture = await probeMedia(ffprobePath, manifest.assets.nativeUiCapture.path);
     if (!probes.teachingVoice.audio || probes.teachingVoice.video) throw new Error("Teaching voice must be an audio-only source");
-    if (!probes.presenterVideo.video || !probes.presenterVideo.audio) throw new Error("Presenter source must contain reviewed video and its authoritative teaching audio");
+    if (probes.presenterClips.some((probe) => !probe.video || !probe.audio)) throw new Error("Each presenter source must contain reviewed video and its matching utterance audio");
     if (Math.abs(probes.teachingVoice.durationSeconds - manifest.assets.teachingVoice.durationSeconds) > 0.08) throw new Error("Teaching voice duration differs from its manifest");
   }
   return { manifest, edit, probes };
 }
 
 export function buildMarketingTutorialProjectDocument({ teachingDurationSeconds, captions, mode = "final" }) {
-  assertDuration(teachingDurationSeconds, "teaching narration", 7, 22);
+  assertDuration(teachingDurationSeconds, "teaching narration", 7, 25);
   validateCaptionSequence(captions, teachingDurationSeconds, marketingTeachingScript);
   return {
     title: `${marketingDemoTitle}${mode === "draft" ? " · DRAFT" : ""}`,
@@ -240,6 +348,28 @@ export function buildMarketingTutorialProjectDocument({ teachingDurationSeconds,
     },
     marketingDemo: { schemaVersion: 1, mode, exactTeachingScript: marketingTeachingScript, designedVisualIds: rayleighVisuals.map((visual) => visual.id) },
   };
+}
+
+export function deriveMarketingPresenterTransform({
+  canvasWidth = 1920,
+  canvasHeight = 1080,
+  sourceWidth = 512,
+  sourceHeight = 512,
+  desiredCenterX = 1510,
+  desiredCenterY = 650,
+  scale = 0.68,
+} = {}) {
+  for (const [label, value] of Object.entries({ canvasWidth, canvasHeight, sourceWidth, sourceHeight, desiredCenterX, desiredCenterY, scale })) {
+    if (!Number.isFinite(value) || value <= 0) throw new Error(`Presenter layout ${label} must be positive`);
+  }
+  const contain = Math.min(canvasWidth / sourceWidth, canvasHeight / sourceHeight);
+  const width = sourceWidth * contain * scale;
+  const height = sourceHeight * contain * scale;
+  const x = desiredCenterX - canvasWidth / 2;
+  const y = desiredCenterY - canvasHeight / 2;
+  const bounds = { left: desiredCenterX - width / 2, top: desiredCenterY - height / 2, right: desiredCenterX + width / 2, bottom: desiredCenterY + height / 2 };
+  if (bounds.left < 0 || bounds.top < 0 || bounds.right > canvasWidth || bounds.bottom > canvasHeight) throw new Error(`Presenter layout escapes the ${canvasWidth}×${canvasHeight} canvas`);
+  return { x: round3(x), y: round3(y), scaleX: scale, scaleY: scale, desiredCenterX, desiredCenterY, renderedWidth: round3(width), renderedHeight: round3(height), bounds: Object.fromEntries(Object.entries(bounds).map(([key, value]) => [key, round3(value)])) };
 }
 
 export async function prepareMarketingTutorialInNativeEditor({
@@ -289,7 +419,9 @@ export async function prepareMarketingTutorialInNativeEditor({
   }
   const hideEmpty = editor.getByRole("button", { name: "Hide empty tracks", exact: true });
   if (await hideEmpty.getAttribute("aria-pressed") === "true") await hideEmpty.click();
-  const sources = [...assetManifest.assets.visuals.map((visual) => visual.path), assetManifest.assets.presenterVideo.path, assetManifest.assets.teachingVoice.path];
+  const presenterSources = assetManifest.assets.presenterClips;
+  if (!Array.isArray(presenterSources) || presenterSources.length < 1) throw new Error("Marketing tutorial needs at least one presenter clip");
+  const sources = [...assetManifest.assets.visuals.map((visual) => visual.path), ...presenterSources.map((clip) => clip.path), assetManifest.assets.teachingVoice.path];
   await editor.getByLabel("Rights for new editor media").selectOption("owned");
   await editor.getByLabel("Import media files").setInputFiles(sources);
   for (const source of sources) {
@@ -309,19 +441,27 @@ export async function prepareMarketingTutorialInNativeEditor({
     await editor.getByRole("button", { name: "Inspector", exact: true }).click();
     await setInspectorNumber(editor, "End frame", scene.endFrame);
   }
-  await setPlayhead(editor, 0);
-  await editor.getByRole("button", { name: "Presenter", exact: true }).click();
-  await editor.getByRole("button", { name: "Media", exact: true }).click();
-  const presenterName = path.basename(assetManifest.assets.presenterVideo.path);
-  await editor.getByRole("listitem").filter({ hasText: presenterName }).getByRole("button", { name: `Place ${presenterName} at playhead` }).click();
-  const presenterClip = editor.locator(".aly-editor-clip--presenter").filter({ hasText: presenterName });
-  await presenterClip.click();
-  await editor.getByRole("button", { name: "Inspector", exact: true }).click();
-  await setInspectorNumber(editor, "End frame", timing.durationFrames);
-  await setInspectorNumber(editor, "X", 1510);
-  await setInspectorNumber(editor, "Y", 650);
-  await setInspectorNumber(editor, "Scale X", 0.68);
-  await setInspectorNumber(editor, "Scale Y", 0.68);
+  const presenterTransform = deriveMarketingPresenterTransform();
+  for (const presenter of presenterSources) {
+    const startFrame = Math.round(presenter.startSeconds * marketingFrameRate);
+    const endFrame = Math.round(presenter.endSeconds * marketingFrameRate);
+    await setPlayhead(editor, startFrame);
+    await editor.getByRole("button", { name: "Presenter", exact: true }).click();
+    await editor.getByRole("button", { name: "Media", exact: true }).click();
+    const presenterName = path.basename(presenter.path);
+    await editor.getByRole("listitem").filter({ hasText: presenterName }).getByRole("button", { name: `Place ${presenterName} at playhead` }).click();
+    const presenterClip = editor.locator(".aly-editor-clip--presenter").filter({ hasText: presenterName });
+    await presenterClip.click();
+    await editor.getByRole("button", { name: "Inspector", exact: true }).click();
+    await setInspectorNumber(editor, "End frame", endFrame);
+    await setInspectorNumber(editor, "X", presenterTransform.x);
+    await setInspectorNumber(editor, "Y", presenterTransform.y);
+    await setInspectorNumber(editor, "Scale X", presenterTransform.scaleX);
+    await setInspectorNumber(editor, "Scale Y", presenterTransform.scaleY);
+    // Each reviewed presenter MP4 carries its matching utterance. Keep it
+    // visual-only so the stitched narration remains the only programme audio.
+    await editor.getByLabel("Mute clip", { exact: true }).check();
+  }
 
   await setPlayhead(editor, 0);
   await editor.getByRole("button", { name: "Narration", exact: true }).click();
@@ -360,11 +500,15 @@ export async function prepareMarketingTutorialInNativeEditor({
   const saved = await invokeNative(page, "project_snapshot_get", identity);
   const document = saved.snapshot?.editorDocument;
   const clips = document?.tracks?.flatMap((track) => track.clips ?? []) ?? [];
+  const presenterClips = clips.filter((clip) => clip.kind === "presenter");
   if (clips.filter((clip) => clip.kind === "slides").length !== 3 || clips.filter((clip) => clip.kind === "captions").length !== 3
-    || clips.filter((clip) => clip.kind === "presenter").length !== 1 || clips.filter((clip) => clip.kind === "narration").length !== 1) {
+    || presenterClips.length !== presenterSources.length || presenterClips.some((clip) => clip.audio?.muted !== true
+      || clip.transform?.x !== presenterTransform.x || clip.transform?.y !== presenterTransform.y
+      || clip.transform?.scaleX !== presenterTransform.scaleX || clip.transform?.scaleY !== presenterTransform.scaleY)
+    || clips.filter((clip) => clip.kind === "narration").length !== 1) {
     throw new Error("Persisted marketing tutorial does not contain the three-scene presenter/narration/caption timeline");
   }
-  return { identity, title: initialSnapshot.title, outputPath, outputSha256: await sha256File(outputPath), probe, timing, actualNativeEditorRender: true, fixtureUi: false };
+  return { identity, title: initialSnapshot.title, outputPath, outputSha256: await sha256File(outputPath), probe, timing, presenterTransform, actualNativeEditorRender: true, fixtureUi: false };
 }
 
 export function buildMarketingNativeCaptureTimeline({ timeline, edit, projectTitle, state = {} }) {
@@ -577,6 +721,10 @@ function assertDuration(value, label, minimum, maximum) {
 
 function normalizeText(value) {
   return String(value ?? "").trim().replace(/\s+/gu, " ");
+}
+
+function transcriptTokens(value) {
+  return String(value ?? "").toLocaleLowerCase("en-US").match(/[a-z]+(?:'[a-z]+)?/gu) ?? [];
 }
 
 function round3(value) {

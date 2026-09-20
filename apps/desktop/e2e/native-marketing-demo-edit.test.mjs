@@ -7,6 +7,8 @@ import test from "node:test";
 import {
   buildMarketingTutorialProjectDocument,
   buildMarketingNativeCaptureTimeline,
+  deriveMarketingPresenterTransform,
+  deriveSentenceSegmentsFromAsr,
   deriveAdaptiveMarketingEdit,
   marketingTeachingScript,
   rayleighVisuals,
@@ -28,11 +30,13 @@ const teachingCaptions = [
 ];
 
 test("adaptive edit follows verified narration durations and covers 35–50 seconds without a gap", () => {
-  const edit = deriveAdaptiveMarketingEdit({ teachingDurationSeconds: 12.4, productSegments });
+  const edit = deriveAdaptiveMarketingEdit({ teachingDurationSeconds: 12.4, teachingSegments: teachingCaptions, productSegments });
   assert.equal(edit.mp4.durationSeconds, 35);
   assert.equal(edit.webp.durationSeconds, 14.8);
   assert.equal(edit.webp.startsWithVisibleMotion, true);
+  assert.deepEqual(edit.webp.beats.map((beat) => beat.out), [3.2, 8.4, 11.4, 14.8]);
   assert.deepEqual(edit.mp4.beats.slice(0, 3).map((beat) => beat.visualId), rayleighVisuals.map((visual) => visual.id));
+  assert.deepEqual(edit.mp4.beats.slice(0, 3).map((beat) => beat.out), [3.2, 8.4, 12.72]);
   for (let index = 1; index < edit.mp4.beats.length; index += 1) {
     assert.ok(Math.abs(edit.mp4.beats[index - 1].out - edit.mp4.beats[index].in) <= 0.001, `gap before ${edit.mp4.beats[index].id}`);
   }
@@ -48,6 +52,28 @@ test("adaptive edit expands naturally for longer verified reads", () => {
   assert.ok(edit.mp4.durationSeconds <= 50);
   assert.ok(edit.webp.durationSeconds >= 12 && edit.webp.durationSeconds <= 20);
   assert.equal(edit.mp4.beats[2].out, Number((17.25 + 0.32).toFixed(3)));
+});
+
+test("animated WebP samples all four presenter styles in order before the native editor", () => {
+  const edit = deriveAdaptiveMarketingEdit({
+    teachingDurationSeconds: 22.18,
+    teachingSegments: [
+      { id: "white-light", startSeconds: 0, endSeconds: 5.69 },
+      { id: "molecule-scattering", startSeconds: 5.69, endSeconds: 13.6 },
+      { id: "viewer-conclusion", startSeconds: 13.6, endSeconds: 22.18 },
+    ],
+    presenterSegments: [
+      { style: "realistic-woman", startSeconds: 0, endSeconds: 5.69 },
+      { style: "anime-woman", startSeconds: 5.69, endSeconds: 13.6 },
+      { style: "realistic-man", startSeconds: 13.6, endSeconds: 18.8 },
+      { style: "cartoon-woman", startSeconds: 18.8, endSeconds: 22.18 },
+    ],
+    productSegments,
+  });
+  assert.equal(edit.webp.durationSeconds, 17.28);
+  assert.deepEqual(edit.webp.beats.map((beat) => beat.presenterStyle ?? beat.id), ["realistic-woman", "anime-woman", "realistic-man", "cartoon-woman", "actual-native-editor"]);
+  assert.deepEqual(edit.webp.beats.slice(0, 4).map((beat) => [beat.sourceIn, beat.sourceOut]), [[0, 3.5], [5.69, 9.19], [13.6, 17.1], [18.8, 22.18]]);
+  assert.equal(edit.webp.beats.at(-1).out, edit.webp.durationSeconds);
 });
 
 test("native tutorial project uses three factual scenes and exact phrase captions", () => {
@@ -114,7 +140,12 @@ test("final preflight validates real inputs before native capture but final-edit
     assets: {
       teachingVoice: await asset("teaching.wav", { transcript: marketingTeachingScript, durationSeconds: 12.4, publicDemoCleared: true }),
       productVoice: await asset("product.wav", { transcript: "This is a real lesson, ready to refine. Edit the script, timing, captions, and layout in one timeline. Choose a presenter, or start with included teaching visuals. Use cloud providers or downloadable local models. Then review and export the finished tutorial.", publicDemoCleared: true }),
-      presenterVideo: await asset("presenter.mp4", { publicDemoCleared: true, temporalReviewPassed: true, naturalBlinkVerified: true }),
+      presenterClips: await Promise.all([
+        ["emma.mp4", "realistic-woman", 0, 3.2],
+        ["yuki.mp4", "anime-woman", 3.2, 6.2],
+        ["noah.mp4", "realistic-man", 6.2, 9.2],
+        ["chloe.mp4", "cartoon-woman", 9.2, 12.4],
+      ].map(async ([name, style, startSeconds, endSeconds]) => asset(name, { style, startSeconds, endSeconds, publicDemoCleared: true, temporalReviewPassed: true, naturalBlinkVerified: true }))),
       music: await asset("music.wav"),
       visuals: await Promise.all(rayleighVisuals.map((visual) => asset(visual.filename, { id: visual.id, mediaType: "image/png", width: 1920, height: 1080 }))),
     },
@@ -132,4 +163,39 @@ test("final preflight validates real inputs before native capture but final-edit
   const preflight = await validateMarketingAssetManifest(manifestPath, { stage: "preflight" });
   assert.equal(preflight.edit.mp4.durationSeconds, 35);
   await assert.rejects(() => validateMarketingAssetManifest(manifestPath, { stage: "final-edit" }), /missing nativeUiCapture/);
+});
+
+test("presenter placement converts desired canvas center to bounded editor offsets", () => {
+  const placement = deriveMarketingPresenterTransform();
+  assert.deepEqual({ x: placement.x, y: placement.y, scaleX: placement.scaleX, scaleY: placement.scaleY }, { x: 550, y: 110, scaleX: 0.68, scaleY: 0.68 });
+  assert.deepEqual(placement.bounds, { left: 1142.8, top: 282.8, right: 1877.2, bottom: 1017.2 });
+  assert.ok(placement.bounds.left >= 0 && placement.bounds.top >= 0 && placement.bounds.right <= 1920 && placement.bounds.bottom <= 1080);
+  assert.throws(() => deriveMarketingPresenterTransform({ desiredCenterX: 1900 }), /escapes/);
+});
+
+test("verified ASR sentence timings use silence midpoints and retain the complete media tail", () => {
+  const segments = deriveSentenceSegmentsFromAsr({
+    asr: {
+      state: "verified",
+      exactNormalizedTranscript: true,
+      durationSeconds: 5,
+      expectedText: "One clear sentence. Then another one.",
+      words: [
+        { word: "One", start: 0.2, end: 0.5 },
+        { word: "clear", start: 0.5, end: 0.8 },
+        { word: "sentence.", start: 0.8, end: 1.2 },
+        { word: "Then", start: 1.8, end: 2.1 },
+        { word: "another", start: 2.1, end: 2.5 },
+        { word: "one.", start: 2.5, end: 3.1 },
+      ],
+    },
+    sentences: ["One clear sentence.", "Then another one."],
+    ids: ["first", "second"],
+  });
+  assert.deepEqual(segments.map(({ id, startSeconds, endSeconds, durationSeconds }) => ({ id, startSeconds, endSeconds, durationSeconds })), [
+    { id: "first", startSeconds: 0, endSeconds: 1.5, durationSeconds: 1.5 },
+    { id: "second", startSeconds: 1.5, endSeconds: 5, durationSeconds: 3.5 },
+  ]);
+  assert.equal(segments[0].boundaryMethod, "midpoint-between-adjacent-sentence-word-timestamps");
+  assert.equal(segments[1].boundaryMethod, "verified-media-duration");
 });
