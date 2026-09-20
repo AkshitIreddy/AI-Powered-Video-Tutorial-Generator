@@ -103,11 +103,33 @@ try {
     New-Item -ItemType Directory -Path $PresenterPlanModels -Force | Out-Null
     $PresenterPlanOutput = Join-Path $WorkRoot "presenter-plan.stdout.json"
     $PresenterPlanError = Join-Path $WorkRoot "presenter-plan.stderr.txt"
-    $PresenterPlan = Start-Process -FilePath $BuiltExecutable -ArgumentList @(
-        "presenter-runtime", "plan", "--models-root", $PresenterPlanModels
-    ) -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $PresenterPlanOutput -RedirectStandardError $PresenterPlanError
+    # Start-Process flattens ArgumentList into one command line. Quote the
+    # generated path explicitly because the default build root contains spaces.
+    $PresenterPlanArguments = 'presenter-runtime plan --models-root "{0}"' -f `
+        $PresenterPlanModels.Replace('"', '\"')
+    $PresenterPlan = Start-Process -FilePath $BuiltExecutable -ArgumentList $PresenterPlanArguments `
+        -Wait -PassThru -WindowStyle Hidden `
+        -RedirectStandardOutput $PresenterPlanOutput -RedirectStandardError $PresenterPlanError
     if ($PresenterPlan.ExitCode -ne 0) {
-        throw "Packaged SoulX installer resources failed validation."
+        $PresenterPlanStdout = if (Test-Path -LiteralPath $PresenterPlanOutput -PathType Leaf) {
+            Get-Content -LiteralPath $PresenterPlanOutput -Raw
+        }
+        else {
+            "<stdout was not captured>"
+        }
+        $PresenterPlanStderr = if (Test-Path -LiteralPath $PresenterPlanError -PathType Leaf) {
+            Get-Content -LiteralPath $PresenterPlanError -Raw
+        }
+        else {
+            "<stderr was not captured>"
+        }
+        throw @"
+Packaged SoulX installer resources failed validation (exit $($PresenterPlan.ExitCode)).
+stdout:
+$PresenterPlanStdout
+stderr:
+$PresenterPlanStderr
+"@
     }
 
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
