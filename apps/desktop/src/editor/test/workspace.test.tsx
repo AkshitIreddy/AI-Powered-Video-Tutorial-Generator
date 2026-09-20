@@ -166,11 +166,14 @@ describe("editor workspace redesign", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
-  it("compacts empty tracks and hides them only on request without deleting data", async () => {
+  it("hides unused tracks by default and restores them without deleting data", async () => {
     const user = userEvent.setup();
     const project = createEmptyEditorProject({ id: "empty-tracks", name: "Empty tracks", now: "2026-09-05T00:00:00Z" });
     project.durationFrames = 60;
     render(<AdvancedVideoEditor project={project} />);
+    expect(screen.queryByRole("group", { name: "Slides track" })).not.toBeInTheDocument();
+    expect(screen.getByText(/7 empty tracks hidden/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show empty tracks" }));
     for (const track of ["Slides", "Presenter", "Titles", "Captions", "Narration", "Music", "Sound effects"]) {
       expect(screen.getByRole("group", { name: `${track} track` })).toBeInTheDocument();
     }

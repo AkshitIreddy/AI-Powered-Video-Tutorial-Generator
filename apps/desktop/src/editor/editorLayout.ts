@@ -11,7 +11,7 @@ export const EDITOR_LAYOUT_DEFAULTS: EditorLayoutPrefs = {
   timelineHeight: 296,
   dockCollapsed: false,
   timelineCollapsed: false,
-  hideEmptyTracks: false,
+  hideEmptyTracks: true,
 };
 
 export const EDITOR_DOCK_MIN = 248;
@@ -61,7 +61,7 @@ export function loadEditorLayout(): EditorLayoutPrefs {
       timelineHeight: clampTimelineHeight(asNumber(parsed.timelineHeight, EDITOR_LAYOUT_DEFAULTS.timelineHeight)),
       dockCollapsed: parsed.dockCollapsed === true,
       timelineCollapsed: parsed.timelineCollapsed === true,
-      hideEmptyTracks: parsed.hideEmptyTracks === true,
+      hideEmptyTracks: typeof parsed.hideEmptyTracks === "boolean" ? parsed.hideEmptyTracks : defaults.hideEmptyTracks,
     };
   } catch {
     return defaults;

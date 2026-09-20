@@ -60,7 +60,7 @@ test.describe("editor workspace redesign", () => {
     await expect(page.getByRole("heading", { name: "One multiplication disappears" })).toBeVisible();
     await page.locator(".aly-editor-dock").screenshot({ path: `${output}-inspector.png` });
 
-    await page.getByRole("button", { name: "Hide empty tracks" }).click();
+    await expect(page.getByRole("button", { name: "Hide empty tracks" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByText(/empty tracks? hidden/)).toBeVisible();
     await page.locator(".aly-editor-timeline").screenshot({ path: `${output}-empty-hidden.png` });
     await page.getByRole("button", { name: "Show empty tracks", exact: true }).click();
