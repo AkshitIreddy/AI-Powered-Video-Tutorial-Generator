@@ -67,19 +67,19 @@ describe("casual presenter catalog", () => {
     const yukiReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-anime-yuki-v1")?.lipSync;
     expect(yukiReview?.preferredEngineId).toBe("joyvasa-human");
     expect(yukiReview?.qualifications).toEqual(expect.arrayContaining([
-      expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/root and independent.+realistic lip patch.+anime linework/i) }),
+      expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/dense visual review.+realistic lip patch.+anime linework/i) }),
       expect.objectContaining({ engineId: "joyvasa-human", outcome: "reviewed-compatible", notes: expect.stringMatching(/held-out.+coherent illustrated mouth.+1\.47.+2\.58-second silence/i) }),
     ]));
     const lenaReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-anime-lena-v1")?.lipSync;
     expect(lenaReview?.preferredEngineId).toBe("joyvasa-human");
     expect(lenaReview?.qualifications).toEqual(expect.arrayContaining([
-      expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/root and independent.+lip-and-teeth patch.+hand-painted anime style/i) }),
+      expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/dense visual review.+lip-and-teeth patch.+hand-painted anime style/i) }),
       expect.objectContaining({ engineId: "joyvasa-human", outcome: "reviewed-compatible", notes: expect.stringMatching(/held-out.+coherent painted mouth.+1\.47.+2\.58-second silence/i) }),
     ]));
     const chloeReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-cartoon-chloe-v1")?.lipSync;
     expect(chloeReview?.preferredEngineId).toBe("joyvasa-human");
     expect(chloeReview?.qualifications).toEqual(expect.arrayContaining([
-      expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/owner rejected.+lips.+distorted/i) }),
+      expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/dense visual review.+lips.+distorted/i) }),
       expect.objectContaining({ engineId: "joyvasa-human", outcome: "reviewed-compatible", notes: expect.stringMatching(/held-out.+mouth corners coherent.+silence/i) }),
     ]));
     expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.styleGroup === "Animal").every((entry) => (
