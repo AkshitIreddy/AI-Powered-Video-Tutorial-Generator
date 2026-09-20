@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Shorter wavelengths scatter more strongly</title>
+  <desc id="desc">A white sunlight beam enters air molecules. Blue light scatters in several directions while more red light continues forward.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8F8F3"/>
+      <stop offset="1" stop-color="#E8F1F6"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#1A2940" flood-opacity=".14"/>
+    </filter>
+    <marker id="arrow-blue" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#3E70D1"/></marker>
+    <marker id="arrow-red" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#C74E54"/></marker>
+    <marker id="arrow-white" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#FFFFFF"/></marker>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#sky)"/>
+  <rect x="78" y="70" width="1764" height="888" rx="44" fill="#FFFFFF" opacity=".72" stroke="#D7DFE9" stroke-width="2"/>
+  <text x="126" y="142" fill="#168F88" font-family="Arial, sans-serif" font-size="25" font-weight="700" letter-spacing="5">RAYLEIGH SCATTERING</text>
+  <text x="126" y="226" fill="#151827" font-family="Arial, sans-serif" font-size="66" font-weight="800">Tiny molecules redirect blue light</text>
+  <text x="126" y="294" fill="#151827" font-family="Arial, sans-serif" font-size="66" font-weight="800">more strongly than red light.</text>
+  <g transform="translate(118 566)">
+    <g filter="url(#shadow)">
+      <circle cx="86" cy="0" r="72" fill="#F2BD50"/>
+      <circle cx="68" cy="-20" r="24" fill="#FFF2B5" opacity=".75"/>
+    </g>
+    <path d="M170-56H780V56H170Z" fill="#FFFFFF" opacity=".96"/>
+    <path d="M212 0H748" stroke="#FFFFFF" stroke-width="18" marker-end="url(#arrow-white)"/>
+    <text x="420" y="-88" text-anchor="middle" fill="#566078" font-family="Arial, sans-serif" font-size="24" font-weight="700">WHITE SUNLIGHT</text>
+    <g transform="translate(810 0)" filter="url(#shadow)">
+      <circle r="48" fill="#C8D9D9" stroke="#168F88" stroke-width="6"/>
+      <circle cx="-17" cy="-10" r="8" fill="#F8FBFB"/><circle cx="16" cy="12" r="7" fill="#F8FBFB"/>
+    </g>
+    <g fill="#B8CACC" stroke="#168F88" stroke-width="3">
+      <circle cx="930" cy="-164" r="26"/><circle cx="1044" cy="138" r="22"/><circle cx="1160" cy="-102" r="28"/>
+      <circle cx="1272" cy="114" r="24"/><circle cx="1390" cy="-148" r="22"/><circle cx="1502" cy="92" r="27"/>
+    </g>
+    <g fill="none" stroke="#3E70D1" stroke-width="16" stroke-linecap="round" marker-end="url(#arrow-blue)">
+      <path d="M842-18C980-70 1020-176 1068-248"/>
+      <path d="M844 0C990 18 1094 24 1218 0"/>
+      <path d="M840 20C982 78 1044 184 1090 258"/>
+      <path d="M824-38C782-168 744-242 690-304"/>
+    </g>
+    <path d="M852 26C1034 50 1208 54 1370 50" fill="none" stroke="#C74E54" stroke-width="18" stroke-linecap="round" marker-end="url(#arrow-red)"/>
+    <rect x="956" y="-276" width="410" height="60" rx="30" fill="#EAF0FF"/>
+    <text x="1161" y="-236" text-anchor="middle" fill="#245FAF" font-family="Arial, sans-serif" font-size="25" font-weight="800">BLUE SCATTERS OUTWARD</text>
+    <rect x="964" y="124" width="468" height="60" rx="30" fill="#FBEDEF"/>
+    <text x="1198" y="164" text-anchor="middle" fill="#A43B45" font-family="Arial, sans-serif" font-size="25" font-weight="800">RED CONTINUES FORWARD</text>
+  </g>
+  <rect x="126" y="884" width="1668" height="2" fill="#CBD3DE"/>
+  <text x="126" y="934" fill="#566078" font-family="Arial, sans-serif" font-size="25">Scattering strength rises sharply as wavelength gets shorter — it is a difference in degree, not an on/off switch.</text>
+</svg>

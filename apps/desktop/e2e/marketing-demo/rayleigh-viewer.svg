@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Scattered blue light reaches the viewer from every direction</title>
+  <desc id="desc">Blue paths curve from different parts of the atmosphere toward a viewer, explaining why the whole daytime sky appears blue.</desc>
+  <defs>
+    <linearGradient id="atmosphere" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#DCEEFF"/>
+      <stop offset="0.58" stop-color="#B8D8F3"/>
+      <stop offset="1" stop-color="#F7F4EA"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#C8DDD2"/>
+      <stop offset="1" stop-color="#AFCBC4"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#3E70D1"/></marker>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#14243D" flood-opacity=".16"/></filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#atmosphere)"/>
+  <circle cx="286" cy="390" r="82" fill="#F3C45D"/>
+  <circle cx="262" cy="366" r="24" fill="#FFF5C2" opacity=".72"/>
+  <path d="M0 862 C360 758 642 890 948 820 C1270 748 1540 806 1920 730 V1080 H0Z" fill="url(#ground)"/>
+  <text x="104" y="104" fill="#245FAF" font-family="Arial, sans-serif" font-size="25" font-weight="700" letter-spacing="5">WHAT YOUR EYES RECEIVE</text>
+  <text x="104" y="184" fill="#151827" font-family="Arial, sans-serif" font-size="64" font-weight="800">Scattered blue arrives</text>
+  <text x="104" y="254" fill="#151827" font-family="Arial, sans-serif" font-size="64" font-weight="800">from across the sky.</text>
+  <g fill="#FFFFFF" stroke="#168F88" stroke-width="3" opacity=".88">
+    <circle cx="630" cy="350" r="20"/><circle cx="860" cy="244" r="17"/><circle cx="1070" cy="386" r="21"/><circle cx="1320" cy="250" r="19"/>
+    <circle cx="650" cy="590" r="18"/><circle cx="930" cy="540" r="20"/><circle cx="1190" cy="620" r="17"/><circle cx="1430" cy="500" r="22"/>
+  </g>
+  <g fill="none" stroke="#3E70D1" stroke-width="15" stroke-linecap="round" marker-end="url(#arrow)" opacity=".9">
+    <path d="M648 358C850 388 1040 504 1268 686"/>
+    <path d="M878 256C1040 342 1156 490 1274 684"/>
+    <path d="M1086 398C1170 466 1222 558 1278 690"/>
+    <path d="M672 592C894 590 1084 624 1270 698"/>
+    <path d="M950 548C1096 574 1190 622 1274 702"/>
+    <path d="M1208 622C1232 646 1254 674 1276 708"/>
+  </g>
+  <g transform="translate(1320 724)" filter="url(#shadow)">
+    <circle cx="0" cy="0" r="94" fill="#FFFFFF" stroke="#151827" stroke-width="7"/>
+    <path d="M-57 0C-20-47 25-47 60 0C24 47-20 47-57 0Z" fill="#F7F8FC" stroke="#151827" stroke-width="7"/>
+    <circle cx="3" cy="0" r="22" fill="#3E70D1"/><circle cx="3" cy="0" r="9" fill="#151827"/>
+  </g>
+  <rect x="112" y="910" width="1170" height="100" rx="24" fill="#151827" opacity=".92"/>
+  <text x="154" y="972" fill="#FBFAF5" font-family="Arial, sans-serif" font-size="30" font-weight="700">The whole dome looks blue because many scattered paths reach you at once.</text>
+  <text x="1320" y="894" text-anchor="middle" fill="#245FAF" font-family="Arial, sans-serif" font-size="24" font-weight="800">YOUR EYE</text>
+</svg>

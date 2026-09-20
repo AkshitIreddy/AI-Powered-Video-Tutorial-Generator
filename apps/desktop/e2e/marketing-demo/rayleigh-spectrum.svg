@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Sunlight contains the visible spectrum</title>
+  <desc id="desc">A warm sun sends a white beam through a glass prism, separating into restrained bands from red to violet.</desc>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F9F7F0"/>
+      <stop offset="1" stop-color="#EEF2F8"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FFF7C8"/>
+      <stop offset="0.7" stop-color="#F5C765"/>
+      <stop offset="1" stop-color="#DF922E"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#15223A" flood-opacity=".12"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#paper)"/>
+  <path d="M0 864 C430 742 752 970 1165 846 C1450 760 1700 760 1920 826 V1080 H0Z" fill="#DDE9E8"/>
+  <circle cx="1570" cy="186" r="320" fill="#5658E8" opacity=".055"/>
+  <text x="112" y="104" fill="#168F88" font-family="Arial, sans-serif" font-size="25" font-weight="700" letter-spacing="5">LIGHT · FIRST PRINCIPLE</text>
+  <text x="112" y="188" fill="#151827" font-family="Arial, sans-serif" font-size="68" font-weight="800">White sunlight carries</text>
+  <text x="112" y="264" fill="#151827" font-family="Arial, sans-serif" font-size="68" font-weight="800">every visible color.</text>
+  <text x="116" y="319" fill="#566078" font-family="Arial, sans-serif" font-size="28">A prism reveals what our eyes usually see blended together.</text>
+  <g transform="translate(120 555)">
+    <g filter="url(#shadow)">
+      <circle cx="132" cy="0" r="94" fill="url(#sun)"/>
+      <g stroke="#DF922E" stroke-width="9" stroke-linecap="round">
+        <path d="M132-130V-170"/><path d="M132 130V170"/><path d="M2 0H-38"/><path d="M262 0H302"/>
+        <path d="M40-92L12-120"/><path d="M224 92L252 120"/><path d="M224-92L252-120"/><path d="M40 92L12 120"/>
+      </g>
+    </g>
+    <path d="M226-24 L690-55 L690 55 L226 24Z" fill="#FFFFFF" opacity=".96"/>
+    <path d="M720-154 L864 0 L720 154 Z" fill="#FFFFFF" fill-opacity=".54" stroke="#8493A8" stroke-width="4"/>
+    <g fill="none" stroke-width="20" stroke-linecap="round">
+      <path d="M852-10 L1214-142" stroke="#C74E54"/>
+      <path d="M856-4 L1244-90" stroke="#E38734"/>
+      <path d="M858 3 L1260-32" stroke="#E6BE3F"/>
+      <path d="M856 10 L1260 32" stroke="#46A66C"/>
+      <path d="M852 17 L1244 90" stroke="#397EC5"/>
+      <path d="M846 24 L1214 142" stroke="#6656B8"/>
+    </g>
+    <rect x="948" y="220" width="468" height="72" rx="36" fill="#151827"/>
+    <text x="1182" y="267" text-anchor="middle" fill="#FBFAF5" font-family="Arial, sans-serif" font-size="25" font-weight="700">ONE BEAM · MANY COLORS</text>
+  </g>
+  <rect x="112" y="944" width="1696" height="2" fill="#BDC6D4"/>
+  <text x="112" y="1002" fill="#566078" font-family="Arial, sans-serif" font-size="24">Visible light spans longer red wavelengths to shorter blue and violet wavelengths.</text>
+</svg>
