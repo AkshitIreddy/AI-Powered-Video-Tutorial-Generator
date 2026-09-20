@@ -16,7 +16,10 @@ describe("casual presenter desktop library", () => {
       expect(CASUAL_PRESENTER_PERSONAS[presenter.id]).toMatchObject({
         styleGroup: presenter.styleGroup,
         focalPoint: presenter.focalPoint,
-        lipSync: { status: "pending-review" },
+        lipSync: {
+          preferredEngineId: presenter.lipSync.preferredEngineId,
+          qualifications: presenter.lipSync.qualifications,
+        },
       });
       expect(CASUAL_PRESENTER_ASSETS.find((asset) => asset.id === presenter.id)).toMatchObject({
         filename: presenter.filename,

@@ -5141,6 +5141,939 @@
       }
     },
     {
+      "id": "presenter-portrait.casual-realistic-emma-v1",
+      "kind": "presenter-portrait",
+      "name": "Emma · casual home-studio tutor",
+      "description": "Fictional synthetic adult tutor with a natural photographic style and an approachable home-studio presence.",
+      "tags": [
+        "presenter",
+        "casual",
+        "realistic",
+        "home-studio",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/casual-realistic-emma-v1.png",
+        "contentHash": "27ac749dc0b30c2676d327e2a14fd05f873aee401d4b97bdd684eaab7c42a7f7",
+        "byteSize": 2199229
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 reviewed-compatible."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic adult tutor with a natural photographic style and an approachable home-studio presence."
+      }
+    },
+    {
+      "id": "presenter-portrait.casual-anime-yuki-v1",
+      "kind": "presenter-portrait",
+      "name": "Yuki · casual anime coding tutor",
+      "description": "Fictional synthetic adult anime tutor with crisp contemporary linework and a bright home coding workspace.",
+      "tags": [
+        "presenter",
+        "casual",
+        "anime",
+        "coding",
+        "home-studio",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/casual-anime-yuki-v1.png",
+        "contentHash": "54f695769e64273cc3a6e7f12742df8b8bfb7b6e844f302daabbf270e6a3aebb",
+        "byteSize": 2037428
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 reviewed-compatible."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic adult anime tutor with crisp contemporary linework and a bright home coding workspace."
+      }
+    },
+    {
+      "id": "presenter-portrait.casual-realistic-noah-v1",
+      "kind": "presenter-portrait",
+      "name": "Noah · casual maker tutor",
+      "description": "Fictional synthetic adult maker and software tutor with a natural photographic style and relaxed workshop setting.",
+      "tags": [
+        "presenter",
+        "casual",
+        "realistic",
+        "maker",
+        "software",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/casual-realistic-noah-v1.png",
+        "contentHash": "6f83257ec713c8d0df42ebb1506b9be32735bec9934aa5c2e946e24cbed8c0bd",
+        "byteSize": 2218368
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 reviewed-compatible."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic adult maker and software tutor with a natural photographic style and relaxed workshop setting."
+      }
+    },
+    {
+      "id": "presenter-portrait.casual-cartoon-chloe-v1",
+      "kind": "presenter-portrait",
+      "name": "Chloe · cartoon science creator",
+      "description": "Fictional synthetic adult cartoon tutor with softly sculpted 3D styling and an energetic art-and-science room.",
+      "tags": [
+        "presenter",
+        "casual",
+        "cartoon",
+        "3d",
+        "science",
+        "art",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/casual-cartoon-chloe-v1.png",
+        "contentHash": "4afecb9e0141a3bcb933aca577222adfa7819fd3dc49a9b437f1b1bc0f3437ca",
+        "byteSize": 2202377
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 reviewed-compatible."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic adult cartoon tutor with softly sculpted 3D styling and an energetic art-and-science room."
+      }
+    },
+    {
+      "id": "presenter-portrait.casual-realistic-maya-v1",
+      "kind": "presenter-portrait",
+      "name": "Maya · casual science tutor",
+      "description": "Fictional synthetic adult science and creativity tutor with a natural photographic style and bright home study.",
+      "tags": [
+        "presenter",
+        "casual",
+        "realistic",
+        "science",
+        "creativity",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/casual-realistic-maya-v1.png",
+        "contentHash": "62ee0fd94a0e92114e000e89a6420e9ce0c7726e5b4b8ec2165c041f2252e79b",
+        "byteSize": 2325687
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 reviewed-compatible."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic adult science and creativity tutor with a natural photographic style and bright home study."
+      }
+    },
+    {
+      "id": "presenter-portrait.casual-anime-finn-v1",
+      "kind": "presenter-portrait",
+      "name": "Finn · retro anime maker tutor",
+      "description": "Fictional synthetic adult engineering tutor in a distinctive retro cel-anime workshop.",
+      "tags": [
+        "presenter",
+        "casual",
+        "anime",
+        "retro",
+        "engineering",
+        "maker",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/casual-anime-finn-v1.png",
+        "contentHash": "98ff859669a316dcbf2f1b8edd30941b355ee244308a3b755ffd51e4630a8494",
+        "byteSize": 1850287
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-human pending-review."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic adult engineering tutor in a distinctive retro cel-anime workshop."
+      }
+    },
+    {
+      "id": "presenter-portrait.casual-anime-lena-v1",
+      "kind": "presenter-portrait",
+      "name": "Lena · hand-painted anime nature tutor",
+      "description": "Fictional synthetic adult natural-science tutor in a warm hand-painted anime conservatory.",
+      "tags": [
+        "presenter",
+        "casual",
+        "anime",
+        "hand-painted",
+        "nature",
+        "science",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/casual-anime-lena-v1.png",
+        "contentHash": "280c530e69c08737698c0fff8b0a582ac76fb9799cf0ad6a780d540c68f667f1",
+        "byteSize": 2445372
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 reviewed-compatible."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic adult natural-science tutor in a warm hand-painted anime conservatory."
+      }
+    },
+    {
+      "id": "presenter-portrait.casual-cartoon-robot-pip-v1",
+      "kind": "presenter-portrait",
+      "name": "Pip · cartoon robot tutor",
+      "description": "Original fictional robot teaching assistant with a rounded 3D cartoon design and a cheerful electronics desk.",
+      "tags": [
+        "presenter",
+        "casual",
+        "cartoon",
+        "robot",
+        "character",
+        "maker",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/casual-cartoon-robot-pip-v1.png",
+        "contentHash": "b0163d6e3250d345c97e1c261fa3ff69cf0dcab70f248cad27a06dfe5e818d29",
+        "byteSize": 2082833
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Original fictional robot teaching assistant with a rounded 3D cartoon design and a cheerful electronics desk."
+      }
+    },
+    {
+      "id": "presenter-portrait.animal-cat-milo-v1",
+      "kind": "presenter-portrait",
+      "name": "Milo · cat science tutor",
+      "description": "Original fictional orange tabby tutor with polished animated styling and a cozy reading-and-science nook.",
+      "tags": [
+        "presenter",
+        "animal",
+        "cat",
+        "3d",
+        "science",
+        "reading",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/animal-cat-milo-v1.png",
+        "contentHash": "f47095f9b54b54d53fecfa49a93241544869aa359d8ce3273b38a8575965bafd",
+        "byteSize": 2502495
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Original fictional orange tabby tutor with polished animated styling and a cozy reading-and-science nook."
+      }
+    },
+    {
+      "id": "presenter-portrait.animal-kitten-peaches-v1",
+      "kind": "presenter-portrait",
+      "name": "Peaches · clay kitten tutor",
+      "description": "Original fictional kitten teaching mascot with a soft clay style and a pastel craft classroom.",
+      "tags": [
+        "presenter",
+        "animal",
+        "kitten",
+        "clay",
+        "craft",
+        "young-learners",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/animal-kitten-peaches-v1.png",
+        "contentHash": "6cb3c5727c422ac6e717f64c8c345abb757f65c5399555e5c0058f7db3524ab1",
+        "byteSize": 2223881
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Original fictional kitten teaching mascot with a soft clay style and a pastel craft classroom."
+      }
+    },
+    {
+      "id": "presenter-portrait.animal-dog-buddy-v1",
+      "kind": "presenter-portrait",
+      "name": "Buddy · dog workshop tutor",
+      "description": "Original fictional golden retriever tutor with polished animated styling and a sunny practical-learning corner.",
+      "tags": [
+        "presenter",
+        "animal",
+        "dog",
+        "3d",
+        "workshop",
+        "practical",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/animal-dog-buddy-v1.png",
+        "contentHash": "68fa5cd79ebb50e9b0a5b00d2c28d2d636bee695f0b579f1a36afaa62aa25062",
+        "byteSize": 2368887
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Original fictional golden retriever tutor with polished animated styling and a sunny practical-learning corner."
+      }
+    },
+    {
+      "id": "presenter-portrait.animal-puppy-poppy-v1",
+      "kind": "presenter-portrait",
+      "name": "Poppy · storybook puppy tutor",
+      "description": "Original fictional corgi puppy teaching mascot in a warm hand-painted storybook classroom.",
+      "tags": [
+        "presenter",
+        "animal",
+        "puppy",
+        "storybook",
+        "craft",
+        "young-learners",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/animal-puppy-poppy-v1.png",
+        "contentHash": "704dce7be0612822ff0dc10ebfce8627cd808e63a0b3e158fa070fe19f8d633a",
+        "byteSize": 2495845
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Original fictional corgi puppy teaching mascot in a warm hand-painted storybook classroom."
+      }
+    },
+    {
+      "id": "presenter-portrait.animal-tiger-tavi-v1",
+      "kind": "presenter-portrait",
+      "name": "Tavi · tiger science tutor",
+      "description": "Original fictional tiger tutor with polished 3D styling and a warm natural-science study.",
+      "tags": [
+        "presenter",
+        "animal",
+        "tiger",
+        "3d",
+        "science",
+        "nature",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/animal-tiger-tavi-v1.png",
+        "contentHash": "e8fb1f4d917377a68d379ffd734463f97b20ef2238b7f9d32fff389c86000ae5",
+        "byteSize": 2523155
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Original fictional tiger tutor with polished 3D styling and a warm natural-science study."
+      }
+    },
+    {
+      "id": "presenter-portrait.animal-lion-leo-v1",
+      "kind": "presenter-portrait",
+      "name": "Leo · clay lion tutor",
+      "description": "Original fictional lion tutor with a tactile clay style and a softly simplified library study.",
+      "tags": [
+        "presenter",
+        "animal",
+        "lion",
+        "clay",
+        "library",
+        "humanities",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/animal-lion-leo-v1.png",
+        "contentHash": "7694fb148894a41dcf4df55182bd803946a3d18f9a7a81daaf3cb3987411894e",
+        "byteSize": 2452101
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Original fictional lion tutor with a tactile clay style and a softly simplified library study."
+      }
+    },
+    {
       "id": "lower-third.precision",
       "kind": "lower-third",
       "name": "Precision Label",

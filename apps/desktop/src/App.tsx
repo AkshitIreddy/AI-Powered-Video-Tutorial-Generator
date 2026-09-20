@@ -162,6 +162,7 @@ import {
   jobStatus,
   localModelSetupGet,
   localModelSetupSave,
+  loadLocalPresenterRuntimeStatus,
   masterExport,
   projectCreate,
   projectAssetImport,
@@ -192,6 +193,7 @@ import {
   type GroundingMode,
   type JobReceipt,
   type LocalModelSetup,
+  type LocalPresenterPortraitRuntimeStatus,
   type MasterExportRequest,
   type ModelProfile,
   type ProjectAssetImportReceipt,
@@ -241,9 +243,14 @@ import {
 import { BundledAssetLibrary } from "./BundledAssetLibrary";
 import { LEGACY_PRESENTER_STYLE_GROUPS, presenterCollection } from "./presenterCollection";
 import { PresenterPicker, type PresenterStyleGroup } from "./PresenterPicker";
+import {
+  presenterLipSyncEngineForRouteModel,
+  presenterSelectionAnimationIssues,
+  type PresenterLipSyncRuntimeContext,
+} from "./presenterCapabilities";
 import { NEW_PRESENTER_ASSETS, NEW_PRESENTER_PERSONAS } from "./presenterLibrary";
 import { CASUAL_PRESENTER_ASSETS, CASUAL_PRESENTER_PERSONAS } from "./casualPresenterLibrary";
-import { BUILT_IN_STARTER_KIT } from "@alystria/themes";
+import { BUILT_IN_STARTER_KIT, type CasualPresenterLipSyncReview } from "@alystria/themes";
 import { watchRuntimeBootstrap } from "./runtimeBootstrap";
 import { bundledAssets, importBundledAsset, type BundledAsset } from "./bundledAssets";
 import {
@@ -583,6 +590,7 @@ interface PresenterPersona {
   readonly styleGroup?: PresenterStyleGroup;
   readonly filterTags?: readonly string[];
   readonly featuredRank?: number;
+  readonly lipSync?: CasualPresenterLipSyncReview;
 }
 
 const STARTER_PRESENTER_PREVIEWS: Record<string, PresenterPersona> = {
@@ -632,11 +640,50 @@ const PRESENTER_CHOICES = DEFAULT_CANVAS_CUSTOMIZATION.assets
       style: persona.style ?? asset.label.split(" · ")[1] ?? "Presenter",
       styleGroup: persona.styleGroup ?? LEGACY_PRESENTER_STYLE_GROUPS[asset.id as keyof typeof LEGACY_PRESENTER_STYLE_GROUPS] ?? "Other",
       filterTags: persona.filterTags ?? [],
+      ...(asset.sha256 ? { portraitArtifactHash: asset.sha256 } : {}),
       ...(persona.featuredRank === undefined ? {} : { featuredRank: persona.featuredRank }),
       ...(persona.background ? { background: persona.background } : {}),
+      ...(persona.lipSync ? { lipSync: persona.lipSync } : {}),
     }] : [];
   })
   .sort((left, right) => (left.featuredRank ?? Number.MAX_SAFE_INTEGER) - (right.featuredRank ?? Number.MAX_SAFE_INTEGER));
+
+function presenterRuntimeContext(
+  modelId: string | null | undefined,
+  statuses: readonly LocalPresenterPortraitRuntimeStatus[],
+  statusLoaded: boolean,
+): PresenterLipSyncRuntimeContext {
+  return {
+    activeEngineId: presenterLipSyncEngineForRouteModel(modelId),
+    portraitStatuses: statuses,
+    statusLoaded,
+  };
+}
+
+function usePresenterRuntimeStatuses(): { statuses: readonly LocalPresenterPortraitRuntimeStatus[]; loaded: boolean } {
+  const [statuses, setStatuses] = useState<LocalPresenterPortraitRuntimeStatus[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void loadLocalPresenterRuntimeStatus()
+      .then((next) => { if (active) setStatuses(Array.isArray(next) ? next : []); })
+      .catch(() => { if (active) setStatuses([]); })
+      .finally(() => { if (active) setLoaded(true); });
+    return () => { active = false; };
+  }, []);
+  return { statuses, loaded };
+}
+
+function projectLipSyncRouteModel(policy: unknown): string | null {
+  if (!policy || typeof policy !== "object" || !("routes" in policy) || !Array.isArray(policy.routes)) return null;
+  const route = policy.routes.find((entry: unknown) => (
+    entry !== null
+    && typeof entry === "object"
+    && "capability" in entry
+    && entry.capability === "lipsync.generate"
+  ));
+  return route && typeof route === "object" && "model" in route && typeof route.model === "string" ? route.model : null;
+}
 
 function presenterVoiceMatch(assetId: string | null, label?: string): Pick<CanvasCustomization["presenter"], "voiceDirection" | "preferredVoiceId"> {
   const persona = assetId ? STARTER_PRESENTER_PREVIEWS[assetId] : undefined;
@@ -2777,6 +2824,8 @@ function ProjectHeader({ project, step, title, description, action }: { project:
 
 function PlanWorkspace({ project, onNotify, onApproveGeneration, approvalPending, onImportSources, onSceneUpdate, onUndo, onRedo, onProjectEdit }: ProjectWorkspaceProps) {
   const [tab, setTab] = useState("Learning plan");
+  const presenterRuntimeStatus = usePresenterRuntimeStatuses();
+  const presenterRuntime = presenterRuntimeContext(projectLipSyncRouteModel(project.providerRoutingPolicy), presenterRuntimeStatus.statuses, presenterRuntimeStatus.loaded);
   const objectiveScenes = project.scenes.filter((scene) => scene.objective.trim());
   const reviewedSources = project.sources.filter((source) => source.status === "verified").length;
   return <div className="page project-page plan-workspace">
@@ -2787,7 +2836,7 @@ function PlanWorkspace({ project, onNotify, onApproveGeneration, approvalPending
       {tab === "Learning plan" ? <><div className="learner-strip"><div><UserRoundCheck size={18} /><span><small>Learner</small><strong>{project.audience}</strong></span></div><div><Clock3 size={18} /><span><small>Target</small><strong>{project.duration} minutes</strong></span></div><div><Languages size={18} /><span><small>Language</small><strong>{project.locale}</strong></span></div></div>
         <div className="objective-section"><div className="section-number"><BookOpen size={22} /></div><div><span className="section-kicker">Scene learning objectives</span><div className="objective-list">{objectiveScenes.map((scene) => <div key={scene.id}><span>{scene.index}</span><label className="objective-edit"><small>{scene.title}</small><textarea aria-label={`Objective for ${scene.title}`} rows={2} value={scene.objective} onChange={(event) => onSceneUpdate(scene.id, { objective: event.target.value })} /></label></div>)}</div>{!objectiveScenes.length && <p>Add a scene objective in Studio to begin the learning plan.</p>}</div></div>
         <div className="learning-sequence"><span className="section-kicker">The teaching sequence</span>{project.scenes.map((scene) => <div key={scene.id}><span>{String(scene.index).padStart(2, "0")}</span><strong>{scene.title}</strong><small>{formatTime(scene.duration)}</small></div>)}</div>
-      </> : tab === "Presenters" ? <div className="plan-presenters"><PresenterPicker choices={PRESENTER_CHOICES} value={projectPresenterSelection(project)} onChange={(selection) => onProjectEdit({ presenterSelection: selection, customization: presenterCustomizationForSelection(project, selection) })} /><SceneSpeakerAssignments project={project} onChange={(selection) => onProjectEdit({ presenterSelection: selection })} /></div> : tab === "Brief" ? <div className="brief-document"><span className="section-kicker">The question</span><h3>{project.topic}</h3><p>{project.description}</p><dl><div><dt>Who is learning?</dt><dd>{project.audience}</dd></div><div><dt>Available time</dt><dd>{project.duration} minutes</dd></div><div><dt>Language</dt><dd>{project.locale}</dd></div></dl><p>Review and edit the scene objectives and script before approving this plan.</p></div> : tab === "Sources" || tab === "Research" ? <SourceEvidence project={project} research={tab === "Research"} onImportSources={onImportSources} onNotify={onNotify} /> : <ScriptEditor project={project} onNotify={onNotify} onSceneUpdate={onSceneUpdate} onUndo={onUndo} onRedo={onRedo} />}
+      </> : tab === "Presenters" ? <div className="plan-presenters"><PresenterPicker choices={PRESENTER_CHOICES} value={projectPresenterSelection(project)} runtime={presenterRuntime} onChange={(selection) => onProjectEdit({ presenterSelection: selection, customization: presenterCustomizationForSelection(project, selection) })} /><SceneSpeakerAssignments project={project} onChange={(selection) => onProjectEdit({ presenterSelection: selection })} /></div> : tab === "Brief" ? <div className="brief-document"><span className="section-kicker">The question</span><h3>{project.topic}</h3><p>{project.description}</p><dl><div><dt>Who is learning?</dt><dd>{project.audience}</dd></div><div><dt>Available time</dt><dd>{project.duration} minutes</dd></div><div><dt>Language</dt><dd>{project.locale}</dd></div></dl><p>Review and edit the scene objectives and script before approving this plan.</p></div> : tab === "Sources" || tab === "Research" ? <SourceEvidence project={project} research={tab === "Research"} onImportSources={onImportSources} onNotify={onNotify} /> : <ScriptEditor project={project} onNotify={onNotify} onSceneUpdate={onSceneUpdate} onUndo={onUndo} onRedo={onRedo} />}
     </section><aside className="plan-aside"><div className="grounding-card"><div className="grounding-head"><span><ShieldCheck size={17} /> Sources & support</span></div><p>Source review and claim support are separate. Review the rendered lesson before export.</p><div className="grounding-meter"><span><strong>{reviewedSources} / {project.sources.length}</strong><small>source records reviewed</small></span><ProgressBar value={project.sources.length ? reviewedSources / project.sources.length * 100 : 0} /></div><button className="text-button" onClick={() => setTab("Sources")}>Review sources <ArrowRight size={15} /></button></div><div className="teaching-note"><span className="section-kicker">A useful review question</span><h3>Could they explain it back?</h3><p>Give each scene one job. Show an example, let the learner predict the next step, then explain what changed.</p><button className="text-button" onClick={() => setTab("Script")}>Read the full script <ArrowRight size={15} /></button></div></aside></div>
   </div>;
 }
@@ -3535,6 +3584,7 @@ function createTemplateSceneScaffold(templateId: string, projectId: string, tota
 }
 
 function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { environment: RuntimeState["environment"]; templateId: string | null; onClose: () => void; onCreate: (project: ProjectRecord, settings: TutorialCreationSettings) => Promise<void> }) {
+  const presenterRuntimeStatus = usePresenterRuntimeStatuses();
   const [step, setStep] = useState(1);
   const [presenterSelection, setPresenterSelection] = useState<PresenterSelection>({ schemaVersion: 1, mode: "off", presenters: [], sceneAssignments: [] });
   const [topic, setTopic] = useState("");
@@ -3574,6 +3624,8 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
     return () => { active = false; };
   }, [environment]);
   const selectedProfile = setup?.profiles.find((profile) => profile.id === selectedProfileId) ?? setup?.profiles[0] ?? null;
+  const presenterRuntime = presenterRuntimeContext(selectedProfile?.routes.lipSync?.modelId, presenterRuntimeStatus.statuses, presenterRuntimeStatus.loaded);
+  const presenterAnimationIssues = presenterSelectionAnimationIssues(PRESENTER_CHOICES, presenterSelection, presenterRuntime);
   const usesCloudflare = selectedProfile
     ? Object.values(selectedProfile.routes).some((route) => route?.providerId === "cloudflare-workers-ai" && !/^(?:off|none|disabled)\b/i.test(route.modelId.trim()))
     : false;
@@ -3585,6 +3637,10 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
     providerAccountIds,
   }) : null;
   const create = async () => {
+    if (presenterAnimationIssues.length) {
+      setCreateError(presenterAnimationIssues[0]!);
+      return;
+    }
     if (!routingReview?.policy) {
       setCreateError(routingReview?.errors[0] ?? "Choose a ready provider profile before creating this tutorial.");
       return;
@@ -3632,7 +3688,7 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
       {step === 1 && <div className="wizard-template-selection"><img src={TEMPLATE_PREVIEWS[selectedTemplate.id]} alt="" /><span><small>Selected learning arc</small><strong>{selectedTemplate.name}</strong><em>{selectedTemplate.scenes} editable scenes · {selectedTemplate.category}</em></span></div>}
       {step === 1 && <div className="wizard-step"><span className="section-kicker">Start with the hard part</span><h2 id="wizard-title">What should become clear?</h2><p>Describe the idea, skill, or question in plain language. You can add documents and URLs after this step.</p><label className="large-input"><WandSparkles size={21} /><textarea autoFocus rows={4} placeholder="What would you like to teach? Describe your topic, question, or learning goal." value={topic} onChange={(event) => setTopic(event.target.value)} /></label><div className="source-drop"><Upload size={20} /><span><strong>Add source material</strong><small>{sourceFiles.length ? `${sourceFiles.length} selected · added before generation` : "PDF, DOCX, EPUB, Markdown, or text · 8 MiB each · optional"}</small></span><input ref={sourceInputRef} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => setSourceFiles(Array.from(event.target.files ?? []))} /><button onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? "Change files" : "Choose files"}</button></div>{sourceFiles.length > 0 && <div className="selected-source-list" aria-label="Selected source files">{sourceFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><FileCheck2 size={14} /> {file.name} <small>{formatBytes(file.size)}</small></span>)}</div>}</div>}
       {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>{PRODUCT_NAME} changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="1">About 1 minute (quick draft)</option><option value="3">About 3 minutes (inspection draft)</option><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="12">About 12 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option><option value="custom">Custom length…</option></select></label>{duration === "custom" && <label><span>Custom target in minutes</span><input aria-label="Custom target in minutes" type="number" min="1" max="180" step="1" inputMode="numeric" value={exactDuration} onChange={(event) => setExactDuration(event.target.value)} /><small>Choose 1 to 180 minutes. Final length follows the narration.</small></label>}<label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Tutorial method</span><select aria-label="Tutorial method" value={tutorialMode} onChange={(event) => setTutorialMode(event.target.value as TutorialMode)}>{Object.entries(TUTORIAL_MODE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>Board strokes and code edits are timed to narration and remain editable.</small></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>{TUTORIAL_MODE_LABELS[tutorialMode]} · {PRODUCT_NAME} will align every visual action to narration, preserve a static accessible alternative, and surface common misconceptions.</p></div></div></div>}
-      {step === 3 && <div className="wizard-step"><span className="section-kicker">Put a face to the lesson</span><h2>Who will teach?</h2><p>Choose one presenter, build a cast that takes turns, or keep the focus on your visuals.</p><PresenterPicker choices={PRESENTER_CHOICES} value={presenterSelection} onChange={setPresenterSelection} /></div>}
+      {step === 3 && <div className="wizard-step"><span className="section-kicker">Put a face to the lesson</span><h2>Who will teach?</h2><p>Choose one presenter, build a cast that takes turns, or keep the focus on your visuals.</p><PresenterPicker choices={PRESENTER_CHOICES} value={presenterSelection} runtime={presenterRuntime} onChange={setPresenterSelection} /></div>}
       {step === 4 && <div className="wizard-step"><span className="section-kicker">Shape the research</span><h2>How should {PRODUCT_NAME} research?</h2><p>Choose how strongly the lesson should depend on external evidence and citations.</p><div className="choice-cards">{([
         { name: "Creative", detail: "Use the prompt as the source of truth", icon: Sparkles }, { name: "Grounded", detail: "Connect verifiable claims to reliable evidence", icon: ShieldCheck }, { name: "Strict", detail: "Block every unsupported external claim", icon: Lock },
       ] satisfies Array<{ name: string; detail: string; icon: LucideIcon }>).map(({ name, detail, icon: Icon }) => <button key={name} className={grounding === name ? "active" : ""} onClick={() => setGrounding(name)}><span><Icon size={20} /></span><strong>{name}</strong><small>{detail}</small>{grounding === name && <CheckCircle2 size={17} />}</button>)}</div></div>}
@@ -3642,10 +3698,11 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
           <div className="routing-review-controls"><label><span>Creation profile</span><select aria-label="Creation profile" value={selectedProfile?.id ?? ""} disabled={routingLoading || !setup} onChange={(event) => setSelectedProfileId(event.target.value)}>{setup?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>{usesCloudflare && <label><span>Cloudflare Account ID</span><input aria-label="Cloudflare Account ID" autoComplete="off" value={providerAccountIds["cloudflare-workers-ai"] ?? ""} onChange={(event) => setProviderAccountIds((current) => ({ ...current, "cloudflare-workers-ai": event.target.value.trim() }))} /><small>Account setting required by Cloudflare Workers AI.</small></label>}</div>
           {routingReview?.routeRows.length ? <div className="routing-route-list" aria-label="Selected provider routes">{routingReview.routeRows.map((route) => <div key={`${route.medium}-${route.providerId}`}><span>{route.medium}</span><strong>{providerDisplayName(route.providerId)}</strong><code>{route.modelId}</code><em className={route.boundary}>{route.boundary}</em></div>)}</div> : <div className="routing-empty">Choose a saved profile with explicit writing, research, image, and narration models.</div>}
           {routingReview?.errors.length ? <div className="routing-errors" role="status">{routingReview.errors.map((error) => <span key={error}><CircleAlert size={13} /> {error}</span>)}</div> : null}
+          {presenterAnimationIssues.length ? <div className="routing-errors" role="alert">{presenterAnimationIssues.map((error) => <span key={error}><CircleAlert size={13} /> {error}</span>)}</div> : null}
         </section>
         {createError && <div className="create-error" role="alert"><CircleAlert size={17} /><span><strong>Project creation failed</strong><small>{createError}</small></span></div>}</div>}
     </div>
-    <footer><button className="secondary-button" disabled={creating} onClick={step === 1 ? onClose : () => setStep((value) => value - 1)}>{step === 1 ? "Cancel" : <><ArrowLeft size={15} /> Back</>}</button><span>Step {step} of 5</span>{step < 5 ? <button className="primary-button" disabled={(step === 1 && !topic.trim()) || (step === 3 && presenterSelection.mode !== "off" && presenterSelection.presenters.length === 0)} onClick={() => setStep((value) => value + 1)}>Continue <ArrowRight size={15} /></button> : <button className="primary-button" disabled={creating || !routingReview?.policy} onClick={() => { void create(); }}>{creating ? <RefreshCw className="spin" size={16} /> : <Sparkles size={16} />}{creating ? (sourceFiles.length ? "Importing sources…" : "Creating project…") : "Create learning plan"}</button>}</footer>
+    <footer><button className="secondary-button" disabled={creating} onClick={step === 1 ? onClose : () => setStep((value) => value - 1)}>{step === 1 ? "Cancel" : <><ArrowLeft size={15} /> Back</>}</button><span>Step {step} of 5</span>{step < 5 ? <button className="primary-button" disabled={(step === 1 && !topic.trim()) || (step === 3 && (presenterSelection.mode !== "off" && presenterSelection.presenters.length === 0 || presenterAnimationIssues.length > 0))} onClick={() => setStep((value) => value + 1)}>Continue <ArrowRight size={15} /></button> : <button className="primary-button" disabled={creating || !routingReview?.policy || presenterAnimationIssues.length > 0} onClick={() => { void create(); }}>{creating ? <RefreshCw className="spin" size={16} /> : <Sparkles size={16} />}{creating ? (sourceFiles.length ? "Importing sources…" : "Creating project…") : "Create learning plan"}</button>}</footer>
   </div></div>;
 }
 

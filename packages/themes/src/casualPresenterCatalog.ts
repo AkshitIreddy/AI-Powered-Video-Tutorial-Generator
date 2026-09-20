@@ -63,10 +63,33 @@ export const CASUAL_PRESENTER_IDS = Object.freeze(
   CASUAL_PRESENTER_PLANS.map((presenter) => presenter.id),
 );
 
-export type CasualPresenterLipSyncReview =
-  | { readonly status: "pending-review"; readonly notes: string }
-  | { readonly status: "compatible"; readonly notes: string }
-  | { readonly status: "incompatible"; readonly notes: string };
+export type CasualPresenterLipSyncEngineId =
+  | "liveportrait-musetalk-1.5"
+  | "joyvasa-human"
+  | "joyvasa-animal";
+
+export type CasualPresenterLipSyncOutcome =
+  | "reviewed-compatible"
+  | "pending-review"
+  | "incompatible";
+
+export interface CasualPresenterLipSyncQualification {
+  /** Exact model ID written to the local presenter worker receipt. */
+  readonly engineId: CasualPresenterLipSyncEngineId;
+  readonly displayName: string;
+  readonly outcome: CasualPresenterLipSyncOutcome;
+  readonly notes: string;
+}
+
+/**
+ * A static portrait can be ready while every animation route is unavailable.
+ * Qualification is deliberately per engine so a failed human-face model never
+ * becomes a broad claim that an anime, character, or animal portrait cannot move.
+ */
+export interface CasualPresenterLipSyncReview {
+  readonly preferredEngineId: CasualPresenterLipSyncEngineId;
+  readonly qualifications: readonly CasualPresenterLipSyncQualification[];
+}
 
 export interface VerifiedCasualPresenterDetails {
   readonly label: string;
@@ -125,8 +148,11 @@ function assertVerifiedDetails(plan: CasualPresenterPlan, details: VerifiedCasua
   if (details.fileExtension === "png" && details.mediaType !== "image/png" || details.fileExtension === "webp" && details.mediaType !== "image/webp") {
     throw new Error(`Casual presenter ${plan.id} has inconsistent extension and media type.`);
   }
-  if (!details.lipSync.notes.trim()) {
-    throw new Error(`Casual presenter ${plan.id} needs a recorded lip-sync review state.`);
+  if (!details.lipSync.qualifications.length
+    || new Set(details.lipSync.qualifications.map((entry) => entry.engineId)).size !== details.lipSync.qualifications.length
+    || !details.lipSync.qualifications.some((entry) => entry.engineId === details.lipSync.preferredEngineId)
+    || details.lipSync.qualifications.some((entry) => !entry.notes.trim())) {
+    throw new Error(`Casual presenter ${plan.id} needs unique, documented lip-sync qualifications including its preferred engine.`);
   }
 }
 
@@ -171,7 +197,7 @@ export function casualPresenterStarterAsset(presenter: VerifiedCasualPresenter):
       ingredientAssetIds: [],
       recordedAt: presenter.recordedAt,
       reviewStatus: "verified",
-      notes: `Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: ${presenter.promptRecordPath}. Lip-sync review: ${presenter.lipSync.status} — ${presenter.lipSync.notes}`,
+      notes: `Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: ${presenter.promptRecordPath}. Lip-sync qualifications: ${presenter.lipSync.qualifications.map((entry) => `${entry.engineId} ${entry.outcome}`).join(", ")}.`,
     },
     technical: {
       mediaType: presenter.mediaType,
@@ -208,14 +234,51 @@ function catalogPresenter(id: CasualPresenterId, details: CasualPresenterCatalog
     generationModel: "OpenAI image_gen (model not exposed)",
     promptRecordPath: "docs/assets/casual-presenter-prompts-2026-09-20.json",
     recordedAt: "2026-09-20T00:00:00.000Z",
-    lipSync: {
-      status: "pending-review",
-      notes: "Static portrait and closed-mouth framing verified; runtime lip-sync compatibility has not been accepted yet.",
-    },
+    lipSync: lipSyncReviewFor(plan),
   });
 }
 
-/** Verified static portraits. Lip-sync remains a separate pending capability on every entry. */
+const MUSETALK_REVIEWED_IDS = new Set<CasualPresenterId>([
+  "presenter-portrait.casual-realistic-emma-v1",
+  "presenter-portrait.casual-anime-yuki-v1",
+  "presenter-portrait.casual-realistic-noah-v1",
+  "presenter-portrait.casual-cartoon-chloe-v1",
+  "presenter-portrait.casual-realistic-maya-v1",
+  "presenter-portrait.casual-anime-lena-v1",
+]);
+
+function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncReview {
+  const museTalk: CasualPresenterLipSyncQualification = MUSETALK_REVIEWED_IDS.has(plan.id)
+    ? {
+      engineId: "liveportrait-musetalk-1.5",
+      displayName: "LivePortrait + MuseTalk 1.5",
+      outcome: "reviewed-compatible",
+      notes: "Identity, speech motion, and closed-mouth rest were visually accepted on a bounded 8.22-second reference clip on 2026-09-20. The runtime pack is still checked separately on each PC.",
+    }
+    : {
+      engineId: "liveportrait-musetalk-1.5",
+      displayName: "LivePortrait + MuseTalk 1.5",
+      outcome: "incompatible",
+      notes: plan.styleGroup === "Animal"
+        ? "The human-face MuseTalk route is not valid for this animal portrait. Use a separately reviewed animal route."
+        : plan.styleGroup === "Character"
+          ? "The human-face MuseTalk route did not produce a valid result for this character portrait."
+          : "The MuseTalk result replaced the portrait's illustrated mouth style, so this route was rejected.",
+    };
+  if (MUSETALK_REVIEWED_IDS.has(plan.id)) {
+    return { preferredEngineId: museTalk.engineId, qualifications: [museTalk] };
+  }
+  const usesAnimalRoute = plan.styleGroup === "Animal" || plan.id === "presenter-portrait.casual-cartoon-robot-pip-v1";
+  const joyVasa: CasualPresenterLipSyncQualification = {
+    engineId: usesAnimalRoute ? "joyvasa-animal" : "joyvasa-human",
+    displayName: usesAnimalRoute ? "JoyVASA animal and character route" : "JoyVASA illustrated-human route",
+    outcome: "pending-review",
+    notes: "A pinned local route is under bounded visual review. It is not offered as compatible until exact artifacts and rest-mouth behavior are accepted.",
+  };
+  return { preferredEngineId: joyVasa.engineId, qualifications: [museTalk, joyVasa] };
+}
+
+/** Verified static portraits with engine-specific, independently truthful lip-sync qualifications. */
 export const CASUAL_PRESENTER_CATALOG = Object.freeze([
   catalogPresenter("presenter-portrait.casual-realistic-emma-v1", {
     label: "Emma · casual home-studio tutor",

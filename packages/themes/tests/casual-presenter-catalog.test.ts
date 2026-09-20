@@ -33,7 +33,15 @@ function verifiedDetails() {
     generationModel: "OpenAI image_gen (model not exposed)",
     promptRecordPath: "docs/assets/casual-presenter-prompts-2026-09-20.json",
     recordedAt: "2026-09-20T00:00:00.000Z" as const,
-    lipSync: { status: "compatible", notes: "Front-facing mouth and chin remain unobstructed." } as const,
+    lipSync: {
+      preferredEngineId: "liveportrait-musetalk-1.5",
+      qualifications: [{
+        engineId: "liveportrait-musetalk-1.5",
+        displayName: "LivePortrait + MuseTalk 1.5",
+        outcome: "reviewed-compatible",
+        notes: "Front-facing mouth and chin remain unobstructed.",
+      }],
+    } as const,
   };
 }
 
@@ -46,11 +54,24 @@ describe("casual presenter catalog", () => {
       .map((entry) => entry.displayName)).toEqual(["Emma", "Yuki", "Noah", "Chloe"]);
   });
 
-  it("publishes every verified static portrait while keeping lip-sync pending", () => {
+  it("publishes every verified static portrait while keeping runtime qualification separate", () => {
     expect(CASUAL_PRESENTER_CATALOG.map((entry) => entry.id)).toEqual(CASUAL_PRESENTER_IDS);
     expect(CASUAL_PRESENTER_STARTER_ASSETS.map((entry) => entry.id)).toEqual(CASUAL_PRESENTER_IDS);
     expect(CASUAL_PRESENTER_STARTER_ASSETS.every((entry) => entry.source.availability === "ready")).toBe(true);
-    expect(CASUAL_PRESENTER_CATALOG.every((entry) => entry.lipSync.status === "pending-review")).toBe(true);
+    expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.lipSync.qualifications.some((review) => review.outcome === "reviewed-compatible")).map((entry) => entry.displayName))
+      .toEqual(["Emma", "Yuki", "Noah", "Chloe", "Maya", "Lena"]);
+    expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.styleGroup === "Animal").every((entry) => (
+      entry.lipSync.preferredEngineId === "joyvasa-animal"
+      && entry.lipSync.qualifications.some((review) => review.engineId === "liveportrait-musetalk-1.5" && review.outcome === "incompatible")
+      && entry.lipSync.qualifications.some((review) => review.engineId === "joyvasa-animal" && review.outcome === "pending-review")
+    ))).toBe(true);
+    const finnReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.displayName === "Finn")?.lipSync;
+    expect(finnReview?.preferredEngineId).toBe("joyvasa-human");
+    expect(finnReview?.qualifications).toEqual(expect.arrayContaining([
+        { engineId: "liveportrait-musetalk-1.5", outcome: "incompatible" },
+        { engineId: "joyvasa-human", outcome: "pending-review" },
+      ].map((entry) => expect.objectContaining(entry))));
+    expect(CASUAL_PRESENTER_CATALOG.find((entry) => entry.displayName === "Pip")?.lipSync.preferredEngineId).toBe("joyvasa-animal");
   });
 
   it("binds the catalog to the actual PNG bytes, dimensions, and embedded C2PA carrier", async () => {
@@ -95,10 +116,18 @@ describe("casual presenter catalog", () => {
   it("keeps a verified static portrait ready while its separate lip-sync review is pending", () => {
     const presenter = defineCasualPresenter(CASUAL_PRESENTER_PLANS[0], {
       ...verifiedDetails(),
-      lipSync: { status: "pending-review", notes: "Static portrait verified; animation suitability has not been tested." },
+      lipSync: {
+        preferredEngineId: "joyvasa-human",
+        qualifications: [{
+          engineId: "joyvasa-human",
+          displayName: "JoyVASA character route",
+          outcome: "pending-review",
+          notes: "Static portrait verified; animation suitability has not been tested.",
+        }],
+      },
     });
     expect(casualPresenterStarterAsset(presenter).source.availability).toBe("ready");
-    expect(presenter.lipSync.status).toBe("pending-review");
+    expect(presenter.lipSync.qualifications[0]?.outcome).toBe("pending-review");
   });
 
   it("refuses unverified hashes, dimensions, sizes, media pairs, or review state notes", () => {
@@ -107,6 +136,10 @@ describe("casual presenter catalog", () => {
     expect(() => defineCasualPresenter(plan, { ...verifiedDetails(), byteSize: 0 })).toThrow(/byte size/);
     expect(() => defineCasualPresenter(plan, { ...verifiedDetails(), width: 0 })).toThrow(/pixel dimensions/);
     expect(() => defineCasualPresenter(plan, { ...verifiedDetails(), mediaType: "image/webp" })).toThrow(/media type/);
-    expect(() => defineCasualPresenter(plan, { ...verifiedDetails(), lipSync: { status: "incompatible", notes: "" } })).toThrow(/lip-sync review/);
+    expect(() => defineCasualPresenter(plan, { ...verifiedDetails(), lipSync: { preferredEngineId: "joyvasa-human", qualifications: [] } })).toThrow(/lip-sync qualifications/);
+    expect(() => defineCasualPresenter(plan, { ...verifiedDetails(), lipSync: {
+      preferredEngineId: "joyvasa-human",
+      qualifications: [{ engineId: "liveportrait-musetalk-1.5", displayName: "MuseTalk", outcome: "incompatible", notes: "Rejected." }],
+    } })).toThrow(/preferred engine/);
   });
 });

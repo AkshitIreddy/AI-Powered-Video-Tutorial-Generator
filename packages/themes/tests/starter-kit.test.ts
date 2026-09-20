@@ -12,6 +12,13 @@ describe("built-in starter kit", () => {
     expect(new Set(BUILT_IN_STARTER_KIT.themePacks.map((pack) => pack.themeId))).toHaveLength(10);
   });
 
+  it("keeps the checked-in native starter manifest identical to the TypeScript catalog", async () => {
+    const manifest = JSON.parse(await readFile(resolve(process.cwd(), "starter-kits/core.v1.json"), "utf8")) as unknown;
+    expect(manifest).toEqual(BUILT_IN_STARTER_KIT);
+    expect((manifest as typeof BUILT_IN_STARTER_KIT).assets.filter((asset) => asset.source.availability === "ready" && asset.technical.mediaType.startsWith("image/"))).toHaveLength(55);
+    expect((manifest as typeof BUILT_IN_STARTER_KIT).assets.filter((asset) => asset.kind === "presenter-portrait")).toHaveLength(52);
+  });
+
   it("offers substantial choice with audio remaining opt-in", () => {
     expect(STARTER_ASSET_COUNTS).toMatchObject({
       background: 13, transition: 8, font: 14, "presenter-style": 12,
