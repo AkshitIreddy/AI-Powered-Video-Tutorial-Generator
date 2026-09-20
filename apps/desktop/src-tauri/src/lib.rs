@@ -6,6 +6,7 @@ mod error;
 pub mod generated;
 mod model_download;
 mod model_setup;
+mod process_tree;
 mod project_store;
 mod runtime;
 mod secrets;
@@ -127,8 +128,9 @@ fn prepare_headless_acceptance(state: &AppState) -> Result<(), std::io::Error> {
 #[tauri::command]
 fn desktop_shutdown(app: tauri::AppHandle, state: tauri::State<'_, AppState>) {
     // The webview invokes this only after its pending durable saves finish.
-    // Stop the supervised child before ending the process so a normal window
-    // close cannot strand the worker or discard a final checkpoint.
+    // Stop every supervised child before ending the process so a normal window
+    // close cannot strand an installer or worker, or discard a final checkpoint.
+    state.model_downloads.close();
     state.worker.close();
     app.exit(0);
 }
@@ -220,7 +222,9 @@ pub fn run() {
         .expect("AI Video Tutorial Generator desktop runtime failed");
     app.run(|app_handle, event| {
         if matches!(&event, tauri::RunEvent::ExitRequested { .. }) {
-            app_handle.state::<AppState>().worker.close();
+            let state = app_handle.state::<AppState>();
+            state.model_downloads.close();
+            state.worker.close();
         }
     });
 }

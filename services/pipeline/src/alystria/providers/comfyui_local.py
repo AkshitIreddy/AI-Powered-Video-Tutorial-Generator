@@ -80,6 +80,16 @@ class DownloadFile:
 
 
 @dataclass(frozen=True, slots=True)
+class _RuntimeLayout:
+    comfy_root: Path
+    python_executable: Path
+
+    @property
+    def ready(self) -> bool:
+        return (self.comfy_root / "main.py").is_file() and self.python_executable.is_file()
+
+
+@dataclass(frozen=True, slots=True)
 class ComfyBundle:
     model_id: str
     recipe_id: str | None
@@ -237,28 +247,38 @@ class ComfyBundleInstaller:
 
     @property
     def comfy_root(self) -> Path:
-        manual = self.runtime_root / "ComfyUI"
-        portable = self.runtime_root / "ComfyUI_windows_portable" / "ComfyUI"
-        if (manual / "main.py").is_file():
-            return manual
-        if (portable / "main.py").is_file():
-            return portable
-        return portable
+        return self._resolve_layout().comfy_root
 
     @property
     def python_executable(self) -> Path:
-        manual = self.runtime_root / "venv" / "Scripts" / "python.exe"
-        portable = self.runtime_root / "ComfyUI_windows_portable" / "python_embeded" / "python.exe"
-        return manual if manual.is_file() else portable
+        return self._resolve_layout().python_executable
+
+    def _manual_layout(self) -> _RuntimeLayout:
+        return _RuntimeLayout(
+            self.runtime_root / "ComfyUI",
+            self.runtime_root / "venv" / "Scripts" / "python.exe",
+        )
+
+    def _portable_layout(self) -> _RuntimeLayout:
+        root = self.runtime_root / "ComfyUI_windows_portable"
+        return _RuntimeLayout(root / "ComfyUI", root / "python_embeded" / "python.exe")
+
+    def _resolve_layout(self) -> _RuntimeLayout:
+        manual = self._manual_layout()
+        if manual.ready:
+            return manual
+        portable = self._portable_layout()
+        if portable.ready:
+            return portable
+        # Every managed download installs the pinned portable archive. Partial
+        # legacy/manual folders must never redirect weights into another tree.
+        return portable
 
     def install_runtime(self, *, extractor: str = "tar.exe") -> Path:
         pending = self.runtime_root / ".comfyui-extraction-pending"
-        if (
-            not pending.exists()
-            and self.python_executable.is_file()
-            and (self.comfy_root / "main.py").is_file()
-        ):
-            return self.comfy_root
+        layout = self._resolve_layout()
+        if not pending.exists() and layout.ready:
+            return layout.comfy_root
         self.runtime_root.mkdir(parents=True, exist_ok=True)
         archive = self.runtime_root / f"ComfyUI-{COMFYUI_RUNTIME_TAG}-nvidia.7z"
         _download_verified(
@@ -307,24 +327,24 @@ class ComfyBundleInstaller:
         )
         if extracted.returncode != 0:
             raise RuntimeError("The verified ComfyUI archive could not be extracted")
-        if not self.python_executable.is_file() or not (self.comfy_root / "main.py").is_file():
+        portable = self._portable_layout()
+        if not portable.ready:
             raise RuntimeError("The extracted ComfyUI runtime is incomplete")
         pending.unlink()
-        return self.comfy_root
+        return self._resolve_layout().comfy_root
 
     def install_bundle(self, model_id: str) -> dict[str, Any]:
         try:
             bundle = COMFY_BUNDLES[model_id]
         except KeyError as error:
             raise ValueError(f"Unknown local image bundle: {model_id}") from error
-        if (self.runtime_root / ".comfyui-extraction-pending").exists() or not (
-            self.comfy_root / "main.py"
-        ).is_file():
+        layout = self._resolve_layout()
+        if (self.runtime_root / ".comfyui-extraction-pending").exists() or not layout.ready:
             raise RuntimeError("Install the pinned ComfyUI runtime before a model bundle")
         installed = []
         for file in bundle.files:
             installed.append(
-                str(_download_verified(file, self.comfy_root, self.progress))
+                str(_download_verified(file, layout.comfy_root, self.progress))
             )
         manifest = {
             "modelId": bundle.model_id,
@@ -347,17 +367,17 @@ class ComfyBundleInstaller:
         bundle = COMFY_BUNDLES.get(model_id)
         if bundle is None:
             raise ValueError(f"Unknown local image bundle: {model_id}")
+        layout = self._resolve_layout()
         files = []
         for item in bundle.files:
-            path = _safe_destination(self.comfy_root, item.relative_path)
+            path = _safe_destination(layout.comfy_root, item.relative_path)
             valid = path.is_file() and path.stat().st_size == item.size
             if valid:
                 valid = _sha256(path) == item.sha256
             files.append({"path": str(path), "verified": valid})
         runtime_ready = (
             not (self.runtime_root / ".comfyui-extraction-pending").exists()
-            and self.python_executable.is_file()
-            and (self.comfy_root / "main.py").is_file()
+            and layout.ready
         )
         return {
             "runtimeReady": runtime_ready,
@@ -600,6 +620,7 @@ class ComfyUiRuntime(AbstractContextManager[ComfyUiLocalAdapter]):
         preflight = self.installer.preflight(SDXL_MODEL_ID)
         if not preflight["executable"]:
             raise RuntimeError("The verified SDXL local image bundle is not installed")
+        layout = self.installer._resolve_layout()
         guard = GpuExecutionGuard(self.gpu_lock, owner="comfyui-local")
         guard.__enter__()
         self._gpu_guard = guard
@@ -625,7 +646,7 @@ class ComfyUiRuntime(AbstractContextManager[ComfyUiLocalAdapter]):
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             self.process = subprocess.Popen(
                 (
-                    str(self.installer.python_executable),
+                    str(layout.python_executable),
                     "main.py",
                     "--listen",
                     "127.0.0.1",
@@ -635,7 +656,7 @@ class ComfyUiRuntime(AbstractContextManager[ComfyUiLocalAdapter]):
                     "--disable-api-nodes",
                     "--lowvram",
                 ),
-                cwd=self.installer.comfy_root,
+                cwd=layout.comfy_root,
                 env=environment,
                 stdin=subprocess.DEVNULL,
                 stdout=self.log_handle,

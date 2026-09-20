@@ -6,11 +6,14 @@
 //! non-executable after their exact files are installed.
 
 use crate::error::CommandError;
+#[cfg(windows)]
+use crate::process_tree::CREATE_SUSPENDED_PROCESS;
+use crate::process_tree::KillOnCloseJob;
 use crate::types::{
     ModelDownloadCatalogEntry, ModelDownloadPhase, ModelDownloadStartRequest, ModelDownloadStatus,
 };
 use chrono::Utc;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{CONTENT_RANGE, RANGE};
 use sha2::{Digest, Sha256};
@@ -18,8 +21,9 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -31,6 +35,7 @@ const MAX_ARTIFACT_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const MAX_INSTALLER_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_MANAGED_MANIFEST_BYTES: u64 = 128 * 1024;
 const MANAGED_PROGRESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const INSTALLER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const COMFYUI_RUNTIME_BYTES: u64 = 1_803_412_624;
 const COMFYUI_RUNTIME_REVISION: &str = "8f40b43e0204d5b9780f3e9618e140e929e80594";
 const COMFYUI_RUNTIME_ARCHIVE: &str = "ComfyUI-v0.9.2-nvidia.7z";
@@ -386,12 +391,36 @@ const PACKAGES: &[PackageSpec] = &[
     ACCEPTANCE_DOWNLOAD_FIXTURE,
 ];
 
+#[derive(Debug)]
+struct ActiveInstaller {
+    child: Child,
+    process_tree: KillOnCloseJob,
+}
+
+impl ActiveInstaller {
+    fn terminate_and_wait(&mut self) -> bool {
+        self.process_tree.terminate();
+        let _ = self.child.kill();
+        let deadline = std::time::Instant::now() + INSTALLER_SHUTDOWN_TIMEOUT;
+        while std::time::Instant::now() < deadline {
+            if matches!(self.child.try_wait(), Ok(Some(_))) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let _ = self.child.kill();
+        false
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ModelDownloadManager {
     root: PathBuf,
     comfy_root: PathBuf,
     installer_executable: Option<PathBuf>,
     statuses: Arc<RwLock<BTreeMap<String, ModelDownloadStatus>>>,
+    active_installer: Arc<Mutex<Option<ActiveInstaller>>>,
+    closed: Arc<AtomicBool>,
 }
 
 impl ModelDownloadManager {
@@ -404,6 +433,8 @@ impl ModelDownloadManager {
             comfy_root,
             installer_executable: None,
             statuses: Arc::new(RwLock::new(BTreeMap::new())),
+            active_installer: Arc::new(Mutex::new(None)),
+            closed: Arc::new(AtomicBool::new(false)),
         };
         manager.load_statuses();
         manager.revalidate_loaded_ready_installs();
@@ -443,7 +474,17 @@ impl ModelDownloadManager {
         &self,
         input: ModelDownloadStartRequest,
     ) -> Result<ModelDownloadStatus, CommandError> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err(CommandError::unavailable(
+                "The desktop is shutting down and cannot start another model download.",
+            ));
+        }
         let spec = package(&input.model_id)?;
+        if is_managed_comfy(spec.strategy) && self.installer_is_running_or_uninspectable() {
+            return Err(CommandError::conflict(
+                "The previous managed local image installer is still stopping.",
+            ));
+        }
         if input.license_sha256 != spec.license_sha256 || !input.license_accepted {
             return Err(CommandError::new(
                 "LICENSE_NOT_ACCEPTED",
@@ -513,6 +554,31 @@ impl ModelDownloadManager {
             return Err(CommandError::io("model download worker start"));
         }
         Ok(status)
+    }
+
+    /// Permanently stop any managed installer before the desktop exits. The
+    /// kill-on-close process job also covers abrupt parent-process termination;
+    /// this explicit path waits for the installer root to exit before returning.
+    pub fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+        let mut active = self.active_installer.lock();
+        let exited = active
+            .as_mut()
+            .is_none_or(ActiveInstaller::terminate_and_wait);
+        if exited {
+            active.take();
+        }
+    }
+
+    fn installer_is_running_or_uninspectable(&self) -> bool {
+        let mut active = self.active_installer.lock();
+        let exited = active
+            .as_mut()
+            .is_some_and(|installer| matches!(installer.child.try_wait(), Ok(Some(_))));
+        if exited {
+            active.take();
+        }
+        active.is_some()
     }
 
     fn run(&self, spec: &'static PackageSpec) {
@@ -608,44 +674,95 @@ impl ModelDownloadManager {
         if let Some(model_id) = model_id {
             command.args(["--model-id", model_id]);
         }
-        let mut child = command
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|_| download_error("The managed local image installer could not start."))?;
-        let Some(stdout) = child.stdout.take() else {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(download_error(
-                "The managed local image installer output was unavailable.",
-            ));
-        };
-        let Some(stderr) = child.stderr.take() else {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(download_error(
-                "The managed local image installer diagnostics were unavailable.",
-            ));
+        let (stdout, stderr) = {
+            let mut active = self.active_installer.lock();
+            if self.closed.load(Ordering::Acquire) {
+                return Err(download_error(
+                    "The desktop shut down before the managed local image installer started.",
+                ));
+            }
+            if active.is_some() {
+                return Err(CommandError::conflict(
+                    "Another managed local image installer is still stopping.",
+                ));
+            }
+            let mut child = command
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|_| {
+                    download_error("The managed local image installer could not start.")
+                })?;
+            let process_tree = match KillOnCloseJob::attach_suspended(&child) {
+                Ok(process_tree) => process_tree,
+                Err(_) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(download_error(
+                        "The managed local image installer could not be isolated for safe shutdown.",
+                    ));
+                }
+            };
+            let Some(stdout) = child.stdout.take() else {
+                drop(process_tree);
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(download_error(
+                    "The managed local image installer output was unavailable.",
+                ));
+            };
+            let Some(stderr) = child.stderr.take() else {
+                drop(process_tree);
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(download_error(
+                    "The managed local image installer diagnostics were unavailable.",
+                ));
+            };
+            *active = Some(ActiveInstaller {
+                child,
+                process_tree,
+            });
+            (stdout, stderr)
         };
         let stdout_reader = capture_installer_output(stdout);
         let stderr_reader = capture_installer_output(stderr);
         let exit_status = loop {
-            match child.try_wait() {
+            let observed = {
+                let mut active = self.active_installer.lock();
+                match active.as_mut() {
+                    Some(installer) => installer.child.try_wait(),
+                    None => {
+                        return Err(download_error(
+                            "The managed local image installer stopped during desktop shutdown.",
+                        ));
+                    }
+                }
+            };
+            match observed {
                 Ok(Some(status)) => break status,
                 Ok(None) => {
                     self.record_managed_progress(spec);
                     std::thread::sleep(MANAGED_PROGRESS_POLL_INTERVAL);
                 }
                 Err(_) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    let mut active = self.active_installer.lock();
+                    let exited = active
+                        .as_mut()
+                        .is_none_or(ActiveInstaller::terminate_and_wait);
+                    if exited {
+                        active.take();
+                    }
                     return Err(download_error(
                         "The managed local image installer could not be monitored.",
                     ));
                 }
             }
         };
+        // Closing the process job after the root exits also removes any helper
+        // process that unexpectedly survived it and releases inherited pipes.
+        drop(self.active_installer.lock().take());
         self.record_managed_progress(spec);
         let stdout = finish_installer_output(stdout_reader)?;
         let stderr = finish_installer_output(stderr_reader)?;
@@ -1155,7 +1272,7 @@ fn fetch_artifact_from_url(
     loop {
         let count = response.read(&mut buffer).map_err(|_| {
             download_error(
-                "The model download was interrupted; the verified prefix was kept for resume.",
+                "The model download was interrupted; the partial file was kept for resume.",
             )
         })?;
         if count == 0 {
@@ -1500,14 +1617,42 @@ fn managed_progress(runtime_root: &Path, spec: &PackageSpec) -> ManagedProgress 
 }
 
 fn managed_comfy_root(runtime_root: &Path) -> PathBuf {
-    let manual = runtime_root.join("ComfyUI");
-    if manual.join("main.py").is_file() {
-        manual
-    } else {
-        runtime_root
-            .join("ComfyUI_windows_portable")
-            .join("ComfyUI")
+    resolved_managed_runtime_layout(runtime_root)
+        .map(|layout| layout.comfy_root)
+        .unwrap_or_else(|| portable_runtime_layout(runtime_root).comfy_root)
+}
+
+#[derive(Debug)]
+struct ManagedRuntimeLayout {
+    comfy_root: PathBuf,
+    python_executable: PathBuf,
+}
+
+fn manual_runtime_layout(runtime_root: &Path) -> ManagedRuntimeLayout {
+    ManagedRuntimeLayout {
+        comfy_root: runtime_root.join("ComfyUI"),
+        python_executable: runtime_root.join("venv").join("Scripts").join("python.exe"),
     }
+}
+
+fn portable_runtime_layout(runtime_root: &Path) -> ManagedRuntimeLayout {
+    let root = runtime_root.join("ComfyUI_windows_portable");
+    ManagedRuntimeLayout {
+        comfy_root: root.join("ComfyUI"),
+        python_executable: root.join("python_embeded").join("python.exe"),
+    }
+}
+
+fn resolved_managed_runtime_layout(runtime_root: &Path) -> Option<ManagedRuntimeLayout> {
+    let manual = manual_runtime_layout(runtime_root);
+    if manual.comfy_root.join("main.py").is_file() && manual.python_executable.is_file() {
+        return Some(manual);
+    }
+    let portable = portable_runtime_layout(runtime_root);
+    if portable.comfy_root.join("main.py").is_file() && portable.python_executable.is_file() {
+        return Some(portable);
+    }
+    None
 }
 
 fn existing_bytes(root: &Path, spec: &PackageSpec) -> u64 {
@@ -1592,7 +1737,7 @@ fn active_download_phase(phase: &ModelDownloadPhase) -> bool {
 fn hidden_command(program: &Path) -> Command {
     let mut command = Command::new(program);
     #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
+    command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED_PROCESS);
     command
 }
 
@@ -1907,24 +2052,11 @@ fn validate_managed_runtime(runtime_root: &Path) -> Result<PathBuf, CommandError
             "ComfyUI extraction was interrupted. Retry the runtime download to finish installation.",
         ));
     }
-    let manual_comfy = runtime_root.join("ComfyUI");
-    let portable_comfy = runtime_root
-        .join("ComfyUI_windows_portable")
-        .join("ComfyUI");
-    let manual_python = runtime_root.join("venv").join("Scripts").join("python.exe");
-    let portable_python = runtime_root
-        .join("ComfyUI_windows_portable")
-        .join("python_embeded")
-        .join("python.exe");
-    let comfy_root = if manual_comfy.join("main.py").is_file() && manual_python.is_file() {
-        manual_comfy
-    } else if portable_comfy.join("main.py").is_file() && portable_python.is_file() {
-        portable_comfy
-    } else {
-        return Err(download_error(
-            "The extracted ComfyUI runtime entry points are incomplete.",
-        ));
-    };
+    let comfy_root = resolved_managed_runtime_layout(runtime_root)
+        .ok_or_else(|| {
+            download_error("The extracted ComfyUI runtime entry points are incomplete.")
+        })?
+        .comfy_root;
     if !verify_exact_file(
         &runtime_root.join(COMFYUI_RUNTIME_ARCHIVE),
         COMFYUI_RUNTIME_BYTES,
@@ -2296,6 +2428,25 @@ mod tests {
     }
 
     #[test]
+    fn closed_manager_cannot_publish_or_launch_another_download() {
+        let directory = tempdir().expect("tempdir");
+        let manager = ModelDownloadManager::at(directory.path().to_path_buf()).expect("manager");
+        manager.close();
+        let error = manager
+            .start(ModelDownloadStartRequest {
+                model_id: COMFYUI_RUNTIME.model_id.into(),
+                license_sha256: COMFYUI_RUNTIME.license_sha256.into(),
+                license_accepted: true,
+            })
+            .expect_err("closed manager");
+        assert_eq!(error.code, "COMPONENT_UNAVAILABLE");
+        assert_eq!(
+            manager.current(&COMFYUI_RUNTIME).phase,
+            ModelDownloadPhase::ManifestRequired
+        );
+    }
+
+    #[test]
     fn managed_image_catalog_is_available_only_with_a_verified_installer() {
         for spec in [&SDXL, &FLUX_KLEIN, &Z_IMAGE] {
             validate_spec(spec).expect("valid managed declaration");
@@ -2315,10 +2466,43 @@ mod tests {
     #[test]
     fn interrupted_extraction_cannot_publish_runtime_ready() {
         let directory = tempdir().expect("tempdir");
-        fs::write(directory.path().join(".comfyui-extraction-pending"), "pending")
-            .expect("interruption marker");
+        fs::write(
+            directory.path().join(".comfyui-extraction-pending"),
+            "pending",
+        )
+        .expect("interruption marker");
         let failure = validate_managed_runtime(directory.path()).expect_err("partial runtime");
         assert!(failure.message.contains("interrupted"));
+    }
+
+    #[test]
+    fn managed_model_destination_never_combines_mixed_runtime_layouts() {
+        let directory = tempdir().expect("tempdir");
+        let manual = manual_runtime_layout(directory.path());
+        let portable = portable_runtime_layout(directory.path());
+        fs::create_dir_all(&manual.comfy_root).expect("manual ComfyUI root");
+        fs::write(manual.comfy_root.join("main.py"), b"# incomplete manual")
+            .expect("manual entrypoint");
+        fs::create_dir_all(&portable.comfy_root).expect("portable ComfyUI root");
+        fs::write(portable.comfy_root.join("main.py"), b"# portable").expect("portable entrypoint");
+        fs::create_dir_all(portable.python_executable.parent().unwrap())
+            .expect("portable Python root");
+        fs::write(&portable.python_executable, b"portable python").expect("portable Python");
+
+        assert_eq!(managed_comfy_root(directory.path()), portable.comfy_root);
+        let resolved = resolved_managed_runtime_layout(directory.path()).expect("portable pair");
+        assert_eq!(resolved.comfy_root, portable.comfy_root);
+        assert_eq!(resolved.python_executable, portable.python_executable);
+
+        fs::remove_file(&portable.python_executable).expect("remove portable Python");
+        assert!(resolved_managed_runtime_layout(directory.path()).is_none());
+        assert_eq!(managed_comfy_root(directory.path()), portable.comfy_root);
+
+        fs::create_dir_all(manual.python_executable.parent().unwrap()).expect("manual Python root");
+        fs::write(&manual.python_executable, b"manual python").expect("manual Python");
+        let resolved = resolved_managed_runtime_layout(directory.path()).expect("manual pair");
+        assert_eq!(resolved.comfy_root, manual.comfy_root);
+        assert_eq!(resolved.python_executable, manual.python_executable);
     }
 
     #[test]

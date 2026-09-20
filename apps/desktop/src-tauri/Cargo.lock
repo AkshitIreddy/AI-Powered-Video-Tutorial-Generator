@@ -55,6 +55,7 @@ dependencies = [
  "tauri-build",
  "tempfile",
  "uuid",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 

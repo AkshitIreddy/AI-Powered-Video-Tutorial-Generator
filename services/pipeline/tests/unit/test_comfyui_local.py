@@ -442,3 +442,52 @@ def test_runtime_retries_partial_extraction_before_reusing_entrypoints(
     assert extractions == 2
     assert installer.install_runtime() == installer.comfy_root
     assert extractions == 2
+
+
+def test_runtime_layout_and_model_destination_never_mix_entrypoint_trees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installer = ComfyBundleInstaller(tmp_path)
+    manual_comfy = tmp_path / "ComfyUI"
+    portable_root = tmp_path / "ComfyUI_windows_portable"
+    portable_comfy = portable_root / "ComfyUI"
+    portable_python = portable_root / "python_embeded" / "python.exe"
+    manual_comfy.mkdir(parents=True)
+    (manual_comfy / "main.py").write_text("# incomplete manual tree", encoding="utf-8")
+    portable_comfy.mkdir(parents=True)
+    (portable_comfy / "main.py").write_text("# portable tree", encoding="utf-8")
+    portable_python.parent.mkdir(parents=True)
+    portable_python.write_bytes(b"portable python")
+
+    assert installer.comfy_root == portable_comfy
+    assert installer.python_executable == portable_python
+    assert installer.install_runtime() == portable_comfy
+    assert installer.preflight(SDXL_MODEL_ID)["runtimeReady"] is True
+
+    destinations: list[Path] = []
+
+    def downloaded(file: DownloadFile, root: Path, *_args: Any) -> Path:
+        destinations.append(root)
+        return root / file.relative_path
+
+    monkeypatch.setattr(comfy_module, "_download_verified", downloaded)
+    installer.install_bundle(SDXL_MODEL_ID)
+    assert destinations
+    assert set(destinations) == {portable_comfy}
+
+
+def test_complete_manual_runtime_layout_remains_an_atomic_pair(tmp_path: Path) -> None:
+    installer = ComfyBundleInstaller(tmp_path)
+    manual_comfy = tmp_path / "ComfyUI"
+    manual_python = tmp_path / "venv" / "Scripts" / "python.exe"
+    portable_comfy = tmp_path / "ComfyUI_windows_portable" / "ComfyUI"
+    manual_comfy.mkdir(parents=True)
+    (manual_comfy / "main.py").write_text("# manual tree", encoding="utf-8")
+    manual_python.parent.mkdir(parents=True)
+    manual_python.write_bytes(b"manual python")
+    portable_comfy.mkdir(parents=True)
+    (portable_comfy / "main.py").write_text("# incomplete portable tree", encoding="utf-8")
+
+    assert installer.comfy_root == manual_comfy
+    assert installer.python_executable == manual_python
+    assert installer.preflight(SDXL_MODEL_ID)["runtimeReady"] is True
