@@ -17,14 +17,15 @@ export const marketingProductScript = "This is a real lesson, ready to refine. E
 export const marketingFrameRate = 30;
 export const marketingCaptionStyle = Object.freeze({
   fontFamily: "Segoe UI Semibold",
-  fontSizeAt1440x810: 38,
-  textColor: "#FFF9F2",
-  panelColor: "#151A2D",
-  accentColor: "#21A39A",
-  panelOpacity: 0.9,
-  maximumWidthPercent: 72,
-  cornerRadiusPixels: 18,
-  horizontalPaddingPixels: 24,
+  fontSizeAt1440x810: 34,
+  textColor: "#FFFDF8",
+  panelColor: "#101522",
+  panelOpacity: 0.82,
+  borderColor: "#FFFFFF",
+  borderOpacity: 0.12,
+  maximumWidthPercent: 76,
+  cornerRadiusPixels: 14,
+  horizontalPaddingPixels: 28,
   verticalPaddingPixels: 14,
   maximumLines: 2,
 });
@@ -504,24 +505,31 @@ export async function prepareMarketingTutorialInNativeEditor({
     await editor.getByLabel("Text placement").selectOption("top");
   }
   if (await hideEmpty.getAttribute("aria-pressed") !== "true") await hideEmpty.click();
+  const hideCaptions = editor.getByRole("button", { name: "Hide Captions", exact: true });
+  await hideCaptions.click();
+  await expect(hideCaptions).toHaveAttribute("aria-pressed", "true");
   await editor.getByRole("button", { name: "Render timeline" }).click();
   const statusText = await waitForEditorRender(editor.locator(".aly-editor-shell__status"), jobTimeoutMs);
   const outputPath = statusText.match(/^Timeline rendered to (.+?)(?: ·|$)/u)?.[1];
   if (!outputPath) throw new Error(`Marketing tutorial editor render failed: ${statusText}`);
   const probe = await probeMedia(ffprobePath, outputPath);
   if (!probe.video || !probe.audio || Math.abs(probe.durationSeconds - timing.durationSeconds) > 0.12) throw new Error(`Marketing tutorial render has an invalid duration or streams: ${JSON.stringify(probe)}`);
+  await hideCaptions.click();
+  await expect(hideCaptions).toHaveAttribute("aria-pressed", "false");
+  await page.waitForTimeout(450);
   const saved = await invokeNative(page, "project_snapshot_get", identity);
   const document = saved.snapshot?.editorDocument;
   const clips = document?.tracks?.flatMap((track) => track.clips ?? []) ?? [];
+  const captionTrack = document?.tracks?.find((track) => track.kind === "captions");
   const presenterClips = clips.filter((clip) => clip.kind === "presenter");
   if (clips.filter((clip) => clip.kind === "slides").length !== 3 || clips.filter((clip) => clip.kind === "captions").length !== 3
     || presenterClips.length !== presenterSources.length || presenterClips.some((clip) => clip.audio?.muted !== true
       || clip.transform?.x !== presenterTransform.x || clip.transform?.y !== presenterTransform.y
       || clip.transform?.scaleX !== presenterTransform.scaleX || clip.transform?.scaleY !== presenterTransform.scaleY)
-    || clips.filter((clip) => clip.kind === "narration").length !== 1) {
+    || clips.filter((clip) => clip.kind === "narration").length !== 1 || captionTrack?.hidden === true) {
     throw new Error("Persisted marketing tutorial does not contain the three-scene presenter/narration/caption timeline");
   }
-  return { identity, title: initialSnapshot.title, outputPath, outputSha256: await sha256File(outputPath), probe, timing, presenterTransform, actualNativeEditorRender: true, fixtureUi: false };
+  return { identity, title: initialSnapshot.title, outputPath, outputSha256: await sha256File(outputPath), probe, timing, presenterTransform, actualNativeEditorRender: true, captionsBurnedIn: false, captionsPreservedInProject: true, fixtureUi: false };
 }
 
 export function buildMarketingNativeCaptureTimeline({ timeline, edit, projectTitle, state = {} }) {

@@ -162,6 +162,7 @@ export async function validateMarketingFinishManifest(manifestPath, { ffprobePat
   for (const key of ["teachingVoice", "productVoice", "music", "nativeTutorialExport", "nativeUiCapture"]) await validateHashedFile(manifest.assets?.[key], key);
   if (manifest.mode === "final") {
     if (manifest.assets.nativeTutorialExport.actualNativeEditorRender !== true || manifest.assets.nativeTutorialExport.fixtureUi === true) throw new Error("Final teaching video is not an actual native editor render");
+    if (manifest.assets.nativeTutorialExport.captionsBurnedIn !== false || manifest.assets.nativeTutorialExport.captionsPreservedInProject !== true) throw new Error("Final teaching render must keep editable captions in the project while leaving caption pixels to the finisher");
     if (manifest.assets.nativeUiCapture.actualNativeWebView !== true || manifest.assets.nativeUiCapture.fixtureUi === true || manifest.assets.nativeUiCapture.encodedFrameAnchors !== true) throw new Error("Final UI capture lacks actual-native encoded-frame evidence");
   }
   const probes = ffprobePath ? {

@@ -83,9 +83,10 @@ test("product UI beats use readable close-ups and a branded two-line caption pla
   assert.deepEqual(productBeats.map((beat) => beat.focusRegion), ["review-player", "editor-transcript-dock-timeline", "presenter-gallery-and-teaching-library", "model-card-and-download-panel", "review-export"]);
   assert.ok(productBeats.slice(1, 4).every((beat) => beat.editorialZoom >= 1.2 && beat.editorialZoom <= 1.4));
   assert.equal(marketingCaptionStyle.maximumLines, 2);
-  assert.equal(marketingCaptionStyle.maximumWidthPercent, 72);
-  assert.equal(marketingCaptionStyle.panelColor, "#151A2D");
-  assert.equal(marketingCaptionStyle.accentColor, "#21A39A");
+  assert.equal(marketingCaptionStyle.maximumWidthPercent, 76);
+  assert.equal(marketingCaptionStyle.panelColor, "#101522");
+  assert.equal(marketingCaptionStyle.panelOpacity, 0.82);
+  assert.equal(marketingCaptionStyle.borderOpacity, 0.12);
 });
 
 test("native tutorial project uses three factual scenes and exact phrase captions", () => {
