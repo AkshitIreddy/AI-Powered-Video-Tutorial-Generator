@@ -28,6 +28,11 @@ from alystria.licensed_media_workflow import (
     LicensedMediaInvoker,
     search_visual_candidates,
 )
+from alystria.music_workflow import (
+    accept_music_candidate,
+    reject_music_candidate,
+    search_music_candidates,
+)
 from alystria.project import ProjectStore, Revision
 from alystria.project_assets import validate_approved_presenters_for_export
 from alystria.providers.licensed_media_selection import LicensedMediaVisionSelector
@@ -91,6 +96,7 @@ class NativeControlCoordinator:
             "native.regenerate_scene": self._regenerate_scene,
             "native.regenerate_authored_scene": self._regenerate_authored_scene,
             "native.search_visual_candidates": self._search_visual_candidates,
+            "native.search_music_candidates": self._search_music_candidates,
             "native.render_scene": self._render_scene,
             "native.repair_qa": self._repair_qa,
             "native.export_master": self._export_master,
@@ -226,6 +232,36 @@ class NativeControlCoordinator:
         return self._enqueue(
             "native.search_visual_candidates", parameters, head.root_hash
         )
+
+    def submit_music_search(self, params: dict[str, Any]) -> Job:
+        expected = _required_text(params, "expectedHeadRevisionId")
+        head = self.store.head_revision()
+        if head is None:
+            raise ValueError("Project has no durable base revision")
+        if head.revision_id != expected:
+            raise ValueError(
+                f"Base revision {expected} is stale; current head is {head.revision_id}"
+            )
+        topic = _bounded_text(params.get("topic"), "topic", 240)
+        mood = _bounded_text(params.get("mood", "curious"), "mood", 40)
+        if mood not in {
+            "calm",
+            "curious",
+            "focused",
+            "hopeful",
+            "playful",
+            "reflective",
+            "energetic",
+        }:
+            raise ValueError("mood is unsupported")
+        parameters = {
+            "expectedHeadRevisionId": head.revision_id,
+            "topic": topic,
+            "mood": mood,
+            "alternatives": _integer(params.get("alternatives", 3), "alternatives", 1, 4),
+            "locale": _bounded_text(params.get("locale", "en-US"), "locale", 40),
+        }
+        return self._enqueue("native.search_music_candidates", parameters, head.root_hash)
 
     def submit_qa_repair(self, params: dict[str, Any]) -> Job:
         head = self._validate_head(params)
@@ -582,6 +618,12 @@ class NativeControlCoordinator:
     def reject_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
         return reject_visual_candidate(self.store, params)
 
+    def accept_music_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        return accept_music_candidate(self.store, params)
+
+    def reject_music_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        return reject_music_candidate(self.store, params)
+
     def accept_scene_edit_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
         result = accept_scene_edit_candidate(self.store, params)
         head = self.store.head_revision()
@@ -624,6 +666,7 @@ class NativeControlCoordinator:
                     "native.regenerate_scene",
                     "native.regenerate_authored_scene",
                     "native.search_visual_candidates",
+                    "native.search_music_candidates",
                 }
                 else 2
             ),
@@ -688,6 +731,19 @@ class NativeControlCoordinator:
             self.store,
             self.licensed_media_client,
             self.licensed_media_selector,
+            params,
+            context,
+            transport=self.licensed_media_transport,
+        )
+
+    def _search_music_candidates(
+        self, context: JobContext, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        if self.licensed_media_client is None:
+            raise RuntimeError("Background-music search requires an approved Openverse route")
+        return search_music_candidates(
+            self.store,
+            self.licensed_media_client,
             params,
             context,
             transport=self.licensed_media_transport,
@@ -1715,6 +1771,24 @@ class NativeControlCoordinator:
                 encoding="utf-8",
             )
             paths.append(str(bibliography))
+        head = self.store.head_revision()
+        credits = [] if head is None else _export_asset_attributions(head.snapshot)
+        if credits:
+            attribution = self.store.root / "exports" / f"{stem}-attribution.json"
+            attribution.write_text(
+                json.dumps(
+                    {
+                        "schema": "alystria.export.credits.v1",
+                        "projectId": self.store.manifest.project_id,
+                        "assets": credits,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            paths.append(str(attribution))
         return paths
 
 
@@ -1738,6 +1812,7 @@ def _job_message(job: Job) -> str:
         "native.regenerate_scene": "Scoped scene candidate work persisted",
         "native.regenerate_authored_scene": "Authored scene proposals are ready for review",
         "native.search_visual_candidates": "Licensed visual candidates are ready for review",
+        "native.search_music_candidates": "Background-music candidates are ready for review",
         "native.render_scene": "Scene render completed",
         "native.repair_qa": "Selected QA repair work persisted",
         "native.export_master": "Master export completed",
@@ -1813,6 +1888,57 @@ def _exportable_imported_artifacts(snapshot: dict[str, Any]) -> dict[str, tuple[
         ):
             exportable[digest] = (artifact_id, kind)
     return exportable
+
+
+def _export_asset_attributions(snapshot: dict[str, Any]) -> list[dict[str, str]]:
+    customization = snapshot.get("customization")
+    if not isinstance(customization, dict):
+        return []
+    selected_ids: set[str] = set()
+    for value in (
+        customization.get("backgroundAssetId"),
+        customization.get("audio", {}).get("musicAssetId")
+        if isinstance(customization.get("audio"), dict)
+        else None,
+        customization.get("audio", {}).get("sfxAssetId")
+        if isinstance(customization.get("audio"), dict)
+        else None,
+        customization.get("presenter", {}).get("assetId")
+        if isinstance(customization.get("presenter"), dict)
+        else None,
+    ):
+        if isinstance(value, str):
+            selected_ids.add(value)
+    assets = customization.get("assets")
+    if not isinstance(assets, list):
+        return []
+    credits: list[dict[str, str]] = []
+    for asset in assets:
+        if (
+            not isinstance(asset, dict)
+            or asset.get("id") not in selected_ids
+            or asset.get("source") != "licensed-media"
+            or asset.get("rightsStatus") != "cleared"
+        ):
+            continue
+        required = {
+            "assetId": asset.get("id"),
+            "title": asset.get("label"),
+            "role": asset.get("kind"),
+            "creator": asset.get("creator"),
+            "license": asset.get("license"),
+            "attribution": asset.get("attribution"),
+            "sourceUrl": asset.get("sourceUrl"),
+            "sha256": asset.get("sha256"),
+        }
+        if not all(isinstance(value, str) and value.strip() for value in required.values()):
+            raise ValueError("Selected licensed asset has incomplete export attribution")
+        if not SHA256_PATTERN.fullmatch(str(required["sha256"])):
+            raise ValueError("Selected licensed asset attribution has an invalid SHA-256")
+        if not str(required["sourceUrl"]).casefold().startswith("https://"):
+            raise ValueError("Selected licensed asset attribution source must use HTTPS")
+        credits.append({key: str(value) for key, value in required.items()})
+    return sorted(credits, key=lambda item: item["assetId"])
 
 
 def _target(params: dict[str, Any]) -> dict[str, Any]:

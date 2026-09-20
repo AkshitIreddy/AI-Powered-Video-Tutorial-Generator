@@ -122,7 +122,7 @@ describe("Alystria ProjectRecord adapter", () => {
       ],
       customization: {
         presenter: { assetId: "presenter-ref", placement: "picture-in-picture" },
-        audio: { musicAssetId: "music-ref", musicLevel: -14 },
+        audio: { musicAssetId: "music-ref", musicLevel: 12, narrationDucking: 72 },
         assets: [
           { id: "presenter-ref", kind: "presenter", label: "Selected presenter", source: "user-upload", rightsStatus: "cleared" },
           { id: "music-ref", kind: "music", label: "Selected music", source: "starter-pack", rightsStatus: "cleared" },
@@ -134,6 +134,11 @@ describe("Alystria ProjectRecord adapter", () => {
     expect(project.tracks.find((track) => track.kind === "captions")?.clips).toHaveLength(0);
     expect(project.tracks.find((track) => track.kind === "narration")?.clips[0]?.text).toBe("Begin with a question.");
     expect(project.tracks.find((track) => track.kind === "presenter")?.clips[0]?.assetId).toBe("presenter-ref");
+    expect(project.tracks.find((track) => track.kind === "music")?.clips[0]).toMatchObject({
+      assetId: "music-ref",
+      audio: { volumeDb: -18.42 },
+      metadata: { loopToTimeline: true, narrationDuckingDb: -12.96 },
+    });
     expect(project.assets.map((asset) => asset.status)).toEqual(["pending", "pending"]);
     expect(project.assets.every((asset) => asset.uri === undefined)).toBe(true);
     expect(project.metadata.adapterNotice).toMatch(/playable media uris must be resolved/i);

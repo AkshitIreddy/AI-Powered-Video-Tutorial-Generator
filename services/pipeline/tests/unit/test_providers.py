@@ -681,6 +681,38 @@ def test_licensed_media_builder_carries_explicit_license_allowlist() -> None:
     assert "Authorization" not in sent.headers
 
 
+def test_openverse_audio_result_normalizes_file_type_and_millisecond_duration() -> None:
+    transport = FakeTransport(
+        response(
+            {
+                "results": [
+                    {
+                        "id": "track-1",
+                        "title": "A quiet discovery",
+                        "url": "https://cdn.example.test/audio.mp3",
+                        "foreign_landing_url": "https://source.example.test/track-1",
+                        "creator": "Example Creator",
+                        "filetype": "mp32",
+                        "duration": 123_000,
+                        "license": "by",
+                        "license_version": "4.0",
+                    }
+                ]
+            }
+        )
+    )
+    adapter = launch_media_adapter("openverse", transport)
+
+    result = adapter.invoke(
+        MediaSearchRequest("quiet instrumental", media_type="audio"),
+        context("openverse"),
+    )
+
+    asset = result.value.assets[0]
+    assert asset.media_type == "audio/mpeg"
+    assert asset.duration_seconds == pytest.approx(123.0)
+
+
 def test_pexels_result_preserves_download_source_attribution_and_license() -> None:
     transport = FakeTransport(
         response(

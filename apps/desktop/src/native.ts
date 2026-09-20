@@ -325,7 +325,7 @@ export interface JobReceipt {
   acceptedAt: string;
   message: string;
   retryable: boolean;
-  operation?: "regenerate_scene" | "regenerate_authored_scene" | "search_visual_candidates" | "render_scene" | "repair_qa" | "export_master" | "editor_timeline_export";
+  operation?: "regenerate_scene" | "regenerate_authored_scene" | "search_visual_candidates" | "search_music_candidates" | "render_scene" | "repair_qa" | "export_master" | "editor_timeline_export";
   progress?: number;
   result?: Record<string, unknown> | null;
   error?: Record<string, unknown> | null;
@@ -397,6 +397,34 @@ export interface StockVisualCandidateSearchRequest extends ProjectIdentityReques
   searchQuery?: string;
   desiredAspectRatio?: "16:9" | "4:3" | "1:1" | "9:16";
   locale?: string;
+}
+
+export type MusicMood = "calm" | "curious" | "focused" | "hopeful" | "playful" | "reflective" | "energetic";
+
+export interface MusicCandidateSearchRequest extends ProjectIdentityRequest {
+  expectedHeadRevisionId: string;
+  topic: string;
+  mood: MusicMood;
+  alternatives: number;
+  locale?: string;
+}
+
+export interface MusicCandidateDecisionRequest extends ProjectIdentityRequest {
+  expectedHeadRevisionId: string;
+  candidateId: string;
+  reason?: string;
+}
+
+export interface MusicCandidateDecisionReceipt {
+  projectId: string;
+  headRevisionId: string;
+  revisionNumber: number;
+  candidateId: string;
+  status: "accepted" | "rejected";
+  assetId?: string;
+  artifactHash?: string;
+  selected?: boolean;
+  attribution?: string;
 }
 
 export interface SceneRenderRequest extends ProjectIdentityRequest {
@@ -1173,6 +1201,28 @@ export function searchVisualCandidates(input: StockVisualCandidateSearchRequest)
     candidateIds: Array.from({ length: input.alternatives }, () => `demo_candidate_${demoId()}`),
     preservationLocks: input.preservationLocks,
   }));
+}
+
+export function searchMusicCandidates(input: MusicCandidateSearchRequest): Promise<JobReceipt> {
+  return command("music_search", input, () => browserControlReceipt("search_music_candidates", {
+    demoOnly: true,
+    topic: input.topic,
+    mood: input.mood,
+    candidateIds: [],
+    reviewRequired: true,
+  }));
+}
+
+export function musicCandidateAccept(input: MusicCandidateDecisionRequest): Promise<MusicCandidateDecisionReceipt> {
+  return command("music_candidate_accept", input, () => {
+    throw new Error("Music candidate acceptance requires the desktop app.");
+  });
+}
+
+export function musicCandidateReject(input: MusicCandidateDecisionRequest): Promise<MusicCandidateDecisionReceipt> {
+  return command("music_candidate_reject", input, () => {
+    throw new Error("Music candidate rejection requires the desktop app.");
+  });
 }
 
 export function sceneRender(input: SceneRenderRequest): Promise<JobReceipt> {

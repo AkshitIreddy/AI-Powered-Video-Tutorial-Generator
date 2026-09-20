@@ -195,6 +195,8 @@ export interface ProjectRecord {
   creative?: CreativeConfiguration;
   sceneCandidates?: unknown[];
   sceneEditCandidates?: unknown[];
+  /** Downloaded, quarantined Openverse tracks awaiting explicit review. */
+  musicCandidates?: unknown[];
   /** Media promoted before this durable authored edit must not be reviewed as current. */
   mediaInvalidatedAt?: string;
   renderedFrameReview?: unknown;
@@ -227,7 +229,7 @@ export interface JobRecord {
   projectId?: string;
   projectDirectory?: string;
   retryable?: boolean;
-  operation?: "regenerate_scene" | "regenerate_authored_scene" | "search_visual_candidates" | "render_scene" | "repair_qa" | "export_master" | "visual_review" | "presenter_generate" | "editor_timeline_export";
+  operation?: "regenerate_scene" | "regenerate_authored_scene" | "search_visual_candidates" | "search_music_candidates" | "render_scene" | "repair_qa" | "export_master" | "visual_review" | "presenter_generate" | "editor_timeline_export";
   result?: Record<string, unknown> | null;
 }
 

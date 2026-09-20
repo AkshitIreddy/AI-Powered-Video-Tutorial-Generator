@@ -4,8 +4,11 @@ import array
 import copy
 import hashlib
 import json
+import math
 import shutil
+import struct
 import subprocess
+import wave
 from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
@@ -173,6 +176,240 @@ def test_compiles_cas_bound_trim_speed_transform_text_and_codec(tmp_path: Path) 
     assert (staging / "text-0001.txt").read_bytes() == b"First\nSecond\nThird\nFourth"
 
 
+def test_music_loops_to_timeline_and_ducks_during_narration(tmp_path: Path) -> None:
+    digest = "9" * 64
+    store = SimpleNamespace(
+        root=tmp_path,
+        manifest=SimpleNamespace(project_id="project-editor"),
+        cas=FakeCas(tmp_path, digest),
+    )
+    value = manifest(digest)
+    value["assets"].append(  # type: ignore[union-attr]
+        {
+            "id": "music",
+            "artifactHash": digest,
+            "mediaType": "audio/wav",
+            "kind": "audio",
+            "exportEligible": True,
+        }
+    )
+    value["clips"].append(  # type: ignore[union-attr]
+        {
+            "id": "music",
+            "trackId": "track-music",
+            "kind": "music",
+            "layer": 5,
+            "assetId": "music",
+            "timelineStartTicks": 0,
+            "timelineDurationTicks": 480_000,
+            "sourceStartTicks": 0,
+            "sourceDurationTicks": 480_000,
+            "playbackRate": 1,
+            "transform": {
+                "x": 0,
+                "y": 0,
+                "scaleX": 1,
+                "scaleY": 1,
+                "rotation": 0,
+                "anchorX": 0.5,
+                "anchorY": 0.5,
+            },
+            "opacity": 1,
+            "audio": {
+                "volumeDb": -18.42,
+                "pan": 0,
+                "muted": False,
+                "fadeInTicks": 0,
+                "fadeOutTicks": 0,
+            },
+            "keyframes": [],
+            "loop": True,
+            "duckingDb": -12.96,
+        }
+    )
+    plan = build_editor_export_plan(
+        store,
+        value,
+        ffmpeg_path=Path("ffmpeg.exe"),
+        media_probe=FakeMediaProbe(),
+        output_path=tmp_path / "music.webm",
+        staging_dir=tmp_path / "staging-music",
+    )
+
+    command = " ".join(plan.audio_argv)
+    assert "-stream_loop -1" in command
+    assert "volume='pow(10,(-18.420000000)/20)'" in command
+    assert "between(t+0,0.2,1.2)" in command
+    assert "pow(10,-12.960000000/20)" in command
+
+
+def test_rejects_loop_or_ducking_on_non_music_audio(tmp_path: Path) -> None:
+    digest = "8" * 64
+    store = SimpleNamespace(
+        root=tmp_path,
+        manifest=SimpleNamespace(project_id="project-editor"),
+        cas=FakeCas(tmp_path, digest),
+    )
+    value = manifest(digest)
+    narration = value["clips"][2]  # type: ignore[index]
+    narration["loop"] = True  # type: ignore[index]
+    narration["duckingDb"] = -8  # type: ignore[index]
+
+    with pytest.raises(EditorExportError, match="loop only on the music track"):
+        build_editor_export_plan(
+            store,
+            value,
+            ffmpeg_path=Path("ffmpeg.exe"),
+            media_probe=FakeMediaProbe(),
+            output_path=tmp_path / "invalid.webm",
+            staging_dir=tmp_path / "staging-invalid",
+        )
+
+
+@pytest.mark.skipif(
+    not Path(r"C:\FFmpeg\bin\ffmpeg.exe").is_file() and shutil.which("ffmpeg") is None,
+    reason="FFmpeg is required for music loop and ducking proof",
+)
+def test_actual_music_loop_and_narration_ducking_reach_delivery(tmp_path: Path) -> None:
+    ffmpeg = _ffmpeg()
+    assert ffmpeg is not None
+
+    def wav_bytes(*, tone: bool) -> bytes:
+        path = tmp_path / ("tone.wav" if tone else "silence.wav")
+        with wave.open(str(path), "wb") as writer:
+            writer.setnchannels(1)
+            writer.setsampwidth(2)
+            writer.setframerate(48_000)
+            values = (
+                int(6_000 * math.sin(2 * math.pi * 220 * index / 48_000)) if tone else 0
+                for index in range(48_000)
+            )
+            writer.writeframes(b"".join(struct.pack("<h", value) for value in values))
+        return path.read_bytes()
+
+    with ProjectStore.create(tmp_path / "music-proof", name="Music proof") as store:
+        music = store.add_artifact_bytes(tone_wav := wav_bytes(tone=True), media_type="audio/wav")
+        narration = store.add_artifact_bytes(wav_bytes(tone=False), media_type="audio/wav")
+        assert len(tone_wav) > 48_000
+        ticks = 240_000
+        transform = {
+            "x": 0,
+            "y": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotation": 0,
+            "anchorX": 0.5,
+            "anchorY": 0.5,
+        }
+        audio = {
+            "volumeDb": -6,
+            "pan": 0,
+            "muted": False,
+            "fadeInTicks": 0,
+            "fadeOutTicks": 0,
+        }
+        value = {
+            "schema": "alystria.editor.render.v1",
+            "projectId": store.manifest.project_id,
+            "name": "Music proof",
+            "timebaseHz": ticks,
+            "frameRate": {"numerator": 10, "denominator": 1},
+            "canvas": {
+                "width": 100,
+                "height": 100,
+                "pixelAspectRatio": 1,
+                "backgroundColor": "#202020",
+            },
+            "durationTicks": 4 * ticks,
+            "codec": {"name": "vp9", "quality": 28},
+            "assets": [
+                {
+                    "id": "music",
+                    "artifactHash": music.hash,
+                    "mediaType": "audio/wav",
+                    "kind": "audio",
+                    "exportEligible": True,
+                },
+                {
+                    "id": "narration",
+                    "artifactHash": narration.hash,
+                    "mediaType": "audio/wav",
+                    "kind": "audio",
+                    "exportEligible": True,
+                },
+            ],
+            "clips": [
+                {
+                    "id": "music",
+                    "trackId": "music-track",
+                    "kind": "music",
+                    "layer": 1,
+                    "assetId": "music",
+                    "timelineStartTicks": 0,
+                    "timelineDurationTicks": 4 * ticks,
+                    "sourceStartTicks": 0,
+                    "sourceDurationTicks": 4 * ticks,
+                    "playbackRate": 1,
+                    "transform": transform,
+                    "opacity": 1,
+                    "audio": audio,
+                    "keyframes": [],
+                    "loop": True,
+                    "duckingDb": -12,
+                },
+                {
+                    "id": "narration",
+                    "trackId": "narration-track",
+                    "kind": "narration",
+                    "layer": 2,
+                    "assetId": "narration",
+                    "timelineStartTicks": ticks,
+                    "timelineDurationTicks": ticks,
+                    "sourceStartTicks": 0,
+                    "sourceDurationTicks": ticks,
+                    "playbackRate": 1,
+                    "transform": transform,
+                    "opacity": 1,
+                    "audio": audio,
+                    "keyframes": [],
+                },
+            ],
+        }
+        receipt = render_editor_timeline(store, value, ffmpeg_path=ffmpeg)
+        decoded = subprocess.run(
+            [
+                str(ffmpeg),
+                "-v",
+                "error",
+                "-i",
+                str(receipt["outputPath"]),
+                "-map",
+                "0:a:0",
+                "-ac",
+                "1",
+                "-ar",
+                "48000",
+                "-f",
+                "f32le",
+                "pipe:1",
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout
+        samples = array.array("f", decoded)
+
+        def rms(start: float, end: float) -> float:
+            window = samples[round(start * 48_000) : round(end * 48_000)]
+            return math.sqrt(sum(value * value for value in window) / len(window))
+
+        before = rms(0.2, 0.8)
+        during = rms(1.2, 1.8)
+        after = rms(2.2, 2.8)
+        assert before > 0.05
+        assert during < before * 0.32
+        assert after == pytest.approx(before, rel=0.08)
+
+
 def test_elides_neutral_rotation_and_opacity_pixel_filters(tmp_path: Path) -> None:
     digest = "f" * 64
     store = SimpleNamespace(root=tmp_path, manifest=SimpleNamespace(project_id="project-editor"), cas=FakeCas(tmp_path, digest))
@@ -220,6 +457,83 @@ def test_executes_without_shell_and_content_addresses_delivery(tmp_path: Path, m
     assert [item.hash for item in registered] == [receipt["artifactHash"], *(item["artifactHash"] for item in receipt["captionSidecars"])]
     assert "00:00:00.200 --> 00:00:01.000" in Path(receipt["captionSidecars"][0]["path"]).read_text(encoding="utf-8")
     assert "00:00:00,200 --> 00:00:01,000" in Path(receipt["captionSidecars"][1]["path"]).read_text(encoding="utf-8")
+
+
+def test_export_emits_hash_bound_licensed_asset_credits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(editor_export_module, "verify_editor_delivery", lambda *_args, **_kwargs: {"testDouble": True})
+    source_bytes = b"trusted media"
+    digest = hashlib.sha256(source_bytes).hexdigest()
+    project_id = "11111111-1111-4111-8111-111111111111"
+    initial_snapshot = {
+        "id": project_id,
+        "title": "Credited edit",
+        "scenes": [],
+        "sources": [],
+        "customization": {
+            "assets": [
+                {
+                    "id": "voice",
+                    "kind": "music",
+                    "label": "Curious Motion",
+                    "source": "licensed-media",
+                    "sha256": digest,
+                    "creator": "Ada Artist",
+                    "license": "CC-BY-4.0",
+                    "attribution": (
+                        '"Curious Motion" by Ada Artist · CC-BY-4.0 '
+                        "(https://creativecommons.org/licenses/by/4.0/) · "
+                        "https://source.test/curious-motion"
+                    ),
+                    "sourceUrl": "https://source.test/curious-motion",
+                    "rightsStatus": "cleared",
+                }
+            ]
+        },
+    }
+    with ProjectStore.create(
+        tmp_path / "credited-project",
+        name="Credited edit",
+        project_id=project_id,
+        initial_snapshot=initial_snapshot,
+    ) as store:
+        source = store.add_artifact_bytes(source_bytes, media_type="audio/wav")
+        assert source.hash == digest
+        value = manifest(digest)
+        value["projectId"] = project_id
+        receipt = render_editor_timeline(
+            store,
+            value,
+            ffmpeg_path=Path("ffmpeg.exe"),
+            media_probe=FakeMediaProbe(),
+            runner=FakeRunner(),
+        )
+
+        assert receipt["attributions"] == [
+            {
+                "assetId": "voice",
+                "title": "Curious Motion",
+                "role": "music",
+                "creator": "Ada Artist",
+                "license": "CC-BY-4.0",
+                "attribution": initial_snapshot["customization"]["assets"][0]["attribution"],  # type: ignore[index]
+                "sourceUrl": "https://source.test/curious-motion",
+                "sha256": digest,
+            }
+        ]
+        sidecar = receipt["attributionSidecar"]
+        assert sidecar is not None
+        credits = json.loads(Path(sidecar["path"]).read_text(encoding="utf-8"))
+        assert credits == {
+            "schema": "alystria.editor.credits.v1",
+            "projectId": project_id,
+            "assets": receipt["attributions"],
+        }
+        row = store.connection.execute(
+            "SELECT metadata_json FROM artifacts WHERE hash = ?",
+            (receipt["artifactHash"],),
+        ).fetchone()
+        assert row is not None
+        assert json.loads(str(row["metadata_json"]))["attributions"] == receipt["attributions"]
 
 
 def test_cancellation_after_encode_prevents_artifact_promotion(tmp_path: Path) -> None:

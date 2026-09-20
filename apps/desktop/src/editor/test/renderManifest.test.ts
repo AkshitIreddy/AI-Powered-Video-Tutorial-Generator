@@ -11,12 +11,15 @@ describe("editor render manifest", () => {
       hash: String(index + 1).repeat(64),
       metadata: { ...asset.metadata, exportEligible: true, nativeArtifactId: `artifact-${index}` },
     }));
+    const music = project.tracks.find((track) => track.kind === "music")!.clips[0]!;
+    music.metadata = { ...music.metadata, loopToTimeline: true, narrationDuckingDb: -12.96 };
     const compiled = compileEditorRenderManifest(project, { name: "vp9", quality: 24 });
     expect(compiled.blockers).toEqual([]);
     expect(compiled.ready).toBe(true);
     expect(compiled.manifest).toMatchObject({ schema: "alystria.editor.render.v1", timebaseHz: 240000, durationTicks: 1_440_000, codec: { name: "vp9" } });
     expect(compiled.manifest.assets.every((asset) => !asset.artifactHash.includes("blob:"))).toBe(true);
     expect(compiled.manifest.clips.find((clip) => clip.id === "sfx-a")?.audio).toMatchObject({ fadeInTicks: 0, fadeOutTicks: 0 });
+    expect(compiled.manifest.clips.find((clip) => clip.id === "music-a")).toMatchObject({ loop: true, duckingDb: -12.96 });
   });
 
   it("compiles motion keyframes to canonical ticks while still blocking browser media and pan", () => {

@@ -44,6 +44,8 @@ export interface EditorRenderClip {
   opacity: number;
   audio: { volumeDb: number; pan: number; muted: boolean; fadeInTicks: number; fadeOutTicks: number };
   includeSourceAudio?: boolean;
+  loop?: boolean;
+  duckingDb?: number;
   text?: string;
   textStyle?: TextStyle;
   keyframes: EditorRenderKeyframe[];
@@ -134,6 +136,8 @@ export function compileEditorRenderManifest(
           fadeOutTicks: framesToTicks(clip.audio.fadeOutFrames, project),
         },
         ...(includeSourceAudio ? { includeSourceAudio: true } : {}),
+        ...(track.kind === "music" && clip.metadata.loopToTimeline === true ? { loop: true } : {}),
+        ...(track.kind === "music" && typeof clip.metadata.narrationDuckingDb === "number" ? { duckingDb: clip.metadata.narrationDuckingDb } : {}),
         ...(clip.text !== undefined ? { text: clip.text } : {}),
         ...((track.kind === "titles" || track.kind === "captions") ? { textStyle: structuredClone(clip.textStyle ?? {
           fontFamily: "sans-serif",

@@ -13,6 +13,8 @@ import { isDownloadActive, isDownloadComplete, downloadPhaseLabel as modelDownlo
 import { ModelDownloadProvider, useModelDownloads } from "./downloads/ModelDownloadProvider";
 import { ModelDownloadLauncher, ModelDownloadPanel } from "./downloads/ModelDownloadPanel";
 import { findModelDownloadEntry } from "./catalog/downloadMatching";
+import { MusicBrowser } from "./music/MusicBrowser";
+import { parseMusicCandidates, type MusicCandidate, type MusicMood } from "./music/types";
 import {
   Activity,
   AlignLeft,
@@ -165,6 +167,8 @@ import {
   localModelSetupSave,
   loadLocalPresenterRuntimeStatus,
   masterExport,
+  musicCandidateAccept,
+  musicCandidateReject,
   projectCreate,
   projectAssetImport,
   projectAssetResolve,
@@ -184,6 +188,7 @@ import {
   sceneCandidateAccept,
   sceneEditCandidateAccept,
   sceneEditCandidateReject,
+  searchMusicCandidates,
   searchVisualCandidates,
   sceneRender,
   sourceImport,
@@ -3063,6 +3068,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
     "--project-shadow": customization.shadowStrength / 100,
   } as React.CSSProperties;
   const [generatingVisual, setGeneratingVisual] = useState(false);
+  const [searchingMusic, setSearchingMusic] = useState(false);
   const candidateImages = visualCandidates(project.sceneCandidates).filter((candidate) => candidate.sceneId === activeScene.id);
   const authoredCandidates = parseSceneEditCandidates(project.sceneEditCandidates).filter((candidate) => candidate.sceneId === activeScene.id);
   const currentAuthoredScene: SceneEditContent = {
@@ -3161,6 +3167,62 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
     } catch (error) { onNotify("Photo search needs attention", errorMessage(error), "warning"); }
     finally { setGeneratingVisual(false); }
   };
+  const searchMusic = async (input: { topic: string; mood: MusicMood; alternatives: number }) => {
+    if (searchingMusic) return;
+    const current = projectRef.current;
+    const identity = nativeProjectLink(current);
+    if (environment !== "native" || !identity) {
+      onNotify("Open the desktop app", "Music search downloads openly licensed tracks into this project for review.", "info");
+      return;
+    }
+    setSearchingMusic(true);
+    try {
+      const durable = await projectSnapshotGet(identity);
+      let receipt = await searchMusicCandidates({ ...identity, expectedHeadRevisionId: durable.headRevisionId, topic: input.topic, mood: input.mood, alternatives: input.alternatives, locale: localeCode(current.locale) });
+      const link = { ...identity, jobId: receipt.jobId };
+      const record = () => onAddJob(receiptJob(receipt, `Music · ${input.mood}`, receipt.message, link));
+      record();
+      while (!["SUCCEEDED", "FAILED", "CANCELLED", "STALE", "BLOCKED"].includes(receipt.state)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        receipt = await jobStatus(link);
+        record();
+      }
+      await reloadCandidateProject();
+      if (receipt.state !== "SUCCEEDED") throw new Error(receipt.message || "Music search did not complete.");
+      const readyCount = typeof receipt.result?.readyCount === "number" ? receipt.result.readyCount : 0;
+      onNotify(readyCount ? "Music ready to review" : "No suitable music found", readyCount ? "Preview the tracks and credits, then choose one to use." : "Try another mood or a shorter musical direction. Your current soundtrack is unchanged.", readyCount ? "success" : "info");
+    } catch (error) {
+      onNotify("Music search needs attention", errorMessage(error), "warning");
+    } finally {
+      setSearchingMusic(false);
+    }
+  };
+  const decideMusicCandidate = async (candidate: MusicCandidate, decision: "accept" | "reject") => {
+    const current = projectRef.current;
+    const identity = nativeProjectLink(current);
+    if (environment !== "native" || !identity) {
+      onNotify("Open the desktop app", "Music choices are saved with the desktop project and its source attribution.", "info");
+      return;
+    }
+    try {
+      const durable = await projectSnapshotGet(identity);
+      if (decision === "accept") {
+        await musicCandidateAccept({ ...identity, expectedHeadRevisionId: durable.headRevisionId, candidateId: candidate.id });
+      } else {
+        await musicCandidateReject({ ...identity, expectedHeadRevisionId: durable.headRevisionId, candidateId: candidate.id, reason: "Skipped during soundtrack review" });
+      }
+      await reloadCandidateProject();
+      onNotify(decision === "accept" ? "Music selected" : "Music candidate skipped", decision === "accept" ? "The track, license, creator credit, source, looping, and narration ducking are saved with this tutorial." : "The selected soundtrack is unchanged.", "success");
+    } catch (error) {
+      onNotify("Music choice needs attention", errorMessage(error), "warning");
+    }
+  };
+  const resolveMusicPreview = useCallback(async (candidate: MusicCandidate) => {
+    const identity = nativeProjectLink(projectRef.current);
+    if (environment !== "native" || !identity) throw new Error("Open the desktop app to preview downloaded music.");
+    const resolved = await projectAssetResolve({ ...identity, artifactHash: candidate.artifactHash });
+    return convertFileSrc(resolved.path);
+  }, [environment]);
   return <div className="studio-workspace">
     <div className="studio-toolbar"><div><span className="scene-crumb">Scene {String(activeScene.index).padStart(2, "0")}</span><strong>{activeScene.title}</strong><SceneStatus status={activeScene.status} /></div><div className="studio-toolbar-center"><button onClick={onUndo} aria-label="Undo durable revision"><Undo2 size={16} /></button><button onClick={onRedo} aria-label="Redo durable revision"><Redo2 size={16} /></button><span className="separator" /><button onClick={() => setZoom(100)} aria-pressed={zoom === 100}><Square size={14} /> Fit</button><label><input aria-label="Canvas zoom" type="range" min="45" max="100" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />{zoom}%</label></div><div><button className="secondary-button small" onClick={() => { void openAdvancedEditor(); }}><Film size={15} /> Advanced editor</button><button className="secondary-button small" onClick={() => onRegenerate(activeScene)}><WandSparkles size={15} /> New candidate</button><button className="primary-button small" data-tour-target="render-scene" onClick={() => onRenderScene(activeScene)}><Play size={14} /> Render scene</button></div></div>
     <div className="studio-layout">
@@ -3170,7 +3232,7 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
       <aside className="inspector"><div className="inspector-tabs">{["Content", "Generate", "Design", "Motion"].map((tab) => <button className={inspectorTab === tab ? "active" : ""} onClick={() => setInspectorTab(tab)} key={tab}>{tab}</button>)}</div>
         {inspectorTab === "Content" ? <div className="inspector-body"><InspectorSection title="Scene identity"><label>Title<input value={activeScene.title} onChange={(event) => onSceneUpdate(activeScene.id, { title: event.target.value })} /></label><label>Scene family<select value={activeScene.kind} onChange={(event) => onSceneUpdate(activeScene.id, { kind: event.target.value as Scene["kind"] })}><option value="title">Title</option><option value="definition">Definition</option><option value="diagram">Diagram</option><option value="worked-example">Worked example</option><option value="comparison">Comparison</option><option value="code">Code trace</option><option value="recap">Recap</option></select></label></InspectorSection><InspectorSection title="Narration"><textarea data-tour-target="scene-narration" aria-label="Scene narration" rows={7} value={activeScene.narration} onChange={(event) => onSceneUpdate(activeScene.id, { narration: event.target.value })} /><div className="field-meta"><span>{activeScene.narration.split(" ").length} words</span><span>~{activeScene.duration}s</span></div><button className="secondary-button full" onClick={() => setInspectorTab("Design")}><Mic2 size={15} /> Presenter & voice direction</button></InspectorSection><InspectorSection title="Evidence"><div className="evidence-chip"><Link2 size={15} /><span><strong>{activeScene.citations} citation references</strong><small>Review claim support in the Sources and Review workspaces.</small></span></div></InspectorSection><InspectorSection title="Your scene review"><button className="secondary-button full" onClick={() => onSceneUpdate(activeScene.id, { status: activeScene.status === "approved" ? "draft" : "approved" })}><CheckCircle2 size={15} />{activeScene.status === "approved" ? "Reopen scene review" : "Mark scene reviewed"}</button><p className="inspector-note">This records your review. Editing the explanation clears this mark; export checks still run separately.</p></InspectorSection>{mode === "studio" && <InspectorSection title="Dependency impact"><p className="inspector-note">Editing narration invalidates alignment, captions, presenter timing, scene render, and final composition.</p></InspectorSection>}</div>
         : inspectorTab === "Generate" ? <div><fieldset className="creative-generation-fields" disabled={generatingVisual}><CreativeInspector configuration={creative} onChange={onProjectCreative} onQueueVisualReview={() => { void generateVisual("scene"); }} onGeneratePresenter={() => { void generateVisual("presenter"); }} /></fieldset><StockImageSearch policy={project.providerRoutingPolicy} sceneId={activeScene.id} suggestedQuery={activeScene.title} busy={generatingVisual} onSearch={searchStockImages} />{generatingVisual && <p role="status" className="inspector-note">Preparing image candidates… You can follow or cancel this task in Jobs.</p>}{authoredCandidates.length > 0 && <SceneEditCandidateReview current={currentAuthoredScene} candidates={authoredCandidates} onAccept={(candidate) => decideAuthoredCandidate(candidate, "accept")} onReject={(candidate) => decideAuthoredCandidate(candidate, "reject")} />}<VisualCandidateReview candidates={candidateImages} resolve={resolveCandidateImage} onAccept={acceptCandidateImage} /></div>
-        : inspectorTab === "Design" ? <DesignInspector project={project} customization={customization} onChange={onProjectCustomization} onNotify={onNotify} onPreviewAsset={(id, url) => setAssetPreviews((current) => ({ ...current, [id]: url }))} /> : <MotionInspector scene={activeScene} canEditTiming={canEditGeneratedTiming} onChange={(update) => onSceneUpdate(activeScene.id, update)} />}
+        : inspectorTab === "Design" ? <DesignInspector project={project} customization={customization} searchingMusic={searchingMusic} onSearchMusic={searchMusic} onAcceptMusic={(candidate) => decideMusicCandidate(candidate, "accept")} onRejectMusic={(candidate) => decideMusicCandidate(candidate, "reject")} onResolveMusicPreview={resolveMusicPreview} onChange={onProjectCustomization} onNotify={onNotify} onPreviewAsset={(id, url) => setAssetPreviews((current) => ({ ...current, [id]: url }))} /> : <MotionInspector scene={activeScene} canEditTiming={canEditGeneratedTiming} onChange={(update) => onSceneUpdate(activeScene.id, update)} />}
       </aside>
     </div>
     <div className="scene-sequence-panel"><div className="scene-sequence-heading"><strong><Layers3 size={15} /> Teaching sequence</strong><button className="text-button" onClick={() => { void openAdvancedEditor(); }}>Edit tracks & timing <ArrowRight size={14} /></button><small>v{version}</small></div><div className="scene-sequence-clips">{project.scenes.map((scene) => <button className={scene.id === activeScene.id ? "active" : ""} style={{ flexGrow: scene.duration }} key={scene.id} title={scene.title} onClick={() => onSelectScene(scene.id)}><span>{String(scene.index).padStart(2, "0")} · {formatTime(scene.duration)}</span><strong>{scene.title}</strong></button>)}</div></div>
@@ -3178,9 +3240,14 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
   </div>;
 }
 
-function DesignInspector({ project, customization, onChange, onNotify, onPreviewAsset }: {
+function DesignInspector({ project, customization, searchingMusic, onSearchMusic, onAcceptMusic, onRejectMusic, onResolveMusicPreview, onChange, onNotify, onPreviewAsset }: {
   project: ProjectRecord;
   customization: CanvasCustomization;
+  searchingMusic: boolean;
+  onSearchMusic: (input: { topic: string; mood: MusicMood; alternatives: number }) => Promise<void>;
+  onAcceptMusic: (candidate: MusicCandidate) => Promise<void>;
+  onRejectMusic: (candidate: MusicCandidate) => Promise<void>;
+  onResolveMusicPreview: (candidate: MusicCandidate) => Promise<string>;
   onChange: (next: CanvasCustomization, receipt?: ProjectAssetImportReceipt) => void;
   onNotify: ProjectWorkspaceProps["onNotify"];
   onPreviewAsset: (id: string, url: string) => void;
@@ -3397,7 +3464,8 @@ function DesignInspector({ project, customization, onChange, onNotify, onPreview
         <div className="compact-row"><label>Side<select value={customization.presenter.side} onChange={(event) => updatePresenter({ side: event.target.value as "left" | "right" })}><option value="left">Left</option><option value="right">Right</option></select></label><label>Crop<select value={customization.presenter.crop} onChange={(event) => updatePresenter({ crop: event.target.value as CanvasCustomization["presenter"]["crop"] })}><option value="portrait">Portrait safe</option><option value="contain">Contain</option><option value="cover">Fill</option></select></label></div>
       </InspectorSection>
       <InspectorSection title="Music & sound cues">
-        <label>Music bed<select value={customization.audio.musicAssetId ?? "music-none"} onChange={(event) => updateAudio({ musicAssetId: event.target.value === "music-none" ? null : event.target.value })}><option value="music-none">No music · recommended</option><option value="starter.audio.music.focus-loop">Focus loop · starter pack</option><option value="starter.audio.music.inquiry-loop">Inquiry loop · starter pack</option>{customization.assets.filter((asset) => asset.kind === "music" && asset.source !== "starter-pack").map((asset) => <option value={asset.id} key={asset.id}>{asset.label} · uploaded</option>)}</select></label>
+        <MusicBrowser topic={project.topic} candidates={parseMusicCandidates(project.musicCandidates)} busy={searchingMusic} onSearch={onSearchMusic} onAccept={onAcceptMusic} onReject={onRejectMusic} resolvePreview={onResolveMusicPreview} />
+        <label>Music bed<select value={customization.audio.musicAssetId ?? "music-none"} onChange={(event) => updateAudio({ musicAssetId: event.target.value === "music-none" ? null : event.target.value })}><option value="music-none">No music</option><option value="starter.audio.music.focus-loop">Focus loop · starter pack</option><option value="starter.audio.music.inquiry-loop">Inquiry loop · starter pack</option>{customization.assets.filter((asset) => asset.kind === "music" && asset.source !== "starter-pack").map((asset) => <option value={asset.id} key={asset.id}>{asset.label} · {asset.source === "licensed-media" ? "Openverse" : "uploaded"}</option>)}</select></label>
         <AssetUpload label="Upload music" accept="audio/wav,audio/mpeg,audio/flac,audio/ogg,audio/opus,.wav,.mp3,.flac,.ogg,.opus" onFile={(file) => { void acceptAsset(file, "music"); }} />
         <label>Sound cue<select value={customization.audio.sfxAssetId ?? "sfx-none"} onChange={(event) => updateAudio({ sfxAssetId: event.target.value === "sfx-none" ? null : event.target.value })}><option value="sfx-none">No sound cues · recommended</option><option value="starter.audio.sfx.emphasis-a">Quiet teaching cue</option><option value="starter.audio.sfx.emphasis-b">Technical emphasis</option>{customization.assets.filter((asset) => asset.kind === "sfx" && asset.source !== "starter-pack").map((asset) => <option value={asset.id} key={asset.id}>{asset.label} · uploaded</option>)}</select></label>
         <AssetUpload label="Upload a sound cue" accept="audio/wav,audio/mpeg,audio/flac,audio/ogg,audio/opus,.wav,.mp3,.flac,.ogg,.opus" onFile={(file) => { void acceptAsset(file, "sfx"); }} />

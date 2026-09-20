@@ -496,6 +496,90 @@ pub fn scene_stock_search(
 }
 
 #[tauri::command]
+pub fn music_search(
+    mut input: MusicCandidateSearchRequest,
+    state: State<'_, AppState>,
+) -> Result<JobReceipt, CommandError> {
+    verify_control_identity(
+        &state,
+        input.project_id,
+        &input.project_directory,
+        &input.expected_head_revision_id,
+    )?;
+    input.topic = validation::bounded_text(&input.topic, "topic", 240)?;
+    if !(1..=4).contains(&input.alternatives) {
+        return Err(CommandError::invalid(
+            "alternatives",
+            "must be between 1 and 4",
+        ));
+    }
+    if let Some(locale) = &mut input.locale {
+        *locale = validation::locale(locale)?;
+    }
+    control_action(input, "control.searchMusicCandidates", &state)
+}
+
+#[tauri::command]
+pub fn music_candidate_accept(
+    input: MusicCandidateDecisionRequest,
+    state: State<'_, AppState>,
+) -> Result<MusicCandidateDecisionReceipt, CommandError> {
+    music_candidate_decision(input, "control.acceptMusicCandidate", "accepted", &state)
+}
+
+#[tauri::command]
+pub fn music_candidate_reject(
+    mut input: MusicCandidateDecisionRequest,
+    state: State<'_, AppState>,
+) -> Result<MusicCandidateDecisionReceipt, CommandError> {
+    if let Some(reason) = &mut input.reason {
+        *reason = validation::bounded_text(reason, "reason", 500)?;
+    }
+    music_candidate_decision(input, "control.rejectMusicCandidate", "rejected", &state)
+}
+
+fn music_candidate_decision(
+    mut input: MusicCandidateDecisionRequest,
+    method: &str,
+    expected_status: &str,
+    state: &State<'_, AppState>,
+) -> Result<MusicCandidateDecisionReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    input.expected_head_revision_id = validation::bounded_text(
+        &input.expected_head_revision_id,
+        "expectedHeadRevisionId",
+        128,
+    )?;
+    input.candidate_id = validation::stable_id(&input.candidate_id, "candidateId")?;
+    let expected_project_id = input.project_id;
+    let expected_candidate_id = input.candidate_id.clone();
+    let receipt: MusicCandidateDecisionReceipt = worker_result(&state.worker, method, &input)?;
+    if receipt.project_id != expected_project_id
+        || receipt.candidate_id != expected_candidate_id
+        || receipt.status != expected_status
+    {
+        return Err(CommandError::worker(
+            "The pipeline returned a mismatched music candidate receipt.",
+            false,
+        ));
+    }
+    validation::stable_id(&receipt.head_revision_id, "headRevisionId")?;
+    if expected_status == "accepted" {
+        let asset_id = receipt.asset_id.as_deref().ok_or_else(|| {
+            CommandError::worker("Accepted music receipt omitted its asset ID.", false)
+        })?;
+        validation::stable_id(asset_id, "assetId")?;
+        let artifact_hash = receipt.artifact_hash.as_deref().ok_or_else(|| {
+            CommandError::worker("Accepted music receipt omitted its artifact hash.", false)
+        })?;
+        validate_sha256(artifact_hash, "artifactHash")?;
+    }
+    Ok(receipt)
+}
+
+#[tauri::command]
 pub fn scene_render(
     input: SceneRenderRequest,
     state: State<'_, AppState>,

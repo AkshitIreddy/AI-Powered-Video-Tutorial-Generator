@@ -379,6 +379,15 @@ class MediaAsset:
     license: str | None = None
     attribution: str | None = None
     source_url: str | None = None
+    title: str | None = None
+    creator: str | None = None
+    creator_url: str | None = None
+    license_version: str | None = None
+    license_url: str | None = None
+    foreign_identifier: str | None = None
+    provider: str | None = None
+    source: str | None = None
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

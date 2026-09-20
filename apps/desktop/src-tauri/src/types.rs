@@ -675,6 +675,60 @@ pub enum StockVisualAspectRatio {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MusicCandidateSearchRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub topic: String,
+    pub mood: MusicMood,
+    pub alternatives: u8,
+    #[serde(default)]
+    pub locale: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MusicMood {
+    Calm,
+    Curious,
+    Focused,
+    Hopeful,
+    Playful,
+    Reflective,
+    Energetic,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MusicCandidateDecisionRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub candidate_id: String,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MusicCandidateDecisionReceipt {
+    pub project_id: Uuid,
+    pub head_revision_id: String,
+    pub revision_number: u64,
+    pub candidate_id: String,
+    pub status: String,
+    #[serde(default)]
+    pub asset_id: Option<String>,
+    #[serde(default)]
+    pub artifact_hash: Option<String>,
+    #[serde(default)]
+    pub selected: Option<bool>,
+    #[serde(default)]
+    pub attribution: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SceneRenderRequest {
     pub project_id: Uuid,
     pub project_directory: PathBuf,

@@ -690,6 +690,11 @@ describe("Alystria desktop shell", () => {
     await user.click(screen.getByRole("button", { name: /top/i }));
     await user.selectOptions(screen.getByLabelText(/maximum lines/i), "1");
     await user.click(screen.getByRole("tab", { name: /media/i }));
+    expect(screen.getByRole("region", { name: /find background music/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /find free music/i })).toBeEnabled();
+    expect(screen.getByText(/openverse · cc0 \/ cc by/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /find free music/i }));
+    expect(await screen.findByText(/music search downloads openly licensed tracks into this project for review/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^licensed$/i }));
     expect(screen.getByLabelText(/^commercial use$/i)).toHaveValue("unknown");
     expect(screen.getByLabelText(/redistribution in exported video/i)).toHaveValue("unknown");

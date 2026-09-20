@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+import alystria.native_controls as native_controls_module
 from alystria.generation import (
     GenerationCoordinator,
     GenerationRequest,
@@ -23,6 +24,7 @@ from alystria.jobs import SQLiteWorkflowRuntime
 from alystria.native_controls import (
     NativeControlCoordinator,
     _caption_delivery_mode,
+    _export_asset_attributions,
     _renderer_scene,
 )
 from alystria.project import ProjectHistory, ProjectStore
@@ -573,6 +575,112 @@ def test_scene_render_fails_closed_without_pinned_runtime(tmp_path: Path) -> Non
         failed = control.status(job.job_id)
         assert failed.state.value == "FAILED"
         assert "Pinned renderer runtime is unavailable" in failed.error["message"]
+
+
+def test_music_search_runs_as_a_durable_native_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_search(
+        store: ProjectStore,
+        client: object,
+        params: dict[str, object],
+        context: object,
+        *,
+        transport: object,
+    ) -> dict[str, object]:
+        del client, context, transport
+        captured.update(params)
+        assert store.head_revision() is not None
+        return {
+            "projectId": store.manifest.project_id,
+            "headRevisionId": params["expectedHeadRevisionId"],
+            "revisionNumber": 1,
+            "readyCount": 2,
+            "candidateIds": ["music_one", "music_two"],
+            "queriesAttempted": ["orbital mechanics", "curious"],
+        }
+
+    monkeypatch.setattr(native_controls_module, "search_music_candidates", fake_search)
+    with _project(tmp_path) as store:
+        head = store.head_revision()
+        assert head is not None
+        control = NativeControlCoordinator(store, licensed_media_client=object())
+        job = control.submit_music_search(
+            {
+                "expectedHeadRevisionId": head.revision_id,
+                "topic": "Orbital mechanics",
+                "mood": "curious",
+                "alternatives": 2,
+                "locale": "en-US",
+            }
+        )
+
+        assert job.state.value == "QUEUED"
+        control.runtime.run_once(control.handlers)
+        completed = control.status(job.job_id)
+
+        assert completed.state.value == "SUCCEEDED"
+        assert completed.result is not None
+        assert completed.result["readyCount"] == 2
+        assert completed.result["candidateIds"] == ["music_one", "music_two"]
+        assert captured == {
+            "expectedHeadRevisionId": head.revision_id,
+            "topic": "Orbital mechanics",
+            "mood": "curious",
+            "alternatives": 2,
+            "locale": "en-US",
+        }
+
+
+def test_export_credits_include_only_selected_licensed_assets() -> None:
+    snapshot = {
+        "customization": {
+            "backgroundAssetId": None,
+            "presenter": {"assetId": None},
+            "audio": {"musicAssetId": "music-open", "sfxAssetId": None},
+            "assets": [
+                {
+                    "id": "music-open",
+                    "kind": "music",
+                    "label": "Curious Motion",
+                    "source": "licensed-media",
+                    "creator": "Ada Artist",
+                    "license": "CC-BY-4.0",
+                    "attribution": "Curious Motion by Ada Artist, CC BY 4.0",
+                    "sourceUrl": "https://source.test/curious-motion",
+                    "sha256": "a" * 64,
+                    "rightsStatus": "cleared",
+                },
+                {
+                    "id": "unused-music",
+                    "kind": "music",
+                    "label": "Unused",
+                    "source": "licensed-media",
+                    "creator": "Other Artist",
+                    "license": "CC0-1.0",
+                    "attribution": "Unused by Other Artist, CC0",
+                    "sourceUrl": "https://source.test/unused",
+                    "sha256": "b" * 64,
+                    "rightsStatus": "cleared",
+                },
+            ],
+        }
+    }
+
+    assert _export_asset_attributions(snapshot) == [
+        {
+            "assetId": "music-open",
+            "title": "Curious Motion",
+            "role": "music",
+            "creator": "Ada Artist",
+            "license": "CC-BY-4.0",
+            "attribution": "Curious Motion by Ada Artist, CC BY 4.0",
+            "sourceUrl": "https://source.test/curious-motion",
+            "sha256": "a" * 64,
+        }
+    ]
 
 
 def test_renderer_scene_preserves_authoritative_storyboard_ticks() -> None:

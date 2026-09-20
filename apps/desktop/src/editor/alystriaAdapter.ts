@@ -49,7 +49,7 @@ export interface AlystriaProjectRecordLike {
     typeScale?: number;
     captions?: { position?: "auto" | "top" | "lower-third"; size?: number; textColor?: string; panelColor?: string };
     presenter?: { assetId?: string | null; placement?: string; side?: string; scale?: number };
-    audio?: { musicAssetId?: string | null; sfxAssetId?: string | null; musicLevel?: number; sfxLevel?: number };
+    audio?: { musicAssetId?: string | null; sfxAssetId?: string | null; musicLevel?: number; sfxLevel?: number; narrationDucking?: number };
     assets?: readonly AlystriaStudioAssetLike[];
   };
   nativeProjectId?: string;
@@ -361,8 +361,10 @@ export function createEditorProjectFromAlystriaProject(
   }
   const musicId = customization?.audio?.musicAssetId ?? null;
   if (musicId && sourceAssets.some((asset) => asset.id === musicId)) {
-    const musicClip = makeClip({ id: `music-${musicId}`, trackId: track("music").id, kind: "music", name: sourceAssets.find((asset) => asset.id === musicId)?.label ?? "Music", startFrame: 0, durationFrames: Math.max(1, timelineDuration), assetId: musicId, metadata: { sourceNeedsPlayableUri: true } });
-    musicClip.audio.volumeDb = customization?.audio?.musicLevel ?? 0;
+    const musicLevel = Math.max(0, Math.min(100, customization?.audio?.musicLevel ?? 12));
+    const ducking = Math.max(0, Math.min(100, customization?.audio?.narrationDucking ?? 72));
+    const musicClip = makeClip({ id: `music-${musicId}`, trackId: track("music").id, kind: "music", name: sourceAssets.find((asset) => asset.id === musicId)?.label ?? "Music", startFrame: 0, durationFrames: Math.max(1, timelineDuration), assetId: musicId, metadata: { sourceNeedsPlayableUri: true, loopToTimeline: true, narrationDuckingDb: Math.round((-18 * ducking / 100) * 100) / 100 } });
+    musicClip.audio.volumeDb = musicLevel <= 0 ? -60 : Math.max(-60, Math.round(20 * Math.log10(musicLevel / 100) * 100) / 100);
     track("music").clips.push(musicClip);
   }
   const sfxId = customization?.audio?.sfxAssetId ?? null;

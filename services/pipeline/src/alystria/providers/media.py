@@ -936,7 +936,11 @@ def _media_output(payload: dict[str, Any], provider_id: str | None = None) -> Me
                 candidates.append(value)
     if not candidates:
         candidates = [payload]
-    assets = tuple(asset for item in candidates if (asset := _asset_from_item(item)) is not None)
+    assets = tuple(
+        asset
+        for item in candidates
+        if (asset := _asset_from_item(item, provider_id=provider_id)) is not None
+    )
     return MediaOutput(assets, {"remoteResponseId": payload.get("id")})
 
 
@@ -988,7 +992,9 @@ def _pexels_output(payload: dict[str, Any]) -> MediaOutput:
     return MediaOutput(tuple(assets), {"remoteResponseId": payload.get("id")})
 
 
-def _asset_from_item(item: dict[str, Any]) -> MediaAsset | None:
+def _asset_from_item(
+    item: dict[str, Any], *, provider_id: str | None = None
+) -> MediaAsset | None:
     source = _dictionary(item.get("src"))
     uri = next(
         (
@@ -1015,17 +1021,54 @@ def _asset_from_item(item: dict[str, Any]) -> MediaAsset | None:
     )
     if uri is None and encoded is None:
         return None
+    media_type = _string(item.get("mime_type")) or _string(item.get("media_type"))
+    duration_seconds = _float(item.get("duration"))
+    if provider_id == "openverse":
+        media_type = media_type or _openverse_media_type(item)
+        # Openverse's audio API returns duration in milliseconds. The provider-
+        # neutral MediaAsset contract uses seconds.
+        if duration_seconds is not None:
+            duration_seconds /= 1_000
     return MediaAsset(
         uri=uri,
         data_base64=encoded,
-        media_type=_string(item.get("mime_type")) or _string(item.get("media_type")),
+        media_type=media_type,
         width=_integer(item.get("width")),
         height=_integer(item.get("height")),
-        duration_seconds=_float(item.get("duration")),
+        duration_seconds=duration_seconds,
         license=_string(item.get("license")),
         attribution=_string(item.get("attribution")) or _string(item.get("creator")),
         source_url=_string(item.get("foreign_landing_url")) or _string(item.get("source_url")),
+        title=_string(item.get("title")) or _string(item.get("name")),
+        creator=_string(item.get("creator")),
+        creator_url=_string(item.get("creator_url")),
+        license_version=_string(item.get("license_version")),
+        license_url=_string(item.get("license_url")),
+        foreign_identifier=_string(item.get("foreign_identifier")) or _string(item.get("id")),
+        provider=_string(item.get("provider")),
+        source=_string(item.get("source")),
+        tags=tuple(
+            tag
+            for value in item.get("tags", [])
+            if isinstance(value, (str, dict))
+            and (tag := (value if isinstance(value, str) else value.get("name")))
+            and isinstance(tag, str)
+        ),
     )
+
+
+def _openverse_media_type(item: dict[str, Any]) -> str | None:
+    file_type = (_string(item.get("filetype")) or "").lower()
+    return {
+        "flac": "audio/flac",
+        "mp3": "audio/mpeg",
+        "mp32": "audio/mpeg",
+        "oga": "audio/ogg",
+        "ogg": "audio/ogg",
+        "opus": "audio/ogg",
+        "wav": "audio/wav",
+        "wave": "audio/wav",
+    }.get(file_type)
 
 
 def _usage_from_payload(provider_id: str, model: str, payload: dict[str, Any]) -> Usage:

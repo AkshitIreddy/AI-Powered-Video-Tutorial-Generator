@@ -473,6 +473,13 @@ def build_editor_export_plan(
             expected_kind = "audio" if kind in AUDIO_KINDS else {"image", "video"}
             if (isinstance(expected_kind, str) and binding[1] != expected_kind) or (isinstance(expected_kind, set) and binding[1] not in expected_kind):
                 raise EditorExportError(f"Clip {clip_id} media kind does not match its track")
+            loop = clip.get("loop", False)
+            if not isinstance(loop, bool):
+                raise EditorExportError(f"Clip {clip_id} loop must be a boolean")
+            if loop and kind != "music":
+                raise EditorExportError(f"Clip {clip_id} can loop only on the music track")
+            if loop:
+                input_args.extend(("-stream_loop", "-1"))
             input_args.extend(("-i", str(binding[0])))
             media_inputs[clip_id] = (next_input, binding[1], binding[0])
             next_input += 1
@@ -489,6 +496,21 @@ def build_editor_export_plan(
     audio_number = 0
     plan_warnings: list[str] = []
     source_audio_cache: dict[Path, bool] = {}
+    narration_windows = [
+        (
+            _seconds(_integer(clip.get("timelineStartTicks"), "narration timelineStartTicks")),
+            _seconds(
+                _integer(clip.get("timelineStartTicks"), "narration timelineStartTicks")
+                + _integer(
+                    clip.get("timelineDurationTicks"),
+                    "narration timelineDurationTicks",
+                    minimum=1,
+                )
+            ),
+        )
+        for clip in clips
+        if clip.get("kind") == "narration"
+    ]
 
     for clip in clips:
         clip_id = str(clip["id"])
@@ -658,6 +680,24 @@ def build_editor_export_plan(
                 _atempo(rate),
                 f"volume='pow(10,({_automation_expression(keyframes, 'audio.volumeDb', gain, time_expression=f't+{start}')})/20)':eval=frame",
             ]
+            raw_ducking = clip.get("duckingDb")
+            if raw_ducking is not None:
+                if kind != "music":
+                    raise EditorExportError(f"Clip {clip_id} can duck only on the music track")
+                ducking_db = _number(
+                    raw_ducking,
+                    f"clip {clip_id} duckingDb",
+                    minimum=-30,
+                    maximum=0,
+                )
+                if narration_windows and ducking_db < 0:
+                    speaking = "+".join(
+                        f"between(t+{start},{window_start},{window_end})"
+                        for window_start, window_end in narration_windows
+                    )
+                    filters.append(
+                        f"volume='if(gt({speaking},0),pow(10,{ducking_db:.9f}/20),1)':eval=frame"
+                    )
             if fade_in_ticks:
                 filters.append(f"afade=t=in:st=0:d={_seconds(fade_in_ticks)}")
             if fade_out_ticks:
@@ -704,6 +744,75 @@ def build_editor_export_plan(
     return EditorExportPlan(argv, audio_argv, output_path, manifest_hash, duration_ticks, codec, media_type, tuple(warnings))
 
 
+def _durable_export_attributions(
+    store: ProjectStore, manifest: Mapping[str, Any]
+) -> list[dict[str, str]]:
+    """Bind export credits to the durable project asset and exact CAS hash."""
+
+    head_reader = getattr(store, "head_revision", None)
+    if not callable(head_reader):
+        return []
+    head = head_reader()
+    if head is None:
+        return []
+    customization = head.snapshot.get("customization")
+    if not isinstance(customization, dict):
+        return []
+    durable_assets = customization.get("assets")
+    if not isinstance(durable_assets, list):
+        return []
+    manifest_assets = {
+        str(asset.get("id")): str(asset.get("artifactHash"))
+        for raw in _list(manifest.get("assets"), "manifest.assets")
+        if isinstance(raw, Mapping)
+        and (asset := dict(raw)).get("id") is not None
+        and asset.get("artifactHash") is not None
+    }
+    credits: list[dict[str, str]] = []
+    for raw in durable_assets:
+        if not isinstance(raw, Mapping) or raw.get("source") != "licensed-media":
+            continue
+        asset = dict(raw)
+        asset_id = _string(asset.get("id"), "licensed asset id", maximum=160)
+        if asset_id not in manifest_assets:
+            continue
+        digest = _string(asset.get("sha256"), f"licensed asset {asset_id} sha256", maximum=64)
+        if not SHA256.fullmatch(digest) or manifest_assets[asset_id] != digest:
+            raise EditorExportError(
+                f"Licensed asset {asset_id} provenance does not match the rendered CAS object"
+            )
+        source_url = _string(
+            asset.get("sourceUrl"), f"licensed asset {asset_id} sourceUrl", maximum=2_000
+        )
+        if not source_url.casefold().startswith("https://"):
+            raise EditorExportError(f"Licensed asset {asset_id} source must use HTTPS")
+        credits.append(
+            {
+                "assetId": asset_id,
+                "title": _string(
+                    asset.get("label"), f"licensed asset {asset_id} label", maximum=500
+                ),
+                "role": _string(
+                    asset.get("kind"), f"licensed asset {asset_id} kind", maximum=40
+                ),
+                "creator": _string(
+                    asset.get("creator"), f"licensed asset {asset_id} creator", maximum=500
+                ),
+                "license": _string(
+                    asset.get("license"), f"licensed asset {asset_id} license", maximum=200
+                ),
+                "attribution": _string(
+                    asset.get("attribution"),
+                    f"licensed asset {asset_id} attribution",
+                    maximum=2_000,
+                ),
+                "sourceUrl": source_url,
+                "sha256": digest,
+            }
+        )
+    return sorted(credits, key=lambda item: item["assetId"])
+
+
 def render_editor_timeline(
     store: ProjectStore,
     manifest: Mapping[str, Any],
@@ -745,7 +854,9 @@ def render_editor_timeline(
         output_path=selected_output,
         staging_dir=attempt,
     )
+    attributions = _durable_export_attributions(store, manifest)
     sidecar_paths: tuple[Path, ...] = ()
+    attribution_sidecar_path: Path | None = None
     try:
         selected_runner = runner or SubprocessEditorExportRunner(cancel_check)
         started = time.monotonic()
@@ -776,11 +887,33 @@ def render_editor_timeline(
             [_mapping(item, "manifest clip") for item in _list(manifest.get("clips"), "manifest.clips")],
             selected_output,
         )
+        if attributions:
+            attribution_sidecar_path = selected_output.with_suffix(
+                f"{selected_output.suffix}.credits.json"
+            )
+            attribution_sidecar_path.write_text(
+                json.dumps(
+                    {
+                        "schema": "alystria.editor.credits.v1",
+                        "projectId": store.manifest.project_id,
+                        "assets": attributions,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
         artifact = store.cas.add_file(
             selected_output,
             media_type=plan.media_type,
             original_name=selected_output.name,
-            metadata={"role": "editor-timeline-export", "manifestHash": plan.manifest_hash, "codec": plan.codec},
+            metadata={
+                "role": "editor-timeline-export",
+                "manifestHash": plan.manifest_hash,
+                "codec": plan.codec,
+                "attributions": attributions,
+            },
         )
         sidecars = []
         artifacts = [artifact]
@@ -794,6 +927,25 @@ def render_editor_timeline(
             )
             artifacts.append(sidecar_artifact)
             sidecars.append({"format": path.suffix[1:], "path": str(path), "artifactHash": sidecar_artifact.hash, "mediaType": media_type, "byteSize": path.stat().st_size})
+        attribution_sidecar = None
+        if attribution_sidecar_path is not None:
+            attribution_artifact = store.cas.add_file(
+                attribution_sidecar_path,
+                media_type="application/json",
+                original_name=attribution_sidecar_path.name,
+                metadata={
+                    "role": "editor-attribution-sidecar",
+                    "manifestHash": plan.manifest_hash,
+                    "schema": "alystria.editor.credits.v1",
+                },
+            )
+            artifacts.append(attribution_artifact)
+            attribution_sidecar = {
+                "path": str(attribution_sidecar_path),
+                "artifactHash": attribution_artifact.hash,
+                "mediaType": "application/json",
+                "byteSize": attribution_sidecar_path.stat().st_size,
+            }
         store.register_artifacts(artifacts)
         return {
             "projectId": store.manifest.project_id,
@@ -806,12 +958,16 @@ def render_editor_timeline(
             "manifestHash": plan.manifest_hash,
             "warnings": list(plan.warnings),
             "captionSidecars": sidecars,
+            "attributions": attributions,
+            "attributionSidecar": attribution_sidecar,
             "deliveryVerification": verification,
         }
     except Exception:
         selected_output.unlink(missing_ok=True)
         for path in sidecar_paths:
             path.unlink(missing_ok=True)
+        if attribution_sidecar_path is not None:
+            attribution_sidecar_path.unlink(missing_ok=True)
         raise
     finally:
         for child in attempt.iterdir():
