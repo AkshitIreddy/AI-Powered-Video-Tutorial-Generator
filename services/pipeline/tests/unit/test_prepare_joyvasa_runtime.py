@@ -558,8 +558,8 @@ def test_repo_route_manifest_matches_the_bundled_presenter_bytes():
         )
     )["routes"]
 
-    assert len(routes) == 9
-    assert [route["runtime"] for route in routes].count("human") == 2
+    assert len(routes) == 11
+    assert [route["runtime"] for route in routes].count("human") == 4
     assert [route["runtime"] for route in routes].count("animal") == 7
     for route in routes:
         slug = route["profileId"].removeprefix("presenter-portrait.")
