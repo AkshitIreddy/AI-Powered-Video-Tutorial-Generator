@@ -58,14 +58,19 @@ An optional routes manifest uses this shape:
       "runtime": "animal",
       "profileId": "presenter-portrait.animal-cat-milo-v1",
       "portraitArtifactHash": "<lowercase SHA-256>",
-      "subjectId": "fictional-synthetic-animal-cat-milo-v1"
+      "subjectId": "fictional-synthetic-animal-cat-milo-v1",
+      "priorPortraitArtifactHash": "<optional exact hash to retire>"
     }
   ]
 }
 ```
 
 Routes are keyed by the exact imported portrait bytes. Existing routes are preserved.
-A hash already routed elsewhere is an error rather than a silent replacement.
+A hash already routed elsewhere is an error rather than a silent replacement. A route
+may declare `priorPortraitArtifactHash` for an explicit migration. The installer removes
+that prior hash only when it points to the same child runtime, or accepts an already
+completed migration when the new hash is present. A missing prior and new hash, a prior
+hash routed elsewhere, or overlap between prior and current route hashes is an error.
 
 ## Review and install
 
@@ -92,7 +97,7 @@ python scripts/prepare-joyvasa-presenter-runtime.py `
 The candidate evidence manifest must hash to
 `cd22d9e2d97162e1a99201a329dd436c19984f3e64123ba4674c3d6ac4df4ff6`.
 The curated install manifest must hash to
-`debcfe64d43d790f064139505c9a57e7940fc452151aa0dd482bb725b88ac768`.
+`240e993925e6faf8a954303334529334e44ddb82e29921c89112f86c0d3f946d`.
 This supersedes the first activated manifest (`2d9dc173…`), which omitted two upstream
 `InferenceConfig` resources, and the resource-complete manifest (`06d4efa4…`), whose
 adapter placed intermediate files in the delivery directory. The current manifest pins
@@ -100,6 +105,9 @@ adapter placed intermediate files in the delivery directory. The current manifes
 source commit `916a90f8de490e8648fee460c1200bd5d9a795af`. It also pins the repository worker and
 adapter from commit `04547f1a9d951a9e509074c8b1832bb8eec08c57`, which keeps intermediates under the
 declared job workspace and reserves the delivery directory for its one declared output.
+The current routes also perform a guarded Finn v1-to-v2 portrait migration after dense
+visual review rejected the v1 anatomy. Finn v1 remains a historical static asset but is
+not retained as a ninth JoyVASA route.
 Review the dry-run receipt before activation. Activation is the same command with
 `--activate` in place of `--dry-run`:
 

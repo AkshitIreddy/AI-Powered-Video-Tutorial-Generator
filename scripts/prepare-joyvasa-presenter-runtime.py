@@ -110,6 +110,7 @@ class TreeEntry:
 class RouteEntry:
     runtime: str
     profile: dict[str, str]
+    prior_portrait_artifact_hash: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,6 +361,7 @@ def _load_routes(path: Path | None) -> tuple[RouteEntry, ...]:
     raw_routes = _require_list(value.get("routes"), "portrait routes")
     routes: list[RouteEntry] = []
     seen_hashes: set[str] = set()
+    seen_prior_hashes: set[str] = set()
     seen_profiles: set[str] = set()
     for index, raw in enumerate(raw_routes):
         item = _require_object(raw, f"routes[{index}]")
@@ -376,13 +378,27 @@ def _load_routes(path: Path | None) -> tuple[RouteEntry, ...]:
         for optional in ("consentId", "subjectId"):
             if optional in item:
                 profile[optional] = _require_string(item.get(optional), f"routes[{index}].{optional}")
+        prior_hash = None
+        if "priorPortraitArtifactHash" in item:
+            prior_hash = _require_sha256(
+                item.get("priorPortraitArtifactHash"),
+                f"routes[{index}].priorPortraitArtifactHash",
+            )
+            if prior_hash == profile["portraitArtifactHash"]:
+                raise InstallError("portrait route migration hashes must be different")
+            if prior_hash in seen_prior_hashes:
+                raise InstallError("prior portrait route hashes must be unique")
+            seen_prior_hashes.add(prior_hash)
         if profile["portraitArtifactHash"] in seen_hashes:
             raise InstallError("portrait route hashes must be unique")
         if profile["profileId"] in seen_profiles:
             raise InstallError("portrait route profile IDs must be unique")
         seen_hashes.add(profile["portraitArtifactHash"])
         seen_profiles.add(profile["profileId"])
-        routes.append(RouteEntry(runtime, profile))
+        routes.append(RouteEntry(runtime, profile, prior_hash))
+    overlap = seen_hashes & seen_prior_hashes
+    if overlap:
+        raise InstallError("prior portrait hashes cannot be current route hashes")
     return tuple(routes)
 
 
@@ -891,6 +907,11 @@ def _write_stage(plan: InstallPlan, stage: Path, transfer: str) -> dict[str, Any
                 "runtime": route.runtime,
                 "profileId": route.profile["profileId"],
                 "portraitArtifactHash": route.profile["portraitArtifactHash"],
+                **(
+                    {"priorPortraitArtifactHash": route.prior_portrait_artifact_hash}
+                    if route.prior_portrait_artifact_hash is not None
+                    else {}
+                ),
             }
             for route in plan.routes
         ],
@@ -921,12 +942,14 @@ def _desired_primary_config(plan: InstallPlan) -> tuple[dict[str, Any], bool]:
     if not plan.routes:
         return current, False
     relative_root = plan.destination.relative_to(plan.primary_config.parent.resolve(strict=True))
-    desired_by_hash = {
-        route.profile["portraitArtifactHash"]: (
-            relative_root / CHILD_CONFIGS[route.runtime]
-        ).as_posix()
+    desired_routes = [
+        (
+            route.profile["portraitArtifactHash"],
+            (relative_root / CHILD_CONFIGS[route.runtime]).as_posix(),
+            route.prior_portrait_artifact_hash,
+        )
         for route in plan.routes
-    }
+    ]
     raw_existing = current.get("portraitRuntimeOverrides", [])
     existing = _require_list(raw_existing, "portraitRuntimeOverrides")
     merged = [dict(_require_object(item, "portraitRuntimeOverrides entry")) for item in existing]
@@ -937,12 +960,33 @@ def _desired_primary_config(plan: InstallPlan) -> tuple[dict[str, Any], bool]:
         if digest in indexed:
             raise InstallError("Primary config contains duplicate portrait runtime hashes")
         indexed[digest] = path
-    for digest, relative_path in desired_by_hash.items():
+    for digest, relative_path, prior_digest in desired_routes:
         prior = indexed.get(digest)
         if prior is not None and PurePosixPath(prior).as_posix() != relative_path:
             raise InstallError(
                 f"Primary config already routes portrait {digest} to a different runtime"
             )
+        if prior_digest is not None:
+            prior_path = indexed.get(prior_digest)
+            if prior_path is not None and PurePosixPath(prior_path).as_posix() != relative_path:
+                raise InstallError(
+                    f"Prior portrait {prior_digest} is routed to a different runtime"
+                )
+            if prior_path is None and prior is None:
+                raise InstallError(
+                    f"Prior portrait {prior_digest} is missing before guarded migration"
+                )
+    retired_hashes = {
+        prior_digest
+        for _, _, prior_digest in desired_routes
+        if prior_digest is not None and prior_digest in indexed
+    }
+    if retired_hashes:
+        merged = [
+            item for item in merged if item["portraitArtifactHash"] not in retired_hashes
+        ]
+    for digest, relative_path, _ in desired_routes:
+        prior = indexed.get(digest)
         if prior is None:
             merged.append(
                 {

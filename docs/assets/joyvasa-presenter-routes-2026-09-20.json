@@ -3,9 +3,10 @@
   "routes": [
     {
       "runtime": "human",
-      "profileId": "presenter-portrait.casual-anime-finn-v1",
-      "portraitArtifactHash": "98ff859669a316dcbf2f1b8edd30941b355ee244308a3b755ffd51e4630a8494",
-      "subjectId": "fictional-synthetic-casual-anime-finn-v1"
+      "profileId": "presenter-portrait.casual-anime-finn-v2",
+      "portraitArtifactHash": "74d2677cf5666de2bf2702da0ea24703d636dbcc121fa28735e20bfde86e43a1",
+      "subjectId": "fictional-synthetic-casual-anime-finn-v2",
+      "priorPortraitArtifactHash": "98ff859669a316dcbf2f1b8edd30941b355ee244308a3b755ffd51e4630a8494"
     },
     {
       "runtime": "animal",

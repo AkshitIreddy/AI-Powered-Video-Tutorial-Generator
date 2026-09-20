@@ -300,6 +300,13 @@ def _plan(installer, paths: dict[str, Path], *, routes: bool = True):
     )
 
 
+def _set_first_route_migration(paths: dict[str, Path], prior_hash: str, new_hash: str) -> None:
+    routes = json.loads(paths["routes"].read_text(encoding="utf-8"))
+    routes["routes"][0]["portraitArtifactHash"] = new_hash
+    routes["routes"][0]["priorPortraitArtifactHash"] = prior_hash
+    _write_json(paths["routes"], routes)
+
+
 def test_dry_run_validates_every_source_without_mutating_models(installer, tmp_path: Path):
     paths = _fixture(tmp_path)
     original = paths["primary"].read_bytes()
@@ -450,6 +457,79 @@ def test_conflicting_existing_route_is_rejected_without_mutation(installer, tmp_
     assert paths["primary"].read_bytes() == original
 
 
+def test_explicit_route_migration_replaces_only_the_expected_prior_hash(
+    installer, tmp_path: Path
+):
+    paths = _fixture(tmp_path)
+    prior_hash = "c" * 64
+    new_hash = "d" * 64
+    unrelated = {
+        "portraitArtifactHash": "e" * 64,
+        "relativeConfigPath": "Presenter/Other/child.json",
+    }
+    expected_path = "Presenter/JoyVASA/joy-human.json"
+    primary = json.loads(paths["primary"].read_text(encoding="utf-8"))
+    primary["portraitRuntimeOverrides"] = [
+        unrelated,
+        {
+            "portraitArtifactHash": prior_hash,
+            "relativeConfigPath": expected_path,
+        },
+    ]
+    _write_json(paths["primary"], primary)
+    _set_first_route_migration(paths, prior_hash, new_hash)
+
+    first = installer.activate(_plan(installer, paths), "copy")
+    updated = json.loads(paths["primary"].read_text(encoding="utf-8"))
+    overrides = updated["portraitRuntimeOverrides"]
+
+    assert first["primaryConfigAction"] == "updated"
+    assert first["routes"][0]["priorPortraitArtifactHash"] == prior_hash
+    assert unrelated in overrides
+    assert not any(item["portraitArtifactHash"] == prior_hash for item in overrides)
+    assert {
+        "portraitArtifactHash": new_hash,
+        "relativeConfigPath": expected_path,
+    } in overrides
+    assert installer.activate(_plan(installer, paths), "copy")["primaryConfigAction"] == (
+        "unchanged"
+    )
+
+
+def test_route_migration_rejects_prior_hash_routed_to_another_runtime(
+    installer, tmp_path: Path
+):
+    paths = _fixture(tmp_path)
+    prior_hash = "c" * 64
+    new_hash = "d" * 64
+    primary = json.loads(paths["primary"].read_text(encoding="utf-8"))
+    primary["portraitRuntimeOverrides"] = [
+        {
+            "portraitArtifactHash": prior_hash,
+            "relativeConfigPath": "Presenter/Other/child.json",
+        }
+    ]
+    _write_json(paths["primary"], primary)
+    original = paths["primary"].read_bytes()
+    _set_first_route_migration(paths, prior_hash, new_hash)
+
+    with pytest.raises(installer.InstallError, match=r"Prior portrait .* different runtime"):
+        installer.activate(_plan(installer, paths), "copy")
+
+    assert paths["primary"].read_bytes() == original
+    assert not paths["destination"].exists()
+
+
+def test_route_migration_rejects_missing_prior_and_current_hash(installer, tmp_path: Path):
+    paths = _fixture(tmp_path)
+    _set_first_route_migration(paths, "c" * 64, "d" * 64)
+
+    with pytest.raises(installer.InstallError, match="missing before guarded migration"):
+        installer.describe(_plan(installer, paths))
+
+    assert not paths["destination"].exists()
+
+
 def test_manifest_rejects_path_traversal(installer, tmp_path: Path):
     paths = _fixture(tmp_path)
     manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
@@ -493,7 +573,7 @@ def test_tracked_curated_manifest_is_machine_independent_and_pins_repo_sources()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     serialized = manifest_path.read_text(encoding="utf-8")
 
-    assert _digest(manifest_path) == "debcfe64d43d790f064139505c9a57e7940fc452151aa0dd482bb725b88ac768"
+    assert _digest(manifest_path) == "240e993925e6faf8a954303334529334e44ddb82e29921c89112f86c0d3f946d"
     assert manifest["candidateEvidence"]["sha256"] == (
         "cd22d9e2d97162e1a99201a329dd436c19984f3e64123ba4674c3d6ac4df4ff6"
     )
