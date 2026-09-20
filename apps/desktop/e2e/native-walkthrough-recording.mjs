@@ -25,7 +25,7 @@ const expectedGalleryPresenters = Object.freeze([
   { id: "presenter-portrait.casual-realistic-noah-v1", label: "Noah · casual maker tutor", hash: "6f83257ec713c8d0df42ebb1506b9be32735bec9934aa5c2e946e24cbed8c0bd", runtimeModel: "liveportrait-musetalk-1.5" },
   { id: "presenter-portrait.casual-cartoon-chloe-v1", label: "Chloe · cartoon science creator", hash: "4afecb9e0141a3bcb933aca577222adfa7819fd3dc49a9b437f1b1bc0f3437ca", runtimeModel: "liveportrait-musetalk-1.5" },
   { id: "presenter-portrait.casual-realistic-maya-v1", label: "Maya · casual science tutor", hash: "62ee0fd94a0e92114e000e89a6420e9ce0c7726e5b4b8ec2165c041f2252e79b", runtimeModel: "liveportrait-musetalk-1.5" },
-  { id: "presenter-portrait.casual-anime-finn-v1", label: "Finn · retro anime maker tutor", hash: "98ff859669a316dcbf2f1b8edd30941b355ee244308a3b755ffd51e4630a8494", runtimeModel: "joyvasa-human" },
+  { id: "presenter-portrait.casual-anime-finn-v2", label: "Finn · retro anime maker tutor", hash: "74d2677cf5666de2bf2702da0ea24703d636dbcc121fa28735e20bfde86e43a1", runtimeModel: "joyvasa-human" },
   { id: "presenter-portrait.casual-anime-lena-v1", label: "Lena · hand-painted anime nature tutor", hash: "280c530e69c08737698c0fff8b0a582ac76fb9799cf0ad6a780d540c68f667f1", runtimeModel: "liveportrait-musetalk-1.5" },
   { id: "presenter-portrait.casual-cartoon-robot-pip-v1", label: "Pip · cartoon robot tutor", hash: "b0163d6e3250d345c97e1c261fa3ff69cf0dcab70f248cad27a06dfe5e818d29", runtimeModel: "joyvasa-animal" },
   { id: "presenter-portrait.animal-cat-milo-v1", label: "Milo · cat science tutor", hash: "f47095f9b54b54d53fecfa49a93241544869aa359d8ce3273b38a8575965bafd", runtimeModel: "joyvasa-animal", animal: true },
@@ -45,8 +45,9 @@ export async function inspectPackagedPresenterPlatform({ starterManifestPath, ru
     && typeof asset?.technical?.mediaType === "string"
     && asset.technical.mediaType.startsWith("image/")
   ));
-  if (readyVisuals.length !== 55) {
-    throw new Error(`Packaged starter visual manifest has ${readyVisuals.length} ready images instead of 55`);
+  const readyPortraits = readyVisuals.filter((asset) => asset?.kind === "presenter-portrait");
+  if (readyVisuals.length !== 56 || readyPortraits.length !== 53) {
+    throw new Error(`Packaged starter visual manifest has ${readyVisuals.length} ready images and ${readyPortraits.length} ready portraits instead of 56 and 53`);
   }
   const catalog = expectedGalleryPresenters.map((expected) => {
     const matches = manifest.assets.filter((asset) => asset?.id === expected.id);
@@ -90,6 +91,7 @@ export async function inspectPackagedPresenterPlatform({ starterManifestPath, ru
     starterManifestPath,
     starterManifestSha256: await sha256File(starterManifestPath),
     readyVisualCount: readyVisuals.length,
+    readyPortraitCount: readyPortraits.length,
     casualAndAnimalPresenterCount: catalog.length,
     catalog,
     runtimeStatusCount: runtimeStatuses.length,
@@ -356,7 +358,8 @@ export async function recordNativeWalkthrough({
   comparison,
   presenterPlatform,
 }) {
-  if (presenterPlatform?.readyVisualCount !== 55 || presenterPlatform?.casualAndAnimalPresenterCount !== 14
+  if (presenterPlatform?.readyVisualCount !== 56 || presenterPlatform?.readyPortraitCount !== 53
+    || presenterPlatform?.casualAndAnimalPresenterCount !== 14
     || presenterPlatform?.runtimeStatusCount !== 9 || presenterPlatform?.exactJoyRoutes?.length !== 8) {
     throw new Error("Presenter platform evidence was not validated before native walkthrough capture");
   }
