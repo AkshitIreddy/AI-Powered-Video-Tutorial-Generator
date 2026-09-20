@@ -11,6 +11,13 @@ import process from "node:process";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+  copySupplementalProject,
+  inspectPresenterAcceptance,
+  installSupplementalProject,
+  preparePresenterComparison,
+  recordNativeWalkthrough,
+} from "./native-walkthrough-recording.mjs";
 
 // Opt-in real native acceptance. The cloud path uses the product's smallest
 // one-minute duration, stops before media unless planning produced three scenes,
@@ -18,6 +25,10 @@ import { promisify } from "node:util";
 // research is the default; --creative-only proves an explicit zero-research run.
 // The local-image mode creates one reviewed SDXL scene through the same native UI.
 const execFileAsync = promisify(execFile);
+const completedWalkthroughRunId = "20260920082752680-25172";
+const localImageWalkthroughRunId = "20260920083800359-5800";
+const defaultPresenterAcceptanceRoot = "E:\\temp\\AI Video Tutorial Generator Test Sandbox\\Presenter Acceptance\\casual-four-20260920-161859";
+const defaultGifsmithRoot = "C:\\Users\\akshi\\Desktop\\Code Palace\\gifsmith";
 const parsed = parseArguments(process.argv.slice(2));
 const portableRoot = path.resolve(parsed.portableRoot);
 const executable = path.join(portableRoot, "App", "AI Video Tutorial Generator.exe");
@@ -74,6 +85,7 @@ let failureDiagnostics = null;
 let failureScreenshotPath = null;
 let localPreviewDiagnostics = null;
 let localPreviewDiagnosticsPath = null;
+let walkthroughEvidence = null;
 
 await mkdir(runRoot, { recursive: true });
 await recoverInterruptedOwnerIsolation();
@@ -85,6 +97,12 @@ const resumeSource = parsed.resumeCompletedRun
 const resumeLocalImageSource = parsed.resumeLocalImageRun
   ? await inspectAcceptedLocalImageSource(parsed.resumeLocalImageRun)
   : null;
+const walkthroughLocalImageSource = parsed.recordWalkthrough
+  ? await inspectAcceptedLocalImageSource(parsed.walkthroughLocalImageRun)
+  : null;
+const presenterAcceptance = parsed.recordWalkthrough
+  ? await inspectPresenterAcceptance({ root: parsed.presenterAcceptanceRoot, ffprobePath })
+  : null;
 await rotateExistingPath(readyPath);
 
 try {
@@ -94,6 +112,9 @@ try {
   await assertRegularFile(ffprobePath, "packaged ffprobe");
   isolation = await isolateOwnerDirectories();
   if (resumeSource || resumeLocalImageSource) await hydrateResumeSource(resumeSource ?? resumeLocalImageSource);
+  const walkthroughLocalProjectDirectory = walkthroughLocalImageSource
+    ? await copySupplementalProject({ source: walkthroughLocalImageSource, projectsPath })
+    : null;
 
   bootstrapLaunch = await startBootstrapNative();
   const bootstrapDesktopPid = bootstrapLaunch.child.pid;
@@ -136,6 +157,14 @@ try {
   await expect(runtimeBadge).toContainText("Native", { timeout: parsed.actionTimeoutMs });
   await expect(runtimeBadge).toContainText("Worker ready", { timeout: parsed.actionTimeoutMs });
   await expect(page.locator(".aly-onboarding-dialog")).toBeHidden();
+  const walkthroughLocalProject = walkthroughLocalImageSource && walkthroughLocalProjectDirectory
+    ? await installSupplementalProject({
+      page,
+      source: walkthroughLocalImageSource,
+      projectDirectory: walkthroughLocalProjectDirectory,
+      invokeNative,
+    })
+    : null;
   await page.screenshot({ path: path.join(runRoot, "01-native-home.png"), fullPage: true });
 
   if (parsed.localImageOnly) {
@@ -277,6 +306,76 @@ try {
   const playback = await verifyVideoPlayback(reviewVideo, parsed.actionTimeoutMs);
   await page.screenshot({ path: path.join(runRoot, "05-generated-review.png"), fullPage: true });
 
+  if (parsed.recordWalkthrough) {
+    if (!presenterAcceptance || !walkthroughLocalProject || !walkthroughLocalImageSource) {
+      throw new Error("Walkthrough recording prerequisites were not loaded");
+    }
+    const comparison = await preparePresenterComparison({
+      page,
+      presenterAcceptance,
+      projectsPath,
+      invokeNative,
+      actionTimeoutMs: parsed.actionTimeoutMs,
+      jobTimeoutMs: parsed.jobTimeoutMs,
+      ffprobePath,
+      onIdentity: (nextIdentity) => {
+        activeProjectIdentity = nextIdentity;
+        activeGenerationId = undefined;
+      },
+    });
+    walkthroughEvidence = await recordNativeWalkthrough({
+      page,
+      cdpPort: launch.port,
+      gifsmithRoot: parsed.gifsmithRoot,
+      runRoot,
+      ffmpegPath,
+      ffprobePath,
+      skyProjectTitle: planned.project.title,
+      localImageProjectTitle: walkthroughLocalProject.title,
+      comparison,
+    });
+    assertUsageRecordsMatch(
+      walkthroughLocalImageSource.baselineUsage,
+      readUsageRecords(walkthroughLocalProject.nativeProjectDirectory),
+      "walkthrough accepted local-image project",
+    );
+    if (readUsageRecords(comparison.identity.projectDirectory).length !== 0) {
+      throw new Error("Presenter comparison editor project unexpectedly recorded provider usage");
+    }
+    if (await sha256File(walkthroughLocalImageSource.failurePath) !== walkthroughLocalImageSource.failureSha256
+      || await sha256File(walkthroughLocalImageSource.sourceProjectDatabasePath) !== walkthroughLocalImageSource.sourceProjectDatabaseSha256) {
+      throw new Error("Walkthrough changed the preserved local-image source evidence");
+    }
+    const comparisonRelativeProjectDirectory = containedRelativePath(projectsPath, comparison.identity.projectDirectory, "presenter comparison project");
+    const comparisonRelativeOutputPath = containedRelativePath(comparison.identity.projectDirectory, comparison.outputPath, "presenter comparison export");
+    const comparisonReport = { ...comparison };
+    delete comparisonReport.identity;
+    delete comparisonReport.outputPath;
+    walkthroughEvidence.comparison = {
+      ...comparisonReport,
+      identity: { projectId: comparison.identity.projectId },
+      relativeProjectDirectory: comparisonRelativeProjectDirectory,
+      relativeOutputPath: comparisonRelativeOutputPath,
+    };
+    walkthroughEvidence.localImageSource = {
+      runId: walkthroughLocalImageSource.runId,
+      projectId: walkthroughLocalImageSource.projectId,
+      relativeProjectDirectory: containedRelativePath(projectsPath, walkthroughLocalProject.nativeProjectDirectory, "walkthrough local-image project"),
+      candidateId: walkthroughLocalImageSource.acceptedCandidate.id,
+      artifactHash: walkthroughLocalImageSource.acceptedCandidate.artifactHash,
+      providerCalls: 0,
+      localInferenceCalls: 0,
+    };
+    walkthroughEvidence.presenterAcceptance = {
+      reportPath: presenterAcceptance.reportPath,
+      reportSha256: presenterAcceptance.reportSha256,
+      sourceAudioSha256: presenterAcceptance.audioSha256,
+      modelId: presenterAcceptance.modelId,
+      runtimeRevision: presenterAcceptance.runtimeRevision,
+      clips: presenterAcceptance.clips.map((clip) => ({ slug: clip.slug, profileId: clip.profileId, sha256: clip.videoSha256 })),
+    };
+  }
+
   if (pageErrors.length || consoleErrors.length) {
     throw new Error(`Native WebView emitted errors: ${JSON.stringify({ pageErrors, consoleErrors })}`);
   }
@@ -290,12 +389,14 @@ try {
   report = {
     schemaVersion: 1,
     state: "passed",
-    evidenceClass: parsed.resumeCompletedRun
+    evidenceClass: parsed.recordWalkthrough
+      ? "actual-native-gifsmith-walkthrough"
+      : parsed.resumeCompletedRun
       ? "bounded-real-creative-native-generation-completed-continuation"
       : parsed.resumeCreativeRun ? "bounded-real-creative-native-generation-resume"
       : parsed.creativeOnly ? "bounded-real-creative-native-generation" : "bounded-real-grounded-native-generation",
     actualNativeWebView: true,
-    hiddenLaunch: true,
+    hiddenLaunch: !parsed.recordWalkthrough,
     realProviderCalls: !parsed.resumeCompletedRun,
     reusedAcceptedProviderEvidence: Boolean(parsed.resumeCompletedRun),
     selectedProfileId: parsed.profileId,
@@ -345,6 +446,7 @@ try {
     desktopPid: launch.child.pid,
     workerPid: launch.workerPid,
     finishedAtUtc: new Date().toISOString(),
+    ...(walkthroughEvidence ? { walkthrough: walkthroughEvidence } : {}),
   };
   if (parsed.editorSmoke) {
     const generatedMediaPath = exportStage.payload.path;
@@ -446,6 +548,13 @@ if (report && !workError && !cleanupError) {
   if (report.recoverySmoke?.relativeProjectDirectory) {
     report.recoverySmoke.projectEvidenceDirectory = path.join(isolatedProjectsEvidencePath, report.recoverySmoke.relativeProjectDirectory);
   }
+  if (report.walkthrough?.comparison?.relativeProjectDirectory) {
+    report.walkthrough.comparison.projectEvidenceDirectory = path.join(isolatedProjectsEvidencePath, report.walkthrough.comparison.relativeProjectDirectory);
+    report.walkthrough.comparison.outputEvidencePath = path.join(report.walkthrough.comparison.projectEvidenceDirectory, report.walkthrough.comparison.relativeOutputPath);
+  }
+  if (report.walkthrough?.localImageSource?.relativeProjectDirectory) {
+    report.walkthrough.localImageSource.projectEvidenceDirectory = path.join(isolatedProjectsEvidencePath, report.walkthrough.localImageSource.relativeProjectDirectory);
+  }
   await rm(latestFailurePath, { force: true });
   await writeJson(reportPath, report);
   await writeJson(latestReportPath, report);
@@ -458,7 +567,9 @@ if (workError || cleanupError) {
     state: "failed",
     runId,
     runEvidenceDirectory: runRoot,
-    evidenceClass: parsed.localImageOnly
+    evidenceClass: parsed.recordWalkthrough
+      ? "actual-native-gifsmith-walkthrough"
+      : parsed.localImageOnly
       ? parsed.resumeLocalImageRun
         ? "bounded-real-native-local-sdxl-image-continuation"
         : "bounded-real-native-local-sdxl-image"
@@ -1764,6 +1875,10 @@ function parseArguments(arguments_) {
     resumeLocalImageRun: null,
     editorSmoke: false,
     recoverySmoke: false,
+    recordWalkthrough: false,
+    walkthroughLocalImageRun: localImageWalkthroughRunId,
+    presenterAcceptanceRoot: defaultPresenterAcceptanceRoot,
+    gifsmithRoot: defaultGifsmithRoot,
     gpuCoordinationPath: null,
     alignmentConfigPath: null,
     topic: "Explain why the daytime sky looks blue in one concise, factual, three-scene lesson. Keep the spoken explanation close to one minute.",
@@ -1789,6 +1904,10 @@ function parseArguments(arguments_) {
       result.recoverySmoke = true;
       continue;
     }
+    if (name === "--record-walkthrough") {
+      result.recordWalkthrough = true;
+      continue;
+    }
     const value = arguments_[index + 1];
     if (name === "--portable-root") result.portableRoot = requiredText(value, name, 500);
     else if (name === "--profile-id") result.profileId = requiredText(value, name, 100);
@@ -1797,6 +1916,9 @@ function parseArguments(arguments_) {
     else if (name === "--resume-creative-run") result.resumeCreativeRun = requiredText(value, name, 80);
     else if (name === "--resume-completed-run") result.resumeCompletedRun = requiredText(value, name, 80);
     else if (name === "--resume-local-image-run") result.resumeLocalImageRun = requiredText(value, name, 80);
+    else if (name === "--walkthrough-local-image-run") result.walkthroughLocalImageRun = requiredText(value, name, 80);
+    else if (name === "--presenter-acceptance-root") result.presenterAcceptanceRoot = path.resolve(requiredText(value, name, 500));
+    else if (name === "--gifsmith-root") result.gifsmithRoot = path.resolve(requiredText(value, name, 500));
     else if (name === "--topic") result.topic = requiredText(value, name, 240);
     else if (name === "--startup-timeout-ms") result.startupTimeoutMs = positiveNumber(value, name);
     else if (name === "--action-timeout-ms") result.actionTimeoutMs = positiveNumber(value, name);
@@ -1805,6 +1927,9 @@ function parseArguments(arguments_) {
     index += 1;
   }
   if (!result.portableRoot) throw new Error("--portable-root is required");
+  if (result.recordWalkthrough && !result.resumeCompletedRun && !result.resumeCreativeRun && !result.resumeLocalImageRun) {
+    result.resumeCompletedRun = completedWalkthroughRunId;
+  }
   if (result.profileId !== "portable-test-groq-nvidia") {
     throw new Error("This bounded acceptance is pinned to portable-test-groq-nvidia");
   }
@@ -1838,6 +1963,20 @@ function parseArguments(arguments_) {
   }
   if (result.localImageOnly && result.recoverySmoke) {
     throw new Error("--recovery-smoke qualifies the cloud lifecycle path and cannot be combined with --local-image-only");
+  }
+  if (result.recordWalkthrough) {
+    if (result.localImageOnly || result.resumeCreativeRun || !result.resumeCompletedRun) {
+      throw new Error("--record-walkthrough requires the completed Creative continuation and cannot start or resume provider/GPU work");
+    }
+    if (result.resumeCompletedRun !== completedWalkthroughRunId || result.walkthroughLocalImageRun !== localImageWalkthroughRunId) {
+      throw new Error(`--record-walkthrough is pinned to completed run ${completedWalkthroughRunId} and local-image run ${localImageWalkthroughRunId}`);
+    }
+    if (result.editorSmoke || result.recoverySmoke) {
+      throw new Error("--record-walkthrough owns its native editor proof and cannot be combined with the separate editor or recovery smokes");
+    }
+    if (!/^[0-9]{17}-[1-9][0-9]*$/u.test(result.walkthroughLocalImageRun)) {
+      throw new Error("--walkthrough-local-image-run must be one native generation evidence run ID");
+    }
   }
   return result;
 }
@@ -2697,6 +2836,7 @@ async function inspectAcceptedLocalImageSource(sourceRunId) {
     job,
     acceptance,
     acceptedCandidate,
+    sourceSnapshot,
     baselineUsage,
   };
 }
@@ -3093,7 +3233,7 @@ async function startNative(logPrefix) {
     workerPid = validatedReadyWorkerPid(ready, child.pid);
     const pages = browser.contexts().flatMap((context) => context.pages());
     if (pages.length !== 1) throw new Error(`Expected one native WebView page, found ${pages.length}`);
-    return { child, browser, page: pages[0], workerPid, stdout, stderr };
+    return { child, browser, page: pages[0], workerPid, stdout, stderr, port };
   } catch (error) {
     workerPid ||= await readReadyWorkerPid(child.pid);
     const cleanupErrors = await cleanupFailedNativeStart({ child, browser, workerPid, stdout, stderr });
@@ -3129,6 +3269,9 @@ function nativeLaunchEnvironment(port) {
     ...process.env,
     ALYSTRIA_HEADLESS_ACCEPTANCE: "1",
     ALYSTRIA_HEADLESS_ACCEPTANCE_CDP_PORT: String(port),
+    ...(parsed.recordWalkthrough ? {
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-allow-origins=*`,
+    } : {}),
     ...(parsed.gpuCoordinationPath ? { ALYSTRIA_GPU_LOCK_PATH: parsed.gpuCoordinationPath } : {}),
   };
 }
