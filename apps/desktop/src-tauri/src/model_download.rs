@@ -1468,8 +1468,10 @@ impl ModelDownloadManager {
                 status.verified_artifacts = verified;
             }
             if status.downloaded_bytes >= status.total_bytes {
-                status.phase = ModelDownloadPhase::Installing;
-                status.detail = "Building the portable SoulX environment from the verified local wheelhouse. No network or GPU is used.".into();
+                (status.phase, status.detail) = presenter_completed_download_phase(
+                    status.verified_artifacts,
+                    status.artifact_count,
+                );
             } else {
                 status.phase = progress.phase;
                 status.detail = progress.detail;
@@ -1735,6 +1737,24 @@ impl ModelDownloadManager {
         }
         status.updated_at = Utc::now();
         self.update(status);
+    }
+}
+
+fn presenter_completed_download_phase(
+    verified_artifacts: usize,
+    artifact_count: usize,
+) -> (ModelDownloadPhase, String) {
+    if verified_artifacts >= artifact_count {
+        (
+            ModelDownloadPhase::Installing,
+            "Building the portable SoulX environment from the verified local wheelhouse. No network or GPU is used.".into(),
+        )
+    } else {
+        let next = verified_artifacts.saturating_add(1).min(artifact_count);
+        (
+            ModelDownloadPhase::Verifying,
+            format!("Verifying SHA-256 for SoulX artifact {next} of {artifact_count}."),
+        )
     }
 }
 
@@ -4313,5 +4333,16 @@ mod tests {
             );
         }
         assert!(presenter_installer_failure(b"not json", "install").is_none());
+    }
+
+    #[test]
+    fn presenter_bytes_complete_remains_verifying_until_every_artifact_is_verified() {
+        let (phase, detail) = presenter_completed_download_phase(66, 75);
+        assert_eq!(phase, ModelDownloadPhase::Verifying);
+        assert_eq!(detail, "Verifying SHA-256 for SoulX artifact 67 of 75.");
+
+        let (phase, detail) = presenter_completed_download_phase(75, 75);
+        assert_eq!(phase, ModelDownloadPhase::Installing);
+        assert!(detail.contains("Building the portable SoulX environment"));
     }
 }
