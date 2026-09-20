@@ -413,6 +413,13 @@ impl AppState {
         let model_installer_executable = worker_config
             .as_ref()
             .map(|config| config.executable.clone());
+        // Portable acceptance packs use the worker's inspected runtime ledger
+        // rather than RuntimeManager's signed-pack activation registry.
+        let presenter_runtime_root = worker_config
+            .as_ref()
+            .and_then(|config| config.runtime_verification.as_ref())
+            .map(|verification| verification.root.clone())
+            .or_else(|| runtimes.active_pack().map(|pack| pack.root));
         let worker = if let Some(mut config) = worker_config {
             if let Some(layout) = &portable {
                 config.environment.extend(layout.worker_environment());
@@ -425,7 +432,6 @@ impl AppState {
             )
         }
         .with_credential_manager(credentials.clone());
-        let presenter_runtime_root = runtimes.active_pack().map(|pack| pack.root);
         let model_downloads = ModelDownloadManager::at(paths.models.clone())?
             .with_installer_executable(model_installer_executable)
             .with_presenter_runtime_root(presenter_runtime_root);

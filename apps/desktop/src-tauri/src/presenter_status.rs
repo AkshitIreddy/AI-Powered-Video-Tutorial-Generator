@@ -182,7 +182,8 @@ fn inspect_config(models: &Path, child: &Path, is_primary: bool) -> Result<Value
     if is_joy && (files.len() != JOY_ROLES.len() || roles != JOY_ROLES.into_iter().collect()) {
         return Err("The character animation runtime file declarations are incomplete.");
     }
-    if is_soulx && (files.len() != SOULX_ROLES.len() || roles != SOULX_ROLES.into_iter().collect()) {
+    if is_soulx && (files.len() != SOULX_ROLES.len() || roles != SOULX_ROLES.into_iter().collect())
+    {
         return Err("The character animation runtime file declarations are incomplete.");
     }
     for file in files {
@@ -331,7 +332,8 @@ mod tests {
         let mut config = json_file(&temp.path().join("animal.json")).unwrap();
         config["modelId"] = json!("soulx-flashhead-pro");
         config["workerContract"]["contractId"] = json!("alystria.soulx-flashhead.worker.v1");
-        config["workerContract"]["files"] = json!(SOULX_ROLES
+        config["workerContract"]["files"] =
+            json!(SOULX_ROLES
             .iter()
             .map(|role| json!({"role":role,"relativePath":"worker.py","sha256":"a".repeat(64)}))
             .collect::<Vec<_>>());
