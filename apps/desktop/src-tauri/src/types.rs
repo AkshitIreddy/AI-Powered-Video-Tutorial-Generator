@@ -1054,6 +1054,12 @@ pub struct ModelDownloadStartRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ModelDownloadActivateRequest {
+    pub model_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ModelDownloadCatalogEntry {
     pub model_id: String,
     pub display_name: String,

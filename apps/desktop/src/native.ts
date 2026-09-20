@@ -778,6 +778,10 @@ export interface ModelDownloadStartRequest {
   licenseAccepted: boolean;
 }
 
+export interface ModelDownloadActivateRequest {
+  modelId: string;
+}
+
 export interface LocalModelLifecycleRequest {
   modelId: string;
   immutableRevision: string;
@@ -1558,6 +1562,10 @@ export function localModelDownloadStatus(): Promise<ModelDownloadStatus[]> {
 
 export function localModelDownloadStart(input: ModelDownloadStartRequest): Promise<ModelDownloadStatus> {
   return command("local_model_download_start", input, () => Promise.reject(new Error("Open the native app to download model packs. Browser demo mode never downloads model bytes.")));
+}
+
+export function localModelPresenterActivate(input: ModelDownloadActivateRequest): Promise<ModelDownloadStatus> {
+  return command("local_model_presenter_activate", input, () => Promise.reject(new Error("Open the native app to activate a managed presenter model.")));
 }
 
 function defaultLocalModelSetup(): LocalModelSetup {

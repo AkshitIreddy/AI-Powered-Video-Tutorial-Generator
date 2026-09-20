@@ -53,6 +53,7 @@ $DistRoot = Join-Path $WorkRoot "dist"
 $BuildRoot = Join-Path $WorkRoot "build"
 $SpecRoot = Join-Path $WorkRoot "spec"
 $Launcher = Join-Path $PipelineRoot "sidecar_entry.py"
+$PresenterAssetRoot = Join-Path $SourceRoot "alystria\presenter_runtime_assets"
 
 New-Item -ItemType Directory -Path $WorkRoot -Force | Out-Null
 try {
@@ -66,6 +67,10 @@ try {
         "pyinstaller", "--noconfirm", "--clean", "--onefile", "--console",
         "--name", "alystria-pipeline", "--paths", $SourceRoot,
         "--collect-submodules", "alystria", "--collect-data", "alystria.sandbox",
+        "--collect-data", "alystria.presenter_runtime_assets",
+        "--collect-data", "alystria.assets",
+        "--add-data", ((Join-Path $PresenterAssetRoot "local_presenter_worker.py") + ";alystria\presenter_runtime_assets"),
+        "--add-data", ((Join-Path $PresenterAssetRoot "soulx_flashhead_presenter_adapter.py") + ";alystria\presenter_runtime_assets"),
         "--add-data", ($CanonicalFixtureSource + ";alystria\generation\canonical"),
         "--distpath", $DistRoot, "--workpath", $BuildRoot, "--specpath", $SpecRoot,
         $Launcher
@@ -89,6 +94,20 @@ try {
     $DoctorProcess = Start-Process -FilePath $BuiltExecutable -ArgumentList '"doctor"' -Wait -PassThru -NoNewWindow
     if ($DoctorProcess.ExitCode -ne 0) {
         throw "The built sidecar failed its dependency-free doctor smoke test (exit $($DoctorProcess.ExitCode))."
+    }
+
+    # This command loads and hash-validates every packaged SoulX installer
+    # resource. It catches PyInstaller silently omitting the two reviewed .py
+    # files that are copied as data into an offline managed runtime.
+    $PresenterPlanModels = Join-Path $WorkRoot "presenter-plan-models"
+    New-Item -ItemType Directory -Path $PresenterPlanModels -Force | Out-Null
+    $PresenterPlanOutput = Join-Path $WorkRoot "presenter-plan.stdout.json"
+    $PresenterPlanError = Join-Path $WorkRoot "presenter-plan.stderr.txt"
+    $PresenterPlan = Start-Process -FilePath $BuiltExecutable -ArgumentList @(
+        "presenter-runtime", "plan", "--models-root", $PresenterPlanModels
+    ) -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $PresenterPlanOutput -RedirectStandardError $PresenterPlanError
+    if ($PresenterPlan.ExitCode -ne 0) {
+        throw "Packaged SoulX installer resources failed validation."
     }
 
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
@@ -122,4 +141,5 @@ finally {
             Remove-Item -LiteralPath $WorkRoot -Recurse -Force
         }
     }
+
 }

@@ -14,10 +14,12 @@ use crate::types::{
 };
 use chrono::Utc;
 use parking_lot::{Mutex, RwLock};
+use reqwest::Client as AsyncClient;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{CONTENT_RANGE, RANGE};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -36,12 +38,23 @@ const MAX_INSTALLER_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_MANAGED_MANIFEST_BYTES: u64 = 128 * 1024;
 const MANAGED_PROGRESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const INSTALLER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(60);
 const COMFYUI_RUNTIME_BYTES: u64 = 1_803_412_624;
 const COMFYUI_RUNTIME_REVISION: &str = "8f40b43e0204d5b9780f3e9618e140e929e80594";
 const COMFYUI_RUNTIME_ARCHIVE: &str = "ComfyUI-v0.9.2-nvidia.7z";
 const COMFYUI_RUNTIME_SHA256: &str =
     "3a0707fbf1cf5dc8b5f1ab3abe8af104deffcb1acc27b8d27c484715dd41f4c5";
 const SDXL_RECIPE_ID: &str = "comfy-sdxl-1.0-portrait-v1";
+const SOULX_MANIFEST_JSON: &str = include_str!(
+    "../../../../services/pipeline/src/alystria/presenter_runtime_assets/soulx-flashhead-install-manifest.json"
+);
+const SOULX_MANIFEST_SHA256: &str =
+    "b8e3e9859911e798c18054f4921d637800afd5a45717015c3c20cc4203537106";
+const SOULX_REVISION: &str = "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128";
+const SOULX_INSTALL_DIRECTORY: &str = "Presenter/SoulX-FlashHead-Pro";
+const SOULX_STAGED_CONFIG: &str = "presenter-runtime.soulx-flashhead-pro.staged.json";
+const SOULX_TOTAL_BYTES: u64 = 10_394_156_663;
+const SOULX_ARTIFACT_COUNT: usize = 75;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -53,6 +66,10 @@ enum InstallStrategy {
         bundle_bytes: u64,
         artifact_count: usize,
         executable: bool,
+    },
+    ManagedPresenter {
+        bundle_bytes: u64,
+        artifact_count: usize,
     },
 }
 
@@ -89,6 +106,72 @@ struct ManagedManifestFile {
     source_url: &'static str,
     size_bytes: u64,
     sha256: &'static str,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PresenterInstallManifest {
+    schema_version: u32,
+    model_id: String,
+    runtime_model_id: String,
+    immutable_revision: String,
+    source_revision: String,
+    weight_revision: String,
+    dependency_lock_sha256: String,
+    generated_requirements_sha256: String,
+    contract_id: String,
+    artifacts: Vec<PresenterArtifact>,
+    resources: Vec<PresenterResource>,
+    roles: BTreeMap<String, String>,
+    python: PresenterPython,
+    runtime_encoder: PresenterRuntimeEncoder,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PresenterArtifact {
+    kind: String,
+    relative_path: String,
+    source_url: String,
+    bytes: u64,
+    sha256: String,
+    requirement: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PresenterResource {
+    install_path: String,
+    bytes: u64,
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PresenterPython {
+    executable: String,
+    executable_sha256: String,
+    python_dll: String,
+    python_dll_sha256: String,
+    pth_file: String,
+    pth_sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PresenterRuntimeEncoder {
+    source_root: String,
+    executable: String,
+    ffprobe: String,
+    files: Vec<PresenterEncoderFile>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PresenterEncoderFile {
+    relative_path: String,
+    bytes: u64,
+    sha256: String,
 }
 
 const COMFYUI_RUNTIME_FILE: ManagedManifestFile = ManagedManifestFile {
@@ -291,6 +374,25 @@ const MUSETALK: PackageSpec = PackageSpec {
     strategy: InstallStrategy::Quarantine,
 };
 
+const SOULX_FLASHHEAD: PackageSpec = PackageSpec {
+    model_id: "local/soulx-flashhead-pro",
+    display_name: "SoulX-FlashHead Pro 1.3B",
+    immutable_revision: SOULX_REVISION,
+    code_revision: "9bc03de06bb0de82cd6bc477804512ae06144bf2",
+    weight_revision: "59119b6c681230c3eeee157e224ae1941746711e",
+    license_id: "Apache-2.0",
+    license_url: "https://raw.githubusercontent.com/Soul-AILab/SoulX-FlashHead/9bc03de06bb0de82cd6bc477804512ae06144bf2/LICENSE",
+    license_sha256: "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    license_scope: "Pinned SoulX-FlashHead source, Pro weights, Wav2Vec audio features, portable Python, CUDA wheels, and LGPL FFmpeg runtime. Every bundled dependency retains its upstream license.",
+    download_only_reason: "One-click managed presenter install. The desktop downloads 76 exact public artifacts, builds the portable environment offline, and verifies the complete installed-file ledger. Downloading stages SoulX without changing the selected presenter engine; choosing Use model performs the separate verified activation.",
+    artifacts: &[],
+    managed_files: &[],
+    strategy: InstallStrategy::ManagedPresenter {
+        bundle_bytes: SOULX_TOTAL_BYTES,
+        artifact_count: SOULX_ARTIFACT_COUNT,
+    },
+};
+
 const SDXL: PackageSpec = PackageSpec {
     model_id: "local/sdxl-base-1.0",
     display_name: "Stable Diffusion XL Base 1.0 + optional offset LoRA",
@@ -380,10 +482,18 @@ const ACCEPTANCE_DOWNLOAD_FIXTURE: PackageSpec = PackageSpec {
 };
 
 #[cfg(not(feature = "portable-debug-runtime"))]
-const PACKAGES: &[PackageSpec] = &[MUSETALK, COMFYUI_RUNTIME, SDXL, FLUX_KLEIN, Z_IMAGE];
+const PACKAGES: &[PackageSpec] = &[
+    MUSETALK,
+    SOULX_FLASHHEAD,
+    COMFYUI_RUNTIME,
+    SDXL,
+    FLUX_KLEIN,
+    Z_IMAGE,
+];
 #[cfg(feature = "portable-debug-runtime")]
 const PACKAGES: &[PackageSpec] = &[
     MUSETALK,
+    SOULX_FLASHHEAD,
     COMFYUI_RUNTIME,
     SDXL,
     FLUX_KLEIN,
@@ -415,25 +525,42 @@ impl ActiveInstaller {
 
 #[derive(Debug, Clone)]
 pub struct ModelDownloadManager {
+    models_root: PathBuf,
     root: PathBuf,
     comfy_root: PathBuf,
     installer_executable: Option<PathBuf>,
+    presenter_runtime_root: Option<PathBuf>,
     statuses: Arc<RwLock<BTreeMap<String, ModelDownloadStatus>>>,
     active_installer: Arc<Mutex<Option<ActiveInstaller>>>,
+    managed_operation: Arc<Mutex<Option<String>>>,
     closed: Arc<AtomicBool>,
 }
 
 impl ModelDownloadManager {
     pub fn at(models_root: PathBuf) -> Result<Self, CommandError> {
+        if models_root.exists() && path_is_reparse(&models_root)? {
+            return Err(download_error("The Models root cannot be a reparse point."));
+        }
+        fs::create_dir_all(&models_root).map_err(|_| CommandError::io("models root setup"))?;
+        if path_is_reparse(&models_root)? {
+            return Err(download_error("The Models root cannot be a reparse point."));
+        }
+        let models_root = models_root
+            .canonicalize()
+            .map_err(|_| CommandError::io("models root discovery"))?;
         let root = models_root.join("download-quarantine");
         let comfy_root = models_root.join("comfyui-local");
-        fs::create_dir_all(&root).map_err(|_| CommandError::io("model download cache setup"))?;
+        ensure_managed_directory(&models_root, &root)?;
+        ensure_managed_directory(&models_root, &comfy_root)?;
         let manager = Self {
+            models_root,
             root,
             comfy_root,
             installer_executable: None,
+            presenter_runtime_root: None,
             statuses: Arc::new(RwLock::new(BTreeMap::new())),
             active_installer: Arc::new(Mutex::new(None)),
+            managed_operation: Arc::new(Mutex::new(None)),
             closed: Arc::new(AtomicBool::new(false)),
         };
         manager.load_statuses();
@@ -449,11 +576,22 @@ impl ModelDownloadManager {
         self
     }
 
+    pub fn with_presenter_runtime_root(mut self, runtime_root: Option<PathBuf>) -> Self {
+        self.presenter_runtime_root =
+            runtime_root.filter(|path| path.is_absolute() && path.is_dir());
+        self
+    }
+
     pub fn catalog(&self) -> Vec<ModelDownloadCatalogEntry> {
         PACKAGES
             .iter()
             .filter(|spec| catalog_package_visible(spec))
-            .map(|spec| catalog_entry(spec, self.installer_executable.is_some()))
+            .map(|spec| {
+                let available = self.installer_executable.is_some()
+                    && (!matches!(spec.strategy, InstallStrategy::ManagedPresenter { .. })
+                        || self.presenter_runtime_root.is_some());
+                catalog_entry(spec, available)
+            })
             .collect()
     }
 
@@ -480,9 +618,10 @@ impl ModelDownloadManager {
             ));
         }
         let spec = package(&input.model_id)?;
-        if is_managed_comfy(spec.strategy) && self.installer_is_running_or_uninspectable() {
+        let managed = is_managed_installer(spec.strategy);
+        if is_managed_installer(spec.strategy) && self.installer_is_running_or_uninspectable() {
             return Err(CommandError::conflict(
-                "The previous managed local image installer is still stopping.",
+                "The previous managed model installer is still stopping.",
             ));
         }
         if input.license_sha256 != spec.license_sha256 || !input.license_accepted {
@@ -495,25 +634,38 @@ impl ModelDownloadManager {
         if self.statuses.read().values().any(|status| {
             active_download_phase(&status.phase)
                 && (status.model_id == spec.model_id
-                    || is_managed_comfy(spec.strategy)
+                    || is_managed_installer(spec.strategy)
                         && package(&status.model_id)
-                            .is_ok_and(|active| is_managed_comfy(active.strategy)))
+                            .is_ok_and(|active| is_managed_installer(active.strategy)))
         }) {
             return Err(CommandError::conflict(
                 "This managed package download is already running.",
             ));
         }
-        if is_managed_comfy(spec.strategy) && self.installer_executable.is_none() {
+        if is_managed_installer(spec.strategy) && self.installer_executable.is_none() {
             return Err(CommandError::unavailable(
-                "The verified pipeline runtime required for local image installation",
+                "The verified pipeline runtime required for managed model installation",
             ));
         }
-        let managed = is_managed_comfy(spec.strategy);
-        let downloaded_bytes = if managed {
-            managed_progress(&self.comfy_root, spec).downloaded_bytes
-        } else {
-            existing_bytes(&self.package_root(spec), spec)
+        if matches!(spec.strategy, InstallStrategy::ManagedPresenter { .. })
+            && self.presenter_runtime_root.is_none()
+        {
+            return Err(CommandError::unavailable(
+                "The verified app runtime encoder required for SoulX installation",
+            ));
+        }
+        let downloaded_bytes = match spec.strategy {
+            InstallStrategy::ManagedPresenter { .. } => {
+                presenter_progress(&self.package_root(spec).join("files"), spec)?.downloaded_bytes
+            }
+            strategy if is_managed_comfy(strategy) => {
+                managed_progress(&self.comfy_root, spec).downloaded_bytes
+            }
+            _ => existing_bytes(&self.package_root(spec), spec),
         };
+        if managed {
+            self.reserve_managed_operation(spec.model_id)?;
+        }
         let status = ModelDownloadStatus {
             model_id: spec.model_id.into(),
             immutable_revision: Some(spec.immutable_revision.into()),
@@ -528,7 +680,9 @@ impl ModelDownloadManager {
             license_url: Some(spec.license_url.into()),
             license_sha256: Some(spec.license_sha256.into()),
             license_accepted_at: Some(Utc::now()),
-            detail: if managed {
+            detail: if matches!(spec.strategy, InstallStrategy::ManagedPresenter { .. }) {
+                "Starting the pinned SoulX presenter download. Installation stays offline and does not change the selected presenter engine.".into()
+            } else if managed {
                 "Starting the pinned local image installer. Runtime and model files will be verified before use.".into()
             } else if downloaded_bytes > 0 {
                 "Resuming hash-bound artifacts in the download-only quarantine.".into()
@@ -551,6 +705,9 @@ impl ModelDownloadManager {
                 "The model download worker could not start. Start again to retry.".into();
             failed.updated_at = Utc::now();
             self.update(failed);
+            if managed {
+                self.release_managed_operation(spec.model_id);
+            }
             return Err(CommandError::io("model download worker start"));
         }
         Ok(status)
@@ -586,6 +743,7 @@ impl ModelDownloadManager {
             InstallStrategy::Quarantine => self.download(spec),
             InstallStrategy::ManagedComfyRuntime => self.install_comfy_runtime(spec),
             InstallStrategy::ManagedComfy { .. } => self.install_comfy(spec),
+            InstallStrategy::ManagedPresenter { .. } => self.install_presenter(spec),
         };
         if let Err(error) = result {
             if matches!(spec.strategy, InstallStrategy::ManagedComfy { .. }) {
@@ -602,6 +760,27 @@ impl ModelDownloadManager {
             status.detail = error.message;
             status.updated_at = Utc::now();
             self.update(status);
+        }
+        if is_managed_installer(spec.strategy) {
+            self.release_managed_operation(spec.model_id);
+        }
+    }
+
+    fn reserve_managed_operation(&self, model_id: &str) -> Result<(), CommandError> {
+        let mut operation = self.managed_operation.lock();
+        if operation.is_some() {
+            return Err(CommandError::conflict(
+                "Another managed model operation is already running.",
+            ));
+        }
+        *operation = Some(model_id.to_owned());
+        Ok(())
+    }
+
+    fn release_managed_operation(&self, model_id: &str) {
+        let mut operation = self.managed_operation.lock();
+        if operation.as_deref() == Some(model_id) {
+            operation.take();
         }
     }
 
@@ -652,6 +831,313 @@ impl ModelDownloadManager {
         let (runtime_revision, install_fingerprint) = validated_runtime_identity(&self.comfy_root)?;
         self.commit_runtime_ready(runtime_revision, install_fingerprint);
         Ok(())
+    }
+
+    fn install_presenter(&self, spec: &'static PackageSpec) -> Result<(), CommandError> {
+        validate_spec(spec)?;
+        let manifest = presenter_manifest()?;
+        cleanup_presenter_stages(&self.models_root)?;
+        self.download_presenter_files(spec, &manifest)?;
+        let download_root = self.package_root(spec).join("files");
+        let result = self.run_presenter_installer(spec, "install", Some(&download_root))?;
+        validate_presenter_installer_result(&self.models_root, &result, "install")?;
+        let (runtime_revision, install_fingerprint) =
+            validated_presenter_identity(&self.models_root, &manifest)?;
+        let mut ready = self.current(spec);
+        ready.phase = ModelDownloadPhase::Ready;
+        ready.downloaded_bytes = ready.total_bytes;
+        ready.verified_artifacts = ready.artifact_count;
+        ready.activation_blocked = false;
+        ready.runtime_revision = Some(runtime_revision);
+        ready.install_fingerprint = Some(install_fingerprint);
+        ready.detail = "SoulX-FlashHead and its portable offline runtime passed the complete installed-file ledger. It is ready to select; the current presenter engine was not changed by the download.".into();
+        ready.updated_at = Utc::now();
+        self.update(ready);
+        Ok(())
+    }
+
+    pub fn activate_presenter(&self, model_id: &str) -> Result<ModelDownloadStatus, CommandError> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err(CommandError::unavailable(
+                "The desktop is shutting down and cannot activate a presenter model.",
+            ));
+        }
+        self.reserve_managed_operation(model_id)?;
+        let result = self.activate_presenter_reserved(model_id);
+        if let Err(error) = &result {
+            if let Ok(spec) = package(model_id) {
+                let mut failed = self.current(spec);
+                failed.phase = ModelDownloadPhase::Failed;
+                failed.activation_blocked = true;
+                failed.runtime_revision = None;
+                failed.install_fingerprint = None;
+                failed.detail = error.message.clone();
+                failed.updated_at = Utc::now();
+                self.update(failed);
+            }
+        }
+        self.release_managed_operation(model_id);
+        result
+    }
+
+    fn activate_presenter_reserved(
+        &self,
+        model_id: &str,
+    ) -> Result<ModelDownloadStatus, CommandError> {
+        let spec = package(model_id)?;
+        if !matches!(spec.strategy, InstallStrategy::ManagedPresenter { .. }) {
+            return Err(CommandError::invalid(
+                "modelId",
+                "is not a managed presenter runtime",
+            ));
+        }
+        if self.installer_is_running_or_uninspectable() {
+            return Err(CommandError::conflict(
+                "Another managed model installer is still stopping.",
+            ));
+        }
+        let manifest = presenter_manifest()?;
+        let runtime_revision = manifest.immutable_revision.clone();
+        let install_fingerprint = presenter_install_fingerprint(&manifest);
+        let mut checking = self.current(spec);
+        checking.phase = ModelDownloadPhase::Verifying;
+        checking.activation_blocked = true;
+        checking.runtime_revision = None;
+        checking.install_fingerprint = None;
+        checking.detail =
+            "Verifying the complete SoulX runtime ledger before selecting this presenter engine."
+                .into();
+        checking.updated_at = Utc::now();
+        self.update(checking);
+        let result = self.run_presenter_installer(spec, "activate", None)?;
+        validate_presenter_installer_result(&self.models_root, &result, "activate")?;
+        let mut status = self.current(spec);
+        status.phase = ModelDownloadPhase::Ready;
+        status.downloaded_bytes = status.total_bytes;
+        status.verified_artifacts = status.artifact_count;
+        status.activation_blocked = false;
+        status.runtime_revision = Some(runtime_revision);
+        status.install_fingerprint = Some(install_fingerprint);
+        status.detail = "SoulX-FlashHead is installed and selected as the default presenter engine. Existing custom and animal presenter routes were preserved.".into();
+        status.updated_at = Utc::now();
+        self.update(status.clone());
+        Ok(status)
+    }
+
+    fn download_presenter_files(
+        &self,
+        spec: &PackageSpec,
+        manifest: &PresenterInstallManifest,
+    ) -> Result<(), CommandError> {
+        let client = AsyncClient::builder()
+            .connect_timeout(Duration::from_secs(20))
+            .read_timeout(DOWNLOAD_READ_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .build()
+            .map_err(|_| download_error("The secure presenter download client could not start."))?;
+        let download_root = self.package_root(spec).join("files");
+        ensure_managed_directory(&self.models_root, &download_root)?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .map_err(|_| download_error("The SoulX download runtime could not start."))?;
+        for (index, artifact) in manifest.artifacts.iter().enumerate() {
+            let relative = safe_relative(&artifact.relative_path)?;
+            let final_path = download_root.join(relative);
+            if final_path.exists() && path_is_reparse(&final_path)? {
+                return Err(download_error(
+                    "A managed SoulX download file is an unsafe reparse point.",
+                ));
+            }
+            if verify_declared_file(&final_path, artifact.bytes, &artifact.sha256).is_ok() {
+                self.record_presenter_progress(spec, Some(index + 1));
+                continue;
+            }
+            if final_path.exists() {
+                fs::remove_file(&final_path)
+                    .map_err(|_| CommandError::io("invalid presenter artifact cleanup"))?;
+            }
+            if let Some(parent) = final_path.parent() {
+                ensure_managed_directory(&download_root, parent)?;
+            }
+            let part = partial_path(&final_path);
+            if part.exists() && path_is_reparse(&part)? {
+                return Err(download_error(
+                    "A managed SoulX partial file is an unsafe reparse point.",
+                ));
+            }
+            runtime.block_on(fetch_declared_file(
+                &client,
+                &part,
+                artifact,
+                &self.closed,
+                |written| {
+                    self.record_presenter_progress_with_active(
+                        spec,
+                        &artifact.relative_path,
+                        written,
+                    )
+                },
+            ))?;
+            let mut status = self.current(spec);
+            status.phase = ModelDownloadPhase::Verifying;
+            status.detail = format!(
+                "Verifying SHA-256 for SoulX artifact {} of {}.",
+                index + 1,
+                manifest.artifacts.len()
+            );
+            status.updated_at = Utc::now();
+            self.update(status);
+            if let Err(error) = verify_declared_file(&part, artifact.bytes, &artifact.sha256) {
+                let _ = fs::remove_file(&part);
+                return Err(error);
+            }
+            fs::rename(&part, &final_path)
+                .map_err(|_| CommandError::io("verified presenter artifact promotion"))?;
+            self.record_presenter_progress(spec, Some(index + 1));
+        }
+        Ok(())
+    }
+
+    fn run_presenter_installer(
+        &self,
+        spec: &'static PackageSpec,
+        operation: &str,
+        download_root: Option<&Path>,
+    ) -> Result<serde_json::Value, CommandError> {
+        let executable = self.installer_executable.as_ref().ok_or_else(|| {
+            CommandError::unavailable(
+                "The verified pipeline runtime required for presenter installation",
+            )
+        })?;
+        let models_root = self
+            .models_root
+            .to_str()
+            .ok_or_else(|| CommandError::invalid("models root", "is not valid Unicode"))?;
+        let mut command = hidden_command(executable);
+        command.args(["presenter-runtime", operation, "--models-root", models_root]);
+        if let Some(download_root) = download_root {
+            let download_root = download_root
+                .to_str()
+                .ok_or_else(|| CommandError::invalid("download root", "is not valid Unicode"))?;
+            command.args(["--download-root", download_root, "--staging-only"]);
+            let trusted_runtime_root = self.presenter_runtime_root.as_ref().ok_or_else(|| {
+                CommandError::unavailable(
+                    "The verified app runtime encoder required for SoulX installation",
+                )
+            })?;
+            let trusted_runtime_root = trusted_runtime_root.to_str().ok_or_else(|| {
+                CommandError::invalid("trusted runtime root", "is not valid Unicode")
+            })?;
+            command.args(["--trusted-runtime-root", trusted_runtime_root]);
+        }
+        let (stdout, stderr) = self.spawn_managed_installer(command)?;
+        let stdout_reader = capture_installer_output(stdout);
+        let stderr_reader = capture_installer_output(stderr);
+        let exit_status = loop {
+            let observed = {
+                let mut active = self.active_installer.lock();
+                match active.as_mut() {
+                    Some(installer) => installer.child.try_wait(),
+                    None => {
+                        return Err(download_error(
+                            "The SoulX installer stopped during desktop shutdown.",
+                        ));
+                    }
+                }
+            };
+            match observed {
+                Ok(Some(status)) => break status,
+                Ok(None) => {
+                    self.record_presenter_progress(spec, None);
+                    std::thread::sleep(MANAGED_PROGRESS_POLL_INTERVAL);
+                }
+                Err(_) => {
+                    let mut active = self.active_installer.lock();
+                    let exited = active
+                        .as_mut()
+                        .is_none_or(ActiveInstaller::terminate_and_wait);
+                    if exited {
+                        active.take();
+                    }
+                    return Err(download_error(
+                        "The SoulX installer could not be monitored.",
+                    ));
+                }
+            }
+        };
+        drop(self.active_installer.lock().take());
+        let stdout = finish_installer_output(stdout_reader)?;
+        let stderr = finish_installer_output(stderr_reader)?;
+        if !exit_status.success() {
+            let detail = String::from_utf8_lossy(&stderr.bytes);
+            return Err(download_error(if detail.trim().is_empty() {
+                "The SoulX installer rejected the verified runtime bundle."
+            } else {
+                "The SoulX installer rejected the verified runtime bundle; see diagnostics."
+            }));
+        }
+        if stdout.exceeded_limit || stderr.exceeded_limit {
+            return Err(download_error(
+                "The SoulX installer returned too much output.",
+            ));
+        }
+        serde_json::from_slice(&stdout.bytes)
+            .map_err(|_| download_error("The SoulX installer returned an invalid result."))
+    }
+
+    fn spawn_managed_installer(
+        &self,
+        mut command: Command,
+    ) -> Result<(impl Read + Send + 'static, impl Read + Send + 'static), CommandError> {
+        let mut active = self.active_installer.lock();
+        if self.closed.load(Ordering::Acquire) {
+            return Err(download_error(
+                "The desktop shut down before the managed installer started.",
+            ));
+        }
+        if active.is_some() {
+            return Err(CommandError::conflict(
+                "Another managed model installer is still stopping.",
+            ));
+        }
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|_| download_error("The managed model installer could not start."))?;
+        let process_tree = match KillOnCloseJob::attach_suspended(&child) {
+            Ok(process_tree) => process_tree,
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(download_error(
+                    "The managed model installer could not be isolated for safe shutdown.",
+                ));
+            }
+        };
+        let Some(stdout) = child.stdout.take() else {
+            drop(process_tree);
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(download_error(
+                "The managed model installer output was unavailable.",
+            ));
+        };
+        let Some(stderr) = child.stderr.take() else {
+            drop(process_tree);
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(download_error(
+                "The managed model installer diagnostics were unavailable.",
+            ));
+        };
+        *active = Some(ActiveInstaller {
+            child,
+            process_tree,
+        });
+        Ok((stdout, stderr))
     }
 
     fn run_comfy_installer(
@@ -974,6 +1460,69 @@ impl ModelDownloadManager {
         self.update(status);
     }
 
+    fn record_presenter_progress(&self, spec: &PackageSpec, verified: Option<usize>) {
+        if let Ok(progress) = presenter_progress(&self.package_root(spec).join("files"), spec) {
+            let mut status = self.current(spec);
+            status.downloaded_bytes = progress.downloaded_bytes;
+            if let Some(verified) = verified {
+                status.verified_artifacts = verified;
+            }
+            if status.downloaded_bytes >= status.total_bytes {
+                status.phase = ModelDownloadPhase::Installing;
+                status.detail = "Building the portable SoulX environment from the verified local wheelhouse. No network or GPU is used.".into();
+            } else {
+                status.phase = progress.phase;
+                status.detail = progress.detail;
+            }
+            status.updated_at = Utc::now();
+            self.update(status);
+        }
+    }
+
+    fn record_presenter_progress_with_active(
+        &self,
+        spec: &PackageSpec,
+        relative_path: &str,
+        written: u64,
+    ) {
+        if let Ok(manifest) = presenter_manifest() {
+            let download_root = self.package_root(spec).join("files");
+            let mut downloaded = 0u64;
+            for artifact in &manifest.artifacts {
+                if artifact.relative_path == relative_path {
+                    downloaded = downloaded.saturating_add(written.min(artifact.bytes));
+                } else {
+                    let path = download_root.join(&artifact.relative_path);
+                    let part = partial_path(&path);
+                    downloaded = downloaded.saturating_add(
+                        if path
+                            .metadata()
+                            .is_ok_and(|value| value.len() == artifact.bytes)
+                        {
+                            artifact.bytes
+                        } else {
+                            file_bytes_capped(&part, artifact.bytes)
+                        },
+                    );
+                }
+            }
+            let mut status = self.current(spec);
+            status.phase = ModelDownloadPhase::Downloading;
+            status.downloaded_bytes = downloaded.min(status.total_bytes);
+            let name = Path::new(relative_path)
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("SoulX artifact");
+            status.detail = format!(
+                "Downloading {name} · {} of {}.",
+                human_bytes(status.downloaded_bytes),
+                human_bytes(status.total_bytes)
+            );
+            status.updated_at = Utc::now();
+            self.update(status);
+        }
+    }
+
     fn package_root(&self, spec: &PackageSpec) -> PathBuf {
         self.root
             .join(safe_model_key(spec.model_id))
@@ -1024,7 +1573,7 @@ impl ModelDownloadManager {
                     | ModelDownloadPhase::Installing
             ) {
                 status.phase = ModelDownloadPhase::Failed;
-                status.detail = if is_managed_comfy(spec.strategy) {
+                status.detail = if is_managed_installer(spec.strategy) {
                     "The previous app session ended during installation. Start again to verify existing files and finish setup.".into()
                 } else {
                     "The previous app session ended during download. Start again to resume the existing .part files.".into()
@@ -1069,6 +1618,7 @@ impl ModelDownloadManager {
                         executable: true,
                         ..
                     }
+                    | InstallStrategy::ManagedPresenter { .. }
             ) {
                 continue;
             }
@@ -1076,6 +1626,19 @@ impl ModelDownloadManager {
                 continue;
             };
             if saved.phase != ModelDownloadPhase::Ready {
+                continue;
+            }
+            if matches!(spec.strategy, InstallStrategy::ManagedPresenter { .. }) {
+                let mut pending = saved;
+                pending.phase = ModelDownloadPhase::DownloadedQuarantined;
+                pending.runtime_revision = None;
+                pending.install_fingerprint = None;
+                pending.activation_blocked = true;
+                pending.detail = "SoulX is installed. Select Use model to run the complete installed-file verification before activation.".into();
+                pending.updated_at = Utc::now();
+                // Keep the durable Ready receipt resumable. The in-memory state
+                // avoids hashing the 10 GB runtime during ordinary app startup.
+                self.update_memory(pending);
                 continue;
             }
             let expected_identity = self.prepare_ready_revalidation(saved);
@@ -1124,6 +1687,8 @@ impl ModelDownloadManager {
             InstallStrategy::ManagedComfy {
                 executable: true, ..
             } => validated_managed_identity(spec, &self.comfy_root, true),
+            InstallStrategy::ManagedPresenter { .. } => presenter_manifest()
+                .and_then(|manifest| validated_presenter_identity(&self.models_root, &manifest)),
             _ => return,
         };
         let mut status = self.current(spec);
@@ -1144,7 +1709,10 @@ impl ModelDownloadManager {
                 status.activation_blocked = false;
                 status.downloaded_bytes = status.total_bytes;
                 status.verified_artifacts = status.artifact_count;
-                status.detail = if matches!(spec.strategy, InstallStrategy::ManagedComfyRuntime) {
+                status.detail = if matches!(spec.strategy, InstallStrategy::ManagedPresenter { .. })
+                {
+                    "SoulX-FlashHead and its offline portable runtime passed the complete installed-file ledger. It is ready to select.".into()
+                } else if matches!(spec.strategy, InstallStrategy::ManagedComfyRuntime) {
                     "The pinned ComfyUI archive passed its exact size and SHA-256 check, and the extracted runtime entry points are ready for compatible local image packs.".into()
                 } else {
                     "The pinned ComfyUI archive and SDXL model files passed their exact hash checks, and the extracted runtime entry points are present. The reviewed recipe is ready for local generation.".into()
@@ -1155,7 +1723,10 @@ impl ModelDownloadManager {
                 status.runtime_revision = None;
                 status.install_fingerprint = None;
                 status.activation_blocked = true;
-                status.detail = if matches!(spec.strategy, InstallStrategy::ManagedComfyRuntime) {
+                status.detail = if matches!(spec.strategy, InstallStrategy::ManagedPresenter { .. })
+                {
+                    "The installed SoulX runtime no longer matches its exact receipt and complete file ledger. Remove the owned SoulX runtime directory, then start the verified install again.".into()
+                } else if matches!(spec.strategy, InstallStrategy::ManagedComfyRuntime) {
                     "The installed ComfyUI runtime no longer matches its verified archive and entry-point receipt. Start the verified installation again.".into()
                 } else {
                     "The installed local image bundle no longer matches its verified archive and model-file receipt. Start the verified installation again.".into()
@@ -1306,6 +1877,198 @@ fn fetch_artifact_from_url(
     Ok(())
 }
 
+async fn fetch_declared_file(
+    client: &AsyncClient,
+    part: &Path,
+    artifact: &PresenterArtifact,
+    closed: &AtomicBool,
+    mut progress: impl FnMut(u64),
+) -> Result<(), CommandError> {
+    let mut offset = part.metadata().map(|value| value.len()).unwrap_or(0);
+    if offset > artifact.bytes {
+        fs::remove_file(part)
+            .map_err(|_| CommandError::io("oversized presenter partial cleanup"))?;
+        offset = 0;
+    }
+    let mut request = client.get(&artifact.source_url);
+    if offset > 0 {
+        request = request.header(RANGE, format!("bytes={offset}-"));
+    }
+    let mut response = request
+        .send()
+        .await
+        .map_err(|_| download_error("The immutable SoulX artifact could not be reached."))?;
+    if offset > 0 && response.status() == reqwest::StatusCode::OK {
+        fs::remove_file(part).map_err(|_| CommandError::io("presenter partial restart"))?;
+        offset = 0;
+        response = client.get(&artifact.source_url).send().await.map_err(|_| {
+            download_error("The SoulX source did not support resume and the clean retry failed.")
+        })?;
+    }
+    validate_declared_response_parts(
+        response.status(),
+        response.headers(),
+        artifact.bytes,
+        offset,
+    )?;
+    let mut output = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(offset > 0)
+        .truncate(offset == 0)
+        .open(part)
+        .map_err(|_| CommandError::io("presenter partial write"))?;
+    let mut written = offset;
+    loop {
+        if closed.load(Ordering::Acquire) {
+            return Err(download_error(
+                "The SoulX download was stopped; its partial file was kept for resume.",
+            ));
+        }
+        let Some(chunk) = response.chunk().await.map_err(|_| {
+            download_error(
+                "The SoulX download was interrupted or stalled; its partial file was kept.",
+            )
+        })?
+        else {
+            break;
+        };
+        let count = chunk.len();
+        written = written.saturating_add(count as u64);
+        if written > artifact.bytes {
+            return Err(download_error(
+                "The SoulX source exceeded its declared immutable byte count.",
+            ));
+        }
+        output
+            .write_all(&chunk)
+            .map_err(|_| CommandError::io("presenter partial write"))?;
+        progress(written);
+    }
+    output
+        .flush()
+        .and_then(|_| output.sync_all())
+        .map_err(|_| CommandError::io("presenter partial flush"))?;
+    if written != artifact.bytes {
+        return Err(download_error(
+            "The SoulX artifact ended before its declared immutable byte count.",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_declared_response_parts(
+    status: reqwest::StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    expected_bytes: u64,
+    offset: u64,
+) -> Result<(), CommandError> {
+    if offset > 0 {
+        let prefix = format!("bytes {offset}-");
+        if status != reqwest::StatusCode::PARTIAL_CONTENT
+            || !headers
+                .get(CONTENT_RANGE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| {
+                    value.starts_with(&prefix) && value.ends_with(&format!("/{expected_bytes}"))
+                })
+        {
+            return Err(download_error(
+                "The SoulX source did not honor the exact resume range.",
+            ));
+        }
+    } else if status != reqwest::StatusCode::OK {
+        return Err(download_error(
+            "The SoulX source returned an unexpected HTTP status.",
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_managed_directory(root: &Path, directory: &Path) -> Result<(), CommandError> {
+    if !directory.starts_with(root) {
+        return Err(download_error(
+            "A managed download path escaped its owned root.",
+        ));
+    }
+    if root.exists() && path_is_reparse(root)? {
+        return Err(download_error(
+            "A managed download root cannot be a reparse point.",
+        ));
+    }
+    let relative = directory
+        .strip_prefix(root)
+        .map_err(|_| download_error("A managed download path escaped its owned root."))?;
+    let mut current = root.to_path_buf();
+    if !current.exists() {
+        fs::create_dir(&current).map_err(|_| CommandError::io("managed download root creation"))?;
+    }
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            return Err(download_error("A managed download path is unsafe."));
+        };
+        current.push(name);
+        if current.exists() {
+            if path_is_reparse(&current)?
+                || !fs::symlink_metadata(&current).is_ok_and(|m| m.is_dir())
+            {
+                return Err(download_error("A managed download directory is unsafe."));
+            }
+        } else {
+            fs::create_dir(&current)
+                .map_err(|_| CommandError::io("managed download directory creation"))?;
+        }
+    }
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| CommandError::io("managed download root discovery"))?;
+    let canonical_directory = directory
+        .canonicalize()
+        .map_err(|_| CommandError::io("managed download directory discovery"))?;
+    if !canonical_directory.starts_with(&canonical_root) {
+        return Err(download_error(
+            "A managed download directory escaped its owned root.",
+        ));
+    }
+    Ok(())
+}
+
+fn verify_declared_file(path: &Path, bytes: u64, sha256: &str) -> Result<(), CommandError> {
+    if fs::metadata(path).map(|value| value.len()).ok() != Some(bytes) {
+        return Err(download_error(
+            "A staged SoulX artifact has the wrong byte count.",
+        ));
+    }
+    if sha256_file(path)? != sha256 {
+        return Err(download_error(
+            "A staged SoulX artifact failed its exact SHA-256 check.",
+        ));
+    }
+    Ok(())
+}
+
+fn sha256_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn sha256_file(path: &Path) -> Result<String, CommandError> {
+    let mut file = File::open(path).map_err(|_| CommandError::io("file verification read"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 1024 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|_| CommandError::io("file verification read"))?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 fn validate_response(
     response: &Response,
     artifact: &ArtifactSpec,
@@ -1412,6 +2175,20 @@ fn validate_spec(spec: &PackageSpec) -> Result<(), CommandError> {
                 "The managed local image declaration is invalid.",
             ));
         }
+        InstallStrategy::ManagedPresenter {
+            bundle_bytes,
+            artifact_count,
+        } if !spec.artifacts.is_empty()
+            || !spec.managed_files.is_empty()
+            || bundle_bytes != SOULX_TOTAL_BYTES
+            || artifact_count != SOULX_ARTIFACT_COUNT
+            || spec.model_id != SOULX_FLASHHEAD.model_id
+            || spec.immutable_revision != SOULX_REVISION =>
+        {
+            return Err(download_error(
+                "The managed presenter declaration is invalid.",
+            ));
+        }
         _ => {}
     }
     for artifact in spec.artifacts {
@@ -1504,6 +2281,7 @@ fn total_bytes(spec: &PackageSpec) -> u64 {
         InstallStrategy::ManagedComfy { bundle_bytes, .. } => {
             COMFYUI_RUNTIME_BYTES.saturating_add(bundle_bytes)
         }
+        InstallStrategy::ManagedPresenter { bundle_bytes, .. } => bundle_bytes,
     }
 }
 fn artifact_count(spec: &PackageSpec) -> usize {
@@ -1511,6 +2289,7 @@ fn artifact_count(spec: &PackageSpec) -> usize {
         InstallStrategy::Quarantine => spec.artifacts.len(),
         InstallStrategy::ManagedComfyRuntime => 1,
         InstallStrategy::ManagedComfy { artifact_count, .. } => artifact_count,
+        InstallStrategy::ManagedPresenter { artifact_count, .. } => artifact_count,
     }
 }
 
@@ -1519,6 +2298,229 @@ fn is_managed_comfy(strategy: InstallStrategy) -> bool {
         strategy,
         InstallStrategy::ManagedComfyRuntime | InstallStrategy::ManagedComfy { .. }
     )
+}
+
+fn is_managed_installer(strategy: InstallStrategy) -> bool {
+    is_managed_comfy(strategy) || matches!(strategy, InstallStrategy::ManagedPresenter { .. })
+}
+
+fn presenter_manifest() -> Result<PresenterInstallManifest, CommandError> {
+    if sha256_bytes(SOULX_MANIFEST_JSON.as_bytes()) != SOULX_MANIFEST_SHA256 {
+        return Err(download_error(
+            "The bundled SoulX installer manifest changed after review.",
+        ));
+    }
+    let manifest: PresenterInstallManifest = serde_json::from_str(SOULX_MANIFEST_JSON)
+        .map_err(|_| download_error("The bundled SoulX installer manifest is invalid."))?;
+    if manifest.schema_version != 1
+        || manifest.model_id != SOULX_FLASHHEAD.model_id
+        || manifest.runtime_model_id != "soulx-flashhead-pro"
+        || manifest.immutable_revision != SOULX_REVISION
+        || manifest.source_revision != SOULX_FLASHHEAD.code_revision
+        || manifest.weight_revision != SOULX_FLASHHEAD.weight_revision
+        || manifest.contract_id != "alystria.soulx-flashhead.worker.v1"
+        || !is_sha256(&manifest.dependency_lock_sha256)
+        || !is_sha256(&manifest.generated_requirements_sha256)
+        || manifest.artifacts.len() != SOULX_ARTIFACT_COUNT
+        || manifest
+            .artifacts
+            .iter()
+            .map(|item| item.bytes)
+            .sum::<u64>()
+            != SOULX_TOTAL_BYTES
+    {
+        return Err(download_error(
+            "The bundled SoulX installer identity is incomplete.",
+        ));
+    }
+    let allowed_hosts = BTreeSet::from([
+        "www.python.org",
+        "github.com",
+        "huggingface.co",
+        "files.pythonhosted.org",
+        "download.pytorch.org",
+        "download-r2.pytorch.org",
+    ]);
+    let mut paths = BTreeSet::new();
+    let mut kinds: BTreeMap<&str, usize> = BTreeMap::new();
+    for artifact in &manifest.artifacts {
+        let relative = safe_relative(&artifact.relative_path)?;
+        if !paths.insert(relative)
+            || artifact.bytes == 0
+            || artifact.bytes > MAX_ARTIFACT_BYTES
+            || !is_sha256(&artifact.sha256)
+        {
+            return Err(download_error("A SoulX artifact declaration is invalid."));
+        }
+        *kinds.entry(artifact.kind.as_str()).or_default() += 1;
+        let url = reqwest::Url::parse(&artifact.source_url)
+            .map_err(|_| download_error("A SoulX artifact URL is invalid."))?;
+        if url.scheme() != "https"
+            || url.username() != ""
+            || url.password().is_some()
+            || url.fragment().is_some()
+            || !url
+                .host_str()
+                .is_some_and(|host| allowed_hosts.contains(host))
+        {
+            return Err(download_error(
+                "A SoulX artifact source is not allowlisted.",
+            ));
+        }
+        if artifact.kind == "wheel"
+            && artifact.requirement.as_ref().is_none_or(|value| {
+                value.contains(char::is_whitespace)
+                    || value.matches("==").count() != 1
+                    || value.starts_with('-')
+            })
+        {
+            return Err(download_error("A SoulX wheel requirement is not exact."));
+        }
+    }
+    if kinds
+        != BTreeMap::from([
+            ("model-file", 10),
+            ("python-archive", 1),
+            ("source-archive", 1),
+            ("wheel", 63),
+        ])
+        || manifest.resources.len() != 3
+        || manifest.resources.iter().any(|item| {
+            item.bytes == 0
+                || !is_sha256(&item.sha256)
+                || safe_relative(&item.install_path).is_err()
+        })
+    {
+        return Err(download_error(
+            "The SoulX artifact set differs from the reviewed declaration.",
+        ));
+    }
+    let expected_roles = BTreeSet::from([
+        "adapter-entrypoint",
+        "runtime-source-manifest",
+        "audio-feature-config",
+        "audio-feature-preprocessor",
+        "audio-feature-weights",
+        "flashhead-config",
+        "flashhead-weights",
+        "vae-weights",
+    ]);
+    if manifest
+        .roles
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>()
+        != expected_roles
+        || manifest
+            .roles
+            .values()
+            .any(|value| safe_relative(value).is_err())
+        || [
+            (
+                &manifest.python.executable,
+                &manifest.python.executable_sha256,
+            ),
+            (
+                &manifest.python.python_dll,
+                &manifest.python.python_dll_sha256,
+            ),
+            (&manifest.python.pth_file, &manifest.python.pth_sha256),
+        ]
+        .iter()
+        .any(|(path, digest)| safe_relative(path).is_err() || !is_sha256(digest))
+    {
+        return Err(download_error(
+            "The SoulX runtime contract differs from the reviewed declaration.",
+        ));
+    }
+    if manifest.runtime_encoder.source_root != "ffmpeg"
+        || manifest.runtime_encoder.executable != "ffmpeg/ffmpeg.exe"
+        || manifest.runtime_encoder.ffprobe != "ffmpeg/ffprobe.exe"
+        || manifest.runtime_encoder.files.len() != 11
+        || manifest.runtime_encoder.files.iter().any(|item| {
+            item.bytes == 0
+                || !is_sha256(&item.sha256)
+                || safe_relative(&item.relative_path).is_err()
+                || !item.relative_path.starts_with("ffmpeg/")
+        })
+    {
+        return Err(download_error(
+            "The SoulX runtime encoder declaration is invalid.",
+        ));
+    }
+    Ok(manifest)
+}
+
+fn presenter_install_fingerprint(manifest: &PresenterInstallManifest) -> String {
+    let mut hasher = Sha256::new();
+    for value in std::iter::once("alystria-managed-soulx-flashhead-install-v1")
+        .chain(std::iter::once(SOULX_MANIFEST_SHA256))
+        .chain(std::iter::once(manifest.immutable_revision.as_str()))
+        .chain(std::iter::once(manifest.dependency_lock_sha256.as_str()))
+        .chain(std::iter::once(
+            manifest.generated_requirements_sha256.as_str(),
+        ))
+        .chain(manifest.resources.iter().map(|item| item.sha256.as_str()))
+    {
+        hasher.update(value.as_bytes());
+        hasher.update([0]);
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+fn presenter_progress(
+    download_root: &Path,
+    spec: &PackageSpec,
+) -> Result<ManagedProgress, CommandError> {
+    let manifest = presenter_manifest()?;
+    let mut downloaded_bytes = 0u64;
+    let mut active_file: Option<&str> = None;
+    for artifact in &manifest.artifacts {
+        let path = download_root.join(safe_relative(&artifact.relative_path)?);
+        let part = partial_path(&path);
+        let final_bytes = file_bytes_capped(&path, artifact.bytes);
+        let part_bytes = file_bytes_capped(&part, artifact.bytes);
+        downloaded_bytes = downloaded_bytes.saturating_add(if final_bytes == artifact.bytes {
+            artifact.bytes
+        } else {
+            part_bytes
+        });
+        if active_file.is_none() && part_bytes > 0 && part_bytes < artifact.bytes {
+            active_file = Path::new(&artifact.relative_path)
+                .file_name()
+                .and_then(|value| value.to_str());
+        }
+    }
+    downloaded_bytes = downloaded_bytes.min(total_bytes(spec));
+    let (phase, detail) = if let Some(name) = active_file {
+        (
+            ModelDownloadPhase::Downloading,
+            format!(
+                "Downloading {name} · {} of {}.",
+                human_bytes(downloaded_bytes),
+                human_bytes(total_bytes(spec))
+            ),
+        )
+    } else if downloaded_bytes >= total_bytes(spec) {
+        (
+            ModelDownloadPhase::Installing,
+            "Building the portable SoulX environment from the verified local wheelhouse. No network or GPU is used.".into(),
+        )
+    } else {
+        (
+            ModelDownloadPhase::Downloading,
+            format!(
+                "Connecting to the pinned SoulX sources · {} of {} already present.",
+                human_bytes(downloaded_bytes),
+                human_bytes(total_bytes(spec))
+            ),
+        )
+    };
+    Ok(ManagedProgress {
+        downloaded_bytes,
+        phase,
+        detail,
+    })
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1790,6 +2792,399 @@ fn finish_installer_output(
         ));
     }
     Ok(output)
+}
+
+fn cleanup_presenter_stages(models_root: &Path) -> Result<(), CommandError> {
+    let presenter = models_root.join("Presenter");
+    if !presenter.exists() {
+        return Ok(());
+    }
+    if path_is_reparse(&presenter)? {
+        return Err(download_error(
+            "The Presenter model directory is not a safe managed location.",
+        ));
+    }
+    let presenter = presenter
+        .canonicalize()
+        .map_err(|_| download_error("The Presenter model directory is unavailable."))?;
+    if !presenter.starts_with(models_root) {
+        return Err(download_error(
+            "The Presenter model directory is not a safe managed location.",
+        ));
+    }
+    for entry in
+        fs::read_dir(&presenter).map_err(|_| CommandError::io("presenter stale-stage discovery"))?
+    {
+        let entry = entry.map_err(|_| CommandError::io("presenter stale-stage discovery"))?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.starts_with(".SoulX-FlashHead-Pro.install-") {
+            continue;
+        }
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|_| CommandError::io("presenter stale-stage inspection"))?;
+        if path_is_reparse(&path)? || !metadata.is_dir() {
+            return Err(download_error(
+                "An interrupted SoulX stage is not a safe owned directory.",
+            ));
+        }
+        reject_reparse_tree(&path)?;
+        fs::remove_dir_all(&path).map_err(|_| CommandError::io("presenter stale-stage cleanup"))?;
+    }
+    Ok(())
+}
+
+fn reject_reparse_tree(directory: &Path) -> Result<(), CommandError> {
+    for entry in
+        fs::read_dir(directory).map_err(|_| CommandError::io("presenter stale-stage inspection"))?
+    {
+        let path = entry
+            .map_err(|_| CommandError::io("presenter stale-stage inspection"))?
+            .path();
+        if path_is_reparse(&path)? {
+            return Err(download_error(
+                "An interrupted SoulX stage contains an unsafe reparse point.",
+            ));
+        }
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|_| CommandError::io("presenter stale-stage inspection"))?;
+        if metadata.is_dir() {
+            reject_reparse_tree(&path)?;
+        } else if !metadata.is_file() {
+            return Err(download_error(
+                "An interrupted SoulX stage contains an unsupported file type.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn path_is_reparse(path: &Path) -> Result<bool, CommandError> {
+    let metadata =
+        fs::symlink_metadata(path).map_err(|_| CommandError::io("managed path inspection"))?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        Ok(metadata.file_type().is_symlink() || metadata.file_attributes() & 0x400 != 0)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(metadata.file_type().is_symlink())
+    }
+}
+
+fn read_bounded_json(path: &Path, maximum_bytes: u64) -> Result<serde_json::Value, CommandError> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|_| download_error("A managed SoulX receipt is missing."))?;
+    if !metadata.is_file() || path_is_reparse(path)? || metadata.len() > maximum_bytes {
+        return Err(download_error("A managed SoulX receipt is unsafe."));
+    }
+    let bytes = fs::read(path).map_err(|_| CommandError::io("SoulX receipt read"))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|_| download_error("A managed SoulX receipt is invalid."))
+}
+
+fn json_pin<'a>(
+    value: &'a serde_json::Value,
+    label: &str,
+) -> Result<(&'a str, &'a str), CommandError> {
+    let path = value
+        .get("relativePath")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| download_error(&format!("The SoulX {label} pin has no path.")))?;
+    let digest = value
+        .get("sha256")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| is_sha256(value))
+        .ok_or_else(|| download_error(&format!("The SoulX {label} pin has no digest.")))?;
+    Ok((path, digest))
+}
+
+fn validate_runtime_pin(
+    runtime_root: &Path,
+    value: &serde_json::Value,
+    label: &str,
+) -> Result<(), CommandError> {
+    let (relative, digest) = json_pin(value, label)?;
+    let path = runtime_root.join(safe_relative(relative)?);
+    if sha256_file(&path)? != digest {
+        return Err(download_error(&format!(
+            "The installed SoulX {label} changed after installation."
+        )));
+    }
+    Ok(())
+}
+
+fn collect_presenter_files(
+    runtime_root: &Path,
+    directory: &Path,
+    files: &mut BTreeMap<PathBuf, PathBuf>,
+) -> Result<(), CommandError> {
+    for entry in
+        fs::read_dir(directory).map_err(|_| CommandError::io("SoulX runtime ledger discovery"))?
+    {
+        let entry = entry.map_err(|_| CommandError::io("SoulX runtime ledger discovery"))?;
+        let path = entry.path();
+        if path_is_reparse(&path)? {
+            return Err(download_error(
+                "The installed SoulX runtime contains a reparse point.",
+            ));
+        }
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|_| CommandError::io("SoulX runtime ledger discovery"))?;
+        if metadata.is_dir() {
+            collect_presenter_files(runtime_root, &path, files)?;
+        } else if metadata.is_file() {
+            let relative = path
+                .strip_prefix(runtime_root)
+                .map_err(|_| download_error("A SoulX runtime file escaped its root."))?
+                .to_path_buf();
+            if relative != Path::new("manifests/runtime-ledger.json")
+                && relative != Path::new("manifests/install-receipt.json")
+            {
+                files.insert(relative, path);
+            }
+        } else {
+            return Err(download_error(
+                "The SoulX runtime contains an unsupported file type.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validated_presenter_identity(
+    models_root: &Path,
+    manifest: &PresenterInstallManifest,
+) -> Result<(String, String), CommandError> {
+    let models_root = models_root
+        .canonicalize()
+        .map_err(|_| download_error("The Models root is unavailable."))?;
+    if path_is_reparse(&models_root)? {
+        return Err(download_error("The Models root cannot be a reparse point."));
+    }
+    let runtime_root_lexical = models_root.join(SOULX_INSTALL_DIRECTORY);
+    if runtime_root_lexical.exists() && path_is_reparse(&runtime_root_lexical)? {
+        return Err(download_error("The managed SoulX runtime root is unsafe."));
+    }
+    let runtime_root = runtime_root_lexical
+        .canonicalize()
+        .map_err(|_| download_error("The managed SoulX runtime is not installed."))?;
+    if !runtime_root.starts_with(&models_root) {
+        return Err(download_error("The managed SoulX runtime root is unsafe."));
+    }
+    let receipt = read_bounded_json(
+        &runtime_root.join("manifests/install-receipt.json"),
+        1024 * 1024,
+    )?;
+    let fingerprint = presenter_install_fingerprint(manifest);
+    if receipt
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        != Some(1)
+        || receipt.get("modelId").and_then(serde_json::Value::as_str)
+            != Some(SOULX_FLASHHEAD.model_id)
+        || receipt
+            .get("runtimeModelId")
+            .and_then(serde_json::Value::as_str)
+            != Some("soulx-flashhead-pro")
+        || receipt
+            .get("modelRevision")
+            .and_then(serde_json::Value::as_str)
+            != Some(SOULX_REVISION)
+        || receipt
+            .get("manifestSha256")
+            .and_then(serde_json::Value::as_str)
+            != Some(SOULX_MANIFEST_SHA256)
+        || receipt
+            .get("installFingerprint")
+            .and_then(serde_json::Value::as_str)
+            != Some(fingerprint.as_str())
+        || receipt
+            .get("runtimeRoot")
+            .and_then(serde_json::Value::as_str)
+            != runtime_root.to_str()
+    {
+        return Err(download_error(
+            "The managed SoulX install receipt differs from the pinned declaration.",
+        ));
+    }
+    let ledger_pin = receipt
+        .get("runtimeLedger")
+        .ok_or_else(|| download_error("The SoulX receipt has no complete runtime ledger."))?;
+    let (ledger_relative, ledger_digest) = json_pin(ledger_pin, "runtime ledger")?;
+    let ledger_path = runtime_root.join(safe_relative(ledger_relative)?);
+    let expected_ledger_bytes = ledger_pin
+        .get("bytes")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| download_error("The SoulX runtime ledger has no byte count."))?;
+    if fs::metadata(&ledger_path).map(|value| value.len()).ok() != Some(expected_ledger_bytes)
+        || sha256_file(&ledger_path)? != ledger_digest
+    {
+        return Err(download_error(
+            "The SoulX runtime ledger changed after installation.",
+        ));
+    }
+    let ledger = read_bounded_json(&ledger_path, 32 * 1024 * 1024)?;
+    let rows = ledger
+        .get("files")
+        .and_then(serde_json::Value::as_array)
+        .filter(|rows| !rows.is_empty() && rows.len() <= 100_000)
+        .ok_or_else(|| download_error("The SoulX runtime ledger file set is invalid."))?;
+    if ledger_pin
+        .get("fileCount")
+        .and_then(serde_json::Value::as_u64)
+        != Some(rows.len() as u64)
+    {
+        return Err(download_error(
+            "The SoulX runtime ledger count differs from its receipt.",
+        ));
+    }
+    let mut declared = BTreeMap::new();
+    for row in rows {
+        let (relative, digest) = json_pin(row, "runtime file")?;
+        let relative = safe_relative(relative)?;
+        let bytes = row
+            .get("bytes")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| download_error("A SoulX runtime file has no byte count."))?;
+        if declared
+            .insert(relative, (bytes, digest.to_owned()))
+            .is_some()
+        {
+            return Err(download_error(
+                "The SoulX runtime ledger contains a duplicate path.",
+            ));
+        }
+    }
+    let mut actual = BTreeMap::new();
+    collect_presenter_files(&runtime_root, &runtime_root, &mut actual)?;
+    if actual.keys().collect::<BTreeSet<_>>() != declared.keys().collect::<BTreeSet<_>>() {
+        return Err(download_error(
+            "The installed SoulX file set differs from its ledger.",
+        ));
+    }
+    for (relative, path) in actual {
+        let (bytes, digest) = declared
+            .get(&relative)
+            .ok_or_else(|| download_error("An installed SoulX file is undeclared."))?;
+        if fs::metadata(&path).map(|value| value.len()).ok() != Some(*bytes)
+            || sha256_file(&path)? != *digest
+        {
+            return Err(download_error(
+                "An installed SoulX file failed its exact hash check.",
+            ));
+        }
+    }
+    let config = read_bounded_json(&models_root.join(SOULX_STAGED_CONFIG), 1024 * 1024)?;
+    if config
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        != Some(1)
+        || config
+            .get("runtimeRoot")
+            .and_then(serde_json::Value::as_str)
+            != Some(SOULX_INSTALL_DIRECTORY)
+        || config.get("modelId").and_then(serde_json::Value::as_str) != Some("soulx-flashhead-pro")
+        || config
+            .get("modelRevision")
+            .and_then(serde_json::Value::as_str)
+            != Some(SOULX_REVISION)
+        || config
+            .get("installFingerprint")
+            .and_then(serde_json::Value::as_str)
+            != Some(fingerprint.as_str())
+    {
+        return Err(download_error(
+            "The staged SoulX config differs from the installed runtime.",
+        ));
+    }
+    validate_runtime_pin(&runtime_root, &config["executable"], "Python executable")?;
+    validate_runtime_pin(&runtime_root, &config["ffprobe"], "FFprobe executable")?;
+    let contract = &config["workerContract"];
+    if contract
+        .get("contractId")
+        .and_then(serde_json::Value::as_str)
+        != Some("alystria.soulx-flashhead.worker.v1")
+    {
+        return Err(download_error(
+            "The staged SoulX worker contract is invalid.",
+        ));
+    }
+    validate_runtime_pin(&runtime_root, &contract["entrypoint"], "worker entrypoint")?;
+    let files = contract
+        .get("files")
+        .and_then(serde_json::Value::as_array)
+        .filter(|files| files.len() == manifest.roles.len())
+        .ok_or_else(|| download_error("The staged SoulX worker roles are incomplete."))?;
+    let mut roles = BTreeSet::new();
+    for file in files {
+        let role = file
+            .get("role")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| download_error("A staged SoulX worker role is unnamed."))?;
+        let (path, _) = json_pin(file, "worker role")?;
+        if manifest.roles.get(role).map(String::as_str) != Some(path) || !roles.insert(role) {
+            return Err(download_error(
+                "A staged SoulX worker role differs from its manifest.",
+            ));
+        }
+        validate_runtime_pin(&runtime_root, file, role)?;
+    }
+    Ok((manifest.immutable_revision.clone(), fingerprint))
+}
+
+fn validate_presenter_installer_result(
+    models_root: &Path,
+    value: &serde_json::Value,
+    operation: &str,
+) -> Result<(), CommandError> {
+    let expected_fingerprint = presenter_install_fingerprint(&presenter_manifest()?);
+    if value.get("ok").and_then(serde_json::Value::as_bool) != Some(true)
+        || value.get("operation").and_then(serde_json::Value::as_str) != Some(operation)
+        || value.get("modelId").and_then(serde_json::Value::as_str)
+            != Some(SOULX_FLASHHEAD.model_id)
+        || value
+            .get("runtimeRevision")
+            .and_then(serde_json::Value::as_str)
+            != Some(SOULX_REVISION)
+        || value
+            .get("manifestSha256")
+            .and_then(serde_json::Value::as_str)
+            != Some(SOULX_MANIFEST_SHA256)
+        || value
+            .get("installFingerprint")
+            .and_then(serde_json::Value::as_str)
+            != Some(expected_fingerprint.as_str())
+    {
+        return Err(download_error(
+            "The SoulX installer result did not match the pinned declaration.",
+        ));
+    }
+    let expected_root = models_root
+        .join(SOULX_INSTALL_DIRECTORY)
+        .canonicalize()
+        .map_err(|_| download_error("The SoulX installer did not create its runtime root."))?;
+    let returned_root = value.get("runtimeRoot").and_then(serde_json::Value::as_str);
+    if returned_root != expected_root.to_str() {
+        return Err(download_error(
+            "The SoulX installer returned a different runtime root.",
+        ));
+    }
+    if operation == "activate" {
+        let expected_config = models_root.join("presenter-runtime.json");
+        if value
+            .get("activeConfig")
+            .and_then(serde_json::Value::as_str)
+            != expected_config.to_str()
+        {
+            return Err(download_error(
+                "SoulX activation returned a different config path.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_comfy_result(
@@ -2723,5 +4118,109 @@ mod tests {
         assert!(failed.activation_blocked);
         assert!(failed.install_fingerprint.is_none());
         assert!(failed.runtime_revision.is_none());
+    }
+
+    #[test]
+    fn managed_operations_are_reserved_atomically() {
+        let directory = tempdir().expect("tempdir");
+        let manager = ModelDownloadManager::at(directory.path().to_path_buf()).expect("manager");
+        manager
+            .reserve_managed_operation(SOULX_FLASHHEAD.model_id)
+            .expect("first reservation");
+        let error = manager
+            .reserve_managed_operation(COMFYUI_RUNTIME.model_id)
+            .expect_err("concurrent managed operation");
+        assert_eq!(error.code, "CONFLICT");
+        manager.release_managed_operation(SOULX_FLASHHEAD.model_id);
+        manager
+            .reserve_managed_operation(COMFYUI_RUNTIME.model_id)
+            .expect("released reservation");
+    }
+
+    #[test]
+    fn soulx_manifest_identity_matches_the_embedded_installer_contract() {
+        let manifest = presenter_manifest().expect("embedded SoulX manifest");
+        assert_eq!(manifest.immutable_revision, SOULX_REVISION);
+        assert_eq!(manifest.artifacts.len(), SOULX_ARTIFACT_COUNT);
+        assert_eq!(
+            manifest
+                .artifacts
+                .iter()
+                .map(|item| item.bytes)
+                .sum::<u64>(),
+            SOULX_TOTAL_BYTES
+        );
+        assert_eq!(
+            sha256_bytes(SOULX_MANIFEST_JSON.as_bytes()),
+            SOULX_MANIFEST_SHA256
+        );
+        assert!(is_sha256(&presenter_install_fingerprint(&manifest)));
+    }
+
+    #[test]
+    fn soulx_ready_state_defers_full_ledger_hash_until_use() {
+        let directory = tempdir().expect("tempdir");
+        let manager = ModelDownloadManager::at(directory.path().to_path_buf()).expect("manager");
+        let mut ready = manifest_status(&SOULX_FLASHHEAD);
+        ready.phase = ModelDownloadPhase::Ready;
+        ready.activation_blocked = false;
+        ready.runtime_revision = Some(SOULX_REVISION.into());
+        ready.install_fingerprint = Some("a".repeat(64));
+        manager.update(ready);
+        manager.revalidate_loaded_ready_installs();
+        let pending = manager.current(&SOULX_FLASHHEAD);
+        assert_eq!(pending.phase, ModelDownloadPhase::DownloadedQuarantined);
+        assert!(pending.activation_blocked);
+        assert!(pending.runtime_revision.is_none());
+        assert!(pending.install_fingerprint.is_none());
+        assert!(pending.detail.contains("Use model"));
+    }
+
+    #[test]
+    fn presenter_installer_result_requires_exact_activation_identity() {
+        let directory = tempdir().expect("tempdir");
+        let runtime_root = directory.path().join(SOULX_INSTALL_DIRECTORY);
+        fs::create_dir_all(&runtime_root).expect("runtime root");
+        let fingerprint = presenter_install_fingerprint(&presenter_manifest().unwrap());
+        let active_config = directory.path().join("presenter-runtime.json");
+        let valid = serde_json::json!({
+            "ok": true,
+            "operation": "activate",
+            "modelId": SOULX_FLASHHEAD.model_id,
+            "runtimeRevision": SOULX_REVISION,
+            "manifestSha256": SOULX_MANIFEST_SHA256,
+            "installFingerprint": fingerprint,
+            "runtimeRoot": runtime_root.canonicalize().unwrap(),
+            "activeConfig": active_config,
+        });
+        validate_presenter_installer_result(directory.path(), &valid, "activate")
+            .expect("exact activation result");
+
+        for (field, wrong) in [
+            ("operation", serde_json::json!("install")),
+            ("runtimeRevision", serde_json::json!("wrong")),
+            ("manifestSha256", serde_json::json!("0".repeat(64))),
+            ("installFingerprint", serde_json::json!("0".repeat(64))),
+            ("runtimeRoot", serde_json::json!(directory.path())),
+            (
+                "activeConfig",
+                serde_json::json!(directory.path().join("other.json")),
+            ),
+        ] {
+            let mut changed = valid.clone();
+            changed[field] = wrong;
+            assert_eq!(
+                validate_presenter_installer_result(directory.path(), &changed, "activate")
+                    .expect_err(field)
+                    .code,
+                "MODEL_DOWNLOAD_FAILED"
+            );
+        }
+
+        let mut install = valid;
+        install["operation"] = serde_json::json!("install");
+        install.as_object_mut().unwrap().remove("activeConfig");
+        validate_presenter_installer_result(directory.path(), &install, "install")
+            .expect("exact install result");
     }
 }

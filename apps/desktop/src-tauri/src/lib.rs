@@ -228,6 +228,7 @@ pub fn run() {
             local_model_download_status,
             local_presenter_runtime_status,
             local_model_download_start,
+            local_model_presenter_activate,
             runtime_manifest,
             updater_status,
             catalog_discover,

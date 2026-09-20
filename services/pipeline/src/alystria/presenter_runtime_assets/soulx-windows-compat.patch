@@ -1,0 +1,180 @@
+--- a/flash_head/src/modules/flash_head_model.py
++++ b/flash_head/src/modules/flash_head_model.py
+@@ -8,12 +8,20 @@
+ from diffusers.configuration_utils import ConfigMixin, register_to_config
+ import torch.cuda.amp as amp
+ import torch.distributed as dist
+-from xfuser.core.distributed import (
+-    get_sequence_parallel_rank,
+-    get_sequence_parallel_world_size,
+-    get_sp_group,
+-)
+-from xfuser.core.long_ctx_attention import xFuserLongContextAttention
++try:
++    from xfuser.core.distributed import (
++        get_sequence_parallel_rank,
++        get_sequence_parallel_world_size,
++        get_sp_group,
++    )
++    from xfuser.core.long_ctx_attention import xFuserLongContextAttention
++    XFUSER_AVAILABLE = True
++except ModuleNotFoundError:
++    get_sequence_parallel_rank = None
++    get_sequence_parallel_world_size = None
++    get_sp_group = None
++    xFuserLongContextAttention = None
++    XFUSER_AVAILABLE = False
+ try:
+     import flash_attn_interface
+     FLASH_ATTN_3_AVAILABLE = True
+@@ -31,6 +39,14 @@
+     SAGE_ATTN_AVAILABLE = True
+ except ModuleNotFoundError:
+     SAGE_ATTN_AVAILABLE = False
++
++
++def _sequence_parallel_state():
++    if not dist.is_initialized():
++        return False, 1, 0
++    if not XFUSER_AVAILABLE:
++        raise RuntimeError("Distributed inference requires the optional xfuser package")
++    return True, get_sequence_parallel_world_size(), get_sequence_parallel_rank()
+     
+     
+ def flash_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, num_heads: int, compatibility_mode=False):
+@@ -167,9 +183,7 @@
+         self.norm_q = RMSNorm(dim, eps=eps)
+         self.norm_k = RMSNorm(dim, eps=eps)
+ 
+-        self.use_usp = dist.is_initialized()
+-        self.sp_size = get_sequence_parallel_world_size() if self.use_usp else 1
+-        self.sp_rank = get_sequence_parallel_rank() if self.use_usp else 0
++        self.use_usp, self.sp_size, self.sp_rank = _sequence_parallel_state()
+ 
+     def forward(self, x, freqs, grid_sizes):
+         b, s, n, d = *x.shape[:2], self.num_heads, self.head_dim
+@@ -255,9 +269,7 @@
+             approximate='tanh'), nn.Linear(ffn_dim, dim))
+         self.modulation = nn.Parameter(torch.randn(1, 6, dim) / dim**0.5)
+ 
+-        self.use_usp = dist.is_initialized()
+-        self.sp_size = get_sequence_parallel_world_size() if self.use_usp else 1
+-        self.sp_rank = get_sequence_parallel_rank() if self.use_usp else 0
++        self.use_usp, self.sp_size, self.sp_rank = _sequence_parallel_state()
+ 
+     def forward(self, x, context, t_mod, freqs, grid_sizes):
+         e = (self.modulation.to(dtype=t_mod.dtype, device=t_mod.device) + t_mod).chunk(6, dim=1)
+@@ -390,9 +402,7 @@
+                     norm_output_audio=norm_output_audio,
+                 )
+ 
+-        self.use_usp = dist.is_initialized()
+-        self.sp_size = get_sequence_parallel_world_size() if self.use_usp else 1
+-        self.sp_rank = get_sequence_parallel_rank() if self.use_usp else 0
++        self.use_usp, self.sp_size, self.sp_rank = _sequence_parallel_state()
+         
+     def patchify(self, x: torch.Tensor):
+         x = self.patch_embedding(x)
+@@ -545,4 +555,4 @@
+             context_tokens = self.norm(context_tokens)
+         context_tokens = rearrange(context_tokens, "(bz f) m c -> bz f m c", f=video_length)
+ 
+-        return context_tokens+        return context_tokens
+--- a/flash_head/src/pipeline/flash_head_pipeline.py
++++ b/flash_head/src/pipeline/flash_head_pipeline.py
+@@ -13,11 +13,10 @@
+ from flash_head.src.modules.flash_head_model import WanModelAudioProject
+ from flash_head.audio_analysis.wav2vec2 import Wav2Vec2Model
+ from flash_head.utils.utils import match_and_blend_colors_torch, resize_and_centercrop
+-from flash_head.utils.facecrop import process_image
+ 
+ # compile models to speedup inference
+-COMPILE_MODEL = True
+-COMPILE_VAE = True
++COMPILE_MODEL = os.name != "nt"
++COMPILE_VAE = os.name != "nt"
+ # use parallel vae to speedup decode/encode, only support WanVAE
+ USE_PARALLEL_VAE = True
+ 
+@@ -25,6 +24,8 @@
+     def get_image(cond_image_path, use_face_crop):
+         if use_face_crop:
+             try:
++                from flash_head.utils.facecrop import process_image
++
+                 image = process_image(cond_image_path)
+                 return image
+             except Exception as e:
+--- a/flash_head/utils/facecrop.py
++++ b/flash_head/utils/facecrop.py
+@@ -6,8 +6,6 @@
+ import os
+ from PIL import Image
+ import numpy as np
+-
+-from flash_head.utils.cpu_face_handler import CPUFaceHandler
+ 
+ def get_scaled_bbox(
+     bbox, img_w, img_h, ratio: float = 1.0, face_image: Image.Image = None
+@@ -71,6 +69,8 @@
+         imgae: 处理后的图像
+     """
+     # 初始化人脸检测器
++    from flash_head.utils.cpu_face_handler import CPUFaceHandler
++
+     face_detector = CPUFaceHandler()
+     
+     # 验证输入文件
+@@ -107,4 +107,4 @@
+         return crop_face
+             
+     except Exception as e:
+-        raise ValueError(f"Error processing {input_path}: {e}")+        raise ValueError(f"Error processing {input_path}: {e}")
+--- a/generate_video.py
++++ b/generate_video.py
+@@ -22,6 +22,12 @@
+     assert args.model_type=="pro" or args.model_type=="lite", "Please specify the model name (pro, lite)."
+     assert args.cond_image_dir is not None or args.cond_image is not None, "Please specify the condition image or directory."
+     assert args.audio_path is not None, "Please specify the audio path."
++    assert args.save_file is not None, "Please specify an explicit .mp4 output path."
++    assert args.save_file.lower().endswith(".mp4"), "The output path must end in .mp4."
++    ffmpeg = os.environ.get("IMAGEIO_FFMPEG_EXE")
++    assert ffmpeg and os.path.isabs(ffmpeg) and os.path.isfile(ffmpeg), (
++        "IMAGEIO_FFMPEG_EXE must name an existing absolute FFmpeg executable."
++    )
+ 
+     args.base_seed = args.base_seed if args.base_seed >= 0 else 42
+ 
+@@ -80,7 +86,6 @@
+         type=bool,
+         default=False,
+         help="Enable face detection and crop for condition image")
+-    args = parser.parse_args()
+     args = parser.parse_args()
+ 
+     _validate_args(args)
+@@ -98,8 +103,17 @@
+                 writer.append_data(frame)
+     
+     # merge video and audio
+-    cmd = ['ffmpeg', '-i', temp_video_path, '-i', audio_path, '-c:v', 'copy', '-c:a', 'aac', '-shortest', video_path, '-y']
+-    subprocess.run(cmd)
++    cmd = [os.environ['IMAGEIO_FFMPEG_EXE'], '-i', temp_video_path, '-i', audio_path,
++           '-c:v', 'copy', '-c:a', 'aac', '-shortest', video_path, '-y']
++    completed = subprocess.run(
++        cmd,
++        check=False,
++        capture_output=True,
++        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
++    )
++    if completed.returncode != 0:
++        message = completed.stderr.decode("utf-8", errors="replace")[-4000:]
++        raise RuntimeError(f"FFmpeg audio mux failed ({completed.returncode}): {message}")
+     os.remove(temp_video_path)
+ 
+ 
+@@ -215,4 +229,4 @@
+ 
+ if __name__ == "__main__":
+     args = _parse_args()
+-    generate(args)+    generate(args)

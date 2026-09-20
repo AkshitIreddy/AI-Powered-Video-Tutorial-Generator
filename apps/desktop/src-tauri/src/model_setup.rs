@@ -34,6 +34,7 @@ const KNOWN_MODELS: &[&str] = &[
     "local/whisper-large-v3-turbo",
     "local/montreal-forced-aligner",
     "local/musetalk-1.5",
+    "local/soulx-flashhead-pro",
     "local/echomimicv3-flash",
     "local/latentsync-1.5",
     "local/nvidia-lipsync-private",
@@ -47,6 +48,7 @@ const KNOWN_MODELS: &[&str] = &[
 const LIP_SYNC_MODELS: &[&str] = &[
     "local/echomimicv3-flash",
     "local/musetalk-1.5",
+    "local/soulx-flashhead-pro",
     "local/latentsync-1.5",
     "local/nvidia-lipsync-private",
 ];
@@ -54,6 +56,7 @@ const PORTRAIT_ANIMATION_MODELS: &[&str] = &[
     "local/liveportrait",
     "local/longcat-avatar-1.5",
     "local/echomimicv3-flash",
+    "local/soulx-flashhead-pro",
     "local/hunyuan-video-avatar",
     "local/infinitetalk",
 ];
@@ -173,10 +176,7 @@ fn default_setup() -> LocalModelSetup {
                     "portraitAnimation".into(),
                     route("local-runtime", "off by default"),
                 ),
-                (
-                    "lipSync".into(),
-                    route("local-runtime", "off by default"),
-                ),
+                ("lipSync".into(), route("local-runtime", "off by default")),
             ]),
         }],
         updated_at: Utc::now(),

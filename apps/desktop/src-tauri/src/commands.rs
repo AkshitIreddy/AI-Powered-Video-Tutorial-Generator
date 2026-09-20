@@ -1177,6 +1177,23 @@ pub fn local_model_download_start(
 }
 
 #[tauri::command]
+pub async fn local_model_presenter_activate(
+    input: ModelDownloadActivateRequest,
+    state: State<'_, AppState>,
+) -> Result<ModelDownloadStatus, CommandError> {
+    let manager = state.model_downloads.clone();
+    tauri::async_runtime::spawn_blocking(move || manager.activate_presenter(&input.model_id))
+        .await
+        .map_err(|_| {
+            CommandError::new(
+                "PRESENTER_ACTIVATION_JOIN_FAILED",
+                "The presenter activation worker stopped unexpectedly.",
+                true,
+            )
+        })?
+}
+
+#[tauri::command]
 pub fn runtime_manifest(state: State<'_, AppState>) -> RuntimeManifest {
     state.runtimes.manifest()
 }

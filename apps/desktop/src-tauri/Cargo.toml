@@ -43,6 +43,7 @@ serde_json = "1"
 sha2 = "0.10"
 sysinfo = "0.37"
 tauri = { version = "2", features = ["protocol-asset"] }
+tokio = { version = "1", features = ["rt", "time"] }
 uuid = { version = "1", features = ["serde", "v7"] }
 zeroize = "1"
 

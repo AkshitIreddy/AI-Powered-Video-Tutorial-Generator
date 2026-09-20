@@ -1,0 +1,806 @@
+{
+  "schemaVersion": 1,
+  "modelId": "local/soulx-flashhead-pro",
+  "runtimeModelId": "soulx-flashhead-pro",
+  "displayName": "SoulX-FlashHead Pro 1.3B",
+  "immutableRevision": "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+  "sourceRevision": "9bc03de06bb0de82cd6bc477804512ae06144bf2",
+  "weightRevision": "59119b6c681230c3eeee157e224ae1941746711e",
+  "audioFeatureRevision": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156",
+  "dependencyLockSha256": "2bef4a7e3fe79f1e2bb7c5d1b2cfd7e06a9fef48b331c469ff16d2cc71b68c53",
+  "candidateReceiptSha256": "99a1dae40e0f996b20995f82898b2f080d2daae0c6ce64f1d42225918d3598ae",
+  "contractId": "alystria.soulx-flashhead.worker.v1",
+  "motionProfile": "native-idle",
+  "license": {
+    "id": "Apache-2.0",
+    "url": "https://raw.githubusercontent.com/Soul-AILab/SoulX-FlashHead/9bc03de06bb0de82cd6bc477804512ae06144bf2/LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  "artifacts": [
+    {
+      "kind": "python-archive",
+      "relativePath": "archives/python-3.10.6-embed-amd64.zip",
+      "sourceUrl": "https://www.python.org/ftp/python/3.10.6/python-3.10.6-embed-amd64.zip",
+      "bytes": 8585728,
+      "sha256": "c5e3af5d40944d1dbb03740564378f168235e316a2b47c99dcfe46ac837db3d2"
+    },
+    {
+      "kind": "source-archive",
+      "relativePath": "archives/SoulX-FlashHead-9bc03de06bb0de82cd6bc477804512ae06144bf2.zip",
+      "sourceUrl": "https://github.com/Soul-AILab/SoulX-FlashHead/archive/9bc03de06bb0de82cd6bc477804512ae06144bf2.zip",
+      "bytes": 5330723,
+      "sha256": "434b0a5ec3ac3bfde353bee4b6956c1c4492aebf4ec8671f8248255ba75125a5"
+    },
+    {
+      "kind": "model-file",
+      "relativePath": "models/SoulX-FlashHead-1_3B/Model_Pro/config.json",
+      "sourceUrl": "https://huggingface.co/Soul-AILab/SoulX-FlashHead-1_3B/resolve/59119b6c681230c3eeee157e224ae1941746711e/Model_Pro/config.json?download=true",
+      "bytes": 353,
+      "sha256": "94b480d3af70e73989371ed0c106656c2c887201286b1210e835cd09e71e32b1"
+    },
+    {
+      "kind": "model-file",
+      "relativePath": "models/SoulX-FlashHead-1_3B/Model_Pro/diffusion_pytorch_model.safetensors",
+      "sourceUrl": "https://huggingface.co/Soul-AILab/SoulX-FlashHead-1_3B/resolve/59119b6c681230c3eeee157e224ae1941746711e/Model_Pro/diffusion_pytorch_model.safetensors?download=true",
+      "bytes": 6030864656,
+      "sha256": "e47e61b9023ea1aac60c0c0fff077289bc6cca443c71907e5a76a411480af250"
+    },
+    {
+      "kind": "model-file",
+      "relativePath": "models/SoulX-FlashHead-1_3B/VAE_Wan/Wan2.1_VAE.pth",
+      "sourceUrl": "https://huggingface.co/Soul-AILab/SoulX-FlashHead-1_3B/resolve/59119b6c681230c3eeee157e224ae1941746711e/VAE_Wan/Wan2.1_VAE.pth?download=true",
+      "bytes": 507609880,
+      "sha256": "38071ab59bd94681c686fa51d75a1968f64e470262043be31f7a094e442fd981"
+    },
+    {
+      "kind": "model-file",
+      "relativePath": "models/wav2vec2-base-960h/config.json",
+      "sourceUrl": "https://huggingface.co/facebook/wav2vec2-base-960h/resolve/22aad52d435eb6dbaf354bdad9b0da84ce7d6156/config.json?download=true",
+      "bytes": 1596,
+      "sha256": "d3ec255c063d9f95057b553b19c20135b259875834a4fe9deb218a6be25b4cf3"
+    },
+    {
+      "kind": "model-file",
+      "relativePath": "models/wav2vec2-base-960h/feature_extractor_config.json",
+      "sourceUrl": "https://huggingface.co/facebook/wav2vec2-base-960h/resolve/22aad52d435eb6dbaf354bdad9b0da84ce7d6156/feature_extractor_config.json?download=true",
+      "bytes": 158,
+      "sha256": "d3de0c797bf9b65f90bc65c30cb7b303ebeda341f6fc80af33628c4b26b95632"
+    },
+    {
+      "kind": "model-file",
+      "relativePath": "models/wav2vec2-base-960h/model.safetensors",
+      "sourceUrl": "https://huggingface.co/facebook/wav2vec2-base-960h/resolve/22aad52d435eb6dbaf354bdad9b0da84ce7d6156/model.safetensors?download=true",
+      "bytes": 377607901,
+      "sha256": "8aa76ab2243c81747a1f832954586bc566090c83a0ac167df6f31f0fa917d74a"
+    },
+    {
+      "kind": "model-file",
+      "relativePath": "models/wav2vec2-base-960h/preprocessor_config.json",
+      "sourceUrl": "https://huggingface.co/facebook/wav2vec2-base-960h/resolve/22aad52d435eb6dbaf354bdad9b0da84ce7d6156/preprocessor_config.json?download=true",
+      "bytes": 159,
+      "sha256": "b225d617c025463b9e157e06afea8b90dc7078fc70b013c533328423e0486b4a"
+    },
+    {
+      "kind": "model-file",
+      "relativePath": "models/wav2vec2-base-960h/special_tokens_map.json",
+      "sourceUrl": "https://huggingface.co/facebook/wav2vec2-base-960h/resolve/22aad52d435eb6dbaf354bdad9b0da84ce7d6156/special_tokens_map.json?download=true",
+      "bytes": 85,
+      "sha256": "bb7068de1150661a10b55f9e4b12a0e77af8bf91f5e45e1b58afaf1d0e17f675"
+    },
+    {
+      "kind": "model-file",
+      "relativePath": "models/wav2vec2-base-960h/tokenizer_config.json",
+      "sourceUrl": "https://huggingface.co/facebook/wav2vec2-base-960h/resolve/22aad52d435eb6dbaf354bdad9b0da84ce7d6156/tokenizer_config.json?download=true",
+      "bytes": 163,
+      "sha256": "dc790594f5bc351a4311c6624f40acd95850d4aaf2a5cb3c656c9b610720b608"
+    },
+    {
+      "kind": "model-file",
+      "relativePath": "models/wav2vec2-base-960h/vocab.json",
+      "sourceUrl": "https://huggingface.co/facebook/wav2vec2-base-960h/resolve/22aad52d435eb6dbaf354bdad9b0da84ce7d6156/vocab.json?download=true",
+      "bytes": 291,
+      "sha256": "19727f8944fe6459fc3f240ae2c198395b740f6a029bd23e06656266b83bcf64"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "accelerate==1.12.0",
+      "relativePath": "wheelhouse/accelerate-1.12.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/9f/d2/c581486aa6c4fbd7394c23c47b83fa1a919d34194e16944241daf9e762dd/accelerate-1.12.0-py3-none-any.whl",
+      "bytes": 380935,
+      "sha256": "3e2091cd341423207e2f084a6654b1efcd250dc326f2a37d6dde446e07cabb11"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "anyio==4.15.1",
+      "relativePath": "wheelhouse/anyio-4.15.1-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/12/b8/4bd346e22b28902df4d651910f5242c28d84e4a5c2435ca5c3f797ed7e2e/anyio-4.15.1-py3-none-any.whl",
+      "bytes": 132079,
+      "sha256": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "audioread==3.1.0",
+      "relativePath": "wheelhouse/audioread-3.1.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/7e/16/fbe8e1e185a45042f7cd3a282def5bb8d95bb69ab9e9ef6a5368aa17e426/audioread-3.1.0-py3-none-any.whl",
+      "bytes": 23143,
+      "sha256": "b30d1df6c5d3de5dcef0fb0e256f6ea17bdcf5f979408df0297d8a408e2971b4"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "certifi==2026.7.22",
+      "relativePath": "wheelhouse/certifi-2026.7.22-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl",
+      "bytes": 136983,
+      "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "cffi==2.1.1",
+      "relativePath": "wheelhouse/cffi-2.1.1-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/ba/0b/644a2ec1a4eaba49c2939410bb1eb1d25b09d6d0582f5d2f95c537043725/cffi-2.1.1-cp310-cp310-win_amd64.whl",
+      "bytes": 185082,
+      "sha256": "a48d62ab9d6f4f98c983223a547af44be6ca3691074c31cecced6facd3ba2dc1"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "charset-normalizer==3.5.1",
+      "relativePath": "wheelhouse/charset_normalizer-3.5.1-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/d2/21/83fffb77864408b8bf0fe1ca603926401d6f8775a8e150b39aacc9958f8a/charset_normalizer-3.5.1-cp310-cp310-win_amd64.whl",
+      "bytes": 206030,
+      "sha256": "be47f99644b208bff7766314013f9acf57b056b04191d570d68ad14022cf5b1d"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "cloudpickle==3.1.2",
+      "relativePath": "wheelhouse/cloudpickle-3.1.2-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl",
+      "bytes": 22228,
+      "sha256": "9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "colorama==0.4.6",
+      "relativePath": "wheelhouse/colorama-0.4.6-py2.py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl",
+      "bytes": 25335,
+      "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "decorator==5.3.1",
+      "relativePath": "wheelhouse/decorator-5.3.1-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/05/7f/798705f5296a58ca505d600456748d1be48078eac8a7050d8a98bc9edb89/decorator-5.3.1-py3-none-any.whl",
+      "bytes": 10365,
+      "sha256": "f47fe6fdbd2edd623ecfe36875d37aba411624e2670dd395dddae1358689bb3c"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "diffusers==0.36.0",
+      "relativePath": "wheelhouse/diffusers-0.36.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/35/50/281f92cb1f83854dbd79b6e958b3bc5018607e2542971d41604ba7a14b2f/diffusers-0.36.0-py3-none-any.whl",
+      "bytes": 4597884,
+      "sha256": "525d42abc74bfc3b2db594999961295c054b48ef40a11724dacf50e6abd1af98"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "einops==0.8.1",
+      "relativePath": "wheelhouse/einops-0.8.1-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/87/62/9773de14fe6c45c23649e98b83231fffd7b9892b6cf863251dc2afa73643/einops-0.8.1-py3-none-any.whl",
+      "bytes": 64359,
+      "sha256": "919387eb55330f5757c6bea9165c5ff5cfe63a642682ea788a6d472576d81737"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "exceptiongroup==1.3.1",
+      "relativePath": "wheelhouse/exceptiongroup-1.3.1-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/8a/0e/97c33bf5009bdbac74fd2beace167cab3f978feb69cc36f1ef79360d6c4e/exceptiongroup-1.3.1-py3-none-any.whl",
+      "bytes": 16740,
+      "sha256": "a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "filelock==3.32.3",
+      "relativePath": "wheelhouse/filelock-3.32.3-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/a7/8e/50f46a9c0ce8d2861a394c1347caae037ea0431d2f67d7feb151cbc4649a/filelock-3.32.3-py3-none-any.whl",
+      "bytes": 98901,
+      "sha256": "7f0ca4bcc0e181c60dbbd8aa9ab5b120ebb99e4e064e83636340056f833a1f09"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "fsspec==2026.7.0",
+      "relativePath": "wheelhouse/fsspec-2026.7.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/fd/3c/6a2bf344106328fd04963664a60b9bb6496fc25df8e962fcdc1367285fb9/fsspec-2026.7.0-py3-none-any.whl",
+      "bytes": 206583,
+      "sha256": "b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "h11==0.16.0",
+      "relativePath": "wheelhouse/h11-0.16.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl",
+      "bytes": 37515,
+      "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "httpcore==1.0.9",
+      "relativePath": "wheelhouse/httpcore-1.0.9-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/7e/f5/f66802a942d491edb555dd61e3a9961140fd64c90bce1eafd741609d334d/httpcore-1.0.9-py3-none-any.whl",
+      "bytes": 78784,
+      "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "httpx==0.28.1",
+      "relativePath": "wheelhouse/httpx-0.28.1-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl",
+      "bytes": 73517,
+      "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "huggingface_hub==0.36.2",
+      "relativePath": "wheelhouse/huggingface_hub-0.36.2-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/a8/af/48ac8483240de756d2438c380746e7130d1c6f75802ef22f3c6d49982787/huggingface_hub-0.36.2-py3-none-any.whl",
+      "bytes": 566395,
+      "sha256": "48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "idna==3.20",
+      "relativePath": "wheelhouse/idna-3.20-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl",
+      "bytes": 69583,
+      "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "ImageIO==2.37.2",
+      "relativePath": "wheelhouse/imageio-2.37.2-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/fb/fe/301e0936b79bcab4cacc7548bf2853fc28dced0a578bab1f7ef53c9aa75b/imageio-2.37.2-py3-none-any.whl",
+      "bytes": 317646,
+      "sha256": "ad9adfb20335d718c03de457358ed69f141021a333c40a53e57273d8a5bd0b9b"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "imageio-ffmpeg==0.6.0",
+      "relativePath": "wheelhouse/imageio_ffmpeg-0.6.0-py3-none-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/2c/c6/fa760e12a2483469e2bf5058c5faff664acf66cadb4df2ad6205b016a73d/imageio_ffmpeg-0.6.0-py3-none-win_amd64.whl",
+      "bytes": 31246824,
+      "sha256": "02fa47c83703c37df6bfe4896aab339013f62bf02c5ebf2dce6da56af04ffc0a"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "importlib_metadata==9.0.1",
+      "relativePath": "wheelhouse/importlib_metadata-9.0.1-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/b3/55/ecca97ae19075f1fac62def77731e7f535e6c1fb8f92ff08160c5e6dade8/importlib_metadata-9.0.1-py3-none-any.whl",
+      "bytes": 27920,
+      "sha256": "bba5600596a7e21f3eef53281cf28d6a5195634d2f2b78ff9501a3272c6eaab0"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "Jinja2==3.1.6",
+      "relativePath": "wheelhouse/jinja2-3.1.6-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl",
+      "bytes": 134899,
+      "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "joblib==1.6.0",
+      "relativePath": "wheelhouse/joblib-1.6.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/18/53/84099323c2ec4be98d935f63c033ac4151ee83836ca1050ede3b3aadf155/joblib-1.6.0-py3-none-any.whl",
+      "bytes": 306115,
+      "sha256": "3dbbf9f6e4b592a2357b854608e980fe6390d131d7a82f011a377ef2ebef7aba"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "lazy-loader==0.5",
+      "relativePath": "wheelhouse/lazy_loader-0.5-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/8a/a1/8d812e53a5da1687abb10445275d41a8b13adb781bbf7196ddbcf8d88505/lazy_loader-0.5-py3-none-any.whl",
+      "bytes": 8044,
+      "sha256": "ab0ea149e9c554d4ffeeb21105ac60bed7f3b4fd69b1d2360a4add51b170b005"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "librosa==0.11.0",
+      "relativePath": "wheelhouse/librosa-0.11.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/b5/ba/c63c5786dfee4c3417094c4b00966e61e4a63efecee22cb7b4c0387dda83/librosa-0.11.0-py3-none-any.whl",
+      "bytes": 260749,
+      "sha256": "0b6415c4fd68bff4c29288abe67c6d80b587e0e1e2cfb0aad23e4559504a7fa1"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "llvmlite==0.49.0",
+      "relativePath": "wheelhouse/llvmlite-0.49.0-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/59/f6/5c18be29145cfca1d9e859e55a3c586a8c5a821825017b04c7999cd166c9/llvmlite-0.49.0-cp310-cp310-win_amd64.whl",
+      "bytes": 41865252,
+      "sha256": "b352c14353330c879e339b8f8d7491d565fe94242697714a24e80bd757202384"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "loguru==0.7.3",
+      "relativePath": "wheelhouse/loguru-0.7.3-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl",
+      "bytes": 61595,
+      "sha256": "31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "MarkupSafe==3.0.3",
+      "relativePath": "wheelhouse/markupsafe-3.0.3-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/d6/25/55dc3ab959917602c96985cb1253efaa4ff42f71194bddeb61eb7278b8be/markupsafe-3.0.3-cp310-cp310-win_amd64.whl",
+      "bytes": 15056,
+      "sha256": "c4ffb7ebf07cfe8931028e3e4c85f0357459a3f9f9490886198848f4fa002ec8"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "mpmath==1.3.0",
+      "relativePath": "wheelhouse/mpmath-1.3.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl",
+      "bytes": 536198,
+      "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "msgpack==1.2.2",
+      "relativePath": "wheelhouse/msgpack-1.2.2-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/57/1d/b41e96ff441d46890b9d5982959aea4d15c5d322f92740dbef16e9dfa908/msgpack-1.2.2-cp310-cp310-win_amd64.whl",
+      "bytes": 70927,
+      "sha256": "82b1bdf293267afaadcc608b125e7fc6576bb0785a60c4fa7d07c7ab76ed76ec"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "networkx==3.4.2",
+      "relativePath": "wheelhouse/networkx-3.4.2-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/b9/54/dd730b32ea14ea797530a4479b2ed46a6fb250f682a9cfb997e968bf0261/networkx-3.4.2-py3-none-any.whl",
+      "bytes": 1723263,
+      "sha256": "df5d4365b724cf81b8c6a7312509d0c22386097011ad1abe274afd5e9d3bbc5f"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "numba==0.67.0",
+      "relativePath": "wheelhouse/numba-0.67.0-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/7f/39/4175b074929938011bd4b564beb4e0fcffd46252e01f60602b57ffb02b06/numba-0.67.0-cp310-cp310-win_amd64.whl",
+      "bytes": 2815861,
+      "sha256": "ed333e0af4386294e7f03e550e01411856b6935e717d859225e0a7338c6b6795"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "numpy==2.2.6",
+      "relativePath": "wheelhouse/numpy-2.2.6-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/a3/dd/4b822569d6b96c39d1215dbae0582fd99954dcbcf0c1a13c61783feaca3f/numpy-2.2.6-cp310-cp310-win_amd64.whl",
+      "bytes": 12904620,
+      "sha256": "f0fd6321b839904e15c46e0d257fdd101dd7f530fe03fd6359c1ea63738703f3"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "packaging==26.3",
+      "relativePath": "wheelhouse/packaging-26.3-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+      "bytes": 129956,
+      "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "pillow==12.3.0",
+      "relativePath": "wheelhouse/pillow-12.3.0-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/48/7c/8fa0039574c476d7c6fa57dd7c32a130436877c6ec1e5ce1cc8ec44878c1/pillow-12.3.0-cp310-cp310-win_amd64.whl",
+      "bytes": 7226887,
+      "sha256": "300557495eb45ebb8aec96c2da9c4be642fbf7cd937278b4013ba894ea8eb0eb"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "pip==25.2",
+      "relativePath": "wheelhouse/pip-25.2-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/b7/3f/945ef7ab14dc4f9d7f40288d2df998d1837ee0888ec3659c813487572faa/pip-25.2-py3-none-any.whl",
+      "bytes": 1752557,
+      "sha256": "6d67a2b4e7f14d8b31b8b52648866fa717f45a1eb70e83002f4331d07e953717"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "platformdirs==4.11.11",
+      "relativePath": "wheelhouse/platformdirs-4.11.11-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/39/be/3ae887e84c38c4dd1c549cd5825adc93f48069a94fe1cb8ac52a9da16f15/platformdirs-4.11.11-py3-none-any.whl",
+      "bytes": 24992,
+      "sha256": "972ea6b2b387155a536226a0750e46923d731d459a387c4a255c583ed2f64547"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "pooch==1.9.0",
+      "relativePath": "wheelhouse/pooch-1.9.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl",
+      "bytes": 67175,
+      "sha256": "f265597baa9f760d25ceb29d0beb8186c243d6607b0f60b83ecf14078dbc703b"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "psutil==7.2.2",
+      "relativePath": "wheelhouse/psutil-7.2.2-cp37-abi3-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/b4/90/e2159492b5426be0c1fef7acba807a03511f97c5f86b3caeda6ad92351a7/psutil-7.2.2-cp37-abi3-win_amd64.whl",
+      "bytes": 137737,
+      "sha256": "eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "pycparser==3.0",
+      "relativePath": "wheelhouse/pycparser-3.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl",
+      "bytes": 48172,
+      "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "pyloudnorm==0.2.0",
+      "relativePath": "wheelhouse/pyloudnorm-0.2.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/aa/b6/65a49a05614b2548edbba3aab118f2ebe7441dfd778accdcdce9f6567f20/pyloudnorm-0.2.0-py3-none-any.whl",
+      "bytes": 10879,
+      "sha256": "9bb69afb904f59d007a7f9ba3d75d16fb8aeef35c44d6df822a9f192d69cf13f"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "PyYAML==6.0.3",
+      "relativePath": "wheelhouse/pyyaml-6.0.3-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/2a/fa/926c003379b19fca39dd4634818b00dec6c62d87faf628d1394e137354d4/pyyaml-6.0.3-cp310-cp310-win_amd64.whl",
+      "bytes": 158561,
+      "sha256": "bdb2c67c6c1390b63c6ff89f210c8fd09d9a1217a465701eac7316313c915e4c"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "regex==2026.9.10",
+      "relativePath": "wheelhouse/regex-2026.9.10-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/f4/0a/5061dde95447f00acdeeb39780b32def0ce380c3e725aeee1f5b37b788bb/regex-2026.9.10-cp310-cp310-win_amd64.whl",
+      "bytes": 278251,
+      "sha256": "e6b99181d184d0f5c7b36b8d12b94d1e9499cce6246594331f9edc5d2ea9fceb"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "requests==2.34.2",
+      "relativePath": "wheelhouse/requests-2.34.2-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
+      "bytes": 73075,
+      "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "safetensors==0.8.0",
+      "relativePath": "wheelhouse/safetensors-0.8.0-cp310-abi3-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/1b/6d/3fba214c1e5e0f69991677ec3bc17023f0421776975e1de0c682dca475e2/safetensors-0.8.0-cp310-abi3-win_amd64.whl",
+      "bytes": 355540,
+      "sha256": "096ec1a98435df7beb08853bb5aa9081a84f23d0adc67ed1a0a10550f608373f"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "scikit-learn==1.7.2",
+      "relativePath": "wheelhouse/scikit_learn-1.7.2-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/7f/9b/87961813c34adbca21a6b3f6b2bea344c43b30217a6d24cc437c6147f3e8/scikit_learn-1.7.2-cp310-cp310-win_amd64.whl",
+      "bytes": 8886969,
+      "sha256": "ca250e6836d10e6f402436d6463d6c0e4d8e0234cfb6a9a47835bd392b852ce5"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "scipy==1.15.3",
+      "relativePath": "wheelhouse/scipy-1.15.3-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/d1/84/55bc4881973d3f79b479a5a2e2df61c8c9a04fcb986a213ac9c02cfb659b/scipy-1.15.3-cp310-cp310-win_amd64.whl",
+      "bytes": 41259201,
+      "sha256": "9d61e97b186a57350f6d6fd72640f9e99d5a4a2b8fbf4b9ee9a841eab327dc13"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "setuptools==80.9.0",
+      "relativePath": "wheelhouse/setuptools-80.9.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl",
+      "bytes": 1201486,
+      "sha256": "062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "soundfile==0.14.0",
+      "relativePath": "wheelhouse/soundfile-0.14.0-py2.py3-none-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/ed/97/b39c18ac1df45e755ca22b8b00e872929da5d107998a207a5e4ac831bfda/soundfile-0.14.0-py2.py3-none-win_amd64.whl",
+      "bytes": 1021480,
+      "sha256": "299491d3499460fb1b74bb4bd78b57ffc2d243a5fafa7b6ec1b264875c78453e"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "soxr==1.1.0",
+      "relativePath": "wheelhouse/soxr-1.1.0-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/79/c6/2e47f17fa4461ba047f5f38a592f39120c21e6af8786268b0be2ef870318/soxr-1.1.0-cp310-cp310-win_amd64.whl",
+      "bytes": 176571,
+      "sha256": "b2e94c713b7d96fb92841947b785bcee6606124bc852273fab70454b51bfe270"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "sympy==1.14.0",
+      "relativePath": "wheelhouse/sympy-1.14.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl",
+      "bytes": 6299353,
+      "sha256": "e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "threadpoolctl==3.7.0",
+      "relativePath": "wheelhouse/threadpoolctl-3.7.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/43/3f/f88a53f60a472b46f4023f56d204dd7de33d34c5d2acbfa0d70a674e639e/threadpoolctl-3.7.0-py3-none-any.whl",
+      "bytes": 26362,
+      "sha256": "cd8b60b5641b45c67bbf73c64c843235fc2d8a480c87389f52f5dbee893b86be"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "tokenizers==0.22.2",
+      "relativePath": "wheelhouse/tokenizers-0.22.2-cp39-abi3-win_amd64.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/65/71/0670843133a43d43070abeb1949abfdef12a86d490bea9cd9e18e37c5ff7/tokenizers-0.22.2-cp39-abi3-win_amd64.whl",
+      "bytes": 2747786,
+      "sha256": "c9ea31edff2968b44a88f97d784c2f16dc0729b8b143ed004699ebca91f05c48"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "torch==2.7.1+cu128",
+      "relativePath": "wheelhouse/torch-2.7.1+cu128-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://download-r2.pytorch.org/whl/cu128/torch-2.7.1%2Bcu128-cp310-cp310-win_amd64.whl",
+      "bytes": 3273064440,
+      "sha256": "5174f02de8ca14df87c8e333c4c39cf3ce93a323c9d470d690301d110a053b3c"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "torchvision==0.22.1+cu128",
+      "relativePath": "wheelhouse/torchvision-0.22.1+cu128-cp310-cp310-win_amd64.whl",
+      "sourceUrl": "https://download-r2.pytorch.org/whl/cu128/torchvision-0.22.1%2Bcu128-cp310-cp310-win_amd64.whl",
+      "bytes": 7638365,
+      "sha256": "ad48ba3c3ffd48027e3a8de42fcea131a53a524ee9416ca4efb22f9ac6b7328d"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "tqdm==4.70.1",
+      "relativePath": "wheelhouse/tqdm-4.70.1-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/a7/03/921a3d3c75785aca9ebfbfcabfbc3a1be12e2ab5265deb026d55a5a3f83e/tqdm-4.70.1-py3-none-any.whl",
+      "bytes": 80199,
+      "sha256": "c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "transformers==4.57.3",
+      "relativePath": "wheelhouse/transformers-4.57.3-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/6a/6b/2f416568b3c4c91c96e5a365d164f8a4a4a88030aa8ab4644181fdadce97/transformers-4.57.3-py3-none-any.whl",
+      "bytes": 11993463,
+      "sha256": "c77d353a4851b1880191603d36acb313411d3577f6e2897814f333841f7003f4"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "typing_extensions==4.16.0",
+      "relativePath": "wheelhouse/typing_extensions-4.16.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+      "bytes": 45571,
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "urllib3==2.8.0",
+      "relativePath": "wheelhouse/urllib3-2.8.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl",
+      "bytes": 135717,
+      "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "wheel==0.45.1",
+      "relativePath": "wheelhouse/wheel-0.45.1-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/0b/2c/87f3254fd8ffd29e4c02732eee68a83a1d3c346ae39bc6822dcbcb697f2b/wheel-0.45.1-py3-none-any.whl",
+      "bytes": 72494,
+      "sha256": "708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "win32_setctime==1.2.0",
+      "relativePath": "wheelhouse/win32_setctime-1.2.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/e1/07/c6fe3ad3e685340704d314d765b7912993bcb8dc198f0e7a89382d37974b/win32_setctime-1.2.0-py3-none-any.whl",
+      "bytes": 4083,
+      "sha256": "95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390"
+    },
+    {
+      "kind": "wheel",
+      "requirement": "zipp==4.1.0",
+      "relativePath": "wheelhouse/zipp-4.1.0-py3-none-any.whl",
+      "sourceUrl": "https://files.pythonhosted.org/packages/3a/13/547360d81e6d88d58492968ffda9f9542854f11310ee556fef14260cc886/zipp-4.1.0-py3-none-any.whl",
+      "bytes": 10238,
+      "sha256": "25ad4e16390cd314347dd8f1de67a2ac538ae658ed4ab9db16029c07c188e97f"
+    }
+  ],
+  "resources": [
+    {
+      "kind": "source-patch",
+      "resourceName": "soulx-windows-compat.patch",
+      "installPath": "manifests/soulx-windows-compat.patch",
+      "bytes": 7061,
+      "sha256": "a7c6391ea945f9af515b864dafca63e1479a83a8d82579a40d0d6cdca566536c"
+    },
+    {
+      "kind": "worker-entrypoint",
+      "resourceName": "local_presenter_worker.py",
+      "installPath": "worker/local_presenter_worker.py",
+      "sha256": "8981551ea50bc88167e2f9232bd577417c8176291b18afb9ca70c64f548e9aa9",
+      "bytes": 15519
+    },
+    {
+      "kind": "adapter-entrypoint",
+      "resourceName": "soulx_flashhead_presenter_adapter.py",
+      "installPath": "worker/soulx_flashhead_presenter_adapter.py",
+      "sha256": "0b39558413008eca7e9ec28975c00024882e6189ec5338d846411a8ee3dd6a17",
+      "bytes": 16894
+    }
+  ],
+  "source": {
+    "archivePath": "archives/SoulX-FlashHead-9bc03de06bb0de82cd6bc477804512ae06144bf2.zip",
+    "archiveRoot": "SoulX-FlashHead-9bc03de06bb0de82cd6bc477804512ae06144bf2",
+    "patchResource": "soulx-windows-compat.patch",
+    "requiredFiles": [
+      "flash_head/inference.py",
+      "flash_head/configs/infer_params.yaml",
+      "flash_head/audio_analysis/wav2vec2.py",
+      "flash_head/src/distributed/usp_device.py",
+      "flash_head/src/modules/flash_head_model.py",
+      "flash_head/src/pipeline/flash_head_pipeline.py",
+      "flash_head/utils/utils.py"
+    ]
+  },
+  "python": {
+    "archivePath": "archives/python-3.10.6-embed-amd64.zip",
+    "version": "3.10.6",
+    "executable": "python-base/python.exe",
+    "sitePackages": "venv/Lib/site-packages",
+    "pth": [
+      "python310.zip",
+      ".",
+      "..\\venv\\Lib\\site-packages",
+      "Lib\\site-packages",
+      ".."
+    ],
+    "bootstrapPipWheel": "wheelhouse/pip-25.2-py3-none-any.whl",
+    "executableSha256": "32ce1d2650ea8b9d394f5b8f94677d27888dccdc3713365bf903a8c465c9d776",
+    "pythonDll": "python-base/python310.dll",
+    "pythonDllSha256": "058925e4bbfcb460a3c00ec824b8390583baef0c780a7c7ff01d43d9eec45f20",
+    "pthFile": "python-base/python310._pth",
+    "pthSha256": "f925bf888efc27a14b34a8d6f03bb27c7682a10daea2d4656e44102b8c716171"
+  },
+  "roles": {
+    "adapter-entrypoint": "worker/soulx_flashhead_presenter_adapter.py",
+    "runtime-source-manifest": "manifests/source-manifest.json",
+    "audio-feature-config": "models/wav2vec2-base-960h/config.json",
+    "audio-feature-preprocessor": "models/wav2vec2-base-960h/preprocessor_config.json",
+    "audio-feature-weights": "models/wav2vec2-base-960h/model.safetensors",
+    "flashhead-config": "models/SoulX-FlashHead-1_3B/Model_Pro/config.json",
+    "flashhead-weights": "models/SoulX-FlashHead-1_3B/Model_Pro/diffusion_pytorch_model.safetensors",
+    "vae-weights": "models/SoulX-FlashHead-1_3B/VAE_Wan/Wan2.1_VAE.pth"
+  },
+  "environment": {},
+  "argumentTemplate": [
+    "-B",
+    "worker/local_presenter_worker.py",
+    "--portrait",
+    "{portrait}",
+    "--audio",
+    "{audio}",
+    "--output",
+    "{output}",
+    "--workspace",
+    "{workspace}",
+    "--job",
+    "{job_manifest}",
+    "--seed",
+    "{seed}"
+  ],
+  "generatedRequirementsSha256": "8122769b210e512da46446f6ba4f904f752cb8270450cf8b5c65689a2d183160",
+  "activationRemovePortraitOverrides": [
+    {
+      "portraitArtifactHash": "27ac749dc0b30c2676d327e2a14fd05f873aee401d4b97bdd684eaab7c42a7f7",
+      "relativeConfigPath": "Presenter/JoyVASA/joy-human.json",
+      "modelId": "joyvasa-human",
+      "modelRevision": "joyvasa-916a90f8+checkpoints-b8f13fe9+liveportrait-82a4fa67+hubert-fce03754+source-anchored-v2",
+      "installFingerprint": "d6a0b7ca78d5f221c54ed5db6ac242ac43336bf0c1c0ed57d9685d9354538966"
+    },
+    {
+      "portraitArtifactHash": "54f695769e64273cc3a6e7f12742df8b8bfb7b6e844f302daabbf270e6a3aebb",
+      "relativeConfigPath": "Presenter/JoyVASA/joy-human.json",
+      "modelId": "joyvasa-human",
+      "modelRevision": "joyvasa-916a90f8+checkpoints-b8f13fe9+liveportrait-82a4fa67+hubert-fce03754+source-anchored-v2",
+      "installFingerprint": "d6a0b7ca78d5f221c54ed5db6ac242ac43336bf0c1c0ed57d9685d9354538966"
+    },
+    {
+      "portraitArtifactHash": "6f83257ec713c8d0df42ebb1506b9be32735bec9934aa5c2e946e24cbed8c0bd",
+      "relativeConfigPath": "Presenter/JoyVASA/joy-human.json",
+      "modelId": "joyvasa-human",
+      "modelRevision": "joyvasa-916a90f8+checkpoints-b8f13fe9+liveportrait-82a4fa67+hubert-fce03754+source-anchored-v2",
+      "installFingerprint": "d6a0b7ca78d5f221c54ed5db6ac242ac43336bf0c1c0ed57d9685d9354538966"
+    },
+    {
+      "portraitArtifactHash": "4afecb9e0141a3bcb933aca577222adfa7819fd3dc49a9b437f1b1bc0f3437ca",
+      "relativeConfigPath": "Presenter/JoyVASA/joy-human.json",
+      "modelId": "joyvasa-human",
+      "modelRevision": "joyvasa-916a90f8+checkpoints-b8f13fe9+liveportrait-82a4fa67+hubert-fce03754+source-anchored-v2",
+      "installFingerprint": "d6a0b7ca78d5f221c54ed5db6ac242ac43336bf0c1c0ed57d9685d9354538966"
+    },
+    {
+      "portraitArtifactHash": "62ee0fd94a0e92114e000e89a6420e9ce0c7726e5b4b8ec2165c041f2252e79b",
+      "relativeConfigPath": "Presenter/JoyVASA/joy-human.json",
+      "modelId": "joyvasa-human",
+      "modelRevision": "joyvasa-916a90f8+checkpoints-b8f13fe9+liveportrait-82a4fa67+hubert-fce03754+source-anchored-v2",
+      "installFingerprint": "d6a0b7ca78d5f221c54ed5db6ac242ac43336bf0c1c0ed57d9685d9354538966"
+    },
+    {
+      "portraitArtifactHash": "74d2677cf5666de2bf2702da0ea24703d636dbcc121fa28735e20bfde86e43a1",
+      "relativeConfigPath": "Presenter/JoyVASA/joy-human.json",
+      "modelId": "joyvasa-human",
+      "modelRevision": "joyvasa-916a90f8+checkpoints-b8f13fe9+liveportrait-82a4fa67+hubert-fce03754+source-anchored-v2",
+      "installFingerprint": "d6a0b7ca78d5f221c54ed5db6ac242ac43336bf0c1c0ed57d9685d9354538966"
+    },
+    {
+      "portraitArtifactHash": "280c530e69c08737698c0fff8b0a582ac76fb9799cf0ad6a780d540c68f667f1",
+      "relativeConfigPath": "Presenter/JoyVASA/joy-human.json",
+      "modelId": "joyvasa-human",
+      "modelRevision": "joyvasa-916a90f8+checkpoints-b8f13fe9+liveportrait-82a4fa67+hubert-fce03754+source-anchored-v2",
+      "installFingerprint": "d6a0b7ca78d5f221c54ed5db6ac242ac43336bf0c1c0ed57d9685d9354538966"
+    }
+  ],
+  "runtimeEncoder": {
+    "sourceRoot": "ffmpeg",
+    "executable": "ffmpeg/ffmpeg.exe",
+    "ffprobe": "ffmpeg/ffprobe.exe",
+    "files": [
+      {
+        "relativePath": "ffmpeg/avcodec-62.dll",
+        "bytes": 70869504,
+        "sha256": "87f17571aafaf4af460d4f35f99674ae6a94a7531ce79050a416b7d54182a1a9"
+      },
+      {
+        "relativePath": "ffmpeg/avdevice-62.dll",
+        "bytes": 3923968,
+        "sha256": "0d9ef5990a9bac5a9d385e46850e05a3c54173495cd160f27898889299e282b1"
+      },
+      {
+        "relativePath": "ffmpeg/avfilter-11.dll",
+        "bytes": 30029312,
+        "sha256": "da7d380d738534eae0e1deccf9825777f98e2046ca2612a3a73a4aee302064eb"
+      },
+      {
+        "relativePath": "ffmpeg/avformat-62.dll",
+        "bytes": 22107648,
+        "sha256": "7f8b5dfd7eb945522c0e089cbdff230d6c4f108d2229f669176da87aa1d2ebb2"
+      },
+      {
+        "relativePath": "ffmpeg/avutil-60.dll",
+        "bytes": 2937344,
+        "sha256": "13f412ff746ec2f2813b0a3d184a34361bdb425635e26d3974325148fdd6bce8"
+      },
+      {
+        "relativePath": "ffmpeg/ffmpeg.exe",
+        "bytes": 541184,
+        "sha256": "0d600a70c6b62c45c8078638d1ecd4ed05545f3fb6ac2d19b406e3ae8d70c961"
+      },
+      {
+        "relativePath": "ffmpeg/ffplay.exe",
+        "bytes": 18095616,
+        "sha256": "3d799e3ecf55730724cd53d35acba1eda7f9e1d0c7bdab48fa973269b1745ba9"
+      },
+      {
+        "relativePath": "ffmpeg/ffprobe.exe",
+        "bytes": 225792,
+        "sha256": "a413e4866082dd7eb29a4a4e4b2fa13c76b546950ad0071cbff62e10b414119e"
+      },
+      {
+        "relativePath": "ffmpeg/LICENSE.txt",
+        "bytes": 7651,
+        "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+      },
+      {
+        "relativePath": "ffmpeg/swresample-6.dll",
+        "bytes": 722944,
+        "sha256": "2d96741de9b7cd36ea6246d3d1c688f4ff0b4586af0e5814f74062b0c2138e0e"
+      },
+      {
+        "relativePath": "ffmpeg/swscale-9.dll",
+        "bytes": 12759040,
+        "sha256": "3aed98acf700fb6211403dc2d22bbd794652121f59c1f8ab147ffb9d4379c865"
+      }
+    ]
+  }
+}

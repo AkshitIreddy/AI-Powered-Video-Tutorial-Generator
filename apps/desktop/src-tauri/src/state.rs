@@ -425,8 +425,10 @@ impl AppState {
             )
         }
         .with_credential_manager(credentials.clone());
+        let presenter_runtime_root = runtimes.active_pack().map(|pack| pack.root);
         let model_downloads = ModelDownloadManager::at(paths.models.clone())?
-            .with_installer_executable(model_installer_executable);
+            .with_installer_executable(model_installer_executable)
+            .with_presenter_runtime_root(presenter_runtime_root);
         Ok(Self {
             projects: ProjectStore,
             credentials,
