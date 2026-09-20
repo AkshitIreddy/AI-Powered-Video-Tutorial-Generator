@@ -79,6 +79,23 @@ def test_safe_extract_rejects_archive_traversal(tmp_path: Path) -> None:
     assert not (tmp_path / "escape.txt").exists()
 
 
+def test_windows_subprocess_paths_drop_only_supported_namespace_prefixes() -> None:
+    assert installer._ordinary_windows_path(
+        r"\\?\E:\temp\AI Video Tutorial Generator\Models\Presenter"
+    ) == (r"E:\temp\AI Video Tutorial Generator\Models\Presenter")
+    assert installer._ordinary_windows_path(r"\\?\UNC\server\share\Models\Presenter") == (
+        r"\\server\share\Models\Presenter"
+    )
+    assert installer._ordinary_windows_path(r"E:\Models\Presenter") == (r"E:\Models\Presenter")
+    for unsafe in (
+        r"\\?\Volume{00000000-0000-0000-0000-000000000000}\Models",
+        r"\\.\PhysicalDrive0",
+        r"Models\Presenter",
+    ):
+        with pytest.raises(installer.PresenterRuntimeInstallError, match="subprocess paths"):
+            installer._ordinary_windows_path(unsafe)
+
+
 def test_wheel_install_is_offline_hash_required_and_uses_embedded_python(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

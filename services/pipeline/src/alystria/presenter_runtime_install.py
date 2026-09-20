@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import os
 import re
 import shutil
@@ -542,6 +543,34 @@ def _hidden_subprocess_flags() -> int:
     return 0x08000000 if os.name == "nt" else 0
 
 
+def _ordinary_windows_path(raw: str) -> str:
+    if raw.startswith("\\\\?\\UNC\\"):
+        candidate = "\\\\" + raw[8:]
+    elif raw.startswith("\\\\?\\"):
+        candidate = raw[4:]
+        if re.match(r"^[A-Za-z]:[\\/]", candidate) is None:
+            raise PresenterRuntimeInstallError(
+                "SoulX subprocess paths must use a drive or UNC filesystem root"
+            )
+    elif raw.startswith("\\\\.\\"):
+        raise PresenterRuntimeInstallError(
+            "SoulX subprocess paths cannot use a Windows device namespace"
+        )
+    else:
+        candidate = raw
+    normalized = ntpath.normpath(candidate)
+    if not ntpath.isabs(normalized) or normalized.startswith(("\\\\?\\", "\\\\.\\")):
+        raise PresenterRuntimeInstallError(
+            "SoulX subprocess paths must be ordinary absolute Windows paths"
+        )
+    return normalized
+
+
+def _subprocess_path(path: Path) -> str:
+    raw = os.fspath(path)
+    return _ordinary_windows_path(raw) if os.name == "nt" else raw
+
+
 def _verified_tree_entries(root: Path, label: str) -> tuple[list[Path], list[Path]]:
     if _is_reparse(root) or not root.is_dir():
         raise PresenterRuntimeInstallError(f"{label} must be a regular directory")
@@ -620,15 +649,15 @@ def _install_wheels(manifest: Mapping[str, Any], downloads: Path, stage: Path) -
     pip_temporary.mkdir(exist_ok=False)
     environment.update(
         {
-            "TEMP": str(pip_temporary),
-            "TMP": str(pip_temporary),
-            "TMPDIR": str(pip_temporary),
+            "TEMP": _subprocess_path(pip_temporary),
+            "TMP": _subprocess_path(pip_temporary),
+            "TMPDIR": _subprocess_path(pip_temporary),
         }
     )
     try:
         completed = subprocess.run(
             [
-                str(python),
+                _subprocess_path(python),
                 "-B",
                 "-m",
                 "pip",
@@ -639,13 +668,13 @@ def _install_wheels(manifest: Mapping[str, Any], downloads: Path, stage: Path) -
                 "--only-binary=:all:",
                 "--no-compile",
                 "--target",
-                str(site_packages),
+                _subprocess_path(site_packages),
                 "--find-links",
-                str(downloads / "wheelhouse"),
+                _subprocess_path(downloads / "wheelhouse"),
                 "--requirement",
-                str(requirements),
+                _subprocess_path(requirements),
             ],
-            cwd=stage,
+            cwd=_subprocess_path(stage),
             env=environment,
             stdin=subprocess.DEVNULL,
             capture_output=True,
