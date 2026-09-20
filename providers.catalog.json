@@ -65,7 +65,7 @@
       "credentialKind": "secret-reference",
       "approvedByDefault": false,
       "capabilities": ["llm", "vlm", "image", "video", "tts", "asr"],
-      "models": ["gemini-2.5-flash", "gemini-3.7-flash"],
+      "models": ["gemini-3.8-flash", "gemini-3.7-flash"],
       "dataBoundary": "provider-cloud",
       "pricing": { "status": "reviewed-model-snapshot" }
     },

@@ -53,6 +53,12 @@ describe("desktop curated cloud routes", () => {
       capabilities: item.classification.capabilities,
     }))).toEqual([
       {
+        providerId: "gemini",
+        sourceId: "gemini-3.8-flash",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+        capabilities: ["llm.text", "llm.structured", "research.web"],
+      },
+      {
         providerId: "groq",
         sourceId: "openai/gpt-oss-20b",
         baseUrl: "https://api.groq.com/openai/v1",

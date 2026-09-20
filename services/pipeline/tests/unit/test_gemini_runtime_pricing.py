@@ -8,6 +8,7 @@ from typing import Any
 from PIL import Image
 
 from alystria.providers import (
+    GEMINI_3_8_FLASH_MODEL,
     EphemeralCredentialBroker,
     HttpRequest,
     HttpResponse,
@@ -23,7 +24,7 @@ from alystria.providers.types import AssetInput, VisionLanguageRequest
 class GeminiFixtureTransport:
     def send(self, request: HttpRequest) -> HttpResponse:
         assert request.json_body is not None
-        assert request.url.endswith("/v1beta/models/gemini-2.5-flash:generateContent")
+        assert request.url.endswith(f"/v1beta/models/{GEMINI_3_8_FLASH_MODEL}:generateContent")
         assert request.json_body["generationConfig"]["responseMimeType"] == "application/json"
         return HttpResponse(
             200,
@@ -31,7 +32,7 @@ class GeminiFixtureTransport:
             json.dumps(
                 {
                     "responseId": "gemini-priced",
-                    "modelVersion": "gemini-2.5-flash-001",
+                    "modelVersion": "gemini-3.8-flash-001",
                     "candidates": [
                         {
                             "finishReason": "STOP",
@@ -82,7 +83,7 @@ def _policy() -> dict[str, Any]:
             {
                 "capability": "llm.structured",
                 "providerIds": ["gemini"],
-                "model": "gemini-2.5-flash",
+                "model": GEMINI_3_8_FLASH_MODEL,
                 "voice": None,
             }
         ],
@@ -106,7 +107,7 @@ def test_runtime_factory_applies_reviewed_gemini_pricing_under_one_dollar_cap() 
     result = ProviderTextClient(runtime).generate(
         TextRequest(
             "Create a grounded lesson plan.",
-            "gemini-2.5-flash",
+            GEMINI_3_8_FLASH_MODEL,
             max_output_tokens=8_192,
             json_schema={
                 "type": "object",
@@ -121,7 +122,7 @@ def test_runtime_factory_applies_reviewed_gemini_pricing_under_one_dollar_cap() 
     assert result.value.parsed == {"lesson": "verified"}
     assert result.usage.units["output_tokens"] == 4
     assert result.usage.units["thought_tokens"] == 3
-    assert result.usage.actual_cost_micros == 20
+    assert result.usage.actual_cost_micros == 33
 
 
 def test_runtime_factory_supports_vision_without_a_gemini_writing_route() -> None:

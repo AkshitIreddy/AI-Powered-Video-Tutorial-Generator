@@ -33,7 +33,20 @@ class TokenPrices:
     estimated_search_calls: int = 3
 
 
+GEMINI_3_8_FLASH_MODEL = "gemini-3.8-flash"
+GEMINI_3_7_FLASH_MODEL = "gemini-3.7-flash"
 GEMINI_2_5_FLASH_MODEL = "gemini-2.5-flash"
+GEMINI_CURRENT_FLASH_MODELS = (
+    GEMINI_3_8_FLASH_MODEL,
+    GEMINI_3_7_FLASH_MODEL,
+)
+GEMINI_REVIEWED_FLASH_MODELS = (*GEMINI_CURRENT_FLASH_MODELS, GEMINI_2_5_FLASH_MODEL)
+GEMINI_3_FLASH_PRICES = TokenPrices(
+    catalog_version="2026-09-20-google-gemini-3-flash-pricing",
+    input_micros_per_million=750_000,
+    output_micros_per_million=3_750_000,
+    search_micros_per_call=14_000,
+)
 GEMINI_2_5_FLASH_PRICES = TokenPrices(
     catalog_version="2026-09-05-google-gemini-pricing",
     input_micros_per_million=300_000,
@@ -42,14 +55,31 @@ GEMINI_2_5_FLASH_PRICES = TokenPrices(
 
 
 def reviewed_gemini_prices(models: tuple[str, ...]) -> TokenPrices:
-    """Return the verified paid-tier ceiling for one exact Gemini text model."""
+    """Return one verified paid-tier ceiling for compatible Gemini text routes.
+
+    The runtime shares one adapter across a provider's text and research routes,
+    so every selected model must use the same pricing snapshot. Gemini 2.5 is
+    retained for saved profiles, but it cannot be mixed with current Gemini 3
+    routes because their token and search billing units differ.
+    """
 
     selected = tuple(dict.fromkeys(models))
-    if selected != (GEMINI_2_5_FLASH_MODEL,):
+    if selected and set(selected) <= set(GEMINI_CURRENT_FLASH_MODELS):
+        return GEMINI_3_FLASH_PRICES
+    if selected == (GEMINI_2_5_FLASH_MODEL,):
+        return GEMINI_2_5_FLASH_PRICES
+    if GEMINI_2_5_FLASH_MODEL in selected and set(selected) <= set(
+        GEMINI_REVIEWED_FLASH_MODELS
+    ):
         raise ValueError(
-            "Gemini structured writing must pin the reviewed gemini-2.5-flash price snapshot"
+            "Gemini 2.5 and Gemini 3 routes use different billing units; choose one "
+            "Gemini generation for text and research in Models & providers"
         )
-    return GEMINI_2_5_FLASH_PRICES
+    raise ValueError(
+        "Gemini text and research routes must use reviewed models: "
+        f"{', '.join(GEMINI_CURRENT_FLASH_MODELS)}; saved legacy routes may retain "
+        f"{GEMINI_2_5_FLASH_MODEL}"
+    )
 
 
 class BaseLLMAdapter(GuardedAdapter):
@@ -358,11 +388,14 @@ class GeminiGenerateContentAdapter(BaseLLMAdapter):
         self.descriptor = default_catalog().get("gemini")
 
     def build_request(self, request: TextRequest, context: RequestContext) -> HttpRequest:
-        if request.model != GEMINI_2_5_FLASH_MODEL:
+        if request.model not in GEMINI_REVIEWED_FLASH_MODELS:
             raise ProviderFailure(
                 FailureCode.UNSUPPORTED_CAPABILITY,
-                "Gemini structured writing supports only the reviewed gemini-2.5-flash model",
+                f"Gemini model {request.model!r} is not reviewed for text or research. "
+                f"Choose {GEMINI_3_8_FLASH_MODEL} or {GEMINI_3_7_FLASH_MODEL} in "
+                "Models & providers.",
                 provider_id=self.descriptor.provider_id,
+                details={"configuredModel": request.model, "action": "models-and-providers"},
             )
         generation_config: dict[str, Any] = {
             "maxOutputTokens": request.max_output_tokens,
@@ -390,7 +423,7 @@ class GeminiGenerateContentAdapter(BaseLLMAdapter):
                     "Gemini generateContent does not declare web-search domain allowlisting",
                     provider_id=self.descriptor.provider_id,
                 )
-            if request.json_schema is not None:
+            if request.json_schema is not None and request.model == GEMINI_2_5_FLASH_MODEL:
                 raise ProviderFailure(
                     FailureCode.UNSUPPORTED_CAPABILITY,
                     "Gemini 2.5 does not support structured output combined with Google Search",
@@ -406,6 +439,30 @@ class GeminiGenerateContentAdapter(BaseLLMAdapter):
             },
             json_body=body,
         )
+
+    def invoke(
+        self, request: ProviderRequest, context: RequestContext
+    ) -> ProviderResult[TextOutput]:
+        try:
+            return super().invoke(request, context)
+        except ProviderFailure as error:
+            if isinstance(request, TextRequest) and error.http_status == 404:
+                raise ProviderFailure(
+                    error.code,
+                    f"Gemini model {request.model!r} is unavailable for this API key. "
+                    "Choose an available Gemini model in Models & providers.",
+                    provider_id=self.descriptor.provider_id,
+                    retryable=False,
+                    http_status=error.http_status,
+                    request_id=error.request_id,
+                    details={
+                        "configuredModel": request.model,
+                        "action": "models-and-providers",
+                    },
+                ) from error
+            raise
+
+    generate = invoke
 
     def parse_response(
         self, request: TextRequest, payload: dict[str, Any]
@@ -444,9 +501,18 @@ class GeminiGenerateContentAdapter(BaseLLMAdapter):
         tool_use_tokens = _int(usage.get("toolUsePromptTokenCount"))
         grounding = _dict(candidate.get("groundingMetadata"))
         web_search_queries = grounding.get("webSearchQueries")
-        search_requests = len(web_search_queries) if isinstance(web_search_queries, list) else 0
-        if not search_requests and grounding:
+        if isinstance(web_search_queries, list):
+            # Gemini 3 bills each unique, non-empty search query. Preserve that
+            # provider unit instead of treating repeated/empty metadata as use.
+            search_requests = len({
+                query.strip()
+                for query in web_search_queries
+                if isinstance(query, str) and query.strip()
+            })
+        elif grounding:
             search_requests = 1
+        else:
+            search_requests = 0
         result_usage = self._usage(
             request.model,
             _int(usage.get("promptTokenCount")),

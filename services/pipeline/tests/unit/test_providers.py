@@ -8,6 +8,7 @@ import pytest
 
 from alystria.providers import (
     GEMINI_2_5_FLASH_MODEL,
+    GEMINI_3_8_FLASH_MODEL,
     AnthropicMessagesAdapter,
     AssetInput,
     Capability,
@@ -278,12 +279,12 @@ def test_anthropic_uses_output_config_and_versioned_research_tool() -> None:
     assert result.value.citations[0]["url"] == "https://source.test"
 
 
-def test_gemini_research_uses_search_without_unsupported_structured_output() -> None:
+def test_gemini_3_research_combines_search_with_structured_output() -> None:
     transport = FakeTransport(
         response(
             {
                 "responseId": "resp_1",
-                "modelVersion": "gemini-2.5-flash-001",
+                "modelVersion": "gemini-3.8-flash-001",
                 "candidates": [
                     {
                         "finishReason": "STOP",
@@ -292,7 +293,7 @@ def test_gemini_research_uses_search_without_unsupported_structured_output() -> 
                             "parts": [{"text": '{"answer":"yes"}'}],
                         },
                         "groundingMetadata": {
-                            "webSearchQueries": ["example query"],
+                            "webSearchQueries": ["example query", "", "example query"],
                             "groundingChunks": [
                                 {
                                     "web": {
@@ -317,24 +318,27 @@ def test_gemini_research_uses_search_without_unsupported_structured_output() -> 
     result = adapter.invoke(
         TextRequest(
             "Answer",
-            GEMINI_2_5_FLASH_MODEL,
+            GEMINI_3_8_FLASH_MODEL,
             system="Return one answer.",
             temperature=0.2,
+            json_schema=SCHEMA,
             research=True,
         ),
         context("gemini"),
     )
     sent = transport.requests[0]
-    assert sent.url.endswith("/v1beta/models/gemini-2.5-flash:generateContent")
+    assert sent.url.endswith("/v1beta/models/gemini-3.8-flash:generateContent")
     assert "Api-Revision" not in sent.headers
     assert sent.json_body["contents"] == [{"role": "user", "parts": [{"text": "Answer"}]}]
     assert sent.json_body["systemInstruction"] == {"parts": [{"text": "Return one answer."}]}
     assert sent.json_body["generationConfig"] == {
         "maxOutputTokens": 2048,
         "temperature": 0.2,
+        "responseMimeType": "application/json",
+        "responseJsonSchema": SCHEMA,
     }
     assert sent.json_body["tools"] == [{"google_search": {}}]
-    assert result.value.parsed is None
+    assert result.value.parsed == {"answer": "yes"}
     assert result.value.citations == (
         {
             "url": "https://source.test/gemini",
@@ -344,7 +348,7 @@ def test_gemini_research_uses_search_without_unsupported_structured_output() -> 
     )
     assert result.usage.units["thought_tokens"] == 2
     assert result.usage.units["search_requests"] == 1
-    assert result.model == "gemini-2.5-flash-001"
+    assert result.model == "gemini-3.8-flash-001"
     assert result.usage.request_id == "resp_1"
 
 
@@ -374,7 +378,7 @@ def test_gemini_research_rejects_unadvertised_domain_filter_before_network() -> 
         adapter.invoke(
             TextRequest(
                 "Research",
-                GEMINI_2_5_FLASH_MODEL,
+                GEMINI_3_8_FLASH_MODEL,
                 research=True,
                 allowed_domains=("x.test",),
             ),
@@ -387,13 +391,36 @@ def test_gemini_research_rejects_unadvertised_domain_filter_before_network() -> 
 def test_gemini_rejects_unreviewed_model_before_network() -> None:
     transport = FakeTransport()
     adapter = GeminiGenerateContentAdapter(transport)
-    with pytest.raises(ProviderFailure, match=r"reviewed gemini-2\.5-flash") as caught:
+    with pytest.raises(ProviderFailure, match="Models & providers") as caught:
         adapter.invoke(
             TextRequest("Answer", "gemini-unreviewed", json_schema=SCHEMA),
             context("gemini"),
         )
     assert caught.value.code is FailureCode.UNSUPPORTED_CAPABILITY
+    assert caught.value.details == {
+        "configuredModel": "gemini-unreviewed",
+        "action": "models-and-providers",
+    }
     assert transport.requests == []
+
+
+def test_gemini_404_names_configured_model_without_copying_response_body() -> None:
+    transport = FakeTransport(response({"error": "private provider details"}, status=404))
+    adapter = GeminiGenerateContentAdapter(transport)
+
+    with pytest.raises(ProviderFailure, match="unavailable for this API key") as caught:
+        adapter.invoke(
+            TextRequest("Answer", GEMINI_3_8_FLASH_MODEL),
+            context("gemini"),
+        )
+
+    assert caught.value.http_status == 404
+    assert caught.value.request_id == "req_header"
+    assert caught.value.details == {
+        "configuredModel": GEMINI_3_8_FLASH_MODEL,
+        "action": "models-and-providers",
+    }
+    assert "private provider details" not in caught.value.message
 
 
 def test_gemini_reports_prompt_and_candidate_safety_blocks() -> None:

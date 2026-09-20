@@ -257,9 +257,11 @@ def default_catalog() -> ProviderCatalog:
             },
             "https://ai.google.dev/api/generate-content",
             policy=_cloud(RetentionMode.CONFIGURABLE),
-            models=("gemini-2.5-flash", "gemini-3.7-flash"),
+            # Current models come first. Gemini 2.5 remains accepted only so
+            # an existing saved owner profile does not become unreadable.
+            models=("gemini-3.8-flash", "gemini-3.7-flash", "gemini-2.5-flash"),
             cancellation=True,
-            verified_at="2026-09-08",
+            verified_at="2026-09-20",
         ),
         _entry(
             "groq",

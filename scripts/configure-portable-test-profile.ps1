@@ -223,7 +223,7 @@ foreach ($Medium in @("presenter", "portraitAnimation", "lipSync")) {
 
 $ProviderRoutes = [ordered]@{
     writing = & $Route "groq" "openai/gpt-oss-20b"
-    research = & $Route "gemini" "gemini-2.5-flash"
+    research = & $Route "gemini" "gemini-3.8-flash"
     images = & $Route "nvidia-nim" "black-forest-labs/flux.2-klein-4b"
     visualReview = & $Route "nvidia-nim" "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     motion = $LocalRoutes.motion
