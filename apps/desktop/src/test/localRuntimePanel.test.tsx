@@ -50,7 +50,7 @@ describe("LocalRuntimePanel", () => {
     render(<LocalRuntimePanel runtimeEntry={runtimeEntry} runtimeStatus={null} queued={false} starting={false} loading={false} onDownloadRuntime={onDownloadRuntime} onViewDownloads={vi.fn()} />);
 
     expect(screen.getByRole("heading", { name: "ComfyUI runtime" })).toBeInTheDocument();
-    expect(screen.getAllByText("Not installed", { exact: true })).toHaveLength(2);
+    expect(screen.getAllByText("Not installed", { exact: true })).toHaveLength(1);
     expect(screen.getByText(/1.7 GB · GPL-3.0/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Download ComfyUI" }));
     expect(onDownloadRuntime).toHaveBeenCalledOnce();
@@ -69,7 +69,7 @@ describe("LocalRuntimePanel", () => {
 
   it("does not accept an SDXL receipt as the runtime", () => {
     render(<LocalRuntimePanel runtimeEntry={runtimeEntry} runtimeStatus={runtimeStatus({ modelId: "local/sdxl-base-1.0" })} queued={false} starting={false} loading={false} onDownloadRuntime={vi.fn()} onViewDownloads={vi.fn()} />);
-    expect(screen.getAllByText("Not installed", { exact: true })).toHaveLength(2);
+    expect(screen.getAllByText("Not installed", { exact: true })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Download ComfyUI" })).toBeEnabled();
   });
 });

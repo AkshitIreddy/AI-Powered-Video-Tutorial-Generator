@@ -35,33 +35,20 @@ export function LocalRuntimePanel({
 
   return (
     <section className="model-setup-panel local-runtime-panel" aria-labelledby="local-runtime-title">
-      <div className="model-setup-heading">
-        <div>
-          <span className="section-kicker">Local image engine</span>
-          <h2 id="local-runtime-title">ComfyUI runtime</h2>
-          <p>Install the verified runtime once, then reuse it with every managed local image model.</p>
-        </div>
-        <span className="setup-state">
+      <div className="runtime-summary">
+        <span className="section-kicker">Local image engine</span>
+        <h2 id="local-runtime-title">ComfyUI runtime</h2>
+        <p>
+          {runtimeEntry || installed
+            ? `v${COMFYUI_RUNTIME_VERSION} · ${formatDownloadSize(runtimeStatus?.totalBytes ?? runtimeEntry?.totalBytes ?? 0)}${installed ? " verified" : ""} · ${runtimeStatus?.licenseId ?? runtimeEntry?.licenseId ?? "license recorded"}`
+            : loading ? "Checking the verified runtime package…" : "The verified runtime package is unavailable in this build."}
+        </p>
+      </div>
+      <div className="runtime-actions">
+        <span className={`setup-state ${installed ? "is-ready" : busy ? "is-active" : "is-missing"}`}>
           {installed ? <CheckCircle2 size={15} /> : <Cpu size={15} />}
           {state}
         </span>
-      </div>
-      <div className="runtime-row">
-        <span>
-          <b>ComfyUI {COMFYUI_RUNTIME_VERSION} portable runtime</b>
-          <small>
-            {installed
-              ? `${formatDownloadSize(runtimeStatus?.totalBytes ?? runtimeEntry?.totalBytes ?? 0)} verified · ${runtimeStatus?.licenseId ?? runtimeEntry?.licenseId ?? "license recorded"} · shared by every managed local image model.`
-              : runtimeEntry
-              ? `${formatDownloadSize(runtimeEntry.totalBytes)} · ${runtimeEntry.licenseId} · one shared runtime for SDXL, FLUX.2 Klein, and Z-Image Turbo.`
-              : loading
-                ? "Checking the verified runtime package…"
-                : "The verified runtime package is unavailable in this build."}
-          </small>
-        </span>
-        <em className={installed ? "is-ready" : undefined}>{state}</em>
-      </div>
-      <div className="model-setup-actions">
         {installed || busy ? (
           <button type="button" className="secondary-button" onClick={onViewDownloads}>
             <HardDrive size={16} /> View downloads
@@ -71,8 +58,8 @@ export function LocalRuntimePanel({
             <Download size={16} /> Download ComfyUI
           </button>
         )}
-        <small>{installed ? "Verified and ready for compatible local image models." : busy ? "You can minimize Downloads and keep working." : "Optional unless you want to generate images locally."}</small>
       </div>
+      <p className="runtime-hint">{installed ? "Verified and ready for compatible local image models." : busy ? "You can minimize Downloads and keep working." : "Optional for local image generation. Install once and share it across your managed models."}</p>
     </section>
   );
 }

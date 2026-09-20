@@ -32,8 +32,12 @@ test("keeps catalog discovery visible and exposes only working model actions", a
     await page.screenshot({ path: `${evidenceDir}/catalog-${testInfo.project.name}.png` });
   }
 
-  await page.getByRole("button", { name: "Inspect details" }).first().click();
-  await expect(page.locator(".toast").filter({ hasText: "was reviewed here only" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Inspect details" })).toHaveCount(0);
+  await firstCard.locator("summary").filter({ hasText: "Model details" }).click();
+  await expect(firstCard.locator("details")).toHaveAttribute("open", "");
+  // A browser preview cannot download native packages; it must explain that
+  // boundary instead of presenting a successful inspection as installation.
+  await expect(catalog.getByRole("button", { name: "Download unavailable" }).first()).toBeDisabled();
 });
 
 test("stages an eligible writing model and persists it only through the saved profile action", async ({ page }, testInfo) => {
@@ -56,7 +60,7 @@ test("stages an eligible writing model and persists it only through the saved pr
   await page.getByRole("button", { name: "Store securely" }).click();
   await expect(useForWriting).toBeEnabled();
   await useForWriting.click();
-  await expect(page.locator(".toast").filter({ hasText: "Use Save setup & active profile" })).toBeVisible();
+  await expect(page.locator(".toast").filter({ hasText: "Writing choice staged" })).toBeVisible();
   await expect(writingProvider).toHaveValue("groq");
   await expect(writingModel).toHaveValue("openai/gpt-oss-120b");
   await expect(writingModel).toBeFocused();
