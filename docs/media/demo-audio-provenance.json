@@ -1,0 +1,400 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-20",
+  "purpose": "Public-safe provenance for README demo narration and voice-selection samples.",
+  "publicationBoundary": {
+    "sourceWavs": "Private build inputs; the PCM and WAV source files are not checked into this repository.",
+    "finalMedia": "The README MP4 contains the approved Sulafat narration and both short presenter-comparison lines as rendered speech.",
+    "shortSamples": "Both short lines are audible in the final README MP4 presenter comparison: Sulafat voices Emma, Yuki, and Chloe; Sadaltager voices Noah."
+  },
+  "evidenceBoundary": {
+    "numericallyEstablished": [
+      "provider and model identifiers returned for the successful synthesis",
+      "PCM and WAV hashes, formats, durations, levels, and clipping counts",
+      "independent ASR transcripts and strict normalized word equality",
+      "chapter boundaries derived from ASR word timestamps"
+    ],
+    "notEstablishedByAutomation": [
+      "subjective warmth, expressiveness, or perceived production quality",
+      "human-perceived pronunciation quality, mouth noises, or voice consistency",
+      "a legal conclusion beyond the linked provider terms"
+    ],
+    "humanAuditionClaimed": false
+  },
+  "normalization": {
+    "description": "Case-fold text, normalize curly apostrophes, and compare ordered ASCII letter/digit tokens while retaining internal apostrophes; punctuation and hyphens do not create spoken-word differences."
+  },
+  "callSummary": {
+    "successfulSynthesisCalls": 3,
+    "successfulAsrCalls": 3,
+    "note": "Two successful synthesis calls created the short voice-selection samples; one successful streaming synthesis call created the continuous final narration."
+  },
+  "assets": [
+    {
+      "id": "demo-voice-sample-female-sulafat",
+      "role": "presenter demo line for Emma, Yuki, and Chloe",
+      "embeddedInReadmeMp4": true,
+      "script": "Watch your ideas become clear, engaging lessons.",
+      "synthesis": {
+        "provider": "Google Gemini API",
+        "model": "gemini-3.1-flash-tts-preview",
+        "voice": "Sulafat",
+        "successfulCalls": 1
+      },
+      "sourceAudio": {
+        "privateBuildInput": true,
+        "checkedIntoRepository": false,
+        "durationSeconds": 4.52,
+        "format": {
+          "codec": "pcm_s16le",
+          "sampleRateHz": 24000,
+          "channels": 1,
+          "sampleWidthBits": 16
+        },
+        "pcmSha256": "1d69ad50c58f25fda8627ff70eb7c420edbbd3aae433e13f98acf918ca0399c6",
+        "wavSha256": "664c0770b2cb463bc5585bb56942fa1caec058482d826d9d5f287bd590384fd3"
+      },
+      "verification": {
+        "asrProvider": "Groq",
+        "asrModel": "whisper-large-v3",
+        "successfulAsrCalls": 1,
+        "transcript": "Watch your ideas become clear, engaging lessons.",
+        "strictNormalizedWordMatch": true,
+        "normalizedWordCount": 7,
+        "signalMeasurements": {
+          "peakDbfs": -2.688864,
+          "rmsDbfs": -19.123818,
+          "clippedSamples": 0
+        }
+      },
+      "presenters": [
+        "Emma",
+        "Yuki",
+        "Chloe"
+      ]
+    },
+    {
+      "id": "demo-voice-sample-male-sadaltager",
+      "role": "presenter demo line for Noah",
+      "embeddedInReadmeMp4": true,
+      "script": "Watch your ideas become clear, engaging lessons.",
+      "synthesis": {
+        "provider": "Google Gemini API",
+        "model": "gemini-3.1-flash-tts-preview",
+        "voice": "Sadaltager",
+        "successfulCalls": 1
+      },
+      "sourceAudio": {
+        "privateBuildInput": true,
+        "checkedIntoRepository": false,
+        "durationSeconds": 4.76,
+        "format": {
+          "codec": "pcm_s16le",
+          "sampleRateHz": 24000,
+          "channels": 1,
+          "sampleWidthBits": 16
+        },
+        "pcmSha256": "670315dbdf3981fcc79a14fee87a13247db96aa5614950dfe5d5e4a08510be0e",
+        "wavSha256": "545b8ebfaf3ae50f4768560ea237b78b2a049da256551a2598bb9d15f595361e"
+      },
+      "verification": {
+        "asrProvider": "Groq",
+        "asrModel": "whisper-large-v3",
+        "successfulAsrCalls": 1,
+        "transcript": "Watch your ideas become clear, engaging lessons.",
+        "strictNormalizedWordMatch": true,
+        "normalizedWordCount": 7,
+        "signalMeasurements": {
+          "peakDbfs": -1.545116,
+          "rmsDbfs": -18.820054,
+          "clippedSamples": 0
+        }
+      },
+      "presenters": [
+        "Noah"
+      ]
+    },
+    {
+      "id": "readme-demo-final-voiceover-sulafat",
+      "role": "final README MP4 narration",
+      "embeddedInReadmeMp4": true,
+      "script": {
+        "direction": "A warm, articulate tutorial creator showing a useful tool to a friend. Curious and genuinely pleased, never breathless or announcer-like. Natural American English, lightly smiling tone, varied emphasis, clear consonants, about 150 words per minute. Speak the narration exactly. Do not read section titles. Leave a clean 0.8-second pause between paragraphs. No music or sound effects.",
+        "segments": [
+          {
+            "order": 1,
+            "id": "home",
+            "cue": "Home",
+            "text": "From a first idea to a finished lesson. Welcome to AI Video Tutorial Generator."
+          },
+          {
+            "order": 2,
+            "id": "projects",
+            "cue": "Project gallery",
+            "text": "Keep each lesson's sources, scenes, and media together in one local project."
+          },
+          {
+            "order": 3,
+            "id": "models",
+            "cue": "Models and downloads",
+            "text": "Choose a cloud provider, or download a local model. The download panel keeps you updated while you continue working."
+          },
+          {
+            "order": 4,
+            "id": "library",
+            "cue": "Included teaching assets",
+            "text": "Start with included teaching backgrounds and slide elements. Image generation is optional, so a well-designed lesson doesn't need another API call."
+          },
+          {
+            "order": 5,
+            "id": "presenters",
+            "cue": "Fourteen casual and animal presenters",
+            "text": "Give your tutorial a cast. Pick realistic, anime or cartoon hosts, or a playful animal, and assign speakers to different scenes."
+          },
+          {
+            "order": 6,
+            "id": "artwork",
+            "cue": "Accepted local SDXL artwork",
+            "text": "For an illustrated scene, review your locally generated artwork and keep the version you want."
+          },
+          {
+            "order": 7,
+            "id": "editor",
+            "cue": "Presenter comparison editor",
+            "text": "Then refine the actual timeline. Move between tools with a single icon dock. Make more room for your transcript, resize the tracks, and keep the preview in view."
+          },
+          {
+            "order": 8,
+            "id": "comparison",
+            "cue": "Presenter style comparison",
+            "text": "Here are four visual styles, with real, locally rendered lip-sync."
+          },
+          {
+            "order": 9,
+            "id": "outro",
+            "cue": "Four real lip-sync styles complete",
+            "text": "Your lesson. Your cast. Ready to review and export."
+          }
+        ]
+      },
+      "synthesis": {
+        "provider": "Google Gemini API",
+        "model": "gemini-3.1-flash-tts-preview",
+        "voice": "Sulafat",
+        "transport": "Interactions API streaming audio",
+        "successfulCalls": 1,
+        "providerUsage": {
+          "total_tokens": 4118,
+          "total_input_tokens": 220,
+          "input_tokens_by_modality": [
+            {
+              "modality": "text",
+              "tokens": 220
+            }
+          ],
+          "total_cached_tokens": 0,
+          "total_output_tokens": 3898,
+          "output_tokens_by_modality": [
+            {
+              "modality": "audio",
+              "tokens": 3898
+            }
+          ],
+          "total_tool_use_tokens": 0,
+          "total_thought_tokens": 0,
+          "raw_prompt_token": 493,
+          "model_invocation_token_counts": [
+            {
+              "prompt_tokens_details": [
+                {
+                  "modality": "text",
+                  "tokens": 234
+                }
+              ],
+              "candidates_tokens_details": [
+                {
+                  "modality": "text",
+                  "tokens": 1949
+                }
+              ]
+            }
+          ],
+          "non_grounding_model_invocation_token_counts": [
+            {
+              "prompt_tokens_details": [
+                {
+                  "modality": "text",
+                  "tokens": 234
+                }
+              ],
+              "candidates_tokens_details": [
+                {
+                  "modality": "text",
+                  "tokens": 1949
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "sourceAudio": {
+        "privateBuildInput": true,
+        "checkedIntoRepository": false,
+        "durationSeconds": 77.96,
+        "format": {
+          "codec": "pcm_s16le",
+          "sampleRateHz": 24000,
+          "channels": 1,
+          "sampleWidthBits": 16
+        },
+        "pcmSha256": "ff1613febbbcdf828dd815b641d0ad9422cf488b7a8f9fc0c03a446693629f3c",
+        "wavSha256": "f748fc60798618fd324d3790ff11f593caed892a533215c88c190d1534d34327",
+        "signalMeasurements": {
+          "peakDbfs": -2.712015,
+          "rmsDbfs": -20.649122,
+          "clippedSamples": 0
+        }
+      },
+      "verification": {
+        "asrProvider": "Groq",
+        "asrModel": "whisper-large-v3",
+        "successfulAsrCalls": 1,
+        "transcript": "From a first idea to a finished lesson, welcome to AI Video Tutorial Generator. Keep each lesson's sources, scenes, and media together in one local project. Choose a cloud provider or download a local model. The download panel keeps you updated while you continue working. Start with included teaching backgrounds and slide elements. image generation is optional, so a well-designed lesson doesn't need another API call. Give your tutorial a cast. Pick realistic, anime, or cartoon hosts, or a playful animal, and assign speakers to different scenes. For an illustrated scene, review your locally generated artwork and keep the version you want. Then, refine the actual timeline. Move between tools with a single icon dock. Make more room for your transcript, resize the tracks, and keep the preview in view. Here are four visual styles with real, locally rendered lip sync. Your lesson. Your cast. Ready to review and export.",
+        "strictNormalizedWordMatch": true,
+        "normalizedWordCount": 151,
+        "wordTimestampBoundaries": true,
+        "sourceWavPcmMatchesOriginal": true,
+        "chapterFramesContiguous": true,
+        "concatenatedChapterPcmMatchesSourceSlice": true
+      },
+      "chapterPolicy": {
+        "sourcePauseRangeSeconds": [
+          1.28,
+          2.18
+        ],
+        "targetTimelinePauseSeconds": 0.8,
+        "description": "Internal cuts use the midpoint between the prior segment's last word end and next segment's first word start. Source start/end preserve 200 ms around the first/last spoken word where available.",
+        "timelineAdjustment": "The model left longer natural pauses than requested. Use each segment's recommendedTimelineInSeconds and recommendedTimelineOutSeconds to retain 0.4 seconds on each side of internal boundaries, yielding 0.8 seconds between spoken paragraphs while preserving at least 0.2 seconds of lead/tail."
+      },
+      "chapters": [
+        {
+          "order": 1,
+          "id": "home",
+          "cue": "Home",
+          "script": "From a first idea to a finished lesson. Welcome to AI Video Tutorial Generator.",
+          "durationSeconds": 7.55,
+          "pcmSha256": "2cae9f95f823d5b8823247bf429a413f624eba9dc071ee82f69123857ce0d793",
+          "wavSha256": "ff700c65beb61062a4e32842bb8afde6c5aa64a43414a6f8ac1c3fe968b31245",
+          "recommendedTimelineInSeconds": 0,
+          "recommendedTimelineOutSeconds": 6.88,
+          "recommendedTimelineDurationSeconds": 6.88
+        },
+        {
+          "order": 2,
+          "id": "projects",
+          "cue": "Project gallery",
+          "script": "Keep each lesson's sources, scenes, and media together in one local project.",
+          "durationSeconds": 7.08,
+          "pcmSha256": "98a0acdfd22c197918c7dfb28e342dfc75057fdea4c22a4b0f81af9c20392b2c",
+          "wavSha256": "e9a66f832c75aebafaef41c2c1cb636b17b69630a2982fd5c273a5f93b3cddf0",
+          "recommendedTimelineInSeconds": 0.67,
+          "recommendedTimelineOutSeconds": 6.43,
+          "recommendedTimelineDurationSeconds": 5.76
+        },
+        {
+          "order": 3,
+          "id": "models",
+          "cue": "Models and downloads",
+          "script": "Choose a cloud provider, or download a local model. The download panel keeps you updated while you continue working.",
+          "durationSeconds": 8.24,
+          "pcmSha256": "0102459fd870caf772598cb79def9ee1272c9cfed70e5c093cf33447926365c7",
+          "wavSha256": "fc0fc17e6e41f3243b4e25e683528d70098fa2bc80f52bfcc5b421f3d521e14b",
+          "recommendedTimelineInSeconds": 0.65,
+          "recommendedTimelineOutSeconds": 7.63,
+          "recommendedTimelineDurationSeconds": 6.98
+        },
+        {
+          "order": 4,
+          "id": "library",
+          "cue": "Included teaching assets",
+          "script": "Start with included teaching backgrounds and slide elements. Image generation is optional, so a well-designed lesson doesn't need another API call.",
+          "durationSeconds": 10.88,
+          "pcmSha256": "14d338b13aebc687dc4c4c61bff7f04fb161e2733e9e14f608e2460d40120a97",
+          "wavSha256": "cfd829f9be3545add17f977fd6871e11278946719d3ed081d150bb76bacba4f4",
+          "recommendedTimelineInSeconds": 0.61,
+          "recommendedTimelineOutSeconds": 10.23,
+          "recommendedTimelineDurationSeconds": 9.62
+        },
+        {
+          "order": 5,
+          "id": "presenters",
+          "cue": "Fourteen casual and animal presenters",
+          "script": "Give your tutorial a cast. Pick realistic, anime or cartoon hosts, or a playful animal, and assign speakers to different scenes.",
+          "durationSeconds": 11.28,
+          "pcmSha256": "5bf406d7b7534f28c83412601a0d0eefcf7d0c71c3cb6881f226e005124c45b8",
+          "wavSha256": "94e78734ea4a25592e1ad9deb0c5b99ace02155342d1d748b9627b48cc4c1bdb",
+          "recommendedTimelineInSeconds": 0.65,
+          "recommendedTimelineOutSeconds": 10.59,
+          "recommendedTimelineDurationSeconds": 9.94
+        },
+        {
+          "order": 6,
+          "id": "artwork",
+          "cue": "Accepted local SDXL artwork",
+          "script": "For an illustrated scene, review your locally generated artwork and keep the version you want.",
+          "durationSeconds": 7.59,
+          "pcmSha256": "360675c921a0c2c5e5a0817ac3cf61fc066458359574de53a93901c024849a1f",
+          "wavSha256": "498e781b48a82dc054554e038b7bed9e2847d42c7be2c0cb5d4af4771df5af69",
+          "recommendedTimelineInSeconds": 0.69,
+          "recommendedTimelineOutSeconds": 6.93,
+          "recommendedTimelineDurationSeconds": 6.24
+        },
+        {
+          "order": 7,
+          "id": "editor",
+          "cue": "Presenter comparison editor",
+          "script": "Then refine the actual timeline. Move between tools with a single icon dock. Make more room for your transcript, resize the tracks, and keep the preview in view.",
+          "durationSeconds": 13.19,
+          "pcmSha256": "f8da8204a66081d3b9ec884099b98706962d6383a863da5c43126af0d1ba6071",
+          "wavSha256": "53a016143eb7e9c777de62944e50d1d343b3c7533c0399c2d860168d1567949b",
+          "recommendedTimelineInSeconds": 0.66,
+          "recommendedTimelineOutSeconds": 12.82,
+          "recommendedTimelineDurationSeconds": 12.16
+        },
+        {
+          "order": 8,
+          "id": "comparison",
+          "cue": "Presenter style comparison",
+          "script": "Here are four visual styles, with real, locally rendered lip-sync.",
+          "durationSeconds": 6.63,
+          "pcmSha256": "33afff909a5d47596cef9450e13355e4ec27d44245a84a3c73663d833971b528",
+          "wavSha256": "9d7e4ee298d624c5669f0f9970fc37495127ab8752c99f7521a8be6bcfedb713",
+          "recommendedTimelineInSeconds": 0.37,
+          "recommendedTimelineOutSeconds": 6.39,
+          "recommendedTimelineDurationSeconds": 6.02
+        },
+        {
+          "order": 9,
+          "id": "outro",
+          "cue": "Four real lip-sync styles complete",
+          "script": "Your lesson. Your cast. Ready to review and export.",
+          "durationSeconds": 5.42,
+          "pcmSha256": "e322cfc00f3b721db1ade3f092b1c058e4c206b4f3f49ff473427c5980633219",
+          "wavSha256": "3a54147be79e41cbc8ce49791fac8eb6844f7f9a703dbbfa3a9a790dab779ae9",
+          "recommendedTimelineInSeconds": 0.24,
+          "recommendedTimelineOutSeconds": 5.42,
+          "recommendedTimelineDurationSeconds": 5.18
+        }
+      ]
+    }
+  ],
+  "sources": {
+    "geminiApiTerms": "https://ai.google.dev/gemini-api/terms",
+    "geminiSpeechGeneration": "https://ai.google.dev/gemini-api/docs/speech-generation",
+    "geminiModels": "https://ai.google.dev/gemini-api/docs/models",
+    "geminiPricing": "https://ai.google.dev/gemini-api/docs/pricing",
+    "groqSpeechToText": "https://console.groq.com/docs/speech-to-text",
+    "groqApiReference": "https://console.groq.com/docs/api-reference"
+  },
+  "rightsNote": "Google's Gemini API Additional Terms state that Google does not claim ownership over generated content. Publication remains subject to current provider terms, applicable law, and the preview model's documented limitations."
+}

@@ -1,333 +1,234 @@
-# AI Video Tutorial Generator
+<p align="center">
+  <img src="docs/media/ai-video-tutorial-banner.png" alt="AI Video Tutorial Generator — a polished tutorial studio with illustrated lessons, presenters, narration, and a multitrack editor" width="960" />
+</p>
 
-> **Local release-candidate worktree — not released.** AI Video Tutorial Generator is under active local development on `main`. No push, merge, package publication, deployment, public release, or announcement is authorized without explicit owner approval.
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Windows-8C78C5?style=flat-square&amp;labelColor=30273F" alt="Windows" />
+  <img src="https://img.shields.io/badge/Status-local%20RC-D9A85F?style=flat-square&amp;labelColor=30273F" alt="Local release candidate" />
+  <a href="#local-and-cloud-options"><img src="https://img.shields.io/badge/AI-local%20%2B%20BYOK-8FB5A0?style=flat-square&amp;labelColor=30273F" alt="Local and bring-your-own-key AI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-C9B5ED?style=flat-square&amp;labelColor=30273F" alt="MIT License" /></a>
+</p>
 
-**Turn a difficult idea into a source-grounded, editable tutorial—without giving up ownership of the project.**
+<h1 align="center">AI Video Tutorial Generator</h1>
 
-AI Video Tutorial Generator is a Windows-first, local-first desktop environment for researching, planning, storyboarding, editing, rendering, reviewing, and exporting educational video. Projects, source copies, revisions, artifacts, job state, and usage records stay in an ordinary local directory. Cloud AI is optional bring-your-own-key; Fully Local work has no required product account, hosted backend, synchronization service, or collaboration service.
+<p align="center">
+  <strong>Turn a question, topic, or source into a tutorial you can inspect and edit.</strong><br />
+  Research, script, storyboard, narrate, animate presenters, refine the timeline,<br />
+  and export from one Windows desktop workspace.
+</p>
 
-![Current teaching workbench, empty local profile](docs/images/workbench-home-2026-09-05.png)
+<p align="center">
+  <a href="#for-users"><strong>▸ For users</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#see-it-in-action"><strong>▸ See it in action</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#local-and-cloud-options"><strong>▸ AI options</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#for-developers"><strong>▸ For developers</strong></a>
+  &nbsp;·&nbsp;
+  <a href="docs/README.md"><strong>▸ Documentation</strong></a>
+</p>
 
-The [September 5 independent audit](docs/research/product-audit-2026-09-05.md) records the product changes and evidence boundaries. The screenshots here show the September 5 browser UI; they do not substitute for the separately documented native Windows acceptance. The latest September 16 product changes and verification are tracked in the [implementation ledger](IMPLEMENTATION_STATUS.md) and [product work record](WORK_2026-09-16.md) and [download/control audit](WORK_2026-09-16_CONTROLS.md); the [September 8 checkpoint](CONTINUE_2026-09-08.md) preserves earlier media evidence.
+<a id="see-it-in-action"></a>
 
-[Documentation](docs/README.md) · [Architecture](docs/architecture/overview.md) · [Local model profiles](docs/models/local-profiles.md) · [Free/trial provider guide](docs/providers/free-and-trial.md) · [Security and privacy](docs/security/security-and-privacy.md) · [Evaluation](docs/testing/evaluation.md) · [Implementation ledger](IMPLEMENTATION_STATUS.md)
+<p align="center">
+  <img src="docs/media/ai-video-tutorial-demo.webp" alt="Native Windows walkthrough of projects, models, teaching assets, presenters, the resizable editor, and four locally animated presenter styles" width="960" />
+</p>
+<p align="center">
+  <a href="docs/media/ai-video-tutorial-demo.mp4"><strong>▶ Watch the same walkthrough with sound (MP4)</strong></a>
+</p>
+<p align="center"><sub>Recorded from the native Windows app with <a href="https://www.npmjs.com/package/gifsmith">Gifsmith</a>.<br />Demo narration: Gemini Sulafat. Presenter samples: Sulafat and Sadaltager. <a href="docs/media/demo-audio-provenance.json">Audio notes</a> · <a href="docs/media/demo-video-provenance.json">Recording evidence</a>.</sub></p>
 
-## What is in this worktree
+> **Current status:** 2.0 is a local release candidate. A public installer is not available yet.
 
-The 2.0 repository contains a Tauri 2/React desktop, Rust privilege broker, supervised Python pipeline, local SQLite history and content-addressed artifacts, durable generation jobs, provider and model contracts, a typed scene system, ten theme packs, deterministic Chromium/FFmpeg rendering, audio/caption/presenter policy, security and provenance gates, canonical fixtures, and the teaching workbench interface shown above.
+---
 
-This is still a **local RC candidate**, not a published installer. Clean-machine packaging, managed runtime signing/installation, immutable local-model pins and reference-laptop benchmarks, live BYOK smoke tests, complete rendered/audio inspection, blind v1-versus-v2 scoring, and owner approval remain release gates.
+## For users
 
-- Reviewed provider adapters have offline tests plus bounded live evidence: Groq structured writing and Cloudflare image generation succeeded; the single Mistral smoke was rate-limited. NVIDIA image, narration, local alignment, and presenter evidence have separate reports. These results do not qualify every provider or quota.
-- Runtime manifests describe required signed packs, but no signed production FFmpeg/pipeline pack is shipped.
-- Local model weights are **not bundled**. Optional pinned ComfyUI packages have managed download, verification, reuse and preflight paths. Local SDXL 1.0 with its official offset LoRA completed a real image-candidate generate/review/accept/reload workflow on the 12 GB GPU. FLUX.2 Klein and Z-Image remain optional offload candidates, without a claimed laptop quality/performance pass. See the [local image audit](docs/research/local-image-model-audit-2026-09-05.md).
-- The included library provides four slide backgrounds and eight elements without an API key. Image generation is optional for creating more scene artwork or fictional teachers; generated candidates require explicit review and selection.
-- **Designed layout** is the default and uses authored slide content without an image-generation request. Choose **Illustrated** explicitly with an approved image route to generate artwork. After an image failure, switching to Designed and approving again preserves unchanged narration clips once active work has stopped.
-- New tutorials ask explicitly for no presenter or a cast of up to four. Speakers take turns across scenes; Plan → Presenters controls scene assignments and optional voice overrides. Twelve additional bundled portraits cover anime, clay, graphic illustration, gouache, and watercolor settings. Animation still needs a compatible installed runtime or approved provider.
-- Selecting an available model in onboarding starts its download and opens the shared Downloads panel. It can minimize while you use the app. The Models page uses the same queue; progress, retry/resume, and installed reuse are native-backed. Downloading accepts the linked license. Unavailable installers are disabled, and fresh setup selects no optional packs.
+### From an idea to an editable lesson
 
-## Guided and Studio workflows
+AI Video Tutorial Generator is built for explanations that need more than a talking-head export.
+Start with a topic, learner question, script, or source material, then keep control at every stage:
 
-The Guided flow keeps provider IDs, raw prompts, cache keys, codec details, and exact ticks out of the way:
+1. Choose the audience, length, visual theme, research mode, and an AI profile.
+2. Work without a presenter or select a cast of up to four.
+3. Review objectives, evidence, outline, script, and scene assignments.
+4. Approve the storyboard and source rights before media generation begins.
+5. Generate or reuse narration, captions, illustrations, presenter clips, and scene renders.
+6. Refine the result in the timeline, review quality findings, and export the finished tutorial.
 
-1. Start with a topic, learner question, script, or source material.
-2. Choose audience, duration, locale, theme, Creative/Grounded/Strict research, quality, and a saved provider/model profile.
-3. Choose no presenter or a cast of up to four, then review the objectives, evidence, outline, script, and scene speaker assignments.
-4. Review and approve the storyboard and source rights.
-5. Generate assets, narration, captions, optional presenter moments, renders, and QA as durable jobs.
-6. Review claims, versions, accessibility, and repair suggestions.
-7. Export video, captions, transcript, bibliography, chapters, metadata, thumbnail, provenance, or `.alytutorial`.
+Projects remain ordinary local folders. Their revisions, job state, source copies, usage records,
+and content-addressed media stay with the project rather than a hosted product account.
 
-Your selected profile determines the provider routes; there is no separate privacy-control or routing-approval screen. There is no app monetary budget or known-price gate; provider quotas, bounded retries, and exact provider routing still apply.
+### A studio made for tutorial work
 
-![Current New Tutorial wizard in an empty browser profile](docs/images/new-tutorial-2026-09-05.png)
+- **Guided planning with real review points.** Creative, Grounded, and Strict modes carry claims,
+  citations, objectives, and unresolved support into the plan instead of hiding them in a prompt.
+- **A practical editor.** The Studio workspace combines scene preview, timeline, waveform, captions,
+  titles, media, presenters, and an icon-switched inspector. Side panels can be resized so transcript
+  and media work get the space they need.
+- **Changes stay focused.** Scene edits, pronunciation fixes, and accepted media candidates create
+  revisions and invalidate dependent work without discarding unrelated completed assets.
+- **Durable background work.** Generation and downloads report progress, survive navigation, and
+  expose retry, resume, cancellation, or a clear blocker where that operation is supported.
+- **Useful exports.** Video, captions, transcript, bibliography, chapters, metadata, thumbnail,
+  provenance, and portable `.alytutorial` project archives share one reviewed project state.
 
-Studio mode reveals stable scene navigation, authored scene preview, Content/Design/Motion inspectors, pronunciation and evidence controls, dependency impact, 240,000-tick choreography, target overrides, narration/caption tracks, preservation locks, candidates, scene-local regeneration, undo/redo, revision history, and persistent jobs—without remounting or discarding project state. The timeline editor's HTML media preview is not qualified as frame-accurate; transitions, proxy media, nested sequences, and timeline-range AI regeneration remain product gaps. See the [editor audit](docs/research/editor-audit-2026-09-05.md).
+### Presenters and multi-cast tutorials
 
-The included asset library works before a project exists, without an image API key.
+The included collection contains fourteen original fictional tutorial hosts across realistic,
+anime, cartoon, robot, cat, kitten, dog, puppy, tiger, and lion styles. Choose none, one, or up to
+four presenters; a cast takes turns across scenes, and each scene can have its own speaker and voice.
 
-![Included teaching backgrounds and elements](docs/images/included-library-2026-09-05.png)
+Presenter animation is optional and runtime-gated. The current short-sample qualification covers
+three LivePortrait/MuseTalk portrait routes and nine exact-portrait JoyVASA human or animal routes.
+Poppy and Leo remain available as still portraits; their current animation routes are disabled
+because speech distorted the muzzle. The other animal and robot routes retain visible style limits.
+That evidence shows the reviewed portraits working with short narration clips; it is not a promise
+that arbitrary portraits or long recordings will animate well. See the
+[presenter qualification](docs/research/casual-presenter-qualification-2026-09-20.md) for the
+accepted routes, visible limits, and measured reuse behavior.
 
-Global areas are Home, Projects, Templates, Library, Models & Providers, and Settings & Diagnostics. Project workspaces are Plan, Storyboard, Studio, Review, and Export. The responsive desktop layout is tested at a narrow 860 px window as well as larger displays.
+### Models and downloads
 
-![Current workbench at a narrow desktop width](docs/images/workbench-narrow-2026-09-05.png)
+Onboarding and **Models & Providers** use the same native download queue. Selecting an available
+local package starts its verified download and opens a progress panel that can be minimized while
+you keep working. The queue reports bytes and phases, resumes supported transfers, reuses verified
+files, and keeps model installation separate from model readiness.
 
-## Feature map
+Local weights download separately from the desktop app. The app checks package integrity,
+runtime compatibility, and hardware before marking a model ready.
 
-| Area | Implemented foundation | RC acceptance still required |
+### Local and cloud options
+
+You can begin without an image-generation key: **Designed** lessons use authored slide layouts, and
+the included teaching backgrounds and elements are ready in the Library. **Illustrated** lessons can
+use an explicitly selected image route after you review the candidates.
+
+| Path | What it is good for | What to know |
 | --- | --- | --- |
-| Projects | Manifests, SQLite migrations, append-only revisions, CAS, snapshot conflicts, archives | Clean-machine migration/rollback and long-project recovery |
-| Jobs | Explicit states, task keys, dependencies, leases, retry/cancel/approval, cost and usage | Complete crash matrix and live billable-request reconciliation |
-| Research | Bounded loaders, academic adapters, evidence, atomic claims, learner/objective planning | Live-network policy verification and human fixture evaluation |
-| Studio | Guided/Studio modes, five workspaces, sources, editing, jobs, export wiring, narrow layout | Final native accessibility and clean-install review |
-| Scenes/themes | Full typed registry, responsive compiler, accessibility/reduced-motion data, ten themes | Screenshot approval for every family/theme/target |
-| Renderer | Shared frame path, Chromium verification, network denial, checkpoints, FFmpeg planning, captions | Managed runtimes and final multi-resolution media inspection |
-| Audio/presenter | Speech/pronunciation/caption/mix contracts, consent and presenter QA policy | Live voice/presenter passes and identity/lip-sync review |
-| Providers/models | BYOK adapters, routing, credential references, catalogs, model manager, GPU scheduler | Fresh approvals, artifact pins, downloads, and laptop benchmarks |
-| QA/compliance | Content/media/accessibility/provenance gates, two-repair ceiling, fixtures, SBOM tooling | Full local RC evidence packet and owner sign-off |
+| Included assets | Slides, backgrounds, diagrams, and teaching elements without an API call | Works before a project exists and does not consume a provider quota |
+| Local image generation | Private, repeatable illustration through the managed ComfyUI/SDXL route | No API fee after download; uses local storage, power, and GPU time |
+| Local presenter animation | Reviewed bundled portraits through installed MuseTalk or JoyVASA routes | Optional large runtimes; compatibility is portrait-specific |
+| Cloud text and research | Writing and research with Groq, Gemini, Mistral, OpenRouter, NVIDIA NIM, or another reviewed profile | Uses your key and the exact provider/model you select; no silent fallback |
+| Cloud images and licensed media | Optional generation or discovery through reviewed image and stock-media routes | Every accepted asset still keeps provenance, rights, and attribution |
 
-## Inputs, research, and grounding
+Several providers offer free or evaluation allowances. See the dated
+[free and trial provider guide](docs/providers/free-and-trial.md) for options and current-source
+links. Local inference uses your hardware and has no per-generation API charge.
 
-The pipeline has bounded loaders for topics, learner questions, notes, scripts, UTF-8 text/source code, local repositories, presentations, CSV/JSON/JSONL datasets, allow-listed HTTP(S) text/HTML/JSON/XML, and optional PDF/DOCX/PPTX/spreadsheet/image extraction in a disposable Docling worker.
+### Installation and requirements
 
-The current New Tutorial UI accepts PDF, DOCX, PPTX, EPUB, Markdown, text, CSV, and JSON with an 8 MiB desktop import boundary. Every input is still checked for path, type, size, parser capability, privacy, rights, and provenance. Imports begin in quarantine. Retrieved or imported text is evidence, never an instruction that can change providers, commands, policy, SQL, paths, or renderer code.
+There is no public 2.0 installer yet. The current build is available only for local
+release-candidate evaluation; installation artifacts have not been published.
+
+The planned Windows baseline is:
+
+- 64-bit Windows 10 or 11 with Microsoft Edge WebView2;
+- 8 GB RAM minimum for desktop/cloud work, with 16 GB or more recommended;
+- about 25 GB free for the application and working files, plus any optional model packs;
+- an optional NVIDIA GPU for supported local generation and presenter runtimes.
+
+The final installer must not require Node.js, Python, Rust, Git, or a manually started model server.
+Contributors building the current candidate should use the setup below.
+
+## For developers
+
+### Architecture
+
+The application keeps privileged operations behind small typed boundaries:
 
 ```text
-learner brief → safe sources → research questions → evidence ledger
-→ objectives + prerequisites + misconceptions → concept graph
-→ outline candidates → reviewed script → storyboard + VisualBible
-→ storyboard/rights approval → media + render → QA + bounded repair
+React + TypeScript interface inside Tauri
+                 │ typed commands and events
+                 ▼
+Rust desktop core
+  projects · credentials · downloads · diagnostics · worker supervision
+                 │ authenticated local IPC
+                 ▼
+Python pipeline — sole project database writer
+  research · providers · revisions · jobs · QA · export
+        ├── TypeScript scene renderer + pinned Chromium
+        ├── managed FFmpeg / ffprobe
+        ├── optional local model workers
+        └── isolated document, code, and media workers
 ```
 
-Academic adapters normalize OpenAlex, Crossref, DataCite, OpenCitations, Europe PMC, and arXiv behind a safe transport. Evidence stays connected to immutable source versions and exact text offsets, page boxes, time ranges, table cells, figures, sections, or records.
-
-- **Creative:** clearly marked creative analogy/story content is allowed; factual claims remain honest.
-- **Grounded:** important factual claims require evidence and unresolved support stays visible.
-- **Strict:** unsupported externally verifiable claims and unresolved critical/major findings block approval/export.
-
-Citation presence is not support. Claims record whether evidence entails, supports, contextualizes, qualifies, or contradicts them. See [Research, evidence, and pedagogy](docs/research/evidence-and-pedagogy.md).
-
-## Scenes, rendering, audio, and presenters
-
-The typed scene registry covers titles, section intros, definitions, bullets, comparisons, diagrams, timelines, formulas/derivations/graphs, code/walkthrough/diff/file tree/terminal/traces/state, charts/tables/maps, images, documents, UI demonstrations, simulations, presenters, quotes, questions, worked examples, quizzes, recaps, summaries, sources, and outros.
-
-Exact material prefers deterministic SVG/DOM graphics; real people/events/places/interfaces/documents prefer cleared evidence; generated illustration is for concepts and analogies; generated motion is reserved for genuine explanatory value; presenter use is sparse by default.
-
-The renderer uses one frame-driven scene path for preview and final output, independently compiles landscape/portrait/square/custom targets, represents time at 240,000 ticks/second, denies wall clock/remote assets/autonomous CSS/unseeded randomness, verifies Chromium version and hash, checkpoints frames, and invokes FFmpeg/ffprobe directly without a shell. WebVTT is canonical; SRT, overlays, transcripts, and descriptive output derive from common cues.
-
-The 48 kHz master target is −16 ±1 LUFS and no more than −1.5 dBTP. Music and effects default off. Voice cloning or a real-person presenter requires immutable consent, scope, proof, revocation, rights, and synthetic-media disclosure. The current local evidence includes NVIDIA Magpie narration, pinned CPU forced alignment, and short local presenter tests. Presenter coverage is sparse by default; inspect the [presenter audit](docs/research/presenter-voice-audit-2026-09-05.md) for measured limits and the [Windows report](docs/research/windows-integration-audit-2026-09-05.md) for the current integrated tutorial result.
-
-NVIDIA LipSync remains a separate local-sidecar candidate rather than a normal
-NIM hosted capability: it needs NVIDIA's AI for Media Private Access Program,
-an NGC key, a Docker/NVIDIA GPU stack, and target-hardware verification. It
-animates an existing consented face against speech; it does not select voices.
-
-See [Rendering](docs/architecture/rendering.md) and [Accessibility](docs/accessibility.md).
-
-## Cloud, Local, and Hybrid providers
-
-![Current Models and Providers browser](docs/images/models-providers-compact-2026-09-05.png)
-
-- **Fully Local:** project-content networking is denied; loopback workers remain available.
-- **Hybrid:** sensitive stages can remain local while separately approved payloads use named cloud capabilities.
-- **Cloud:** approved capabilities may use cloud providers, with explicit model, payload, and region/retention. Usage and known cost remain receipts.
-
-Current typed text adapters cover OpenAI Responses, Anthropic Messages, Gemini generateContent, reviewed Groq/Mistral/OpenRouter structured routes, NVIDIA NIM hosted chat/VLM, and OpenAI-compatible local endpoints. NVIDIA NIM also has typed embedding and dormant reranking contracts plus exact allowlisted image endpoints behind one OS-keyring credential; video is not advertised because its documented route is deprecated. Its hosted catalog is public/synthetic development testing only—not production or self-hosted NIM—and every selected model's access and rate limit is rechecked. Media request builders cover configured capabilities across OpenAI, Google/Gemini, NVIDIA NIM, Black Forest Labs, Recraft, Openverse, Pexels, Runway, ElevenLabs, Azure/Google speech, HeyGen, and Tavus.
-
-Availability is **capability-gated**: an adapter is selectable only when its catalog, credential, policy freshness, request shape, and rights/consent checks pass. The deterministic mock is the only provider approved by default. There is no silent provider, region, retention, or local/cloud fallback.
-
-The local catalog records candidates for Qwen LLM/VLM and embeddings, FLUX, Qwen TTS, Kokoro, Whisper, and MuseTalk. Most remain `artifact-pin-required` or `benchmark-and-artifact-pin-required`. Weights download on demand; no model becomes supported before immutable pin/hash, license acceptance, runtime compatibility, and hardware verification.
-
-### Try AI Video Tutorial Generator with free or trial providers
-
-The [free and trial provider guide](docs/providers/free-and-trial.md) preserves its **2026-08-28** broad offer snapshot and links the **2026-09-05** audit of current executable routes. Offers, quotas, access, data-use terms, and licenses change—check official pages again before creating a key or sending content.
-
-> AI Video Tutorial Generator is BYOK and includes no hosted AI allowance. NVIDIA NIM can reduce signup friction because one Developer API key covers several currently available prototype model families; Cohere, Gemini, speech, research, media, and local options are also documented. A free quota is not permission to upload private sources, free output may lack commercial rights, and every asset still needs provenance and export-clear rights.
-
-NVIDIA's hosted trial and its generated content are limited to internal testing
-and evaluation. The app allows those trial assets in private evaluation exports
-and blocks public distribution; the model license alone does not override the
-[API trial restrictions](https://assets.ngc.nvidia.com/products/api-catalog/legal/NVIDIA%20API%20Trial%20Terms%20of%20Service.pdf).
-
-Keys belong in the operating-system credential flow, never project files, `.env`, logs, screenshots, issues, or command-line arguments.
-
-## Installation and system requirements
-
-### End users
-
-There is no public 2.0 installer yet. The local RC still needs clean-machine install/update/rollback, runtime installation, model download, and signing verification. Do not redistribute an ad-hoc development package as a release.
-
-Planned Windows baseline:
-
-- 64-bit Windows 10/11 with WebView2;
-- 25 GiB free disk recommended; model packs may need much more;
-- 8 GiB RAM minimum for desktop/cloud work, 16 GiB or more recommended;
-- GPU optional; the reference local test machine uses an RTX 4080 Laptop GPU with 12 GB VRAM;
-- verified managed FFmpeg/ffprobe for final delivery.
-
-The app observes but never changes Windows/G-Helper power settings. Silent mode with CPU boost disabled is valid for functional work; peak benchmarks must record a deliberately selected profile.
-
-### Exact contributor toolchain
-
-[`runtime-manifest.json`](runtime-manifest.json) pins:
-
-| Tool | Required |
+| Path | Responsibility |
 | --- | --- |
-| Node.js | `24.20.0` |
-| pnpm | `10.15.1` |
-| Python | `3.12.13` |
-| uv | `0.12.7` |
-| Rust/Cargo | `1.96.1` with `clippy` and `rustfmt` |
-| Playwright/Chromium | `1.62.1` / revision `1234`, browser `151.0.7922.34` |
-| FFmpeg target | `9.0.1` LGPL core; optional separate GPL pack |
+| `apps/desktop` | React UI, Tauri host, native commands, downloads, and app lifecycle |
+| `packages/contracts` | Cross-language JSON Schema plus generated TypeScript, Python, and Rust bindings |
+| `packages/scenes` | Typed scene families, target-aware layout, and deterministic preview/render data |
+| `packages/themes` | Theme packs, starter kits, and the bundled presenter catalog |
+| `services/pipeline` | Projects, evidence, generation workflows, providers, presenter routing, QA, and exports |
+| `services/renderer` | Deterministic Chromium frames and media render planning |
+| `docs` | Architecture decisions, setup, provider policy, research, and acceptance evidence |
 
-**Current machine mismatch (observed 2026-08-28):** Windows has Node `20.20.2`, Python `3.12.2`, matching Rust/Cargo `1.96.1`, and a development FFmpeg build identified as `2023-07-19-git-efa6cec759-full_build-www.gyan.dev`; WSL has Python `3.12.3` but no Node/Rust on PATH. pnpm `10.15.1` is reachable through Windows Corepack, while `uv` is not globally on Windows PATH. The development render manifest therefore records Node `20.20.2`, not the pin. Install exact versions before reproducible RC verification. `--allow-version-mismatch` is a development escape hatch, not release evidence.
+The renderer does not receive unrestricted filesystem, process, network, or credential authority.
+The Rust host supervises private workers, and the Python pipeline is the only writer to a project's
+SQLite database. Binary artifacts are immutable SHA-256 objects; accepted changes create revisions.
 
-### One-command setup and development
+### Set up a development machine
 
-From PowerShell, after installing exact pins:
+Use Windows PowerShell with the exact versions in [`runtime-manifest.json`](runtime-manifest.json):
+Node.js 24.20.0, pnpm 10.15.1, Python 3.12.13, uv 0.12.7, and Rust 1.96.1 with
+`clippy` and `rustfmt`. Install Visual Studio C++ Build Tools and WebView2 as well.
 
 ```powershell
+corepack enable
+corepack prepare pnpm@10.15.1 --activate
 .\scripts\bootstrap.ps1 -Check
 .\scripts\bootstrap.ps1
+corepack pnpm doctor
 corepack pnpm dev
 ```
 
-`pnpm dev` launches the native Tauri shell and points its supervisor at the
-locked pipeline worker installed by setup; no second terminal is required. To
-check readiness without opening the app, run `node scripts/dev.mjs --check`.
-The browser-only interface remains available for UI work with
-`corepack pnpm dev:web`.
+`pnpm dev` starts the native Tauri app and its authenticated pipeline worker in one process tree.
+Use `node scripts/dev.mjs --check` for a headless readiness check or
+`corepack pnpm dev:web` for browser-only interface work.
 
-To produce the separate packaged development-worker smoke artifact:
+### Run checks
+
+```powershell
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm test
+corepack pnpm test:fixtures
+corepack pnpm test:e2e
+corepack pnpm render-test
+```
+
+Default tests use deterministic fixtures and do not prove a live provider, GPU route, native
+WebView2 flow, clean installation, or final media quality. Changes to those surfaces need their
+corresponding bounded native or live acceptance run and direct visual or audio inspection.
+
+### Build a local Windows candidate
 
 ```powershell
 .\scripts\build-windows-sidecar.ps1
+corepack pnpm package:desktop
 ```
 
-The sidecar command builds a local executable and SHA-256 file; it does not install/sign a production runtime, download model weights, change power settings, or publish anything.
+This creates local artifacts only. It does not publish a release, bundle model weights, or authorize
+distribution. Runtime packs and model downloads stay separately pinned and verified.
 
-```powershell
-corepack pnpm setup
-corepack pnpm doctor
-corepack pnpm lint
-corepack pnpm typecheck
-corepack pnpm test
-corepack pnpm test:fixtures
-corepack pnpm test:e2e
-corepack pnpm render-test
-corepack pnpm benchmark -- --estimate-only --power-profile Silent --cpu-boost disabled
-corepack pnpm build
-corepack pnpm package:desktop  # local artifact only
-```
+### Documentation
 
-See [Windows setup](docs/setup/windows.md) and [Troubleshooting](docs/troubleshooting.md).
+- [Documentation map](docs/README.md)
+- [Architecture overview](docs/architecture/overview.md)
+- [Project format](docs/architecture/project-format.md)
+- [Windows setup](docs/setup/windows.md)
+- [Rendering](docs/architecture/rendering.md)
+- [Provider and model policy](docs/providers/provider-and-model-policy.md)
+- [Security and privacy](docs/security/security-and-privacy.md)
+- [Accessibility](docs/accessibility.md)
+- [Testing and evaluation](docs/testing/evaluation.md)
+- [Contributing](docs/contributing.md)
+- [Release policy](docs/release-policy.md)
 
-## Project format and architecture
+### License
 
-```text
-Tutorial Project/
-  manifest.json
-  project.sqlite3
-  objects/sha256/ab/cdef…
-  sources/original/
-  staging/
-  exports/
-  backups/
-```
-
-SQLite is authoritative for entities, revisions, jobs, dependencies, usage, and QA. Binary artifacts are immutable SHA-256 objects. Accepting a candidate creates a revision; restoring creates a new head. `.alytutorial` archives are deterministic, path-safe, hash-checked bundles that omit credentials and absolute paths. Live write access on network/sync filesystems is rejected or opened read-only/local-copy. See [Project format](docs/architecture/project-format.md).
-
-```text
-React/Vite UI in Tauri
-        │ narrow typed commands/events
-        ▼
-Rust desktop broker
-  ├─ native project paths and identity
-  ├─ OS credential references
-  ├─ diagnostics and runtime manifests
-  └─ authenticated sidecar supervision
-        ▼
-Python pipeline — sole SQLite writer
-  ├─ projects, revisions, CAS, durable jobs
-  ├─ safe sources, research, providers, models
-  └─ QA, audio, presenters and bounded repair
-        ├─ TypeScript renderer + pinned Chromium
-        ├─ FFmpeg/ffprobe
-        └─ isolated parser/code/model workers
-```
-
-Workers receive immutable inputs and attempt staging; they never open the project database. JSON Schema 2020-12 guards process boundaries. The UI has no generic filesystem, database, secret, or shell bridge. See [Architecture](docs/architecture/overview.md).
-
-## Canonical examples
-
-[`fixtures/canonical`](fixtures/canonical) contains deterministic, offline, source-hashed fixtures for:
-
-- 12-minute undergraduate Karatsuba, including `1234 × 5678 = 7,006,652`;
-- binary-search trace and edge cases;
-- quadratic-formula derivation and substitution;
-- qualified French Revolution map/timeline;
-- document-grounded greenhouse effect;
-- synthetic statistics with exact summaries and no causal overclaim;
-- child-friendly equivalent fractions;
-- a three-lesson searching/sorting course;
-- English, Spanish, and Hindi parity variants.
-
-Each declares learners, objectives, claims, exact source locators, scenes, accessibility, targets, provenance, and release assertions. Local sources are SHA-256 pinned; external links are reviewer context, not runtime dependencies.
-
-## Tests and verification
-
-The repository contains TypeScript, Python, and Rust unit/contract/integration suites; durable job, archive, security, source, provider, model, audio, presenter, QA, and renderer tests; Playwright flows at 1440×960 and 860×900; deterministic fixtures; and CI definitions for Windows, Linux, and macOS.
-
-```powershell
-corepack pnpm doctor
-corepack pnpm lint
-corepack pnpm typecheck
-corepack pnpm test
-corepack pnpm test:fixtures
-corepack pnpm render-test
-corepack pnpm test:e2e
-node scripts/clean-machine-check.mjs
-```
-
-Visual claims require rendered evidence. The five README screenshots were captured from the running UI with Playwright in reduced-motion mode and checked for page/console errors. Final RC acceptance still requires exact pinned-runtime frames, audio measurements, crash injection, clean-machine packages, and human inspection of every canonical family. Current bounded live-provider results are recorded in the dated audit reports; historical screenshots are not evidence for newly integrated native behavior.
-
-Benchmarks never change Windows/G-Helper settings. Reports record power/boost, thermal/background context, runtime revisions, and comparability; constrained-mode numbers remain estimates.
-
-## Privacy, security, accessibility, and licensing
-
-- Fully Local denies project-content egress, remote render assets, analytics, and cloud fallback.
-- Secrets use the OS credential vault and opaque references.
-- URL fetching blocks loopback/private/link-local/metadata destinations and revalidates redirects.
-- In the 2.0 implementation, archives, documents, SVG, JSON, paths, and FFmpeg
-  arguments are bounded and validated; there are no interpolated shell
-  commands. The quarantined `legacy/v1` source is intentionally excluded from
-  this claim and must not be run.
-- Sources/models/assets record origin, hash, rights, attribution, ingredients, consent, provider/model revision, and C2PA state where available.
-- Unknown/restricted rights, missing attribution, or missing/revoked consent block incompatible export.
-- UI/media target WCAG 2.2 AA, keyboard use, non-color cues, reduced motion, captions, transcripts, descriptive output, and English/Spanish/Hindi verification.
-- AI Video Tutorial Generator source is [MIT](LICENSE). Libraries, FFmpeg builds, models, datasets, media, and provider output retain their own licenses.
-
-Read [Security and privacy](docs/security/security-and-privacy.md), [Accessibility](docs/accessibility.md), and [Release policy](docs/release-policy.md).
-
-## Troubleshooting and FAQ
-
-**Why does setup stop?** Exact versions and frozen locks are enforced. Run `corepack pnpm doctor`; use `--allow-version-mismatch` only for non-release development.
-
-**Why can I edit but not generate?** The supervised pipeline, compatible capability, FFmpeg runtime, or required approval may be absent. Diagnostics identifies the blocker.
-
-**Why is cloud blocked?** Check Local mode, credentials, provider/payload approval, retention freshness, account quota, region, capability, rights, and consent.
-
-**Why is export blocked?** Strict-mode support findings, rights, attribution, expiry, and consent are deliberate gates.
-
-**Can projects live in OneDrive/Dropbox/SMB/NFS?** Use read-only or a verified local copy, then transfer `.alytutorial`; live SQLite/WAL editing there is unsupported.
-
-**Do I need CPU boost?** No. Silent mode with boost disabled is valid; only labeled release benchmarks need an explicitly chosen stable performance profile.
-
-See [Troubleshooting](docs/troubleshooting.md).
-
-## Contributing, roadmap, and v1
-
-Read [Contributing](docs/contributing.md). Preserve local ownership, narrow privileges, deterministic fixtures, cloud approval, provenance, accessibility, and unrelated worktree changes. Public cross-language contracts belong in JSON Schema; visual work needs screenshots; audio needs measurements; provider facts need dated primary evidence.
-
-The [roadmap](docs/roadmap.md) covers ten gates through local RC hardening. [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) is the detailed ledger and may lag briefly during concurrent integration.
-
-| v1 prototype (`legacy/v1`) | AI Video Tutorial Generator 2.0 overhaul |
-| --- | --- |
-| Next.js form + manually started FastAPI | Tauri desktop + Rust broker + supervised pipeline |
-| Blocking `/videoCreate` | Durable jobs, dependencies, cancellation, approval, recovery |
-| Cohere + Edge TTS + SadTalker | Provider-neutral capability contracts and consent-aware routing |
-| Scraped Google images, no asset ledger | Cleared assets with provenance, rights, attribution, export gates |
-| 150-character chunks and random layouts | Stable typed scenes with objective/evidence links and responsive composition |
-| MoviePy assembly | Deterministic frames, pinned Chromium, FFV1/FFmpeg pipeline |
-| Timestamp folders | Local projects, SQLite revisions, CAS, `.alytutorial` |
-| Plaintext key workflow | OS credential-vault references |
-| No captions/citations/storyboard/history | Captions, claim support, five workspaces, revisions, partial invalidation |
-
-The tagged revision and three downloaded demo hashes are preserved in [`legacy/v1/DEMO_BASELINE.json`](legacy/v1/DEMO_BASELINE.json). They lack reproducible prompts, sources, storyboards, captions, provider metadata, and generation settings. No blind 2.0 superiority claim is made until evaluation is complete. Legacy assets remain quarantined because rights history is incomplete.
-
-## Release status
-
-The goal is a local Windows-first 2.0 RC with portable macOS/Linux build coverage. This worktree is **not an approved release**.
-
-Completion, green tests, a local installer, or silence does not authorize external action. The project must stop after producing the local evidence packet. **Do not push, merge, publish, deploy, sign a production feed, create a public release, or announce AI Video Tutorial Generator without explicit owner approval.**
+The application's original code and artwork are released under the [MIT License](LICENSE).
+Dependencies, model weights, datasets, fonts, provider services, stock media, and generated output
+retain their own licenses and terms. Review those terms before redistributing a complete build or
+its output.

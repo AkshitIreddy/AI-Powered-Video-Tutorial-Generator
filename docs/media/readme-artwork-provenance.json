@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-20",
+  "tool": "OpenAI image_gen built-in",
+  "asset": "ai-video-tutorial-banner.png",
+  "kind": "original illustrative artwork; not an application screenshot",
+  "prompt": "Use case: ads-marketing. Asset type: wide illustrated GitHub README hero banner for AI Video Tutorial Generator, a Windows app for creating editable educational videos. Primary request: an inviting, beautifully art-directed teaching studio where an idea becomes a sequence of clear illustrated lesson frames. Wide panoramic 3:1 composition, high resolution. A long warm pale-wood workbench stretches across the scene; at center, a graceful ribbon of cream storyboard cards curves from an open notebook into a large dark plum rounded video frame showing a simple sun-and-sky science diagram. A friendly original adult woman creator in a casual rust knit sweater sits at the left, seen three-quarter side while arranging cards; at right a small expressive orange cartoon cat in a muted teal hoodie helps with a paper diagram. The people/character are charming supporting figures, not portraits filling the image. Include thoughtful teaching details: a tidy purple timeline of clip blocks along the desk edge, a small microphone, a few colored pencils, stacked books, leafy plant. The diagram should be simple colored light rays and sky, no equations or text. Style: sophisticated hand-painted editorial gouache with crisp cut-paper shapes, fine paper grain, dimensional warm lighting, soft shadows; cohesive, elegant, playful but not childish or generic. Palette warm ivory, aubergine, muted lavender, apricot and teal; generous breathing room, warm cream background merging into a softly lit studio. Visual hierarchy clear and uncluttered. No written text, letters, logos, watermarks, badges, app-interface mockups, photorealistic faces, suits, religious symbols, or fake screenshots. This is original illustrative brand artwork, not a literal screen capture.",
+  "sourceFilename": "exec-569a2543-ef61-4e75-af9d-85cb1b09290a.png",
+  "originalBytesPreserved": true,
+  "sha256": "0af64c7bc67f06a8228e3b881f237666f9b8eeb1683e1333b46c52e81433f2fd"
+}
