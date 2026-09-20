@@ -390,6 +390,40 @@ def test_activate_builds_pinned_children_and_preserves_primary_config(installer,
     assert (paths["destination"] / "install-receipt.json").is_file()
 
 
+def test_verified_existing_result_enumerates_current_requested_routes(
+    installer, tmp_path: Path
+):
+    paths = _fixture(tmp_path)
+    first = installer.activate(_plan(installer, paths), "copy")
+    installed_receipt = paths["destination"] / installer.RECEIPT_NAME
+    immutable_receipt = installed_receipt.read_bytes()
+    routes = json.loads(paths["routes"].read_text(encoding="utf-8"))
+    added = {
+        "runtime": "human",
+        "profileId": "presenter-portrait.optional-added",
+        "portraitArtifactHash": f"{99:064x}",
+        "subjectId": "fictional-synthetic-optional-added",
+    }
+    routes["routes"].append(added)
+    _write_json(paths["routes"], routes)
+
+    result = installer.activate(_plan(installer, paths), "copy")
+
+    assert result["runtimeAction"] == "verified-existing"
+    assert result["primaryConfigAction"] == "updated"
+    assert result["routes"] == first["routes"]
+    assert len(result["routes"]) == 8
+    assert result["requestedRouteCount"] == 9
+    assert len(result["requestedRoutes"]) == 9
+    assert result["requestedRoutes"][-1] == {
+        "runtime": "human",
+        "profileId": added["profileId"],
+        "portraitArtifactHash": added["portraitArtifactHash"],
+        "relativeConfigPath": "Presenter/JoyVASA/joy-human.json",
+    }
+    assert installed_receipt.read_bytes() == immutable_receipt
+
+
 def test_repeated_activation_verifies_existing_pack_without_new_backup(installer, tmp_path: Path):
     paths = _fixture(tmp_path)
     plan = _plan(installer, paths)

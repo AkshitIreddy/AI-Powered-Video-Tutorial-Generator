@@ -999,6 +999,26 @@ def _desired_primary_config(plan: InstallPlan) -> tuple[dict[str, Any], bool]:
     return updated, _canonical_json(updated) != _canonical_json(current)
 
 
+def _requested_route_entries(plan: InstallPlan) -> list[dict[str, str]]:
+    relative_root = plan.destination.relative_to(plan.primary_config.parent.resolve(strict=True))
+    return [
+        {
+            "runtime": route.runtime,
+            "profileId": route.profile["profileId"],
+            "portraitArtifactHash": route.profile["portraitArtifactHash"],
+            "relativeConfigPath": (
+                relative_root / CHILD_CONFIGS[route.runtime]
+            ).as_posix(),
+            **(
+                {"priorPortraitArtifactHash": route.prior_portrait_artifact_hash}
+                if route.prior_portrait_artifact_hash is not None
+                else {}
+            ),
+        }
+        for route in plan.routes
+    ]
+
+
 def _backup_path(path: Path, stamp: str) -> Path:
     base = path.with_name(f"{path.name}.backup-{stamp}")
     candidate = base
@@ -1056,6 +1076,7 @@ def activate(plan: InstallPlan, transfer: str) -> dict[str, Any]:
                 "primaryConfigBackup": str(primary_backup) if primary_backup else None,
                 "replacedRuntimeBackup": str(destination_backup) if destination_backup else None,
                 "requestedRouteCount": len(plan.routes),
+                "requestedRoutes": _requested_route_entries(plan),
             }
         )
         return result
