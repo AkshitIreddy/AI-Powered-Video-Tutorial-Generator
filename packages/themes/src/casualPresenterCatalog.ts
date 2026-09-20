@@ -250,14 +250,14 @@ function catalogPresenter(id: CasualPresenterId, details: CasualPresenterCatalog
 
 const MUSETALK_REVIEWED_IDS = new Set<CasualPresenterId>([
   "presenter-portrait.casual-realistic-emma-v1",
-  "presenter-portrait.casual-anime-yuki-v1",
   "presenter-portrait.casual-realistic-noah-v1",
   "presenter-portrait.casual-realistic-maya-v1",
-  "presenter-portrait.casual-anime-lena-v1",
 ]);
 
 const JOYVASA_REVIEWED_IDS = new Set<CasualPresenterId>([
+  "presenter-portrait.casual-anime-yuki-v1",
   "presenter-portrait.casual-cartoon-chloe-v1",
+  "presenter-portrait.casual-anime-lena-v1",
   "presenter-portrait.casual-anime-finn-v2",
   "presenter-portrait.casual-cartoon-robot-pip-v1",
   "presenter-portrait.animal-cat-milo-v1",
@@ -303,6 +303,10 @@ function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncRevi
         ? "The human-face MuseTalk route is not valid for this animal portrait. Use a separately reviewed animal route."
         : plan.styleGroup === "Character"
           ? "The human-face MuseTalk route did not produce a valid result for this character portrait."
+          : plan.id === "presenter-portrait.casual-anime-yuki-v1"
+            ? "Root and independent dense visual review rejected Yuki's native MuseTalk render because a soft realistic lip patch broke the portrait's anime linework. Keep this static portrait off MuseTalk."
+          : plan.id === "presenter-portrait.casual-anime-lena-v1"
+            ? "Root and independent dense visual review rejected Lena's native MuseTalk render because an inpainted realistic lip-and-teeth patch broke the portrait's hand-painted anime style. Keep this static portrait off MuseTalk."
           : plan.id === "presenter-portrait.casual-cartoon-chloe-v1"
             ? "The owner rejected Chloe's native MuseTalk render after dense review because the animated lips were visibly distorted. Keep this static portrait off MuseTalk."
           : plan.id === "presenter-portrait.casual-anime-finn-v2"
@@ -321,6 +325,10 @@ function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncRevi
     notes: joyVasaReviewed
       ? plan.id === "presenter-portrait.casual-anime-finn-v2"
         ? "Primary and held-out short narration renders on the pinned installed route preserved the illustrated face, placed speech at the real mouth, and returned to a closed mouth during detected silence on 2026-09-20. This is bounded evidence, not a claim about every phoneme."
+        : plan.id === "presenter-portrait.casual-anime-yuki-v1"
+          ? "Primary and held-out short narration renders on the pinned installed JoyVASA human route kept one coherent illustrated mouth, preserved the mouth corners and surrounding skin, and closed during a held-out 1.47–2.58-second silence in root and independent review on 2026-09-20. Expressions are broad and the mouth can remain slightly parted near speech onset; this does not guarantee sub-130 ms closures or every phoneme."
+        : plan.id === "presenter-portrait.casual-anime-lena-v1"
+          ? "Primary and held-out short narration renders on the pinned installed JoyVASA human route kept one coherent painted mouth without a soft human lip patch, preserved stable corners, and closed during a held-out 1.47–2.58-second silence in root and independent review on 2026-09-20. Openings can be broad; this does not guarantee tiny-gap closures or every phoneme."
         : plan.id === "presenter-portrait.casual-cartoon-chloe-v1"
           ? "Primary and held-out short narration renders on the pinned installed JoyVASA human route kept the mouth corners coherent, preserved sharp cartoon shading, and closed during silence in owner and independent review on 2026-09-20. Peak teeth can look mildly jagged, so this is not a universal phoneme claim."
         : plan.styleGroup === "Animal"
