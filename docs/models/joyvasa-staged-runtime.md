@@ -92,11 +92,14 @@ python scripts/prepare-joyvasa-presenter-runtime.py `
 The candidate evidence manifest must hash to
 `cd22d9e2d97162e1a99201a329dd436c19984f3e64123ba4674c3d6ac4df4ff6`.
 The curated install manifest must hash to
-`06d4efa48b45102d175dccc6411339f74b66567639654b59a9ae35e939609951`.
-This supersedes the first activated manifest (`2d9dc173…`), which omitted the two
-upstream `InferenceConfig` resources discovered by the first strict broker probe. The
-superseding manifest pins `lip_array.pkl` and `mask_template.png`; both are byte-identical
-to their blobs in JoyVASA source commit `916a90f8de490e8648fee460c1200bd5d9a795af`.
+`debcfe64d43d790f064139505c9a57e7940fc452151aa0dd482bb725b88ac768`.
+This supersedes the first activated manifest (`2d9dc173…`), which omitted two upstream
+`InferenceConfig` resources, and the resource-complete manifest (`06d4efa4…`), whose
+adapter placed intermediate files in the delivery directory. The current manifest pins
+`lip_array.pkl` and `mask_template.png`, both byte-identical to their blobs in JoyVASA
+source commit `916a90f8de490e8648fee460c1200bd5d9a795af`. It also pins the repository worker and
+adapter from commit `04547f1a9d951a9e509074c8b1832bb8eec08c57`, which keeps intermediates under the
+declared job workspace and reserves the delivery directory for its one declared output.
 Review the dry-run receipt before activation. Activation is the same command with
 `--activate` in place of `--dry-run`:
 

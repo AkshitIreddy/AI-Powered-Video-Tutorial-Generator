@@ -166,5 +166,23 @@
       "gitBlob": "bca6ca5977ba820d0d2c05b3793c6231cc82e715",
       "purpose": "Loaded by InferenceConfig as the crop mask template."
     }
-  ]
+  ],
+  "repositoryRuntimeSources": {
+    "revision": "04547f1a9d951a9e509074c8b1832bb8eec08c57",
+    "files": [
+      {
+        "path": "services/pipeline/scripts/local_presenter_worker.py",
+        "installPath": "worker/local_presenter_worker.py",
+        "bytes": 14916,
+        "sha256": "16f9c1282d5f89be2ae0cdd3189b479f6cb08c53d1b52965adf549d177d8f8b3"
+      },
+      {
+        "path": "services/pipeline/scripts/joyvasa_presenter_adapter.py",
+        "installPath": "worker/joyvasa_presenter_adapter.py",
+        "bytes": 14279,
+        "sha256": "3be34879f818cedd5624c7f0ea295be5b64056d9d0fd7dba82cc986fb7800fb2"
+      }
+    ],
+    "reason": "Broker workspace identity and adapter intermediate outputs are isolated under the declared job workspace, leaving the delivery directory with only the declared output."
+  }
 }

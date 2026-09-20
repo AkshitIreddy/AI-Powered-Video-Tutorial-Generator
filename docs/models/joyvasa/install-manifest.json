@@ -714,15 +714,15 @@
       "origin": "repository",
       "sourcePath": "services/pipeline/scripts/local_presenter_worker.py",
       "installPath": "worker/local_presenter_worker.py",
-      "bytes": 14256,
-      "sha256": "07c3d0199f119f63fda9ef793e3cb90b265f4a7b3811fa37b89d6c4aa33029f9"
+      "bytes": 14916,
+      "sha256": "16f9c1282d5f89be2ae0cdd3189b479f6cb08c53d1b52965adf549d177d8f8b3"
     },
     {
       "origin": "repository",
       "sourcePath": "services/pipeline/scripts/joyvasa_presenter_adapter.py",
       "installPath": "worker/joyvasa_presenter_adapter.py",
-      "bytes": 13594,
-      "sha256": "f89df691fe4d19e58d2ef7b2c52e82fb607d38adb6f84bbf6724e5c2f9b96f74"
+      "bytes": 14279,
+      "sha256": "3be34879f818cedd5624c7f0ea295be5b64056d9d0fd7dba82cc986fb7800fb2"
     }
   ],
   "trees": [

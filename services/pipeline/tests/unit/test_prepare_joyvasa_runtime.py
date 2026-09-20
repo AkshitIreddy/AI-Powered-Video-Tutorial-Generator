@@ -493,7 +493,7 @@ def test_tracked_curated_manifest_is_machine_independent_and_pins_repo_sources()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     serialized = manifest_path.read_text(encoding="utf-8")
 
-    assert _digest(manifest_path) == "06d4efa48b45102d175dccc6411339f74b66567639654b59a9ae35e939609951"
+    assert _digest(manifest_path) == "debcfe64d43d790f064139505c9a57e7940fc452151aa0dd482bb725b88ac768"
     assert manifest["candidateEvidence"]["sha256"] == (
         "cd22d9e2d97162e1a99201a329dd436c19984f3e64123ba4674c3d6ac4df4ff6"
     )
