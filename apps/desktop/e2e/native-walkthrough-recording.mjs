@@ -1441,8 +1441,8 @@ $selected = $secondary[0]
 $work = $selected.WorkingArea
 $handle = [AlystriaRecordingWindow]::FindForProcess($ownedPid)
 if ($handle -eq [IntPtr]::Zero) { throw 'Owned native process has no top-level window.' }
-$null = [AlystriaRecordingWindow]::ShowWindow($handle, 5)
-[Threading.Thread]::Sleep(250)
+# The first SetWindowPos includes SWP_SHOWWINDOW, so reveal the owned window
+# only after moving it inside the secondary screen's working area.
 $window = New-Object AlystriaRecordingWindow+Rect
 $client = New-Object AlystriaRecordingWindow+Rect
 $provisionalWidth = [Math]::Min(1280, $work.Width - 96)
