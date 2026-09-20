@@ -141,15 +141,17 @@
     "videoHookContract": "Patch images2video and add_audio_to_video in the selected pipeline module, where they are imported and bound at module scope."
   },
   "qualificationBounds": {
-    "state": "eight-presenter-sampled-visual-pass",
+    "state": "installed-short-sample-pass-with-finn-v2-replacement",
     "acceptedBounds": "Sampled visual qualification only: correct lower-face animation, stable noses/identity/style, and closed sampled silence frames.",
     "limitations": [
       "The 8-frame offset was measured on one narration and is not general phoneme-level synchronization proof.",
       "Sampling does not prove every frame or dense full-speed motion quality.",
-      "Strict broker output and a held-out accepted narration remain required before activation.",
+      "Installed strict outputs passed for seven animal/character portraits and corrected Finn v2. Finn v2 and Buddy also passed a second narration; full-speed every-frame naturalness and arbitrary-audio phoneme accuracy remain unqualified.",
       "The JoyVASA motion-generator checkpoint is executable PyTorch pickle data; keep it pinned and hash-verified."
     ],
-    "firstBrokerFinding": "The first activated pack omitted two InferenceConfig resources. Both files are byte-identical to JoyVASA source commit 916a90f8 and are pinned in the superseding curated manifest."
+    "firstBrokerFinding": "The first activated pack omitted two InferenceConfig resources. Both files are byte-identical to JoyVASA source commit 916a90f8 and are pinned in the superseding curated manifest.",
+    "initialCandidateVerdict": "The initial eight-candidate coarse-board pass was superseded for Finn v1 after dense installed-output inspection found a second-mouth mapping error.",
+    "finalQualificationRecord": "docs/research/casual-presenter-qualification-2026-09-20.md"
   },
   "runtimeResources": [
     {

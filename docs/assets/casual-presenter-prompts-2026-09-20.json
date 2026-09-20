@@ -85,6 +85,24 @@
       "prompt": "Use case: stylized-concept. Asset type: square animal tutorial presenter portrait. One original friendly anthropomorphic LION tutor with warm golden fur and a tidy rounded chestnut mane, expressive amber-brown eyes, recognizable cream muzzle and broad brown nose, clearly readable gently CLOSED mouth below nose, calm thoughtful expression. Casual sage-green crewneck sweater. Distinctive high-end soft sculpted clay-animation aesthetic, tactile felt-like mane and warm matte surfaces, appealing adult animal mentor personality. Front-facing chest-up centered with level head/shoulders, entire mane with generousmargin, paws out of frame. Softly simplified cozy library-study background with warm ochre shelves, blue books without writing and daylight. Single lion, square1024x1024. No roar/teeth/tongue, no text/logos/watermark/suits/religious symbols.",
       "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-6158b248-474d-4771-829b-517e2fab0357.png",
       "path": "apps/desktop/src/assets/presenters/animal-lion-leo-v1.png"
+    },
+    {
+      "id": "casual-anime-finn-v2",
+      "path": "apps/desktop/src/assets/presenters/casual-anime-finn-v2.png",
+      "sourcePath": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-2f7f5348-5857-46ea-ab66-bfa8d4d55286.png",
+      "sha256": "74d2677cf5666de2bf2702da0ea24703d636dbcc121fa28735e20bfde86e43a1",
+      "supersedes": "casual-anime-finn-v1",
+      "reason": "Dense strict-broker review showed v1 animating the separate chin shadow as a second mouth. Preserve v1 only as a hidden static legacy asset.",
+      "editSteps": [
+        {
+          "input": "apps/desktop/src/assets/presenters/casual-anime-finn-v1.png",
+          "output": "C:\\Users\\akshi\\.codex\\generated_images\\01a06fb3-fc39-7fe1-baeb-8dea43a738f4\\exec-e44a4844-23ee-4412-8bca-0cdb327934af.png",
+          "prompt": "Use case: identity-preserve. Edit target: the supplied original fictional anime adult male tutor Finn. Create a corrected square portrait for audio-driven talking-head animation. Keep his identity, blond hair, blue eyes, adult age, navy casual hoodie, white T-shirt, cel-anime illustration style, warm electronics workshop, framing and lighting unchanged. Change only his head alignment and mouth drawing: face should be exactly straight toward the camera without tilt; give him ONE unmistakable natural anatomically positioned mouth with softly defined upper and lower lips, relaxed neutral expression, lips very slightly parted, tiny narrow dark interior at the actual mouth opening, no teeth. Crucially REMOVE the separate brown/black lower-lip shadow or dash beneath the current smiling mouth: the chin area below the single mouth must be plain continuous skin with no separate mark, no soul-patch, no dark oval. Keep it clearly illustrated anime, not photorealistic. Symmetric front-facing mouth suitable for a lip-sync model. No text, logos, watermarks, suit, or accessories."
+        },
+        {
+          "prompt": "Precise tiny image edit. Keep this image EXACTLY unchanged everywhere except for the isolated brown crescent/dash on the chin immediately BELOW the mouth. REMOVE that separate brown crescent entirely and fill its pixels with the surrounding plain peach skin color. The mark is centered horizontally at about x=610, y=553 in this 1254x1254 image; it is NOT the actual mouth at y=523. Keep the real slightly open mouth at y=523 exactly unchanged. There must be no lower-lip shadow, separate dash, soul patch, line, oval or any other marking between the real mouth and the bottom of the chin. Completely plain unmarked skin below the real mouth. Preserve the entire rest: face identity, mouth opening, nose, eyes, hair, clothes, workshop, composition and anime style. Do not add text."
+        }
+      ]
     }
   ]
 }
