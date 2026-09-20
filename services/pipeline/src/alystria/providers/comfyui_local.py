@@ -597,6 +597,21 @@ class ComfyUiLocalAdapter:
         )
 
 
+def _runtime_process_path(path: Path) -> str:
+    """Keep verbatim Windows prefixes out of the child process cwd.
+
+    Rust canonicalization sends verbatim paths. Python 3.13's ntpath treats
+    ``/`` as an incomplete UNC root under that cwd, breaking ComfyUI's
+    checkpoint lookup. Verification still uses the original canonical paths.
+    """
+    value = str(path)
+    if value[:8].casefold() == "\\\\?\\unc\\":
+        return "\\\\" + value[8:]
+    if value.startswith("\\\\?\\") and re.match(r"^[A-Za-z]:[\\/]", value[4:]):
+        return value[4:]
+    return value
+
+
 class ComfyUiRuntime(AbstractContextManager[ComfyUiLocalAdapter]):
     """Supervise one hidden loopback runtime and release the shared GPU lock."""
 
@@ -646,7 +661,7 @@ class ComfyUiRuntime(AbstractContextManager[ComfyUiLocalAdapter]):
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             self.process = subprocess.Popen(
                 (
-                    str(layout.python_executable),
+                    _runtime_process_path(layout.python_executable),
                     "main.py",
                     "--listen",
                     "127.0.0.1",
@@ -656,7 +671,7 @@ class ComfyUiRuntime(AbstractContextManager[ComfyUiLocalAdapter]):
                     "--disable-api-nodes",
                     "--lowvram",
                 ),
-                cwd=layout.comfy_root,
+                cwd=_runtime_process_path(layout.comfy_root),
                 env=environment,
                 stdin=subprocess.DEVNULL,
                 stdout=self.log_handle,

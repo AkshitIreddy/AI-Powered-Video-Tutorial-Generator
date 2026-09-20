@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import binascii
+import os
 import struct
 import subprocess
+import sys
 import zlib
 from pathlib import Path
 from typing import Any
@@ -32,6 +34,7 @@ from alystria.providers.comfyui_local import (
     ComfyUiRuntime,
     DownloadFile,
     _download_verified,
+    _runtime_process_path,
     build_sdxl_workflow,
 )
 from alystria.providers.errors import FailureCode, ProviderFailure
@@ -491,3 +494,25 @@ def test_complete_manual_runtime_layout_remains_an_atomic_pair(tmp_path: Path) -
     assert installer.comfy_root == manual_comfy
     assert installer.python_executable == manual_python
     assert installer.preflight(SDXL_MODEL_ID)["runtimeReady"] is True
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows child cwd semantics")
+def test_verbatim_runtime_cwd_keeps_checkpoint_lookup_on_the_drive(tmp_path: Path) -> None:
+    # Exercise the same root-relative expression used by ComfyUI, in a real
+    # hidden Python child. A verbatim cwd makes it fail with a UNC mount error.
+    canonical = Path("\\\\?\\" + str(tmp_path.resolve()))
+    result = subprocess.run(
+        [
+            _runtime_process_path(Path("\\\\?\\" + sys.executable)),
+            "-c",
+            "import os; print(os.path.relpath(os.path.join('/', 'checkpoint.safetensors'), '/'))",
+        ],
+        cwd=_runtime_process_path(canonical),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        check=True,
+    )
+    assert result.stdout.strip() == "checkpoint.safetensors"
+    assert _runtime_process_path(Path(r"\\?\UNC\server\share\ComfyUI")) == r"\\server\share\ComfyUI"
