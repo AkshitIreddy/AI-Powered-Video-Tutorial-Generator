@@ -538,6 +538,8 @@ pub struct SceneRegenerationRequest {
     #[serde(default)]
     pub role: VisualCandidateRole,
     #[serde(default)]
+    pub presenter_display_name: Option<String>,
+    #[serde(default)]
     pub edit_focus: Option<SceneEditFocus>,
     #[serde(default)]
     pub seed: Option<u64>,
@@ -589,6 +591,44 @@ pub struct SceneEditCandidateDecisionReceipt {
     pub preservation_locks: Vec<String>,
     #[serde(default)]
     pub original_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresenterAnimationPreviewRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub base_revision_id: String,
+    pub profile_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresenterAnimationPreviewDecisionRequest {
+    pub project_id: Uuid,
+    pub project_directory: PathBuf,
+    pub expected_head_revision_id: String,
+    pub preview_id: String,
+    #[serde(default)]
+    pub entry_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresenterAnimationPreviewDecisionReceipt {
+    pub project_id: Uuid,
+    pub head_revision_id: String,
+    pub revision_number: u64,
+    pub preview_id: String,
+    pub status: String,
+    pub profile_id: String,
+    pub portrait_artifact_hash: String,
+    pub output_artifact_hash: String,
+    pub engine_id: String,
+    pub model_revision: String,
+    pub worker_contract_id: String,
+    #[serde(default)]
+    pub accepted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

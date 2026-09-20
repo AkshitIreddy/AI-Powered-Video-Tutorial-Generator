@@ -44,6 +44,7 @@ export interface VisualCandidate {
   provider: string;
   seed: number;
   role: "scene" | "presenter";
+  displayName?: string;
   createdAt: string;
   origin?: "aiGenerated" | "licensedMedia";
   error?: string;
@@ -121,7 +122,7 @@ export function visualCandidates(value: unknown): VisualCandidate[] {
       && Number.isSafeInteger(candidate.seed)
       && boundedText(candidate.createdAt, 100)
       && (origin === "aiGenerated" || origin === "licensedMedia");
-    if (!baseValid) return false;
+    if (!baseValid || (candidate.role === "presenter" && !boundedText(candidate.displayName, 120))) return false;
     return origin === "licensedMedia" ? licensedDetails(candidate) : true;
   });
 }

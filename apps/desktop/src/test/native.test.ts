@@ -22,6 +22,14 @@ import {
   projectHistoryUndo,
   projectSnapshotGet,
   projectSnapshotSave,
+  presenterLibraryAddToProject,
+  presenterLibraryImport,
+  presenterLibraryList,
+  presenterLibraryPromote,
+  presenterLibraryResolve,
+  presenterAnimationPreviewAccept,
+  presenterAnimationPreviewReject,
+  presenterAnimationPreviewStart,
   providerSecretSet,
   providerSecretStatus,
   providerRoutingPolicyGet,
@@ -47,6 +55,30 @@ describe("native desktop bridge", () => {
     await catalogDiscover(input);
 
     expect(tauri.invoke).toHaveBeenCalledWith("catalog_discover", { input });
+  });
+
+  it("uses exact native presenter-library command envelopes", async () => {
+    const portrait = { filename: "nova.png", mimeType: "image/png", rights: { status: "owned" as const, commercialUse: "allowed" as const, redistribution: "allowed" as const, modelInput: "allowed" as const }, presenter: { identityType: "synthetic" as const, displayName: "Nova", syntheticOriginAttested: true, selectAfterImport: false }, contentBase64: "cG5n" };
+    const project = { projectId: "018f0000-0000-7000-8000-000000000001", projectDirectory: "C:/Projects/Nova" };
+    tauri.invoke.mockResolvedValue({});
+    await presenterLibraryList();
+    await presenterLibraryImport(portrait);
+    await presenterLibraryResolve("custom-presenter-abc");
+    await presenterLibraryPromote({ ...project, artifactHash: "a".repeat(64), displayName: "Nova", providerId: "gemini", model: "imagen", prompt: "Fictional teacher", seed: 42, candidateId: "candidate-1" });
+    await presenterLibraryAddToProject({ ...project, entryId: "custom-presenter-abc", expectedHeadRevisionId: "revision-1" });
+    await presenterAnimationPreviewStart({ ...project, baseRevisionId: "revision-2", profileId: "profile-nova" });
+    await presenterAnimationPreviewAccept({ ...project, expectedHeadRevisionId: "revision-3", previewId: "presenter-preview-abc", entryId: "custom-presenter-abc" });
+    await presenterAnimationPreviewReject({ ...project, expectedHeadRevisionId: "revision-3", previewId: "presenter-preview-abc" });
+    expect(tauri.invoke.mock.calls).toEqual([
+      ["presenter_library_list", undefined],
+      ["presenter_library_import", { input: portrait }],
+      ["presenter_library_resolve", { input: { entryId: "custom-presenter-abc" } }],
+      ["presenter_library_promote", { input: expect.objectContaining({ candidateId: "candidate-1" }) }],
+      ["presenter_library_add_to_project", { input: expect.objectContaining({ entryId: "custom-presenter-abc", expectedHeadRevisionId: "revision-1" }) }],
+      ["presenter_animation_preview_start", { input: expect.objectContaining({ profileId: "profile-nova", baseRevisionId: "revision-2" }) }],
+      ["presenter_animation_preview_accept", { input: expect.objectContaining({ previewId: "presenter-preview-abc", entryId: "custom-presenter-abc" }) }],
+      ["presenter_animation_preview_reject", { input: expect.objectContaining({ previewId: "presenter-preview-abc" }) }],
+    ]);
   });
 
   it("keeps browser catalog pagination on the selected provider origin", async () => {

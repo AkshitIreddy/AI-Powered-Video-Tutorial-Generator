@@ -1,0 +1,61 @@
+.presenter-animation-review {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--indigo) 24%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--indigo) 4%, var(--surface));
+  color: var(--ink);
+}
+
+.presenter-animation-review__heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.presenter-animation-review__heading > span {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--indigo);
+  background: color-mix(in srgb, var(--indigo) 12%, transparent);
+}
+
+.presenter-animation-review__heading div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.presenter-animation-review__heading small,
+.presenter-animation-review__identity,
+.presenter-animation-review p {
+  color: var(--muted);
+}
+
+.presenter-animation-review video {
+  display: block;
+  width: min(100%, 620px);
+  max-height: 360px;
+  border-radius: 12px;
+  background: #111;
+}
+
+.presenter-animation-review p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.presenter-animation-review__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.presenter-animation-review__identity {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}

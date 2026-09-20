@@ -1,5 +1,6 @@
 use crate::diagnostics;
 use crate::error::CommandError;
+use crate::presenter_library::{PresenterAnimationAcceptance, PresenterAnimationAcceptanceState};
 use crate::project_store::ProjectStore;
 use crate::sidecar::WorkerTransport;
 use crate::state::AppState;
@@ -300,6 +301,15 @@ pub fn scene_regenerate(
     )?;
     input.scene_id = validation::stable_id(&input.scene_id, "sceneId")?;
     input.instruction = validation::bounded_text(&input.instruction, "instruction", 4_000)?;
+    if let Some(display_name) = &mut input.presenter_display_name {
+        if input.role != VisualCandidateRole::Presenter {
+            return Err(CommandError::invalid(
+                "presenterDisplayName",
+                "is only valid for presenter portraits",
+            ));
+        }
+        *display_name = validation::bounded_text(display_name, "presenterDisplayName", 120)?;
+    }
     if input.seed.is_some_and(|seed| seed > i64::MAX as u64) {
         return Err(CommandError::invalid(
             "seed",
@@ -536,6 +546,128 @@ pub fn music_candidate_reject(
         *reason = validation::bounded_text(reason, "reason", 500)?;
     }
     music_candidate_decision(input, "control.rejectMusicCandidate", "rejected", &state)
+}
+
+#[tauri::command]
+pub fn presenter_animation_preview_start(
+    mut input: PresenterAnimationPreviewRequest,
+    state: State<'_, AppState>,
+) -> Result<JobReceipt, CommandError> {
+    verify_control_identity(
+        &state,
+        input.project_id,
+        &input.project_directory,
+        &input.base_revision_id,
+    )?;
+    input.profile_id = validation::stable_id(&input.profile_id, "profileId")?;
+    control_action(input, "control.previewPresenterAnimation", &state)
+}
+
+#[tauri::command]
+pub fn presenter_animation_preview_accept(
+    input: PresenterAnimationPreviewDecisionRequest,
+    state: State<'_, AppState>,
+) -> Result<PresenterAnimationPreviewDecisionReceipt, CommandError> {
+    presenter_animation_preview_decision(
+        input,
+        "control.acceptPresenterAnimationPreview",
+        "accepted",
+        true,
+        &state,
+    )
+}
+
+#[tauri::command]
+pub fn presenter_animation_preview_reject(
+    input: PresenterAnimationPreviewDecisionRequest,
+    state: State<'_, AppState>,
+) -> Result<PresenterAnimationPreviewDecisionReceipt, CommandError> {
+    presenter_animation_preview_decision(
+        input,
+        "control.rejectPresenterAnimationPreview",
+        "rejected",
+        false,
+        &state,
+    )
+}
+
+fn presenter_animation_preview_decision(
+    mut input: PresenterAnimationPreviewDecisionRequest,
+    method: &str,
+    expected_status: &str,
+    update_library: bool,
+    state: &State<'_, AppState>,
+) -> Result<PresenterAnimationPreviewDecisionReceipt, CommandError> {
+    state
+        .projects
+        .verify_identity(&input.project_directory, input.project_id)?;
+    input.expected_head_revision_id = validation::bounded_text(
+        &input.expected_head_revision_id,
+        "expectedHeadRevisionId",
+        128,
+    )?;
+    input.preview_id = validation::stable_id(&input.preview_id, "previewId")?;
+    if let Some(entry_id) = &mut input.entry_id {
+        *entry_id = validation::stable_id(entry_id, "entryId")?;
+    }
+    let worker_payload = serde_json::json!({
+        "projectId": input.project_id,
+        "projectDirectory": &input.project_directory,
+        "expectedHeadRevisionId": &input.expected_head_revision_id,
+        "previewId": &input.preview_id,
+    });
+    let receipt: PresenterAnimationPreviewDecisionReceipt =
+        worker_result(&state.worker, method, &worker_payload)?;
+    if receipt.project_id != input.project_id
+        || receipt.preview_id != input.preview_id
+        || receipt.status != expected_status
+    {
+        return Err(CommandError::worker(
+            "The pipeline returned a mismatched presenter preview receipt.",
+            false,
+        ));
+    }
+    validation::stable_id(&receipt.head_revision_id, "headRevisionId")?;
+    validation::stable_id(&receipt.profile_id, "profileId")?;
+    validate_sha256(&receipt.portrait_artifact_hash, "portraitArtifactHash")?;
+    validate_sha256(&receipt.output_artifact_hash, "outputArtifactHash")?;
+    if receipt.engine_id != "soulx-flashhead-pro"
+        || receipt.worker_contract_id != "alystria.soulx-flashhead.worker.v1"
+    {
+        return Err(CommandError::worker(
+            "The pipeline returned an unsupported presenter runtime identity.",
+            false,
+        ));
+    }
+    validation::bounded_text(&receipt.model_revision, "modelRevision", 500)?;
+    if update_library {
+        let entry_id = input.entry_id.as_deref().ok_or_else(|| {
+            CommandError::invalid(
+                "entryId",
+                "is required when accepting a saved presenter preview",
+            )
+        })?;
+        let accepted_at = receipt.accepted_at.ok_or_else(|| {
+            CommandError::worker(
+                "The accepted presenter preview omitted its review timestamp.",
+                false,
+            )
+        })?;
+        state.presenter_library.accept_animation_review(
+            entry_id,
+            PresenterAnimationAcceptance {
+                status: PresenterAnimationAcceptanceState::Accepted,
+                preview_id: receipt.preview_id.clone(),
+                portrait_artifact_hash: receipt.portrait_artifact_hash.clone(),
+                output_artifact_hash: receipt.output_artifact_hash.clone(),
+                engine_id: receipt.engine_id.clone(),
+                model_revision: receipt.model_revision.clone(),
+                worker_contract_id: receipt.worker_contract_id.clone(),
+                accepted_at,
+            },
+        )?;
+    }
+    Ok(receipt)
 }
 
 fn music_candidate_decision(
@@ -1089,7 +1221,7 @@ fn validate_generation(input: &mut GenerationRequest) -> Result<(), CommandError
     Ok(())
 }
 
-fn validate_project_asset_import(
+pub(crate) fn validate_project_asset_import(
     input: &mut ProjectAssetImportRequest,
 ) -> Result<(), CommandError> {
     input.expected_head_revision_id =

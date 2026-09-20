@@ -285,6 +285,7 @@ def test_presenter_acceptance_creates_synthetic_profile_and_selects_it(tmp_path:
             _params(
                 initial.revision_id,
                 role="presenter",
+                presenterDisplayName="Nova",
                 instruction="calm South Asian woman teaching computer science",
                 alternatives=1,
                 preservationLocks=["narration", "citations", "learningobjective", "timing"],
@@ -337,6 +338,8 @@ def test_presenter_acceptance_creates_synthetic_profile_and_selects_it(tmp_path:
         assert export_policy["identityType"] == "synthetic"
         assert "lips naturally closed" in client.calls[0][0]["visualIntent"]
         assert client.calls[0][0]["imageRole"] == "presenter"
+        candidate = current.snapshot["sceneCandidates"][0]
+        assert candidate["displayName"] == "Nova"
 
 
 def test_local_recipe_is_bounded_and_reaches_the_image_client(tmp_path: Path) -> None:

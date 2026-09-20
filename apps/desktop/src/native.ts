@@ -233,6 +233,67 @@ export interface ProjectAssetResolveReceipt {
   byteSize: number;
 }
 
+export type PresenterLibrarySource = { kind: "upload" } | {
+  kind: "generated";
+  providerId: string;
+  model: string;
+  prompt: string;
+  seed: number;
+  candidateId: string;
+  projectId: string;
+};
+
+export type PresenterAnimationReview = "notReviewed" | {
+  status: "accepted";
+  previewId: string;
+  portraitArtifactHash: string;
+  outputArtifactHash: string;
+  engineId: "soulx-flashhead-pro";
+  modelRevision: string;
+  workerContractId: "alystria.soulx-flashhead.worker.v1";
+  acceptedAt: string;
+};
+
+export interface PresenterLibraryEntry {
+  id: string;
+  displayName: string;
+  sha256: string;
+  byteSize: number;
+  mediaType: "image/png" | "image/jpeg" | "image/webp";
+  originalFilename: string;
+  addedAt: string;
+  source: PresenterLibrarySource;
+  rights: AssetRightsInput;
+  presenter: PresenterAssetInput;
+  animationReview: PresenterAnimationReview;
+}
+
+export interface PresenterLibraryImportRequest {
+  filename: string;
+  mimeType: string;
+  rights: AssetRightsInput;
+  presenter: PresenterAssetInput;
+  contentBase64: string;
+}
+
+export interface PresenterLibraryPromoteRequest extends ProjectIdentityRequest {
+  artifactHash: string;
+  displayName: string;
+  providerId: string;
+  model: string;
+  prompt: string;
+  seed: number;
+  candidateId: string;
+}
+
+export interface PresenterLibraryResolveReceipt {
+  entryId: string;
+  path: string;
+  mediaType: string;
+  sha256: string;
+  byteSize: number;
+}
+
 export interface EditorBindingsGetRequest extends ProjectIdentityRequest {
   generationId: string;
 }
@@ -325,10 +386,58 @@ export interface JobReceipt {
   acceptedAt: string;
   message: string;
   retryable: boolean;
-  operation?: "regenerate_scene" | "regenerate_authored_scene" | "search_visual_candidates" | "search_music_candidates" | "render_scene" | "repair_qa" | "export_master" | "editor_timeline_export";
+  operation?: "regenerate_scene" | "regenerate_authored_scene" | "search_visual_candidates" | "search_music_candidates" | "preview_presenter_animation" | "render_scene" | "repair_qa" | "export_master" | "editor_timeline_export";
   progress?: number;
   result?: Record<string, unknown> | null;
   error?: Record<string, unknown> | null;
+}
+
+export interface PresenterAnimationPreviewRequest extends ProjectIdentityRequest {
+  baseRevisionId: string;
+  profileId: string;
+}
+
+export interface PresenterAnimationPreviewDecisionRequest extends ProjectIdentityRequest {
+  expectedHeadRevisionId: string;
+  previewId: string;
+  entryId?: string;
+}
+
+export interface PresenterAnimationPreview {
+  schemaVersion: 1;
+  id: string;
+  status: "ready" | "accepted" | "rejected";
+  baseRevisionId: string;
+  profileId: string;
+  portraitArtifactId: string;
+  portraitArtifactHash: string;
+  narrationArtifactHash: string;
+  outputArtifactHash: string;
+  mediaType: "video/mp4";
+  byteSize: number;
+  durationMs: number;
+  engineId: "soulx-flashhead-pro";
+  modelRevision: string;
+  workerContractId: "alystria.soulx-flashhead.worker.v1";
+  seed: number;
+  createdAt: string;
+  acceptedAt?: string;
+  rejectedAt?: string;
+}
+
+export interface PresenterAnimationPreviewDecisionReceipt {
+  projectId: string;
+  headRevisionId: string;
+  revisionNumber: number;
+  previewId: string;
+  status: "accepted" | "rejected";
+  profileId: string;
+  portraitArtifactHash: string;
+  outputArtifactHash: string;
+  engineId: "soulx-flashhead-pro";
+  modelRevision: string;
+  workerContractId: "alystria.soulx-flashhead.worker.v1";
+  acceptedAt?: string;
 }
 
 export interface SceneRegenerationRequest extends ProjectIdentityRequest {
@@ -337,6 +446,7 @@ export interface SceneRegenerationRequest extends ProjectIdentityRequest {
   sceneId: string;
   instruction: string;
   role?: "scene" | "presenter";
+  presenterDisplayName?: string;
   editFocus?: "explanation" | "pacing";
   seed?: number;
   imageRecipe?: {
@@ -1112,6 +1222,58 @@ export function projectAssetImport(input: ProjectAssetImportRequest): Promise<Pr
 export function projectAssetResolve(input: ProjectAssetResolveRequest): Promise<ProjectAssetResolveReceipt> {
   return command("project_asset_resolve", input, () => {
     throw new Error("Project media resolution requires the desktop app.");
+  });
+}
+
+export function presenterLibraryList(): Promise<PresenterLibraryEntry[]> {
+  return command("presenter_library_list", undefined, () => []);
+}
+
+export function presenterLibraryImport(input: PresenterLibraryImportRequest): Promise<PresenterLibraryEntry> {
+  return command("presenter_library_import", input, () => {
+    throw new Error("Saved presenter portraits are available in the desktop app.");
+  });
+}
+
+export function presenterLibraryResolve(entryId: string): Promise<PresenterLibraryResolveReceipt> {
+  return command("presenter_library_resolve", { entryId }, () => {
+    throw new Error("Saved presenter portraits are available in the desktop app.");
+  });
+}
+
+export function presenterLibraryPromote(input: PresenterLibraryPromoteRequest): Promise<PresenterLibraryEntry> {
+  return command("presenter_library_promote", input, () => {
+    throw new Error("Generated presenter promotion requires the desktop app.");
+  });
+}
+
+export function presenterLibraryAddToProject(
+  input: ProjectIdentityRequest & { entryId: string; expectedHeadRevisionId: string },
+): Promise<ProjectAssetImportReceipt> {
+  return command("presenter_library_add_to_project", input, () => {
+    throw new Error("Adding a saved presenter requires the desktop app.");
+  });
+}
+
+export function presenterAnimationPreviewStart(input: PresenterAnimationPreviewRequest): Promise<JobReceipt> {
+  return command("presenter_animation_preview_start", input, () => {
+    throw new Error("Presenter animation previews require the desktop app.");
+  });
+}
+
+export function presenterAnimationPreviewAccept(
+  input: PresenterAnimationPreviewDecisionRequest,
+): Promise<PresenterAnimationPreviewDecisionReceipt> {
+  return command("presenter_animation_preview_accept", input, () => {
+    throw new Error("Presenter animation preview review requires the desktop app.");
+  });
+}
+
+export function presenterAnimationPreviewReject(
+  input: PresenterAnimationPreviewDecisionRequest,
+): Promise<PresenterAnimationPreviewDecisionReceipt> {
+  return command("presenter_animation_preview_reject", input, () => {
+    throw new Error("Presenter animation preview review requires the desktop app.");
   });
 }
 

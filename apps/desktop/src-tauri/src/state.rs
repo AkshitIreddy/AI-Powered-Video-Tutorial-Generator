@@ -1,6 +1,7 @@
 use crate::error::CommandError;
 use crate::model_download::ModelDownloadManager;
 use crate::model_setup::ModelSetupStore;
+use crate::presenter_library::PresenterLibraryStore;
 use crate::project_store::ProjectStore;
 use crate::runtime::{RuntimeManager, inspect_portable_debug_pack};
 use crate::secrets::CredentialManager;
@@ -19,6 +20,7 @@ pub struct AppState {
     pub projects: ProjectStore,
     pub credentials: Arc<CredentialManager>,
     pub model_setup: ModelSetupStore,
+    pub presenter_library: PresenterLibraryStore,
     pub model_downloads: ModelDownloadManager,
     pub worker: WorkerSupervisor,
     pub runtimes: RuntimeManager,
@@ -429,6 +431,7 @@ impl AppState {
             projects: ProjectStore,
             credentials,
             model_setup: ModelSetupStore::at(paths.app_data.clone()),
+            presenter_library: PresenterLibraryStore::at(paths.app_data.clone())?,
             model_downloads,
             worker,
             runtimes,

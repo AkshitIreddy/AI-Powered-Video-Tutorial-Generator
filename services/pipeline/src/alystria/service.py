@@ -152,10 +152,13 @@ class PipelineService:
             "control.regenerateScene": self.control_regenerate_scene,
             "control.searchVisualCandidates": self.control_search_visual_candidates,
             "control.searchMusicCandidates": self.control_search_music_candidates,
+            "control.previewPresenterAnimation": self.control_preview_presenter_animation,
             "control.acceptVisualCandidate": self.control_accept_visual_candidate,
             "control.rejectVisualCandidate": self.control_reject_visual_candidate,
             "control.acceptMusicCandidate": self.control_accept_music_candidate,
             "control.rejectMusicCandidate": self.control_reject_music_candidate,
+            "control.acceptPresenterAnimationPreview": self.control_accept_presenter_animation_preview,
+            "control.rejectPresenterAnimationPreview": self.control_reject_presenter_animation_preview,
             "control.acceptSceneEditCandidate": self.control_accept_scene_edit_candidate,
             "control.rejectSceneEditCandidate": self.control_reject_scene_edit_candidate,
             "control.renderScene": self.control_render_scene,
@@ -309,6 +312,7 @@ class PipelineService:
                 "presenterProfiles",
                 "consentRecords",
                 "selectedPresenterProfileId",
+                "presenterAnimationPreviews",
             ):
                 if protected_field in previous_head.snapshot:
                     snapshot[protected_field] = copy.deepcopy(
@@ -815,6 +819,9 @@ class PipelineService:
     def control_search_music_candidates(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._submit_native_control(params, "search_music")
 
+    def control_preview_presenter_animation(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._submit_native_control(params, "preview_presenter")
+
     def control_accept_visual_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
         project_id = _required_uuid(params, "projectId")
         with self._open_desktop_project(params, expected_project_id=project_id) as store:
@@ -834,6 +841,20 @@ class PipelineService:
         project_id = _required_uuid(params, "projectId")
         with self._open_desktop_project(params, expected_project_id=project_id) as store:
             return NativeControlCoordinator(store).reject_music_candidate(params)
+
+    def control_accept_presenter_animation_preview(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return NativeControlCoordinator(store).accept_presenter_preview(params)
+
+    def control_reject_presenter_animation_preview(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        project_id = _required_uuid(params, "projectId")
+        with self._open_desktop_project(params, expected_project_id=project_id) as store:
+            return NativeControlCoordinator(store).reject_presenter_preview(params)
 
     def control_accept_scene_edit_candidate(
         self, params: dict[str, Any]
@@ -884,6 +905,7 @@ class PipelineService:
                 "regenerate": control.submit_regeneration,
                 "search": control.submit_visual_search,
                 "search_music": control.submit_music_search,
+                "preview_presenter": control.submit_presenter_preview,
                 "render": control.submit_scene_render,
                 "repair": control.submit_qa_repair,
                 "export": control.submit_master_export,

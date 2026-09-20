@@ -172,6 +172,9 @@ import {
   projectCreate,
   projectAssetImport,
   projectAssetResolve,
+  presenterAnimationPreviewAccept,
+  presenterAnimationPreviewReject,
+  presenterAnimationPreviewStart,
   projectCustomizationSave,
   projectExportArchive,
   projectOpen,
@@ -203,6 +206,7 @@ import {
   type MasterExportRequest,
   type ModelProfile,
   type ProjectAssetImportReceipt,
+  type PresenterAnimationPreview,
   type ProjectSnapshotReceipt,
   type ProviderSecretRef,
   type TutorialRoutingPolicy,
@@ -248,7 +252,16 @@ import {
 } from "./sceneEdits";
 import { BundledAssetLibrary } from "./BundledAssetLibrary";
 import { LEGACY_PRESENTER_STYLE_GROUPS, presenterCollection } from "./presenterCollection";
-import { PresenterPicker, type PresenterStyleGroup } from "./PresenterPicker";
+import { PresenterPicker, type PresenterChoice, type PresenterStyleGroup } from "./PresenterPicker";
+import { PresenterAnimationPreviewReview } from "./PresenterAnimationPreviewReview";
+import {
+  buildPresenterGenerationRequest,
+  materializeLibraryPresenters,
+  presenterAnimationPreviewFromJob,
+  presenterChoicesForProject,
+  useCustomPresenterLibrary,
+  type PresenterLibraryController,
+} from "./customPresenterLibrary";
 import {
   presenterLipSyncEngineForRouteModel,
   presenterSelectionAnimationIssues,
@@ -882,6 +895,8 @@ function AppWorkbench() {
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const [runtime, setRuntime] = useState<RuntimeState>({ environment: desktopEnvironment(), bootstrap: null, loading: true, error: null });
+  const presenterLibrary = useCustomPresenterLibrary(runtime.environment === "native");
+  const presenterChoices = useMemo(() => [...PRESENTER_CHOICES, ...presenterLibrary.choices], [presenterLibrary.choices]);
   const [diagnosticReport, setDiagnosticReport] = useState<DiagnosticReport | null>(null);
   const [detectedConnections, setDetectedConnections] = useState<string[]>([]);
   const [selectedSetupModelIds, setSelectedSetupModelIds] = useState<string[]>([]);
@@ -1595,6 +1610,47 @@ function AppWorkbench() {
       nativeHeadRevisionId: initialized.headRevisionId,
       nativeRevisionNumber: initialized.revisionNumber,
     };
+    if (createdProject.presenterSelection) {
+      const materialized = await materializeLibraryPresenters(
+        createdProject.presenterSelection,
+        {
+          projectId: handle.manifest.projectId,
+          projectDirectory: handle.projectDirectory,
+          headRevisionId: initialized.headRevisionId,
+        },
+        new Set(presenterLibrary.entries.map((entry) => entry.id)),
+      );
+      if (materialized.receipts.length) {
+        const imported = await projectSnapshotGet({ projectId: handle.manifest.projectId, projectDirectory: handle.projectDirectory });
+        createdProject = hydrateDurableProject(createdProject, imported.snapshot, {
+          nativeProjectId: handle.manifest.projectId,
+          nativeProjectDirectory: handle.projectDirectory,
+          nativeHeadRevisionId: imported.headRevisionId,
+          nativeRevisionNumber: imported.revisionNumber,
+        });
+        const projectChoices = presenterChoicesForProject(
+          PRESENTER_CHOICES,
+          presenterLibrary.entries,
+          createdProject.customization?.assets ?? [],
+          materialized.selection,
+        );
+        const customization = presenterCustomizationForSelection(createdProject, materialized.selection, projectChoices);
+        const saved = await projectSnapshotSave({
+          projectId: handle.manifest.projectId,
+          projectDirectory: handle.projectDirectory,
+          expectedHeadRevisionId: imported.headRevisionId,
+          snapshot: projectSnapshotDocument({ ...createdProject, presenterSelection: materialized.selection, customization }),
+          message: "Added saved presenters to the new tutorial cast",
+        });
+        createdProject = {
+          ...createdProject,
+          presenterSelection: materialized.selection,
+          customization,
+          nativeHeadRevisionId: saved.headRevisionId,
+          nativeRevisionNumber: saved.revisionNumber,
+        };
+      }
+    }
     for (const file of settings.sourceFiles) {
       const receipt = await importSelectedFile(createdProject, file);
       createdProject = appendImportedSource(createdProject, receipt);
@@ -1990,6 +2046,7 @@ function AppWorkbench() {
               version={snapshot.version}
               jobs={snapshot.jobs}
               environment={runtime.environment}
+              presenterLibrary={presenterLibrary}
               onWorkspace={setWorkspace}
               onScene={(scene) => { setActiveSceneId(scene.id); if (workspace !== "studio") setWorkspace("studio"); }}
               onSelectScene={setActiveSceneId}
@@ -2038,7 +2095,7 @@ function AppWorkbench() {
 
       <JobsDrawer open={jobsOpen} jobs={snapshot.jobs} nativeJobIds={new Set(Object.keys(nativeJobs))} onClose={() => setJobsOpen(false)} onCancel={(id) => { void cancelJob(id); }} onRetry={(id) => { void retryNativeJob(id); }} />
 
-      {newTutorialOpen && <NewTutorialWizard environment={runtime.environment} templateId={selectedTemplateId} onClose={() => setNewTutorialOpen(false)} onCreate={createTutorial} />}
+      {newTutorialOpen && <NewTutorialWizard environment={runtime.environment} templateId={selectedTemplateId} presenterChoices={presenterChoices} presenterLibrary={presenterLibrary} onClose={() => setNewTutorialOpen(false)} onCreate={createTutorial} />}
 
       {regenScene && activeProject && <RegenerationSheet scene={regenScene} onClose={() => setRegenScene(null)} onRun={(instruction, focus, preserveTiming, alternatives) => {
         const scene = regenScene;
@@ -2792,6 +2849,7 @@ function ProjectWorkspace(props: {
   version: number;
   jobs: JobRecord[];
   environment: RuntimeState["environment"];
+  presenterLibrary: PresenterLibraryController;
   onWorkspace: (workspace: Workspace) => void;
   onScene: (scene: Scene) => void;
   onSelectScene: (sceneId: string) => void;
@@ -2830,10 +2888,218 @@ function ProjectHeader({ project, step, title, description, action }: { project:
   return <div className="project-page-header"><div><span className="section-kicker">{step} · {project.locale} · {project.audience}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>;
 }
 
-function PlanWorkspace({ project, onNotify, onApproveGeneration, approvalPending, onImportSources, onSceneUpdate, onUndo, onRedo, onProjectEdit }: ProjectWorkspaceProps) {
+function PlanWorkspace({ project, activeScene, environment, presenterLibrary, onNotify, onApproveGeneration, approvalPending, onImportSources, onSceneUpdate, onUndo, onRedo, onProjectEdit, onAddJob, runSerializedProjectMutation }: ProjectWorkspaceProps) {
   const [tab, setTab] = useState("Learning plan");
+  const [presenterBusy, setPresenterBusy] = useState(false);
+  const [generatedPresenterName, setGeneratedPresenterName] = useState("Custom presenter");
+  const [animationPreview, setAnimationPreview] = useState<{ choice: PresenterChoice; preview: PresenterAnimationPreview; videoUrl: string } | null>(null);
   const presenterRuntimeStatus = usePresenterRuntimeStatuses();
   const presenterRuntime = presenterRuntimeContext(projectLipSyncRouteModel(project.providerRoutingPolicy), presenterRuntimeStatus.statuses, presenterRuntimeStatus.loaded);
+  const presenterSelection = projectPresenterSelection(project);
+  const presenterChoices = presenterChoicesForProject(PRESENTER_CHOICES, presenterLibrary.entries, project.customization?.assets ?? [], presenterSelection);
+  const presenterCandidates = visualCandidates(project.sceneCandidates).filter((candidate) => candidate.role === "presenter" && candidate.sceneId === activeScene.id);
+  const resolvePresenterCandidate = useCallback(async (artifactHash: string) => {
+    const identity = nativeProjectLink(project);
+    if (!identity) throw new Error("Open a saved desktop tutorial to review presenter candidates.");
+    return convertFileSrc((await projectAssetResolve({ ...identity, artifactHash })).path);
+  }, [project]);
+  const reloadPresenterProject = async () => {
+    const identity = nativeProjectLink(project);
+    if (!identity) throw new Error("Open a saved desktop tutorial to update its cast.");
+    const durable = await projectSnapshotGet(identity);
+    const next = hydrateDurableProject(project, durable.snapshot, {
+      nativeProjectId: identity.projectId,
+      nativeProjectDirectory: identity.projectDirectory,
+      nativeHeadRevisionId: durable.headRevisionId,
+      nativeRevisionNumber: durable.revisionNumber,
+    });
+    onProjectEdit({
+      scenes: next.scenes,
+      ...(next.sceneCandidates === undefined ? {} : { sceneCandidates: next.sceneCandidates }),
+      ...(next.customization === undefined ? {} : { customization: next.customization }),
+      ...(next.presenterSelection === undefined ? {} : { presenterSelection: next.presenterSelection }),
+      nativeHeadRevisionId: durable.headRevisionId,
+      nativeRevisionNumber: durable.revisionNumber,
+    }, { alreadyDurable: true });
+    return next;
+  };
+  const changePresenterSelection = async (selection: PresenterSelection) => {
+    if (presenterBusy) return;
+    const identity = nativeProjectLink(project);
+    const libraryIds = new Set(presenterLibrary.entries.map((entry) => entry.id));
+    const needsImport = selection.presenters.some((presenter) => libraryIds.has(presenter.portraitAssetId));
+    if (!needsImport) {
+      onProjectEdit({ presenterSelection: selection, customization: presenterCustomizationForSelection(project, selection, presenterChoices) });
+      return;
+    }
+    if (!identity || environment !== "native") {
+      onNotify("Desktop project required", "Save the tutorial in the desktop app before adding a reusable presenter to its cast.", "warning");
+      return;
+    }
+    setPresenterBusy(true);
+    try {
+      await runSerializedProjectMutation(async () => {
+        const durable = await projectSnapshotGet(identity);
+        const materialized = await materializeLibraryPresenters(selection, { ...identity, headRevisionId: durable.headRevisionId }, libraryIds);
+        const imported = await projectSnapshotGet(identity);
+        const hydrated = hydrateDurableProject(project, imported.snapshot, {
+          nativeProjectId: identity.projectId,
+          nativeProjectDirectory: identity.projectDirectory,
+          nativeHeadRevisionId: imported.headRevisionId,
+          nativeRevisionNumber: imported.revisionNumber,
+        });
+        const choices = presenterChoicesForProject(PRESENTER_CHOICES, presenterLibrary.entries, hydrated.customization?.assets ?? [], materialized.selection);
+        const customization = presenterCustomizationForSelection(hydrated, materialized.selection, choices);
+        const saved = await projectSnapshotSave({
+          ...identity,
+          expectedHeadRevisionId: imported.headRevisionId,
+          snapshot: projectSnapshotDocument({ ...hydrated, presenterSelection: materialized.selection, customization }),
+          message: "Updated the reusable presenter cast",
+        });
+        onProjectEdit({ presenterSelection: materialized.selection, customization, nativeHeadRevisionId: saved.headRevisionId, nativeRevisionNumber: saved.revisionNumber }, { alreadyDurable: true });
+      });
+      onNotify("Presenter added", "The saved portrait is now part of this tutorial's durable cast.", "success");
+    } catch (error) {
+      onNotify("Presenter could not be added", errorMessage(error), "warning");
+    } finally {
+      setPresenterBusy(false);
+    }
+  };
+  const generatePresenter = async ({ displayName, prompt }: { displayName: string; prompt: string }) => {
+    const identity = nativeProjectLink(project);
+    if (!identity || environment !== "native") throw new Error("Open a saved desktop tutorial before creating a presenter.");
+    setPresenterBusy(true);
+    setGeneratedPresenterName(displayName);
+    try {
+      const durable = await projectSnapshotGet(identity);
+      const baseJobId = project.nativeGenerationId;
+      let receipt = await sceneRegenerate(buildPresenterGenerationRequest({
+        ...identity,
+        headRevisionId: durable.headRevisionId,
+        ...(baseJobId ? { baseJobId } : {}),
+        sceneId: activeScene.id,
+        seed: Math.floor(Date.now() % 2_147_483_647),
+        displayName,
+        prompt,
+      }));
+      const link = { ...identity, jobId: receipt.jobId };
+      const record = () => onAddJob(receiptJob(receipt, `Presenter candidates · ${displayName}`, receipt.message, link));
+      record();
+      while (!["SUCCEEDED", "FAILED", "CANCELLED", "STALE", "BLOCKED"].includes(receipt.state)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+        receipt = await jobStatus(link);
+        record();
+      }
+      await reloadPresenterProject();
+      if (receipt.state !== "SUCCEEDED") throw new Error(receipt.message || "Presenter creation did not complete.");
+      onNotify("Presenter candidates ready", "Inspect the face and resting mouth, then choose the portrait you want to keep.", "success");
+    } finally {
+      setPresenterBusy(false);
+    }
+  };
+  const acceptPresenterCandidate = async (candidate: VisualCandidate) => {
+    const identity = nativeProjectLink(project);
+    if (!identity) throw new Error("Open a saved desktop tutorial before accepting a presenter.");
+    const durable = await projectSnapshotGet(identity);
+    await sceneCandidateAccept({ ...identity, expectedHeadRevisionId: durable.headRevisionId, candidateId: candidate.id });
+    await presenterLibrary.promoteGeneratedPortrait({
+      ...identity,
+      artifactHash: candidate.artifactHash,
+      displayName: candidate.displayName ?? generatedPresenterName,
+      providerId: candidate.provider,
+      model: candidate.model,
+      prompt: candidate.prompt,
+      seed: candidate.seed,
+      candidateId: candidate.id,
+    });
+    await reloadPresenterProject();
+    onNotify("Presenter saved", `${candidate.displayName ?? generatedPresenterName} is selected in this tutorial and available in My presenters. Animation still requires an exact portrait preview.`, "success");
+  };
+  const runPresenterAnimationPreview = async (choice: PresenterChoice) => {
+    const identity = nativeProjectLink(project);
+    if (!identity || environment !== "native") throw new Error("Open a saved desktop tutorial before previewing presenter animation.");
+    if (presenterRuntime.activeEngineId !== "soulx-flashhead-pro") throw new Error("Select the local SoulX-FlashHead Pro presenter model before previewing a custom portrait.");
+    if (!choice.presenterId || !choice.customPortrait?.libraryEntryId || !choice.portraitArtifactHash) throw new Error("Add this saved presenter to the tutorial cast before previewing animation.");
+    setAnimationPreview(null);
+    const durable = await projectSnapshotGet(identity);
+    let receipt = await presenterAnimationPreviewStart({
+      ...identity,
+      baseRevisionId: durable.headRevisionId,
+      profileId: choice.presenterId,
+    });
+    const link = { ...identity, jobId: receipt.jobId };
+    const record = () => onAddJob(receiptJob(receipt, `Animation preview · ${choice.label}`, receipt.message, link));
+    record();
+    while (!["SUCCEEDED", "FAILED", "CANCELLED", "STALE", "BLOCKED"].includes(receipt.state)) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+      receipt = await jobStatus(link);
+      record();
+    }
+    if (receipt.state !== "SUCCEEDED") throw new Error(receipt.message || "Presenter animation preview did not complete.");
+    const preview = presenterAnimationPreviewFromJob(receipt);
+    if (preview.profileId !== choice.presenterId || preview.portraitArtifactHash !== choice.portraitArtifactHash) throw new Error("The animation preview does not match the selected presenter portrait.");
+    const resolved = await projectAssetResolve({ ...identity, artifactHash: preview.outputArtifactHash });
+    if (resolved.mediaType !== "video/mp4" || resolved.artifactHash !== preview.outputArtifactHash) throw new Error("The animation preview video could not be verified.");
+    await reloadPresenterProject();
+    setAnimationPreview({ choice, preview, videoUrl: convertFileSrc(resolved.path) });
+  };
+  const previewCustomPresenter = async (choice: PresenterChoice) => {
+    if (presenterBusy) return;
+    setPresenterBusy(true);
+    try {
+      await runPresenterAnimationPreview(choice);
+      onNotify("Animation preview ready", "Play the short local preview and keep it only if the mouth, eyes and motion look right.", "success");
+    } catch (error) {
+      onNotify("Animation preview unavailable", errorMessage(error), "warning");
+    } finally {
+      setPresenterBusy(false);
+    }
+  };
+  const acceptAnimationPreview = async () => {
+    if (!animationPreview || presenterBusy) return;
+    const identity = nativeProjectLink(project);
+    if (!identity) throw new Error("Open a saved desktop tutorial before accepting presenter animation.");
+    setPresenterBusy(true);
+    try {
+      const durable = await projectSnapshotGet(identity);
+      await presenterAnimationPreviewAccept({
+        ...identity,
+        expectedHeadRevisionId: durable.headRevisionId,
+        previewId: animationPreview.preview.id,
+        entryId: animationPreview.choice.customPortrait!.libraryEntryId,
+      });
+      await presenterLibrary.refresh();
+      await reloadPresenterProject();
+      setAnimationPreview(null);
+      onNotify("Animation ready", `${animationPreview.choice.label} can now use animated speech with this exact SoulX-FlashHead revision.`, "success");
+    } catch (error) {
+      onNotify("Animation review could not be saved", errorMessage(error), "warning");
+    } finally {
+      setPresenterBusy(false);
+    }
+  };
+  const retryAnimationPreview = async () => {
+    if (!animationPreview || presenterBusy) return;
+    const identity = nativeProjectLink(project);
+    if (!identity) throw new Error("Open a saved desktop tutorial before retrying presenter animation.");
+    const previous = animationPreview;
+    setPresenterBusy(true);
+    try {
+      const durable = await projectSnapshotGet(identity);
+      await presenterAnimationPreviewReject({
+        ...identity,
+        expectedHeadRevisionId: durable.headRevisionId,
+        previewId: previous.preview.id,
+      });
+      await reloadPresenterProject();
+      await runPresenterAnimationPreview(previous.choice);
+      onNotify("New animation preview ready", "Review the new local render before using it.", "success");
+    } catch (error) {
+      onNotify("Animation preview could not be retried", errorMessage(error), "warning");
+    } finally {
+      setPresenterBusy(false);
+    }
+  };
   const objectiveScenes = project.scenes.filter((scene) => scene.objective.trim());
   const reviewedSources = project.sources.filter((source) => source.status === "verified").length;
   return <div className="page project-page plan-workspace">
@@ -2844,7 +3110,7 @@ function PlanWorkspace({ project, onNotify, onApproveGeneration, approvalPending
       {tab === "Learning plan" ? <><div className="learner-strip"><div><UserRoundCheck size={18} /><span><small>Learner</small><strong>{project.audience}</strong></span></div><div><Clock3 size={18} /><span><small>Target</small><strong>{project.duration} minutes</strong></span></div><div><Languages size={18} /><span><small>Language</small><strong>{project.locale}</strong></span></div></div>
         <div className="objective-section"><div className="section-number"><BookOpen size={22} /></div><div><span className="section-kicker">Scene learning objectives</span><div className="objective-list">{objectiveScenes.map((scene) => <div key={scene.id}><span>{scene.index}</span><label className="objective-edit"><small>{scene.title}</small><textarea aria-label={`Objective for ${scene.title}`} rows={2} value={scene.objective} onChange={(event) => onSceneUpdate(scene.id, { objective: event.target.value })} /></label></div>)}</div>{!objectiveScenes.length && <p>Add a scene objective in Studio to begin the learning plan.</p>}</div></div>
         <div className="learning-sequence"><span className="section-kicker">The teaching sequence</span>{project.scenes.map((scene) => <div key={scene.id}><span>{String(scene.index).padStart(2, "0")}</span><strong>{scene.title}</strong><small>{formatTime(scene.duration)}</small></div>)}</div>
-      </> : tab === "Presenters" ? <div className="plan-presenters"><PresenterPicker choices={PRESENTER_CHOICES} value={projectPresenterSelection(project)} runtime={presenterRuntime} onChange={(selection) => onProjectEdit({ presenterSelection: selection, customization: presenterCustomizationForSelection(project, selection) })} /><SceneSpeakerAssignments project={project} onChange={(selection) => onProjectEdit({ presenterSelection: selection })} /></div> : tab === "Brief" ? <div className="brief-document"><span className="section-kicker">The question</span><h3>{project.topic}</h3><p>{project.description}</p><dl><div><dt>Who is learning?</dt><dd>{project.audience}</dd></div><div><dt>Available time</dt><dd>{project.duration} minutes</dd></div><div><dt>Language</dt><dd>{project.locale}</dd></div></dl><p>Review and edit the scene objectives and script before approving this plan.</p></div> : tab === "Sources" || tab === "Research" ? <SourceEvidence project={project} research={tab === "Research"} onImportSources={onImportSources} onNotify={onNotify} /> : <ScriptEditor project={project} onNotify={onNotify} onSceneUpdate={onSceneUpdate} onUndo={onUndo} onRedo={onRedo} />}
+      </> : tab === "Presenters" ? <div className="plan-presenters"><PresenterPicker choices={presenterChoices} value={presenterSelection} runtime={presenterRuntime} {...(environment === "native" ? { library: presenterLibrary, canGeneratePresenter: true, generatingPresenter: presenterBusy, ...(presenterCandidates.length ? { presenterCandidateReview: <VisualCandidateReview candidates={presenterCandidates} resolve={resolvePresenterCandidate} onAccept={acceptPresenterCandidate} /> } : {}), onGeneratePresenter: generatePresenter, onPreviewCustomPresenter: previewCustomPresenter } : {})} onChange={(selection) => { void changePresenterSelection(selection); }} />{animationPreview && <PresenterAnimationPreviewReview presenterName={animationPreview.choice.label} preview={animationPreview.preview} videoUrl={animationPreview.videoUrl} busy={presenterBusy} onAccept={acceptAnimationPreview} onTryAgain={retryAnimationPreview} />}<SceneSpeakerAssignments project={project} choices={presenterChoices} onChange={(selection) => onProjectEdit({ presenterSelection: selection })} />{presenterBusy && <p role="status">Saving presenter work…</p>}</div> : tab === "Brief" ? <div className="brief-document"><span className="section-kicker">The question</span><h3>{project.topic}</h3><p>{project.description}</p><dl><div><dt>Who is learning?</dt><dd>{project.audience}</dd></div><div><dt>Available time</dt><dd>{project.duration} minutes</dd></div><div><dt>Language</dt><dd>{project.locale}</dd></div></dl><p>Review and edit the scene objectives and script before approving this plan.</p></div> : tab === "Sources" || tab === "Research" ? <SourceEvidence project={project} research={tab === "Research"} onImportSources={onImportSources} onNotify={onNotify} /> : <ScriptEditor project={project} onNotify={onNotify} onSceneUpdate={onSceneUpdate} onUndo={onUndo} onRedo={onRedo} />}
     </section><aside className="plan-aside"><div className="grounding-card"><div className="grounding-head"><span><ShieldCheck size={17} /> Sources & support</span></div><p>Source review and claim support are separate. Review the rendered lesson before export.</p><div className="grounding-meter"><span><strong>{reviewedSources} / {project.sources.length}</strong><small>source records reviewed</small></span><ProgressBar value={project.sources.length ? reviewedSources / project.sources.length * 100 : 0} /></div><button className="text-button" onClick={() => setTab("Sources")}>Review sources <ArrowRight size={15} /></button></div><div className="teaching-note"><span className="section-kicker">A useful review question</span><h3>Could they explain it back?</h3><p>Give each scene one job. Show an example, let the learner predict the next step, then explain what changed.</p><button className="text-button" onClick={() => setTab("Script")}>Read the full script <ArrowRight size={15} /></button></div></aside></div>
   </div>;
 }
@@ -3492,18 +3758,18 @@ function projectPresenterSelection(project: ProjectRecord): PresenterSelection {
   return { schemaVersion: 1, mode: id && project.customization?.presenter.placement !== "off" ? "auto" : "off", presenters: id ? [{ presenterId: id, portraitAssetId: id }] : [], sceneAssignments: [] };
 }
 
-function presenterCustomizationForSelection(project: ProjectRecord, selection: PresenterSelection): CanvasCustomization {
+function presenterCustomizationForSelection(project: ProjectRecord, selection: PresenterSelection, choices: readonly PresenterChoice[] = PRESENTER_CHOICES): CanvasCustomization {
   const customization = project.customization ?? DEFAULT_CANVAS_CUSTOMIZATION;
   const id = selection.mode === "off" ? null : selection.presenters[0]?.portraitAssetId ?? null;
-  return { ...customization, presenter: { ...customization.presenter, assetId: id, placement: id ? "picture-in-picture" : "off", ...presenterVoiceMatch(id, PRESENTER_CHOICES.find((choice) => choice.id === id)?.label) } };
+  return { ...customization, presenter: { ...customization.presenter, assetId: id, placement: id ? "picture-in-picture" : "off", ...presenterVoiceMatch(id, choices.find((choice) => choice.id === id)?.label) } };
 }
 
-function SceneSpeakerAssignments({ project, onChange }: { project: ProjectRecord; onChange: (value: PresenterSelection) => void }) {
+function SceneSpeakerAssignments({ project, choices = PRESENTER_CHOICES, onChange }: { project: ProjectRecord; choices?: readonly PresenterChoice[]; onChange: (value: PresenterSelection) => void }) {
   const selection = projectPresenterSelection(project);
   if (selection.mode === "off" || !selection.presenters.length) return null;
   return <section className="scene-speaker-assignments"><h3>Who speaks in each scene?</h3><p>Selected presenters take turns by default. Choose a different speaker here before approving the plan.</p>{project.scenes.map((scene, index) => {
     const assigned = selection.sceneAssignments.find((entry) => entry.sceneId === scene.id)?.presenterId ?? selection.presenters[index % selection.presenters.length]!.presenterId;
-    return <label key={scene.id}><span>{scene.index}. {scene.title}</span><select aria-label={`Presenter for ${scene.title}`} value={assigned} onChange={(event) => onChange({ ...selection, sceneAssignments: [...selection.sceneAssignments.filter((entry) => entry.sceneId !== scene.id), { sceneId: scene.id, presenterId: event.target.value }] })}>{selection.presenters.map((speaker) => <option value={speaker.presenterId} key={speaker.presenterId}>{PRESENTER_CHOICES.find((choice) => choice.id === speaker.portraitAssetId)?.label ?? speaker.presenterId}</option>)}</select></label>;
+    return <label key={scene.id}><span>{scene.index}. {scene.title}</span><select aria-label={`Presenter for ${scene.title}`} value={assigned} onChange={(event) => onChange({ ...selection, sceneAssignments: [...selection.sceneAssignments.filter((entry) => entry.sceneId !== scene.id), { sceneId: scene.id, presenterId: event.target.value }] })}>{selection.presenters.map((speaker) => <option value={speaker.presenterId} key={speaker.presenterId}>{choices.find((choice) => choice.id === speaker.portraitAssetId)?.label ?? speaker.presenterId}</option>)}</select></label>;
   })}</section>;
 }
 
@@ -3678,7 +3944,7 @@ function createTemplateSceneScaffold(templateId: string, projectId: string, tota
   });
 }
 
-function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { environment: RuntimeState["environment"]; templateId: string | null; onClose: () => void; onCreate: (project: ProjectRecord, settings: TutorialCreationSettings) => Promise<void> }) {
+function NewTutorialWizard({ environment, templateId, presenterChoices, presenterLibrary, onClose, onCreate }: { environment: RuntimeState["environment"]; templateId: string | null; presenterChoices: PresenterChoice[]; presenterLibrary: PresenterLibraryController; onClose: () => void; onCreate: (project: ProjectRecord, settings: TutorialCreationSettings) => Promise<void> }) {
   const presenterRuntimeStatus = usePresenterRuntimeStatuses();
   const [step, setStep] = useState(1);
   const [presenterSelection, setPresenterSelection] = useState<PresenterSelection>({ schemaVersion: 1, mode: "off", presenters: [], sceneAssignments: [] });
@@ -3720,7 +3986,7 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
   }, [environment]);
   const selectedProfile = setup?.profiles.find((profile) => profile.id === selectedProfileId) ?? setup?.profiles[0] ?? null;
   const presenterRuntime = presenterRuntimeContext(selectedProfile?.routes.lipSync?.modelId, presenterRuntimeStatus.statuses, presenterRuntimeStatus.loaded);
-  const presenterAnimationIssues = presenterSelectionAnimationIssues(PRESENTER_CHOICES, presenterSelection, presenterRuntime);
+  const presenterAnimationIssues = presenterSelectionAnimationIssues(presenterChoices, presenterSelection, presenterRuntime);
   const usesCloudflare = selectedProfile
     ? Object.values(selectedProfile.routes).some((route) => route?.providerId === "cloudflare-workers-ai" && !/^(?:off|none|disabled)\b/i.test(route.modelId.trim()))
     : false;
@@ -3755,7 +4021,7 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
         ...DEFAULT_CANVAS_CUSTOMIZATION.presenter,
         assetId: selectedPresenterAssetId ?? null,
         placement: selectedPresenterAssetId ? "picture-in-picture" : "off",
-        ...presenterVoiceMatch(selectedPresenterAssetId ?? null, DEFAULT_CANVAS_CUSTOMIZATION.assets.find((asset) => asset.id === selectedPresenterAssetId)?.label),
+        ...presenterVoiceMatch(selectedPresenterAssetId ?? null, presenterChoices.find((choice) => choice.id === selectedPresenterAssetId)?.label),
       },
     };
     setCreating(true);
@@ -3783,11 +4049,11 @@ function NewTutorialWizard({ environment, templateId, onClose, onCreate }: { env
       {step === 1 && <div className="wizard-template-selection"><img src={TEMPLATE_PREVIEWS[selectedTemplate.id]} alt="" /><span><small>Selected learning arc</small><strong>{selectedTemplate.name}</strong><em>{selectedTemplate.scenes} editable scenes · {selectedTemplate.category}</em></span></div>}
       {step === 1 && <div className="wizard-step"><span className="section-kicker">Start with the hard part</span><h2 id="wizard-title">What should become clear?</h2><p>Describe the idea, skill, or question in plain language. You can add documents and URLs after this step.</p><label className="large-input"><WandSparkles size={21} /><textarea autoFocus rows={4} placeholder="What would you like to teach? Describe your topic, question, or learning goal." value={topic} onChange={(event) => setTopic(event.target.value)} /></label><div className="source-drop"><Upload size={20} /><span><strong>Add source material</strong><small>{sourceFiles.length ? `${sourceFiles.length} selected · added before generation` : "PDF, DOCX, EPUB, Markdown, or text · 8 MiB each · optional"}</small></span><input ref={sourceInputRef} className="visually-hidden-file" type="file" multiple accept={SOURCE_FILE_ACCEPT} onChange={(event) => setSourceFiles(Array.from(event.target.files ?? []))} /><button onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? "Change files" : "Choose files"}</button></div>{sourceFiles.length > 0 && <div className="selected-source-list" aria-label="Selected source files">{sourceFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><FileCheck2 size={14} /> {file.name} <small>{formatBytes(file.size)}</small></span>)}</div>}</div>}
       {step === 2 && <div className="wizard-step"><span className="section-kicker">Choose the teaching context</span><h2>Who is on the other side?</h2><p>{PRODUCT_NAME} changes prerequisite coverage, vocabulary, pacing, examples, and caption density for the learner.</p><div className="form-grid"><label><span>Audience</span><input value={audience} onChange={(event) => setAudience(event.target.value)} /></label><label><span>Target duration</span><select value={duration} onChange={(event) => setDuration(event.target.value)}><option value="1">About 1 minute (quick draft)</option><option value="3">About 3 minutes (inspection draft)</option><option value="5">About 5 minutes</option><option value="10">About 10 minutes</option><option value="12">About 12 minutes</option><option value="15">About 15 minutes</option><option value="25">About 25 minutes</option><option value="custom">Custom length…</option></select></label>{duration === "custom" && <label><span>Custom target in minutes</span><input aria-label="Custom target in minutes" type="number" min="1" max="180" step="1" inputMode="numeric" value={exactDuration} onChange={(event) => setExactDuration(event.target.value)} /><small>Choose 1 to 180 minutes. Final length follows the narration.</small></label>}<label><span>Language</span><select value={locale} onChange={(event) => setLocale(event.target.value as ProjectRecord["locale"])}><option>English</option><option>Spanish</option><option>Hindi</option></select></label><label><span>Tutorial method</span><select aria-label="Tutorial method" value={tutorialMode} onChange={(event) => setTutorialMode(event.target.value as TutorialMode)}>{Object.entries(TUTORIAL_MODE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>Board strokes and code edits are timed to narration and remain editable.</small></label></div><div className="learner-card"><UserRoundCheck size={22} /><div><strong>{audience}</strong><p>{TUTORIAL_MODE_LABELS[tutorialMode]} · {PRODUCT_NAME} will align every visual action to narration, preserve a static accessible alternative, and surface common misconceptions.</p></div></div></div>}
-      {step === 3 && <div className="wizard-step"><span className="section-kicker">Put a face to the lesson</span><h2>Who will teach?</h2><p>Choose one presenter, build a cast that takes turns, or keep the focus on your visuals.</p><PresenterPicker choices={PRESENTER_CHOICES} value={presenterSelection} runtime={presenterRuntime} onChange={setPresenterSelection} /></div>}
+      {step === 3 && <div className="wizard-step"><span className="section-kicker">Put a face to the lesson</span><h2>Who will teach?</h2><p>Choose one presenter, build a cast that takes turns, or keep the focus on your visuals.</p><PresenterPicker choices={presenterChoices} value={presenterSelection} runtime={presenterRuntime} {...(environment === "native" ? { library: presenterLibrary } : {})} onChange={setPresenterSelection} /></div>}
       {step === 4 && <div className="wizard-step"><span className="section-kicker">Shape the research</span><h2>How should {PRODUCT_NAME} research?</h2><p>Choose how strongly the lesson should depend on external evidence and citations.</p><div className="choice-cards">{([
         { name: "Creative", detail: "Use the prompt as the source of truth", icon: Sparkles }, { name: "Grounded", detail: "Connect verifiable claims to reliable evidence", icon: ShieldCheck }, { name: "Strict", detail: "Block every unsupported external claim", icon: Lock },
       ] satisfies Array<{ name: string; detail: string; icon: LucideIcon }>).map(({ name, detail, icon: Icon }) => <button key={name} className={grounding === name ? "active" : ""} onClick={() => setGrounding(name)}><span><Icon size={20} /></span><strong>{name}</strong><small>{detail}</small>{grounding === name && <CheckCircle2 size={17} />}</button>)}</div></div>}
-      {step === 5 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration === "custom" ? exactDuration : duration} minutes</dd></div><div><dt>Method</dt><dd>{TUTORIAL_MODE_LABELS[tutorialMode]}</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Presenters</dt><dd>{presenterSelection.mode === "off" ? "No on-screen presenter" : presenterSelection.presenters.map((entry) => PRESENTER_CHOICES.find((choice) => choice.id === entry.portraitAssetId)?.label ?? entry.presenterId).join(", ")}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
+      {step === 5 && <div className="wizard-step review-step"><span className="section-kicker">Ready to shape the lesson</span><h2>Review the learning brief</h2><div className="brief-preview"><div className="brief-topic"><span>Topic</span><h3>{topic || "Untitled tutorial"}</h3></div><dl><div><dt>Audience</dt><dd>{audience}</dd></div><div><dt>Duration</dt><dd>About {duration === "custom" ? exactDuration : duration} minutes</dd></div><div><dt>Method</dt><dd>{TUTORIAL_MODE_LABELS[tutorialMode]}</dd></div><div><dt>Language</dt><dd>{locale}</dd></div><div><dt>Research</dt><dd>{grounding}</dd></div><div><dt>Presenters</dt><dd>{presenterSelection.mode === "off" ? "No on-screen presenter" : presenterSelection.presenters.map((entry) => presenterChoices.find((choice) => choice.id === entry.portraitAssetId)?.label ?? entry.presenterId).join(", ")}</dd></div><div><dt>Sources</dt><dd>{sourceFiles.length ? `${sourceFiles.length} file${sourceFiles.length === 1 ? "" : "s"}` : "None yet"}</dd></div><div><dt>Storage</dt><dd>{environment === "native" ? "Native project folder" : "Browser demo"}</dd></div></dl></div><div className="quality-choice"><div><strong>Creation quality</strong><small>Quality changes model routing and review depth.</small></div>{["Draft", "Standard", "Maximum"].map((item) => <button key={item} className={quality === item ? "active" : ""} onClick={() => setQuality(item)}>{item}</button>)}</div>
         <section className="routing-review" aria-labelledby="routing-review-title">
           <div className="routing-review-heading"><div><span className="section-kicker">Creation profile</span><h3 id="routing-review-title">Use your saved model choices.</h3></div><span className={`routing-readiness ${routingReview?.policy ? "ready" : "attention"}`}>{routingLoading ? "Loading" : routingReview?.policy ? <><CheckCircle2 size={13} /> Ready</> : <><CircleAlert size={13} /> Needs setup</>}</span></div>
           <div className="routing-review-controls"><label><span>Creation profile</span><select aria-label="Creation profile" value={selectedProfile?.id ?? ""} disabled={routingLoading || !setup} onChange={(event) => setSelectedProfileId(event.target.value)}>{setup?.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>{usesCloudflare && <label><span>Cloudflare Account ID</span><input aria-label="Cloudflare Account ID" autoComplete="off" value={providerAccountIds["cloudflare-workers-ai"] ?? ""} onChange={(event) => setProviderAccountIds((current) => ({ ...current, "cloudflare-workers-ai": event.target.value.trim() }))} /><small>Account setting required by Cloudflare Workers AI.</small></label>}</div>

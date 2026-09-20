@@ -1,0 +1,82 @@
+.presenter-library-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.presenter-library-panel__heading,
+.presenter-library-panel__title,
+.presenter-library-panel__actions {
+  display: flex;
+  align-items: center;
+}
+
+.presenter-library-panel__heading { justify-content: space-between; gap: 12px; }
+.presenter-library-panel__title { min-width: 0; gap: 9px; }
+.presenter-library-panel__title > span:first-child { display: grid; flex: none; width: 32px; height: 32px; place-items: center; border-radius: 9px; background: var(--indigo-soft); color: var(--indigo); }
+.presenter-library-panel__title > span:last-child,
+.presenter-library-panel__form-heading,
+.presenter-library-panel__preview > span,
+.presenter-library-panel__readiness > span { display: grid; min-width: 0; gap: 2px; }
+.presenter-library-panel__title strong { font-size: 12px; }
+.presenter-library-panel__title small,
+.presenter-library-panel__form-heading small,
+.presenter-library-panel__form p,
+.presenter-library-panel__readiness small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.presenter-library-panel__count { flex: none; padding: 4px 7px; border-radius: 999px; background: var(--surface-soft); color: var(--muted); font: 650 8px var(--mono); text-transform: uppercase; }
+
+.presenter-library-panel__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.presenter-library-panel__actions button { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 9px; min-width: 0; padding: 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); color: var(--ink); text-align: left; }
+.presenter-library-panel__actions button > span:first-child { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 8px; background: var(--surface); color: var(--indigo); }
+.presenter-library-panel__actions button > span:last-child { display: grid; min-width: 0; gap: 2px; }
+.presenter-library-panel__actions button strong { font-size: 10px; }
+.presenter-library-panel__actions button small { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.presenter-library-panel__actions button:hover,
+.presenter-library-panel__actions button.active { border-color: var(--indigo); background: var(--indigo-soft); }
+.presenter-library-panel__actions button.active > span:first-child { background: var(--surface); color: var(--indigo-deep); }
+
+.presenter-library-panel__form { display: grid; gap: 11px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }
+.presenter-library-panel__form-heading strong { font-size: 11px; }
+.presenter-library-panel__form label:not(.presenter-library-panel__check) { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 700; }
+.presenter-library-panel__form input[type="text"],
+.presenter-library-panel__form input:not([type]),
+.presenter-library-panel__form textarea { width: 100%; min-width: 0; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); padding: 9px 10px; resize: vertical; }
+.presenter-library-panel__form input:focus,
+.presenter-library-panel__form textarea:focus { outline: 2px solid color-mix(in srgb, var(--indigo) 24%, transparent); outline-offset: 1px; border-color: var(--indigo); }
+.presenter-library-panel__form > .primary-button { width: 100%; }
+
+.presenter-library-panel__drop { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 11px; border: 1px dashed var(--indigo); border-radius: 10px; background: var(--surface); color: var(--ink); text-align: left; }
+.presenter-library-panel__drop > svg { padding: 7px; width: 36px; height: 36px; border-radius: 9px; background: var(--indigo-soft); color: var(--indigo); }
+.presenter-library-panel__drop span { display: grid; min-width: 0; gap: 2px; }
+.presenter-library-panel__drop strong { overflow-wrap: anywhere; font-size: 10px; }
+.presenter-library-panel__drop small { color: var(--muted); font-size: 8px; font-weight: 500; }
+
+.presenter-library-panel__preview { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: 11px; padding: 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.presenter-library-panel__preview img { width: 88px; aspect-ratio: 1; object-fit: cover; object-position: 50% 22%; border-radius: 8px; background: var(--surface-soft); }
+.presenter-library-panel__preview strong { font-size: 10px; }
+.presenter-library-panel__preview small { color: var(--muted); font-size: 8.5px; line-height: 1.45; }
+
+.presenter-library-panel__check { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 8px; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.presenter-library-panel__check input { width: 14px; height: 14px; margin: 0; accent-color: var(--indigo); }
+.presenter-library-panel__error { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--rose-soft, color-mix(in srgb, var(--rose) 12%, transparent)); color: var(--rose); font-size: 9px; line-height: 1.45; }
+.presenter-library-panel__readiness { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 8px; margin: 0; padding: 9px 10px; border-radius: 9px; background: var(--teal-soft); }
+.presenter-library-panel__readiness > svg { margin-top: 1px; color: var(--teal); }
+.presenter-library-panel__readiness strong { color: var(--ink); font-size: 9px; }
+.presenter-library-panel__readiness small { font-size: 8.5px; }
+
+@media (max-width: 620px) {
+  .presenter-library-panel { padding: 11px; }
+  .presenter-library-panel__heading { align-items: flex-start; }
+  .presenter-library-panel__count { margin-top: 4px; }
+  .presenter-library-panel__actions { grid-template-columns: 1fr; }
+  .presenter-library-panel__actions button small { white-space: normal; }
+  .presenter-library-panel__form { padding: 11px; }
+  .presenter-library-panel__preview { grid-template-columns: 72px minmax(0, 1fr); }
+  .presenter-library-panel__preview img { width: 72px; }
+}

@@ -85,6 +85,11 @@ def generate_visual_candidates(
     scene_id = _scene_id(params.get("sceneId"))
     scene = _scene(head.snapshot, scene_id)
     role = _enum(params.get("role", "scene"), CANDIDATE_ROLES, "role")
+    presenter_display_name = (
+        _bounded_text(params.get("presenterDisplayName"), "presenterDisplayName", 120)
+        if role == "presenter" and params.get("presenterDisplayName") is not None
+        else None
+    )
     instruction = _bounded_text(params.get("instruction"), "instruction", MAX_INSTRUCTION_CHARS)
     locks = _preservation_locks(params.get("preservationLocks", []), role=role)
     alternatives = _integer(params.get("alternatives", 1), "alternatives", 1, MAX_ALTERNATIVES)
@@ -118,6 +123,7 @@ def generate_visual_candidates(
                 scene,
                 candidate_id=candidate_id,
                 role=role,
+                presenter_display_name=presenter_display_name,
                 prompt=prompt,
                 instruction=instruction,
                 preservation_locks=locks,
@@ -137,6 +143,7 @@ def generate_visual_candidates(
                     candidate_id=candidate_id,
                     scene_id=scene_id,
                     role=role,
+                    presenter_display_name=presenter_display_name,
                     prompt=prompt,
                     instruction=instruction,
                     preservation_locks=locks,
@@ -519,6 +526,7 @@ def _generate_one(
     *,
     candidate_id: str,
     role: str,
+    presenter_display_name: str | None,
     prompt: str,
     instruction: str,
     preservation_locks: Sequence[str],
@@ -607,7 +615,7 @@ def _generate_one(
         "actualCostMicros": media.actual_cost_micros,
         "usageUnits": _numeric_usage(media.usage_units),
         **(
-            {"displayName": _presenter_display_name(instruction)}
+            {"displayName": presenter_display_name or _presenter_display_name(instruction)}
             if role == "presenter"
             else {}
         ),
@@ -746,6 +754,7 @@ def _failed_candidate(
     candidate_id: str,
     scene_id: str,
     role: str,
+    presenter_display_name: str | None,
     prompt: str,
     instruction: str,
     preservation_locks: Sequence[str],
@@ -774,6 +783,11 @@ def _failed_candidate(
         "error": failure,
         "createdAt": utc_now(),
         "acceptedSceneUnchanged": True,
+        **(
+            {"displayName": presenter_display_name or _presenter_display_name(instruction)}
+            if role == "presenter"
+            else {}
+        ),
     }
 
 

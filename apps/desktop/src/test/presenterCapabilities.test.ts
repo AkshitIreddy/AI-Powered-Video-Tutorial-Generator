@@ -26,6 +26,52 @@ const emma: PresenterChoice = {
 };
 
 describe("presenter animation capabilities", () => {
+  it("allows a custom portrait as a still and requires a preview for animation", () => {
+    const custom: PresenterChoice = { id: "custom-presenter", label: "Nova", src: "nova.png", focalPoint: "50% 38%", portraitArtifactHash: "d".repeat(64), customPortrait: { animationReview: "notReviewed", source: "upload", libraryEntryId: "custom-presenter" } };
+    expect(presenterAnimationReadiness(custom, { activeEngineId: null, portraitStatuses: [] })).toMatchObject({ state: "static", badge: "Still image ready", blocksSelection: false });
+    expect(presenterAnimationReadiness(custom, { activeEngineId: "soulx-flashhead-pro", portraitStatuses: [] })).toMatchObject({ state: "pending-review", badge: "Preview required", blocksSelection: false, blocksAnimation: true });
+    expect(presenterSelectionAnimationIssues([custom], {
+      schemaVersion: 1,
+      mode: "on",
+      presenters: [{ presenterId: "profile-nova", portraitAssetId: custom.id }],
+      sceneAssignments: [],
+    }, { activeEngineId: "soulx-flashhead-pro", portraitStatuses: [] })).toHaveLength(1);
+  });
+
+  it("unlocks only the exact SoulX model revision accepted for a custom portrait", () => {
+    const portraitHash = "d".repeat(64);
+    const custom: PresenterChoice = {
+      id: "custom-presenter",
+      label: "Nova",
+      src: "nova.png",
+      focalPoint: "50% 38%",
+      portraitArtifactHash: portraitHash,
+      customPortrait: {
+        source: "upload",
+        libraryEntryId: "custom-presenter",
+        animationReview: {
+          status: "accepted",
+          previewId: "presenter-preview-proof",
+          portraitArtifactHash: portraitHash,
+          outputArtifactHash: "e".repeat(64),
+          engineId: "soulx-flashhead-pro",
+          modelRevision: "soulx-code-a+weights-b",
+          workerContractId: "alystria.soulx-flashhead.worker.v1",
+          acceptedAt: "2026-09-21T00:00:00Z",
+        },
+      },
+    };
+    const ready = presenterAnimationReadiness(custom, {
+      activeEngineId: "soulx-flashhead-pro",
+      portraitStatuses: [{ portraitArtifactHash: null, modelId: "soulx-flashhead-pro", modelRevision: "soulx-code-a+weights-b", configured: true, reason: "Installed." }],
+    });
+    expect(ready).toMatchObject({ state: "ready", blocksSelection: false, blocksAnimation: false });
+    const changed = presenterAnimationReadiness(custom, {
+      activeEngineId: "soulx-flashhead-pro",
+      portraitStatuses: [{ portraitArtifactHash: null, modelId: "soulx-flashhead-pro", modelRevision: "new-weights", configured: true, reason: "Updated." }],
+    });
+    expect(changed).toMatchObject({ state: "pending-review", badge: "Preview again", blocksAnimation: true });
+  });
   it.each(["Poppy", "Leo"])("blocks rejected %s animation even when its exact runtime is installed", (name) => {
     const portrait = CASUAL_PRESENTER_CATALOG.find((entry) => entry.displayName === name)!;
     const choice: PresenterChoice = {
@@ -44,6 +90,7 @@ describe("presenter animation capabilities", () => {
   it("maps saved route aliases to the exact worker model identity", () => {
     expect(presenterLipSyncEngineForRouteModel("local/musetalk-1.5")).toBe("liveportrait-musetalk-1.5");
     expect(presenterLipSyncEngineForRouteModel("joyvasa-animal")).toBe("joyvasa-animal");
+    expect(presenterLipSyncEngineForRouteModel("local/soulx-flashhead-pro")).toBe("soulx-flashhead-pro");
     expect(presenterLipSyncEngineForRouteModel("off by default")).toBeNull();
   });
 

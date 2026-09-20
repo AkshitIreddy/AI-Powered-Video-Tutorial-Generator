@@ -6,6 +6,7 @@ mod error;
 pub mod generated;
 mod model_download;
 mod model_setup;
+mod presenter_library;
 mod presenter_status;
 mod process_tree;
 mod project_store;
@@ -18,6 +19,7 @@ mod types;
 mod validation;
 
 use commands::*;
+use presenter_library::*;
 use state::{AppState, prepare_portable_process_environment};
 use std::ffi::OsStr;
 use std::fs;
@@ -182,6 +184,11 @@ pub fn run() {
             source_import,
             project_asset_import,
             project_asset_resolve,
+            presenter_library_list,
+            presenter_library_import,
+            presenter_library_resolve,
+            presenter_library_add_to_project,
+            presenter_library_promote,
             presenter_profile_select,
             project_export_archive,
             editor_document::editor_document_export,
@@ -192,6 +199,9 @@ pub fn run() {
             music_search,
             music_candidate_accept,
             music_candidate_reject,
+            presenter_animation_preview_start,
+            presenter_animation_preview_accept,
+            presenter_animation_preview_reject,
             scene_candidate_accept,
             scene_edit_candidate_accept,
             scene_edit_candidate_reject,

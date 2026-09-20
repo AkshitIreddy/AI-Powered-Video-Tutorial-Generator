@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { VisualCandidateReview } from "../VisualCandidateReview";
 import { visualCandidates, type VisualCandidate } from "../visualCandidates";
 
-const candidate: VisualCandidate = { id: "candidate-one", sceneId: "scene-one", status: "ready", artifactHash: "a".repeat(64), mediaType: "image/png", prompt: "An original closed-mouth teacher portrait", model: "sdxl-base", provider: "local-runtime", seed: 72, role: "presenter", createdAt: "2026-09-05T12:00:00Z", rights: { exportEligible: true } };
+const candidate: VisualCandidate = { id: "candidate-one", sceneId: "scene-one", status: "ready", artifactHash: "a".repeat(64), mediaType: "image/png", prompt: "An original closed-mouth teacher portrait", model: "sdxl-base", provider: "local-runtime", seed: 72, role: "presenter", displayName: "Nova", createdAt: "2026-09-05T12:00:00Z", rights: { exportEligible: true } };
 
 const licensedCandidate: VisualCandidate = {
   id: "stock-one",
@@ -55,6 +55,7 @@ describe("generated image review", () => {
   it("does not expose old queued placeholders or unverified active content as images", () => {
     expect(visualCandidates([{ ...candidate, mediaType: "image/svg+xml" }, { ...candidate, status: "queued_for_configured_generator" }, { ...candidate, artifactHash: "../secret" }])).toEqual([]);
     expect(visualCandidates([candidate])).toEqual([candidate]);
+    expect(visualCandidates([{ ...candidate, displayName: "" }])).toEqual([]);
   });
 
   it("requires a loaded portrait and explicit author review before acceptance", async () => {

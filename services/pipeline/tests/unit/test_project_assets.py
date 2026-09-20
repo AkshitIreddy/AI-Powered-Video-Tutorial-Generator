@@ -56,6 +56,12 @@ def test_desktop_worker_exposes_only_typed_asset_operations() -> None:
     assert "editor.timeline.export" in ALLOWED_METHODS
     assert "control.acceptVisualCandidate" in ALLOWED_METHODS
     assert "control.searchVisualCandidates" in ALLOWED_METHODS
+    assert "control.searchMusicCandidates" in ALLOWED_METHODS
+    assert "control.acceptMusicCandidate" in ALLOWED_METHODS
+    assert "control.rejectMusicCandidate" in ALLOWED_METHODS
+    assert "control.previewPresenterAnimation" in ALLOWED_METHODS
+    assert "control.acceptPresenterAnimationPreview" in ALLOWED_METHODS
+    assert "control.rejectPresenterAnimationPreview" in ALLOWED_METHODS
     assert "presenter.profile.select" in ALLOWED_METHODS
     assert "filesystem.read" not in ALLOWED_METHODS
 

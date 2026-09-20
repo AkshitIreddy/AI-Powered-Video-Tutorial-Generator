@@ -33,6 +33,12 @@ from alystria.music_workflow import (
     reject_music_candidate,
     search_music_candidates,
 )
+from alystria.presenter_preview import (
+    accept_presenter_preview,
+    prepare_presenter_preview,
+    reject_presenter_preview,
+    render_presenter_preview,
+)
 from alystria.project import ProjectStore, Revision
 from alystria.project_assets import validate_approved_presenters_for_export
 from alystria.providers.licensed_media_selection import LicensedMediaVisionSelector
@@ -97,6 +103,7 @@ class NativeControlCoordinator:
             "native.regenerate_authored_scene": self._regenerate_authored_scene,
             "native.search_visual_candidates": self._search_visual_candidates,
             "native.search_music_candidates": self._search_music_candidates,
+            "native.preview_presenter_animation": self._preview_presenter_animation,
             "native.render_scene": self._render_scene,
             "native.repair_qa": self._repair_qa,
             "native.export_master": self._export_master,
@@ -111,6 +118,13 @@ class NativeControlCoordinator:
         role = params.get("role", "scene")
         if role not in {"scene", "presenter"}:
             raise ValueError("role must be scene or presenter")
+        presenter_display_name = params.get("presenterDisplayName")
+        if presenter_display_name is not None:
+            if role != "presenter":
+                raise ValueError("presenterDisplayName is only valid for presenter portraits")
+            presenter_display_name = _bounded_text(
+                presenter_display_name, "presenterDisplayName", 120
+            )
         edit_focus = params.get("editFocus")
         if edit_focus is not None:
             if edit_focus not in {"explanation", "pacing"}:
@@ -160,6 +174,11 @@ class NativeControlCoordinator:
             "preservationLocks": sorted(locks),
             "alternatives": alternatives,
             "role": role,
+            **(
+                {"presenterDisplayName": presenter_display_name}
+                if presenter_display_name is not None
+                else {}
+            ),
             "seed": seed,
             **(
                 {"imageRecipe": normalize_image_recipe(params["imageRecipe"], local_provider=True)}
@@ -262,6 +281,14 @@ class NativeControlCoordinator:
             "locale": _bounded_text(params.get("locale", "en-US"), "locale", 40),
         }
         return self._enqueue("native.search_music_candidates", parameters, head.root_hash)
+
+    def submit_presenter_preview(self, params: dict[str, Any]) -> Job:
+        head, _profile, parameters = prepare_presenter_preview(self.store, params)
+        return self._enqueue(
+            "native.preview_presenter_animation",
+            parameters,
+            head.root_hash,
+        )
 
     def submit_qa_repair(self, params: dict[str, Any]) -> Job:
         head = self._validate_head(params)
@@ -642,6 +669,12 @@ class NativeControlCoordinator:
     def reject_scene_edit_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
         return reject_scene_edit_candidate(self.store, params)
 
+    def accept_presenter_preview(self, params: dict[str, Any]) -> dict[str, Any]:
+        return accept_presenter_preview(self.store, params)
+
+    def reject_presenter_preview(self, params: dict[str, Any]) -> dict[str, Any]:
+        return reject_presenter_preview(self.store, params)
+
     def _enqueue(self, kind: str, parameters: dict[str, Any], root_hash: str) -> Job:
         action = ActionKey(
             kind,
@@ -667,6 +700,7 @@ class NativeControlCoordinator:
                     "native.regenerate_authored_scene",
                     "native.search_visual_candidates",
                     "native.search_music_candidates",
+                    "native.preview_presenter_animation",
                 }
                 else 2
             ),
@@ -747,6 +781,16 @@ class NativeControlCoordinator:
             params,
             context,
             transport=self.licensed_media_transport,
+        )
+
+    def _preview_presenter_animation(
+        self, context: JobContext, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        return render_presenter_preview(
+            self.store,
+            self.media_client,  # type: ignore[arg-type]
+            context,
+            params,
         )
 
     def _render_scene(self, context: JobContext, params: dict[str, Any]) -> dict[str, Any]:
@@ -1813,6 +1857,7 @@ def _job_message(job: Job) -> str:
         "native.regenerate_authored_scene": "Authored scene proposals are ready for review",
         "native.search_visual_candidates": "Licensed visual candidates are ready for review",
         "native.search_music_candidates": "Background-music candidates are ready for review",
+        "native.preview_presenter_animation": "Presenter animation preview is ready for review",
         "native.render_scene": "Scene render completed",
         "native.repair_qa": "Selected QA repair work persisted",
         "native.export_master": "Master export completed",

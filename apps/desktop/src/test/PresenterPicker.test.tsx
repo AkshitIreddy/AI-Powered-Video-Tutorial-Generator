@@ -19,6 +19,7 @@ const choices: PresenterChoice[] = [
     ],
   } },
   { id: "legacy", label: "Legacy guide", src: "legacy.png", focalPoint: "50% 20%" },
+  { id: "custom-nova", label: "Nova", src: "nova.png", focalPoint: "50% 38%", portraitArtifactHash: "d".repeat(64), customPortrait: { animationReview: "notReviewed", source: "upload", libraryEntryId: "custom-nova" } },
   { id: "finn-v1", label: "Finn · legacy portrait (static only)", src: "finn-v1.png", focalPoint: "50% 20%", hiddenFromGallery: true, portraitArtifactHash: "c".repeat(64), lipSync: {
     preferredEngineId: "joyvasa-human",
     qualifications: [
@@ -132,5 +133,32 @@ describe("PresenterPicker", () => {
     expect(screen.getByText(/rejected after visual review/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Remove Finn · legacy portrait (static only)" }));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ presenters: [] }));
+  });
+
+  it("offers the generic animation-preview hook for a selected custom portrait", async () => {
+    const user = userEvent.setup();
+    const onPreview = vi.fn().mockResolvedValue(undefined);
+    render(<PresenterPicker
+      choices={choices}
+      value={{ ...value, presenters: [{ presenterId: "custom-nova", portraitAssetId: "custom-nova" }] }}
+      onChange={vi.fn()}
+      onPreviewCustomPresenter={onPreview}
+      runtime={{ activeEngineId: "soulx-flashhead-pro", portraitStatuses: [{ portraitArtifactHash: null, modelId: "soulx-flashhead-pro", modelRevision: "soulx-code-a+weights-b", configured: true, reason: "Configured." }] }}
+    />);
+
+    expect(screen.getByText("Preview required")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Preview animation" }));
+    expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ id: "custom-nova", portraitArtifactHash: "d".repeat(64) }));
+  });
+
+  it("preserves a project-local presenter profile when choosing an imported library portrait", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const imported: PresenterChoice = { ...choices.find((choice) => choice.id === "custom-nova")!, id: "asset-nova", presenterId: "profile-nova" };
+    render(<PresenterPicker choices={[imported]} value={value} onChange={onChange} />);
+    await user.click(screen.getByRole("button", { name: "Select Nova" }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      presenters: [{ presenterId: "profile-nova", portraitAssetId: "asset-nova" }],
+    }));
   });
 });
