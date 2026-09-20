@@ -1928,6 +1928,7 @@ function AppWorkbench() {
               onProjectEdit={(update, options) => setSnapshot((current) => ({ ...current, projects: current.projects.map((item) => item.id === activeProject.id ? { ...item, ...update, updatedAt: "just now" } : item), version: current.version + (options?.alreadyDurable ? 0 : 1) }))}
               onEditorDocumentChange={(document) => queueEditorDocumentSave(activeProject.id, document)}
               onFlushEditorDocument={() => flushEditorDocument(activeProject.id)}
+              runSerializedProjectMutation={enqueueSnapshotSave}
               {...(editorSaveStates[activeProject.id] ? { editorSaveStatus: editorSaveStates[activeProject.id] } : {})}
               onRegenerate={setRegenScene}
               onNotify={notify}
@@ -2729,6 +2730,7 @@ function ProjectWorkspace(props: {
   onProjectEdit: (update: Pick<Partial<ProjectRecord>, "scenes" | "sceneCandidates" | "sceneEditCandidates" | "customization" | "presenterSelection" | "editorDocument" | "reviewNotes" | "nativeHeadRevisionId" | "nativeRevisionNumber">, options?: { alreadyDurable?: boolean }) => void;
   onEditorDocumentChange: (document: EditorProject) => void;
   onFlushEditorDocument: () => Promise<void>;
+  runSerializedProjectMutation: <T>(operation: () => Promise<T>) => Promise<T>;
   editorSaveStatus?: EditorSaveStatus;
   onRegenerate: (scene: Scene) => void;
   onNotify: (title: string, detail: string, tone?: ToastMessage["tone"]) => void;
@@ -2806,7 +2808,7 @@ function StoryboardWorkspace({ project, onScene, onRegenerate, onWorkspace, onPr
   </div>;
 }
 
-function StudioWorkspace({ project, activeScene, mode, version, environment, jobs, onSelectScene, onSceneUpdate, onProjectCustomization, onProjectCreative, onPersistProjectForAction, onRegenerate, onUndo, onRedo, onRenderScene, onNotify, onProjectEdit, onEditorDocumentChange, onFlushEditorDocument, editorSaveStatus, onAddJob }: ProjectWorkspaceProps) {
+function StudioWorkspace({ project, activeScene, mode, version, environment, jobs, onSelectScene, onSceneUpdate, onProjectCustomization, onProjectCreative, onPersistProjectForAction, onRegenerate, onUndo, onRedo, onRenderScene, onNotify, onProjectEdit, onEditorDocumentChange, onFlushEditorDocument, runSerializedProjectMutation, editorSaveStatus, onAddJob }: ProjectWorkspaceProps) {
   const [playing, setPlaying] = useState(false);
   const [previewSeconds, setPreviewSeconds] = useState(0);
   const activeIndex = project.scenes.findIndex((scene) => scene.id === activeScene.id);
@@ -2868,10 +2870,19 @@ function StudioWorkspace({ project, activeScene, mode, version, environment, job
   const importEditorMedia = async (files: readonly File[]) => {
     const identity = nativeProjectLink(projectRef.current);
     if (!identity) throw new Error("Open a saved desktop project before importing media.");
-    return importNativeEditorMedia(files, identity, editorImportController.current!, editorImportRights, projectAssetResolve, (update) => {
-      projectRef.current = { ...projectRef.current, ...update };
-      onProjectEdit(update, { alreadyDurable: true });
-    });
+    return importNativeEditorMedia(
+      files,
+      identity,
+      editorImportController.current!,
+      editorImportRights,
+      projectAssetResolve,
+      (update) => {
+        projectRef.current = { ...projectRef.current, ...update };
+        onProjectEdit(update, { alreadyDurable: true });
+      },
+      runSerializedProjectMutation,
+      errorMessage,
+    );
   };
   const resolveEditorWaveform = async (asset: EditorMediaAsset) => {
     const identity = nativeProjectLink(projectRef.current);

@@ -55,6 +55,7 @@ try {
     await expect(page.locator(".runtime-badge")).toContainText("Worker ready", { timeout: 45_000 });
     workspace = await page.evaluate(() => JSON.parse(localStorage.getItem("alystria-studio-v2") ?? "{}"));
   }
+  await installNativeInvokeFailureRecorder(page);
 
   await page.getByRole("button", { name: /open project/i }).click();
   await expect(page.getByRole("navigation", { name: /project workspace/i })).toBeVisible({ timeout: 45_000 });
@@ -81,6 +82,7 @@ try {
       const document = state.projects?.find((candidate) => candidate.nativeProjectId === id)?.editorDocument;
       return document?.importReceipts?.findLast((receipt) => receipt.fileName === name) ?? null;
     }, { id: project.nativeProjectId, name: importedName });
+    const rejectedNativeCommands = await page.evaluate(() => globalThis.__alystriaRejectedNativeCommands ?? []);
     const contentBase64 = (await readFile(mediaPath)).toString("base64");
     const directDiagnostic = await page.evaluate(async ({ identity, contentBase64, fileName }) => {
       const invoke = window.__TAURI_INTERNALS__?.invoke;
@@ -102,7 +104,7 @@ try {
         return { succeeded: false, text: String(error), json: JSON.stringify(error), keys: error && typeof error === "object" ? Object.keys(error) : [] };
       }
     }, { identity: { projectId: project.nativeProjectId, projectDirectory: project.nativeProjectDirectory }, contentBase64, fileName: importedName });
-    throw new Error(`Native editor import failed: ${JSON.stringify({ persistedImport, directDiagnostic })}`);
+    throw new Error(`Native editor import failed: ${JSON.stringify({ persistedImport, rejectedNativeCommands, directDiagnostic })}`);
   }
   await expect(card).toContainText("ready", { timeout: 90_000 });
   await card.getByRole("button", { name: `Place ${importedName} at playhead` }).click();
@@ -379,6 +381,30 @@ async function invokeNative(page, command, input) {
     if (typeof invoke !== "function") throw new Error("Tauri IPC is unavailable in the native WebView");
     return await invoke(command, { input });
   }, { command, input });
+}
+
+async function installNativeInvokeFailureRecorder(page) {
+  await page.evaluate(() => {
+    const internals = globalThis.__TAURI_INTERNALS__;
+    const invoke = internals?.invoke;
+    if (typeof invoke !== "function" || globalThis.__alystriaRejectedNativeCommands) return;
+    const failures = [];
+    globalThis.__alystriaRejectedNativeCommands = failures;
+    internals.invoke = async (command, args, options) => {
+      try {
+        return await invoke.call(internals, command, args, options);
+      } catch (error) {
+        const record = { command: String(command) };
+        if (typeof error === "string") record.message = error.slice(0, 1_000);
+        else if (error && typeof error === "object") {
+          if (typeof error.code === "string") record.code = error.code.slice(0, 160);
+          if (typeof error.message === "string") record.message = error.message.slice(0, 1_000);
+        }
+        failures.push(record);
+        throw error;
+      }
+    };
+  });
 }
 
 async function verifyEditorVideoPlayback(editor, video, timeoutMs) {
