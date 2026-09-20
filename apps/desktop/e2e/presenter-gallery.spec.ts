@@ -43,5 +43,8 @@ test("@casual-presenters shows featured tutors, explicit animal filters, and leg
   await wizard.getByLabel("Presenter visual style").selectOption("All styles");
   await expect(gallery.getByRole("button", { name: "Select Daniel · software instructor" })).toBeVisible();
   await expect(wizard).not.toContainText(/lip-sync (?:ready|compatible)/i);
+  await wizard.getByLabel("Search presenters").fill("Finn");
+  await expect(gallery.getByRole("button")).toHaveCount(1);
+  await expect(gallery.getByRole("button", { name: "Select Finn · retro anime maker tutor" })).toBeVisible();
   await wizard.screenshot({ path: testInfo.outputPath("casual-presenter-gallery.png") });
 });
