@@ -1,6 +1,6 @@
 """Pinned worker boundary for the local presenter runtime.
 
-This file intentionally has no torch or MuseTalk import at module load time. The
+This file intentionally has no Torch or presenter-model import at module load time. The
 privileged runtime pack supplies one exact-hash adapter implementing
 ``run_presenter_job(job, emit_progress)`` and the adapter owns model-specific
 imports. The broker verifies the same ledger before launch; this worker verifies
@@ -21,9 +21,11 @@ from typing import Any, NoReturn
 
 MUSE_TALK_CONTRACT_ID = "alystria.musetalk.worker.v1"
 JOYVASA_CONTRACT_ID = "alystria.joyvasa.worker.v1"
+SOULX_CONTRACT_ID = "alystria.soulx-flashhead.worker.v1"
 MUSE_TALK_MODELS = frozenset({"musetalk", "musetalk-1.5", "liveportrait-musetalk-1.5"})
 JOYVASA_MODELS = frozenset({"joyvasa-human", "joyvasa-animal"})
-SUPPORTED_MODELS = MUSE_TALK_MODELS | JOYVASA_MODELS
+SOULX_MODELS = frozenset({"soulx-flashhead-pro"})
+SUPPORTED_MODELS = MUSE_TALK_MODELS | JOYVASA_MODELS | SOULX_MODELS
 ALLOWED_MUSE_TALK_ROLES = frozenset(
     {
         "adapter-entrypoint",
@@ -76,9 +78,23 @@ ALLOWED_JOYVASA_ROLES = frozenset(
     }
 )
 REQUIRED_JOYVASA_ROLES = ALLOWED_JOYVASA_ROLES
+ALLOWED_SOULX_ROLES = frozenset(
+    {
+        "adapter-entrypoint",
+        "runtime-source-manifest",
+        "audio-feature-config",
+        "audio-feature-preprocessor",
+        "audio-feature-weights",
+        "flashhead-config",
+        "flashhead-weights",
+        "vae-weights",
+    }
+)
+REQUIRED_SOULX_ROLES = ALLOWED_SOULX_ROLES
 CONTRACTS = {
     MUSE_TALK_CONTRACT_ID: (MUSE_TALK_MODELS, ALLOWED_MUSE_TALK_ROLES, REQUIRED_MUSE_TALK_ROLES),
     JOYVASA_CONTRACT_ID: (JOYVASA_MODELS, ALLOWED_JOYVASA_ROLES, REQUIRED_JOYVASA_ROLES),
+    SOULX_CONTRACT_ID: (SOULX_MODELS, ALLOWED_SOULX_ROLES, REQUIRED_SOULX_ROLES),
 }
 SHA256_LENGTH = 64
 MAX_MANIFEST_BYTES = 1024 * 1024
@@ -352,6 +368,7 @@ def main() -> int:
         "liveportrait-musetalk-1.5": "LivePortrait + MuseTalk",
         "joyvasa-human": "JoyVASA human",
         "joyvasa-animal": "JoyVASA animal",
+        "soulx-flashhead-pro": "SoulX-FlashHead Pro",
     }.get(job["model"], "MuseTalk")
     emit_progress("accepted", 0.0, f"{presenter_name} job accepted")
     emit_progress("verified", 0.05, "Exact-hash runtime and inputs verified")

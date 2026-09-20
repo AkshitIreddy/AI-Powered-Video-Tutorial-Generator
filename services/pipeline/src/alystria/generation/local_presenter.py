@@ -74,10 +74,12 @@ AUDIO_SUFFIXES = {
 }
 MUSE_TALK_CONTRACT_ID = "alystria.musetalk.worker.v1"
 JOYVASA_CONTRACT_ID = "alystria.joyvasa.worker.v1"
+SOULX_CONTRACT_ID = "alystria.soulx-flashhead.worker.v1"
 MUSE_TALK_MODELS = frozenset(
     {"musetalk", "musetalk-1.5", "liveportrait-musetalk-1.5"}
 )
 JOYVASA_MODELS = frozenset({"joyvasa-human", "joyvasa-animal"})
+SOULX_MODELS = frozenset({"soulx-flashhead-pro"})
 ALLOWED_MUSE_TALK_FILE_ROLES = frozenset(
     {
         "adapter-entrypoint",
@@ -130,8 +132,23 @@ ALLOWED_JOYVASA_FILE_ROLES = frozenset(
     }
 )
 REQUIRED_JOYVASA_FILE_ROLES = ALLOWED_JOYVASA_FILE_ROLES
+ALLOWED_SOULX_FILE_ROLES = frozenset(
+    {
+        "adapter-entrypoint",
+        "runtime-source-manifest",
+        "audio-feature-config",
+        "audio-feature-preprocessor",
+        "audio-feature-weights",
+        "flashhead-config",
+        "flashhead-weights",
+        "vae-weights",
+    }
+)
+REQUIRED_SOULX_FILE_ROLES = ALLOWED_SOULX_FILE_ROLES
 ALLOWED_PRESENTER_FILE_ROLES = (
-    ALLOWED_MUSE_TALK_FILE_ROLES | ALLOWED_JOYVASA_FILE_ROLES
+    ALLOWED_MUSE_TALK_FILE_ROLES
+    | ALLOWED_JOYVASA_FILE_ROLES
+    | ALLOWED_SOULX_FILE_ROLES
 )
 MAX_PROGRESS_BYTES = 1024 * 1024
 MAX_PROGRESS_EVENTS = 10_000
@@ -323,6 +340,11 @@ class PresenterWorkerContract:
                 REQUIRED_JOYVASA_FILE_ROLES,
                 "JoyVASA",
             ),
+            SOULX_CONTRACT_ID: (
+                ALLOWED_SOULX_FILE_ROLES,
+                REQUIRED_SOULX_FILE_ROLES,
+                "SoulX-FlashHead",
+            ),
         }.get(self.contract_id)
         if contract_roles is None:
             raise ValueError(f"Unsupported presenter worker contract: {self.contract_id}")
@@ -480,15 +502,23 @@ class LocalPresenterRuntime:
                     "Managed presenter mode requires a pinned entrypoint file, not inline/module code"
                 )
             model_id = self.model_id.casefold()
+            if model_id in SOULX_MODELS and self.motion_profile != "native-idle":
+                raise ValueError("Managed SoulX-FlashHead requires native-idle motion")
             expected_contract = (
                 MUSE_TALK_CONTRACT_ID
                 if model_id in MUSE_TALK_MODELS
                 else JOYVASA_CONTRACT_ID
                 if model_id in JOYVASA_MODELS
+                else SOULX_CONTRACT_ID
+                if model_id in SOULX_MODELS
                 else None
             )
             if expected_contract is not None:
-                runtime_name = "MuseTalk" if expected_contract == MUSE_TALK_CONTRACT_ID else "JoyVASA"
+                runtime_name = {
+                    MUSE_TALK_CONTRACT_ID: "MuseTalk",
+                    JOYVASA_CONTRACT_ID: "JoyVASA",
+                    SOULX_CONTRACT_ID: "SoulX-FlashHead",
+                }[expected_contract]
                 if self.encoder_policy is None:
                     raise ValueError(
                         f"Managed {runtime_name} requires an explicitly probed H.264 encoder policy"
@@ -498,8 +528,12 @@ class LocalPresenterRuntime:
                         f"Managed {runtime_name} requires the brokered job manifest; direct upstream "
                         "libx264 muxing is not permitted"
                     )
-                if expected_contract == JOYVASA_CONTRACT_ID and "{workspace}" not in placeholders:
-                    raise ValueError("Managed JoyVASA requires the brokered attempt workspace")
+                if expected_contract in {JOYVASA_CONTRACT_ID, SOULX_CONTRACT_ID} and (
+                    "{workspace}" not in placeholders
+                ):
+                    raise ValueError(
+                        f"Managed {runtime_name} requires the brokered attempt workspace"
+                    )
                 if self.worker_contract is None:
                     raise ValueError(
                         f"Managed {runtime_name} requires an exact-hash worker contract"
