@@ -1,0 +1,874 @@
+{
+  "schemaVersion": 1,
+  "packId": "alystria-joyvasa-no-crop-offset8-gated-20260920",
+  "sourceRevision": "916a90f8de490e8648fee460c1200bd5d9a795af",
+  "modelRevision": "joyvasa-916a90f8+checkpoints-b8f13fe9+liveportrait-82a4fa67+hubert-fce03754",
+  "motionProfile": "native-idle",
+  "candidateEvidence": {
+    "relativePath": "candidate-metadata/candidate-manifest-v2.json",
+    "sha256": "cd22d9e2d97162e1a99201a329dd436c19984f3e64123ba4674c3d6ac4df4ff6",
+    "sourceRevisionField": "source.commit"
+  },
+  "files": [
+    {
+      "origin": "candidate",
+      "sourcePath": "LICENSE",
+      "installPath": "LICENSE",
+      "bytes": 1087,
+      "sha256": "558242d9208c4ac06a01a99bef412eebd11460f5ea9399e96bc5c9a6c35d1e43"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "inference.py",
+      "installPath": "inference.py",
+      "bytes": 2586,
+      "sha256": "98ccc0dfb952939cd961e83e4c9512d3b6336a14d6d5157ff9a7a9addd0bd446"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/__init__.py",
+      "installPath": "src/__init__.py",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/config/__init__.py",
+      "installPath": "src/config/__init__.py",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/config/argument_config.py",
+      "installPath": "src/config/argument_config.py",
+      "bytes": 5719,
+      "sha256": "2be41bcd511ed33723be77c0c3de76776ac0cfdcf782055f4e9c7ab56f5930d2"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/config/base_config.py",
+      "installPath": "src/config/base_config.py",
+      "bytes": 972,
+      "sha256": "32464bd6ce9e740c3eea6af870dc41aae48789c9fb8a95494ffcb996f097c3c6"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/config/crop_config.py",
+      "installPath": "src/config/crop_config.py",
+      "bytes": 1738,
+      "sha256": "6cc02f959374bd01d412a9de9a4b0b207101700d85630b9f7606fe64c9acbff5"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/config/inference_config.py",
+      "installPath": "src/config/inference_config.py",
+      "bytes": 4891,
+      "sha256": "60f5027afa58678a376b612447a97e86ed85c4cd84476c6655581c3b7746a343"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/config/models.yaml",
+      "installPath": "src/config/models.yaml",
+      "bytes": 1377,
+      "sha256": "0d7383cb1fac788b02265c8f86e657deb924340f7a2c2faf9ed13c8ac40742b7"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/live_portrait_wmg_pipeline.py",
+      "installPath": "src/live_portrait_wmg_pipeline.py",
+      "bytes": 10853,
+      "sha256": "15525335568b49fcdbf1b07a20976b2105ebf6c187b9ade1536c1dae407a8a01"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/live_portrait_wmg_pipeline_animal.py",
+      "installPath": "src/live_portrait_wmg_pipeline_animal.py",
+      "bytes": 8154,
+      "sha256": "48304fd2f327f11386acea79a6f661b88ff97f6860e61ec2fbc3adc608d09030"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/live_portrait_wmg_wrapper.py",
+      "installPath": "src/live_portrait_wmg_wrapper.py",
+      "bytes": 25216,
+      "sha256": "cf6fa4cecbc9e543c0efe4dc912eda1f97477a39470cf65f68deb8bafed2cdcb"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/__init__.py",
+      "installPath": "src/modules/__init__.py",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/appearance_feature_extractor.py",
+      "installPath": "src/modules/appearance_feature_extractor.py",
+      "bytes": 2022,
+      "sha256": "05bb27f38dade0ce02183ebff79171b1d6ca624cce709eca3b3b48993fd40db5"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/common.py",
+      "installPath": "src/modules/common.py",
+      "bytes": 1794,
+      "sha256": "c55b3b1dd0e430be12a310167abbdc995956843c107cea57c425afe9fa3a2af4"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/convnextv2.py",
+      "installPath": "src/modules/convnextv2.py",
+      "bytes": 5275,
+      "sha256": "f4b744455ab357221045d667f7c81e4609b8449e110923a423f9c2dfa7afb015"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/dense_motion.py",
+      "installPath": "src/modules/dense_motion.py",
+      "bytes": 5651,
+      "sha256": "7358fbe7aabd42f3c4b9007f95faa81de9641515f142c3e24ca8595820b45be3"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/dit_talking_head.py",
+      "installPath": "src/modules/dit_talking_head.py",
+      "bytes": 23881,
+      "sha256": "69be619c5a592120e36b7285bffecfa5962180cbc02c78a4e5d0db892b14bc70"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/hubert.py",
+      "installPath": "src/modules/hubert.py",
+      "bytes": 2373,
+      "sha256": "f6df30f0ef3620cb4f1d128dcc5ab7258b0476ee7a70c740726340b051aeb217"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/motion_extractor.py",
+      "installPath": "src/modules/motion_extractor.py",
+      "bytes": 1118,
+      "sha256": "ce5ec0b86a7364d139d0dd097a80ac72e1a95445fd015626ceb254fe37d8447c"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/spade_generator.py",
+      "installPath": "src/modules/spade_generator.py",
+      "bytes": 2717,
+      "sha256": "e56a51116a64f3f06afb848c631d523611ac91ceb532cb3b79abc3ec9e10e780"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/stitching_retargeting_network.py",
+      "installPath": "src/modules/stitching_retargeting_network.py",
+      "bytes": 1539,
+      "sha256": "cb548fde067cf3dde8dcfd1517125d28c3fd18307e65de213d7a45803b0764f3"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/util.py",
+      "installPath": "src/modules/util.py",
+      "bytes": 16389,
+      "sha256": "b93c790a9a22fe37db446d78dd6a8c09d4e9488e404875a3f73e3f3322559d6f"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/warping_network.py",
+      "installPath": "src/modules/warping_network.py",
+      "bytes": 2923,
+      "sha256": "73ec86405c5fad2ae9cf8d2e30dc3407a415c45dc14a29204b521ca634088ebf"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/modules/wav2vec2.py",
+      "installPath": "src/modules/wav2vec2.py",
+      "bytes": 6167,
+      "sha256": "e4bf4e0a060becd8b710c4edae8deafcbe4f97a0a8dff1d6ec6825f1c344c882"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/scheduler.py",
+      "installPath": "src/scheduler.py",
+      "bytes": 3326,
+      "sha256": "570a0d9baa510ea17e92e8dacb4acd4ab7f7eb7dcae8ccaec4adf98029ff0d4e"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/__init__.py",
+      "installPath": "src/utils/__init__.py",
+      "bytes": 21,
+      "sha256": "a1ae35d8eba89119bd55fdd794224baa9663cfd65cbb100ac67101bce2bbbb63"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/camera.py",
+      "installPath": "src/utils/camera.py",
+      "bytes": 1882,
+      "sha256": "5e6287b4a88f2160842b2fa62767c13118ec1034f411d34ddc9061946f8270e2"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/common.py",
+      "installPath": "src/utils/common.py",
+      "bytes": 16732,
+      "sha256": "9de3b99606a4dc5d2a0f672b7226b627e749a0d1dd6b0d3a2c5e43e27d684d07"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/crop.py",
+      "installPath": "src/utils/crop.py",
+      "bytes": 14181,
+      "sha256": "70598d9106d66ea3c4743ca409574142d7be00dbe0e693d2e41208e30030f636"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/filter.py",
+      "installPath": "src/utils/filter.py",
+      "bytes": 6084,
+      "sha256": "74759fea28c759770d3d57af46ac9aceb6b9b1b28541ba115367837ea88390bc"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/helper.py",
+      "installPath": "src/utils/helper.py",
+      "bytes": 7970,
+      "sha256": "9c68bca09abc3b838c1d87ee4b969b8fbe363ada7166458c3fab2535547d7108"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/io.py",
+      "installPath": "src/utils/io.py",
+      "bytes": 3312,
+      "sha256": "e7243653293e1661e60f0a915e28ee4322762f33a8c39e8bb0dc0060a2eca65f"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/retargeting_utils.py",
+      "installPath": "src/utils/retargeting_utils.py",
+      "bytes": 1015,
+      "sha256": "471ebf61340b86e3d04c7d363ac7072ee56ee8afaadab216481235eb1094c1b5"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/rprint.py",
+      "installPath": "src/utils/rprint.py",
+      "bytes": 264,
+      "sha256": "1d7858c0bbbdd94dcac0314142651f5ad47553309a0362121f847cd81a62573e"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/timer.py",
+      "installPath": "src/utils/timer.py",
+      "bytes": 635,
+      "sha256": "35c040318f347881a8b83739f5c2410ed9cc45811dacc0898b50eb6e98742bdb"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/video.py",
+      "installPath": "src/utils/video.py",
+      "bytes": 8331,
+      "sha256": "093250a219a10488f0dc4f7920cbc9d1011760da0eee2fcdf6216ffee484f6cc"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/viz.py",
+      "installPath": "src/utils/viz.py",
+      "bytes": 3922,
+      "sha256": "61855c753a81c7080108b00a3eb499c335d14e3724e188b9988a49c8728d1add"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/resources/lip_array.pkl",
+      "installPath": "src/utils/resources/lip_array.pkl",
+      "bytes": 658,
+      "sha256": "2d61aab1cc37a2741f4774fe9963b2db2566e063f798b1d28d791dd119352738"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "src/utils/resources/mask_template.png",
+      "installPath": "src/utils/resources/mask_template.png",
+      "bytes": 3470,
+      "sha256": "4c53e64a07ae3056af2b38548ae5b6cceb04d5c3e6514c7a8d2c3aff9da1ee76"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/JoyVASA/motion_generator/motion_generator_hubert_chinese.pt",
+      "installPath": "pretrained_weights/JoyVASA/motion_generator/motion_generator_hubert_chinese.pt",
+      "bytes": 414067833,
+      "sha256": "9dd869329725caedf5f0c13dd383abec1e385f566d8afe2047b141f604844e80"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/JoyVASA/motion_template/motion_template.pkl",
+      "installPath": "pretrained_weights/JoyVASA/motion_template/motion_template.pkl",
+      "bytes": 3616,
+      "sha256": "294ce67350b18031b375361756f654c76d5e14c8f1e319cf9ed07f759ef81a98"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/chinese-hubert-base/config.json",
+      "installPath": "pretrained_weights/chinese-hubert-base/config.json",
+      "bytes": 1380,
+      "sha256": "f6bd1bdef239518d022edcef31243acf344a2afa33d5428e16f221cac09cbcd0"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/chinese-hubert-base/preprocessor_config.json",
+      "installPath": "pretrained_weights/chinese-hubert-base/preprocessor_config.json",
+      "bytes": 212,
+      "sha256": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/chinese-hubert-base/pytorch_model.bin",
+      "installPath": "pretrained_weights/chinese-hubert-base/pytorch_model.bin",
+      "bytes": 377552987,
+      "sha256": "2fefccd26c2794a583b80f6f7210c721873cb7ebae2c1cde3baf9b27855e24d8"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/liveportrait/base_models/appearance_feature_extractor.pth",
+      "installPath": "pretrained_weights/liveportrait/base_models/appearance_feature_extractor.pth",
+      "bytes": 3387959,
+      "sha256": "5279bb8654293dbdf327030b397f107237dd9212fb11dd75b83dfb635211ceb5"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/liveportrait/base_models/motion_extractor.pth",
+      "installPath": "pretrained_weights/liveportrait/base_models/motion_extractor.pth",
+      "bytes": 112545506,
+      "sha256": "251e6a94ad667a1d0c69526d292677165110ef7f0cf0f6d199f0e414e8aa0ca5"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/liveportrait/base_models/spade_generator.pth",
+      "installPath": "pretrained_weights/liveportrait/base_models/spade_generator.pth",
+      "bytes": 221813590,
+      "sha256": "4780afc7909a9f84e24c01d73b31a555ef651521a1fe3b2429bd04534d992aee"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/liveportrait/base_models/warping_module.pth",
+      "installPath": "pretrained_weights/liveportrait/base_models/warping_module.pth",
+      "bytes": 182180086,
+      "sha256": "2f61a6f265fe344f14132364859a78bdbbc2068577170693da57fb96d636e282"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/liveportrait_animals/base_models_v1.1/appearance_feature_extractor.pth",
+      "installPath": "pretrained_weights/liveportrait_animals/base_models_v1.1/appearance_feature_extractor.pth",
+      "bytes": 3386487,
+      "sha256": "7e320d545579caa83c7b094cef8b7b43fe92a2e410c219ffa97b08be549f45bf"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/liveportrait_animals/base_models_v1.1/motion_extractor.pth",
+      "installPath": "pretrained_weights/liveportrait_animals/base_models_v1.1/motion_extractor.pth",
+      "bytes": 112542562,
+      "sha256": "827d0ea4c56ff252dba50feece3bc62ced365ecae5edb86db07eb71b2f39a696"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/liveportrait_animals/base_models_v1.1/spade_generator.pth",
+      "installPath": "pretrained_weights/liveportrait_animals/base_models_v1.1/spade_generator.pth",
+      "bytes": 221811030,
+      "sha256": "6ac31a9b608f3920ec41a402b1c4e29d22007dafd79a855f204aae9307039445"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "pretrained_weights/liveportrait_animals/base_models_v1.1/warping_module.pth",
+      "installPath": "pretrained_weights/liveportrait_animals/base_models_v1.1/warping_module.pth",
+      "bytes": 182178742,
+      "sha256": "7dfd251dc6b3a1baefebfc658f5bb2a2c565649cdb9aa75032591e824a0bfcee"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_asyncio.pyd",
+      "installPath": "python-base/_asyncio.pyd",
+      "bytes": 64424,
+      "sha256": "3b0661ef2264d6566368b677c732ba062ac4688ef40c22476992a0f9536b0010"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_bz2.pyd",
+      "installPath": "python-base/_bz2.pyd",
+      "bytes": 83368,
+      "sha256": "f178e29921c04fb68cc08b1e5d1181e5df8ce1de38a968778e27990f4a69973c"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_ctypes.pyd",
+      "installPath": "python-base/_ctypes.pyd",
+      "bytes": 122792,
+      "sha256": "92d7954d9099762d81c1ae2836c11b6ba58c1883fde8eeefe387cc93f2f6afb4"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_decimal.pyd",
+      "installPath": "python-base/_decimal.pyd",
+      "bytes": 250280,
+      "sha256": "6314c99a3efa15307e7bdbe18c0b49bc841c734f42923a0b44aab42ed7d4a62d"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_elementtree.pyd",
+      "installPath": "python-base/_elementtree.pyd",
+      "bytes": 127912,
+      "sha256": "940d360744414399037257431492853565b17f83d7d7d25fb0209ef6f7c260c2"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_hashlib.pyd",
+      "installPath": "python-base/_hashlib.pyd",
+      "bytes": 61864,
+      "sha256": "1be5cfd06a782b2ae8e4629d9d035cbc487074e8f63b9773c85e317be29c0430"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_lzma.pyd",
+      "installPath": "python-base/_lzma.pyd",
+      "bytes": 158120,
+      "sha256": "80a6ebe46f43ffa93bbdbfc83e67d6f44a44055de1439b06e4dd2983cb243df6"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_msi.pyd",
+      "installPath": "python-base/_msi.pyd",
+      "bytes": 43432,
+      "sha256": "f5081c75e45c1277b475e0235446c315d9d9a4a12a41c2abfc9ec4e8cbe6e147"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_multiprocessing.pyd",
+      "installPath": "python-base/_multiprocessing.pyd",
+      "bytes": 33192,
+      "sha256": "be8269c83666eaa342788e62085a3db28f81512d2cfa6156bf137b13ebebe9e0"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_overlapped.pyd",
+      "installPath": "python-base/_overlapped.pyd",
+      "bytes": 48552,
+      "sha256": "0606a0c5c4ab46c4a25ded5a2772e672016cac574503681841800f9059af21c4"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_queue.pyd",
+      "installPath": "python-base/_queue.pyd",
+      "bytes": 30632,
+      "sha256": "09c5faf270fd63bde6c45cc53b05160262c7ca47d4c37825ed3e15d479daee66"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_socket.pyd",
+      "installPath": "python-base/_socket.pyd",
+      "bytes": 77736,
+      "sha256": "8046bf64e463d5aa38d13525891156131cf997c2e6cdf47527bc352f00f5c90a"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_sqlite3.pyd",
+      "installPath": "python-base/_sqlite3.pyd",
+      "bytes": 97704,
+      "sha256": "85de6d0b08b5cc1f2c3225c07338c76e1cab43b4de66619824f7b06cb2284c9e"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_ssl.pyd",
+      "installPath": "python-base/_ssl.pyd",
+      "bytes": 159144,
+      "sha256": "58b772b53bfe898513c0eb264ae4fa47ed3d8f256bc8f70202356d20f9ecb6dc"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_uuid.pyd",
+      "installPath": "python-base/_uuid.pyd",
+      "bytes": 23976,
+      "sha256": "51dd1ea5e8cacf7ec4cadefdf685334c7725ff85978390d0b3d67fc8c54fe1db"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/_zoneinfo.pyd",
+      "installPath": "python-base/_zoneinfo.pyd",
+      "bytes": 43432,
+      "sha256": "9f31484c4e1c43004a7583695f9bcc3442ff78e179005935171bf2176718e428"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/libcrypto-1_1.dll",
+      "installPath": "python-base/libcrypto-1_1.dll",
+      "bytes": 3439512,
+      "sha256": "9c0a0a11629cced6a064932e95a0158ee936739d75a56338702fed97cb0bad55"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/libffi-7.dll",
+      "installPath": "python-base/libffi-7.dll",
+      "bytes": 32792,
+      "sha256": "f60dd9f2fcbd495674dfc1555effb710eb081fc7d4cae5fa58c438ab50405081"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/libssl-1_1.dll",
+      "installPath": "python-base/libssl-1_1.dll",
+      "bytes": 698784,
+      "sha256": "ed1c8769f5096afd000fc730a37b11177fcf90890345071ab7fbceac684d571f"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/LICENSE.txt",
+      "installPath": "python-base/LICENSE.txt",
+      "bytes": 32763,
+      "sha256": "ff4591f6dec4dc7ebe86e0c1c0eef1f2c7b651ee3ba45e5b4ccb35f2607bdd43"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/pyexpat.pyd",
+      "installPath": "python-base/pyexpat.pyd",
+      "bytes": 198568,
+      "sha256": "dbe6e7be3a7418811bd5987b0766d8d660190d867cd42f8ed79e70d868e8aa43"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/python.cat",
+      "installPath": "python-base/python.cat",
+      "bytes": 600973,
+      "sha256": "5e27f2c4dac2e56d19b614eba841002a8e5be3f7863fe996b85e34702b0fe072"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/python.exe",
+      "installPath": "python-base/python.exe",
+      "bytes": 101800,
+      "sha256": "32ce1d2650ea8b9d394f5b8f94677d27888dccdc3713365bf903a8c465c9d776"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/python3.dll",
+      "installPath": "python-base/python3.dll",
+      "bytes": 64936,
+      "sha256": "5d78cd1365ea9ae4e95872576cfa4055342f1e80b06f3051cf91d564b6cd09f5"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/python310._pth",
+      "installPath": "python-base/python310._pth",
+      "bytes": 49,
+      "sha256": "58125970415b3908255e760c59c4b2389636ee482ad2468d49934d1a043872a7"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/python310.dll",
+      "installPath": "python-base/python310.dll",
+      "bytes": 4493736,
+      "sha256": "058925e4bbfcb460a3c00ec824b8390583baef0c780a7c7ff01d43d9eec45f20"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/python310.zip",
+      "installPath": "python-base/python310.zip",
+      "bytes": 2640671,
+      "sha256": "d715c5e6f7e7a544de5e41d369dea3f6294f781c20e21a1ca5a25e39b67f35f4"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/pythonw.exe",
+      "installPath": "python-base/pythonw.exe",
+      "bytes": 100264,
+      "sha256": "cb893f43012c270c23043563282e012f2552f7c2996f8951cb5672b197511bab"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/select.pyd",
+      "installPath": "python-base/select.pyd",
+      "bytes": 29096,
+      "sha256": "68b80009ab656ffe811d680585fac3d4f9c1b45f29d48c67ea2b3580ec4d86a1"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/sqlite3.dll",
+      "installPath": "python-base/sqlite3.dll",
+      "bytes": 1445800,
+      "sha256": "50825ea8b431d86ec228d9fa6b643e2c70044c709f5d9471d779be63ff18bcd0"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/unicodedata.pyd",
+      "installPath": "python-base/unicodedata.pyd",
+      "bytes": 1121192,
+      "sha256": "2cf6c5dea30bb0584991b2065c052c22d258b6e15384447dcea193fdcac5f758"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/vcruntime140.dll",
+      "installPath": "python-base/vcruntime140.dll",
+      "bytes": 98736,
+      "sha256": "d66c3b47091ceb3f8d3cc165a43d285ae919211a0c0fcb74491ee574d8d464f8"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/vcruntime140_1.dll",
+      "installPath": "python-base/vcruntime140_1.dll",
+      "bytes": 38304,
+      "sha256": "1758085a61527b427c4380f0c976d29a8bee889f2ac480c356a3f166433bf70e"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "python-base/winsound.pyd",
+      "installPath": "python-base/winsound.pyd",
+      "bytes": 29608,
+      "sha256": "e36128a65a161afe8bb5586882eee014e4c2761901ca602c31b19b981531023a"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "ffmpeg/avcodec-62.dll",
+      "installPath": "ffmpeg/avcodec-62.dll",
+      "bytes": 70869504,
+      "sha256": "87f17571aafaf4af460d4f35f99674ae6a94a7531ce79050a416b7d54182a1a9"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "ffmpeg/avdevice-62.dll",
+      "installPath": "ffmpeg/avdevice-62.dll",
+      "bytes": 3923968,
+      "sha256": "0d9ef5990a9bac5a9d385e46850e05a3c54173495cd160f27898889299e282b1"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "ffmpeg/avfilter-11.dll",
+      "installPath": "ffmpeg/avfilter-11.dll",
+      "bytes": 30029312,
+      "sha256": "da7d380d738534eae0e1deccf9825777f98e2046ca2612a3a73a4aee302064eb"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "ffmpeg/avformat-62.dll",
+      "installPath": "ffmpeg/avformat-62.dll",
+      "bytes": 22107648,
+      "sha256": "7f8b5dfd7eb945522c0e089cbdff230d6c4f108d2229f669176da87aa1d2ebb2"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "ffmpeg/avutil-60.dll",
+      "installPath": "ffmpeg/avutil-60.dll",
+      "bytes": 2937344,
+      "sha256": "13f412ff746ec2f2813b0a3d184a34361bdb425635e26d3974325148fdd6bce8"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "ffmpeg/ffmpeg.exe",
+      "installPath": "ffmpeg/ffmpeg.exe",
+      "bytes": 541184,
+      "sha256": "0d600a70c6b62c45c8078638d1ecd4ed05545f3fb6ac2d19b406e3ae8d70c961"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "ffmpeg/ffprobe.exe",
+      "installPath": "ffmpeg/ffprobe.exe",
+      "bytes": 225792,
+      "sha256": "a413e4866082dd7eb29a4a4e4b2fa13c76b546950ad0071cbff62e10b414119e"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "ffmpeg/LICENSE.txt",
+      "installPath": "ffmpeg/LICENSE.txt",
+      "bytes": 7651,
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "ffmpeg/swresample-6.dll",
+      "installPath": "ffmpeg/swresample-6.dll",
+      "bytes": 722944,
+      "sha256": "2d96741de9b7cd36ea6246d3d1c688f4ff0b4586af0e5814f74062b0c2138e0e"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "ffmpeg/swscale-9.dll",
+      "installPath": "ffmpeg/swscale-9.dll",
+      "bytes": 12759040,
+      "sha256": "3aed98acf700fb6211403dc2d22bbd794652121f59c1f8ab147ffb9d4379c865"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "candidate-metadata/joyvasa-final-source.patch",
+      "installPath": "manifests/joyvasa-final-source.patch",
+      "bytes": 13943,
+      "sha256": "784e5170b01e1d594f8dbf3438e6580e96d6cf2c99738580addced989f450e8a"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "candidate-metadata/requirements-inference-win-cu121.lock.txt",
+      "installPath": "manifests/requirements-inference-win-cu121.lock.txt",
+      "bytes": 1395,
+      "sha256": "66cad1571a62ce0dd3ee86ca48017dcdf2f8bc9a7a69ad2f229a6af66adf730b"
+    },
+    {
+      "origin": "candidate",
+      "sourcePath": "candidate-metadata/candidate-manifest-v2.json",
+      "installPath": "manifests/candidate-manifest-v2.json",
+      "bytes": 24037,
+      "sha256": "cd22d9e2d97162e1a99201a329dd436c19984f3e64123ba4674c3d6ac4df4ff6"
+    },
+    {
+      "origin": "repository",
+      "sourcePath": "services/pipeline/scripts/local_presenter_worker.py",
+      "installPath": "worker/local_presenter_worker.py",
+      "bytes": 14256,
+      "sha256": "07c3d0199f119f63fda9ef793e3cb90b265f4a7b3811fa37b89d6c4aa33029f9"
+    },
+    {
+      "origin": "repository",
+      "sourcePath": "services/pipeline/scripts/joyvasa_presenter_adapter.py",
+      "installPath": "worker/joyvasa_presenter_adapter.py",
+      "bytes": 13594,
+      "sha256": "f89df691fe4d19e58d2ef7b2c52e82fb607d38adb6f84bbf6724e5c2f9b96f74"
+    }
+  ],
+  "trees": [
+    {
+      "origin": "candidate",
+      "sourcePath": "venv/Lib/site-packages",
+      "installPath": "venv/Lib/site-packages",
+      "fileCount": 42871,
+      "bytes": 5977361589,
+      "sha256": "4f5b7beade14d39aa93ac50261284dec20a8e128872676284af62622b1802de8"
+    }
+  ],
+  "runtime": {
+    "executable": "python-base/python.exe",
+    "pythonRuntime": {
+      "kind": "embedded",
+      "home": "python-base",
+      "homeExecutable": "python-base/python.exe",
+      "sitePackages": "venv/Lib/site-packages"
+    },
+    "ffmpeg": "ffmpeg/ffmpeg.exe",
+    "ffprobe": "ffmpeg/ffprobe.exe",
+    "workerEntrypoint": "worker/local_presenter_worker.py",
+    "adapterEntrypoint": "worker/joyvasa_presenter_adapter.py",
+    "audioFeatureConfig": "pretrained_weights/chinese-hubert-base/config.json",
+    "audioFeaturePreprocessor": "pretrained_weights/chinese-hubert-base/preprocessor_config.json",
+    "audioFeatureWeights": "pretrained_weights/chinese-hubert-base/pytorch_model.bin",
+    "motionGeneratorWeights": "pretrained_weights/JoyVASA/motion_generator/motion_generator_hubert_chinese.pt",
+    "motionTemplate": "pretrained_weights/JoyVASA/motion_template/motion_template.pkl",
+    "sourceManifestFiles": [
+      "LICENSE",
+      "inference.py",
+      "src/__init__.py",
+      "src/config/__init__.py",
+      "src/config/argument_config.py",
+      "src/config/base_config.py",
+      "src/config/crop_config.py",
+      "src/config/inference_config.py",
+      "src/config/models.yaml",
+      "src/live_portrait_wmg_pipeline.py",
+      "src/live_portrait_wmg_pipeline_animal.py",
+      "src/live_portrait_wmg_wrapper.py",
+      "src/modules/__init__.py",
+      "src/modules/appearance_feature_extractor.py",
+      "src/modules/common.py",
+      "src/modules/convnextv2.py",
+      "src/modules/dense_motion.py",
+      "src/modules/dit_talking_head.py",
+      "src/modules/hubert.py",
+      "src/modules/motion_extractor.py",
+      "src/modules/spade_generator.py",
+      "src/modules/stitching_retargeting_network.py",
+      "src/modules/util.py",
+      "src/modules/warping_network.py",
+      "src/modules/wav2vec2.py",
+      "src/scheduler.py",
+      "src/utils/__init__.py",
+      "src/utils/camera.py",
+      "src/utils/common.py",
+      "src/utils/crop.py",
+      "src/utils/filter.py",
+      "src/utils/helper.py",
+      "src/utils/io.py",
+      "src/utils/retargeting_utils.py",
+      "src/utils/rprint.py",
+      "src/utils/timer.py",
+      "src/utils/video.py",
+      "src/utils/viz.py",
+      "python-base/_asyncio.pyd",
+      "python-base/_bz2.pyd",
+      "python-base/_ctypes.pyd",
+      "python-base/_decimal.pyd",
+      "python-base/_elementtree.pyd",
+      "python-base/_hashlib.pyd",
+      "python-base/_lzma.pyd",
+      "python-base/_msi.pyd",
+      "python-base/_multiprocessing.pyd",
+      "python-base/_overlapped.pyd",
+      "python-base/_queue.pyd",
+      "python-base/_socket.pyd",
+      "python-base/_sqlite3.pyd",
+      "python-base/_ssl.pyd",
+      "python-base/_uuid.pyd",
+      "python-base/_zoneinfo.pyd",
+      "python-base/libcrypto-1_1.dll",
+      "python-base/libffi-7.dll",
+      "python-base/libssl-1_1.dll",
+      "python-base/LICENSE.txt",
+      "python-base/pyexpat.pyd",
+      "python-base/python.cat",
+      "python-base/python.exe",
+      "python-base/python3.dll",
+      "python-base/python310._pth",
+      "python-base/python310.dll",
+      "python-base/python310.zip",
+      "python-base/pythonw.exe",
+      "python-base/select.pyd",
+      "python-base/sqlite3.dll",
+      "python-base/unicodedata.pyd",
+      "python-base/vcruntime140.dll",
+      "python-base/vcruntime140_1.dll",
+      "python-base/winsound.pyd",
+      "worker/local_presenter_worker.py",
+      "worker/joyvasa_presenter_adapter.py",
+      "manifests/requirements-inference-win-cu121.lock.txt",
+      "src/utils/resources/lip_array.pkl",
+      "src/utils/resources/mask_template.png"
+    ],
+    "portraitRuntimeManifestFiles": [
+      "pretrained_weights/JoyVASA/motion_generator/motion_generator_hubert_chinese.pt",
+      "pretrained_weights/JoyVASA/motion_template/motion_template.pkl",
+      "pretrained_weights/chinese-hubert-base/config.json",
+      "pretrained_weights/chinese-hubert-base/preprocessor_config.json",
+      "pretrained_weights/chinese-hubert-base/pytorch_model.bin",
+      "pretrained_weights/liveportrait/base_models/appearance_feature_extractor.pth",
+      "pretrained_weights/liveportrait/base_models/motion_extractor.pth",
+      "pretrained_weights/liveportrait/base_models/spade_generator.pth",
+      "pretrained_weights/liveportrait/base_models/warping_module.pth",
+      "pretrained_weights/liveportrait_animals/base_models_v1.1/appearance_feature_extractor.pth",
+      "pretrained_weights/liveportrait_animals/base_models_v1.1/motion_extractor.pth",
+      "pretrained_weights/liveportrait_animals/base_models_v1.1/spade_generator.pth",
+      "pretrained_weights/liveportrait_animals/base_models_v1.1/warping_module.pth"
+    ],
+    "pinnedFiles": [
+      "ffmpeg/avcodec-62.dll",
+      "ffmpeg/avdevice-62.dll",
+      "ffmpeg/avfilter-11.dll",
+      "ffmpeg/avformat-62.dll",
+      "ffmpeg/avutil-60.dll",
+      "ffmpeg/LICENSE.txt",
+      "ffmpeg/swresample-6.dll",
+      "ffmpeg/swscale-9.dll",
+      "manifests/joyvasa-final-source.patch",
+      "manifests/candidate-manifest-v2.json"
+    ]
+  },
+  "canonicalProfiles": {
+    "human": {
+      "profileId": "presenter-portrait.casual-anime-finn-v1",
+      "portraitArtifactHash": "98ff859669a316dcbf2f1b8edd30941b355ee244308a3b755ffd51e4630a8494",
+      "subjectId": "fictional-synthetic-casual-anime-finn-v1"
+    },
+    "animal": {
+      "profileId": "presenter-portrait.animal-cat-milo-v1",
+      "portraitArtifactHash": "f47095f9b54b54d53fecfa49a93241544869aa359d8ce3273b38a8575965bafd",
+      "subjectId": "fictional-synthetic-animal-cat-milo-v1"
+    }
+  }
+}

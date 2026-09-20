@@ -1,0 +1,265 @@
+diff --git a/inference.py b/inference.py
+index 17ce000..c8196dc 100644
+--- a/inference.py
++++ b/inference.py
+@@ -4,6 +4,9 @@ import os.path as osp
+ import tyro
+ import subprocess
+ import platform
++import random
++import numpy as np
++import torch
+ from src.config.argument_config import ArgumentConfig
+ from src.config.inference_config import InferenceConfig
+ from src.config.crop_config import CropConfig
+@@ -33,6 +36,11 @@ def main():
+     # set tyro theme
+     tyro.extras.set_accent_color("bright_cyan")
+     args = tyro.cli(ArgumentConfig)
++    random.seed(args.motion_seed)
++    np.random.seed(args.motion_seed)
++    torch.manual_seed(args.motion_seed)
++    if torch.cuda.is_available():
++        torch.cuda.manual_seed_all(args.motion_seed)
+ 
+     ffmpeg_dir = os.path.join(os.getcwd(), "ffmpeg")
+     if osp.exists(ffmpeg_dir):
+@@ -70,4 +78,4 @@ def main():
+ 
+ 
+ if __name__ == "__main__":
+-    main()
+\ No newline at end of file
++    main()
+diff --git a/src/config/argument_config.py b/src/config/argument_config.py
+index 1ce4818..1e16617 100644
+--- a/src/config/argument_config.py
++++ b/src/config/argument_config.py
+@@ -60,6 +60,11 @@ class ArgumentConfig(PrintableConfig):
+     cfg_cond = None
+     cfg_scale: float = 2.8
+     is_smooth_motion: bool = True
++    motion_seed: int = 20260920  # deterministic diffusion motion for reproducible renders
++    motion_offset_frames: int = 8  # compensate observed audio-to-expression latency at 25 fps
++    enable_speech_gate: bool = True  # keep lip keypoints neutral during measured silence
++    speech_gate_floor_db: float = -55.0
++    speech_gate_ceiling_db: float = -35.0
+ 
+     ########## gradio arguments ##########
+     server_port: Annotated[int, tyro.conf.arg(aliases=["-p"])] = 7862  # port for gradio server
+diff --git a/src/config/inference_config.py b/src/config/inference_config.py
+index 7428e66..2d81f72 100644
+--- a/src/config/inference_config.py
++++ b/src/config/inference_config.py
+@@ -31,10 +31,11 @@ class InferenceConfig(PrintableConfig):
+     checkpoint_S: str = make_abs_path('../../pretrained_weights/liveportrait/retargeting_models/stitching_retargeting_module.pth')  # path to checkpoint to S and R_eyes, R_lip
+ 
+     # ANIMAL MODEL CONFIG, NOT EXPORTED PARAMS
+-    checkpoint_F_animal: str = make_abs_path('../../pretrained_weights/liveportrait_animals/base_models/appearance_feature_extractor.pth')  # path to checkpoint of F
+-    checkpoint_M_animal: str = make_abs_path('../../pretrained_weights/liveportrait_animals/base_models/motion_extractor.pth')  # path to checkpoint pf M
+-    checkpoint_G_animal: str = make_abs_path('../../pretrained_weights/liveportrait_animals/base_models/spade_generator.pth')  # path to checkpoint of G
+-    checkpoint_W_animal: str = make_abs_path('../../pretrained_weights/liveportrait_animals/base_models/warping_module.pth')  # path to checkpoint of W
++    version_animals = "_v1.1"  # 2025-01-01 revision improves dog mouth-vs-nose localization
++    checkpoint_F_animal: str = make_abs_path(f'../../pretrained_weights/liveportrait_animals/base_models{version_animals}/appearance_feature_extractor.pth')  # path to checkpoint of F
++    checkpoint_M_animal: str = make_abs_path(f'../../pretrained_weights/liveportrait_animals/base_models{version_animals}/motion_extractor.pth')  # path to checkpoint pf M
++    checkpoint_G_animal: str = make_abs_path(f'../../pretrained_weights/liveportrait_animals/base_models{version_animals}/spade_generator.pth')  # path to checkpoint of G
++    checkpoint_W_animal: str = make_abs_path(f'../../pretrained_weights/liveportrait_animals/base_models{version_animals}/warping_module.pth')  # path to checkpoint of W
+     checkpoint_S_animal: str = make_abs_path('../../pretrained_weights/liveportrait/retargeting_models/stitching_retargeting_module.pth')  # path to checkpoint to S and R_eyes, R_lip, NOTE: use human temporarily!
+ 
+     # EXPORTED PARAMS
+diff --git a/src/live_portrait_wmg_pipeline.py b/src/live_portrait_wmg_pipeline.py
+index bc6460c..aca87f4 100644
+--- a/src/live_portrait_wmg_pipeline.py
++++ b/src/live_portrait_wmg_pipeline.py
+@@ -16,7 +16,6 @@ from rich.progress import track
+ from .config.argument_config import ArgumentConfig
+ from .config.inference_config import InferenceConfig
+ from .config.crop_config import CropConfig
+-from .utils.cropper import Cropper
+ from .utils.camera import get_rotation_matrix
+ from .utils.video import images2video, add_audio_to_video
+ from .utils.crop import prepare_paste_back, paste_back
+@@ -32,12 +31,19 @@ def make_abs_path(fn):
+ class LivePortraitPipeline(object):
+     def __init__(self, inference_cfg: InferenceConfig, crop_cfg: CropConfig):
+         self.live_portrait_wrapper: LivePortraitWrapper = LivePortraitWrapper(inference_cfg=inference_cfg)
+-        self.cropper: Cropper = Cropper(crop_cfg=crop_cfg)
++        self.crop_cfg = crop_cfg
++        self.cropper = None
++        # The supported no-crop path can use the network's own keypoints when
++        # landmark-driven normalization/retargeting is disabled. Do not load
++        # InsightFace merely to resize an already-framed presenter image.
++        if inference_cfg.flag_do_crop:
++            from .utils.cropper import Cropper
++            self.cropper = Cropper(crop_cfg=crop_cfg)
+     
+     def execute(self, args: ArgumentConfig, ):
+         inf_cfg = self.live_portrait_wrapper.inference_cfg
+         device = self.live_portrait_wrapper.device
+-        crop_cfg = self.cropper.crop_cfg
++        crop_cfg = self.crop_cfg
+ 
+         ######## load reference image ########
+         if is_image(args.reference):
+@@ -71,7 +77,7 @@ class LivePortraitPipeline(object):
+             source_lmk = crop_info['lmk_crop']
+             img_crop_256x256 = crop_info['img_crop_256x256']
+         else:
+-            source_lmk = self.cropper.calc_lmk_from_cropped_image(source_rgb_lst[0])
++            source_lmk = None
+             img_crop_256x256 = cv2.resize(source_rgb_lst[0], (256, 256))  # force to resize to 256x256
+         I_s = self.live_portrait_wrapper.prepare_source(img_crop_256x256)
+         x_s_info = self.live_portrait_wrapper.get_kp_info(I_s)
+@@ -110,8 +116,11 @@ class LivePortraitPipeline(object):
+             if inf_cfg.animation_region == "all" or inf_cfg.animation_region == "exp":
+                 # 相对
+                 delta_new = x_s_info['exp'] + (x_d_i_info['exp'] - x_d_0_info['exp'])
++                speech_gate = driving_template_dct.get('speech_gate', [1.0] * n_frames)[i]
+                 for lip_idx in [6, 12, 14, 17, 19, 20]:
+-                    delta_new[:, lip_idx, :] = x_d_i_info['exp'][:, lip_idx, :]
++                    delta_new[:, lip_idx, :] = x_s_info['exp'][:, lip_idx, :] + speech_gate * (
++                        x_d_i_info['exp'][:, lip_idx, :] - x_s_info['exp'][:, lip_idx, :]
++                    )
+                 # # 绝对
+                 # delta_new = x_s_info['exp'].clone()
+                 # for idx in [1,2,6,11,12,13,14,15,16,17,18,19,20]:
+@@ -190,4 +199,4 @@ class LivePortraitPipeline(object):
+             images2video(I_p_lst, wfp=temp_video, fps=inf_cfg.output_fps)
+         final_video = osp.join(args.output_dir, f'{basename(args.reference)}_{basename(args.audio)}.mp4')
+         add_audio_to_video(temp_video, args.audio, final_video)
+-        return final_video
+\ No newline at end of file
++        return final_video
+diff --git a/src/live_portrait_wmg_pipeline_animal.py b/src/live_portrait_wmg_pipeline_animal.py
+index 0d388c0..db37f13 100644
+--- a/src/live_portrait_wmg_pipeline_animal.py
++++ b/src/live_portrait_wmg_pipeline_animal.py
+@@ -21,7 +21,6 @@ from rich.progress import track
+ from .config.argument_config import ArgumentConfig
+ from .config.inference_config import InferenceConfig
+ from .config.crop_config import CropConfig
+-from .utils.cropper import Cropper
+ from .utils.camera import get_rotation_matrix
+ from .utils.video import images2video, concat_frames, get_fps, add_audio_to_video, has_audio_stream, video2gif
+ from .utils.crop import _transform_img, prepare_paste_back, paste_back
+@@ -38,12 +37,23 @@ class LivePortraitPipelineAnimal(object):
+ 
+     def __init__(self, inference_cfg: InferenceConfig, crop_cfg: CropConfig):
+         self.live_portrait_wrapper_animal: LivePortraitWrapperAnimal = LivePortraitWrapperAnimal(inference_cfg=inference_cfg)
+-        self.cropper: Cropper = Cropper(crop_cfg=crop_cfg, image_type='animal_face', flag_use_half_precision=inference_cfg.flag_use_half_precision)
++        self.crop_cfg = crop_cfg
++        self.cropper = None
++        # The supported no-crop path resizes an already-framed source directly.
++        # Avoid loading InsightFace and X-Pose models (and the X-Pose CUDA op)
++        # when they cannot be used by this execution path.
++        if inference_cfg.flag_do_crop:
++            from .utils.cropper import Cropper
++            self.cropper = Cropper(
++                crop_cfg=crop_cfg,
++                image_type='animal_face',
++                flag_use_half_precision=inference_cfg.flag_use_half_precision,
++            )
+ 
+     def execute(self, args: ArgumentConfig):
+         inf_cfg = self.live_portrait_wrapper_animal.inference_cfg
+         device = self.live_portrait_wrapper_animal.device
+-        crop_cfg = self.cropper.crop_cfg
++        crop_cfg = self.crop_cfg
+ 
+         ######## load reference image ########
+         if is_image(args.reference):
+@@ -98,6 +108,11 @@ class LivePortraitPipelineAnimal(object):
+             # 原始
+             # delta_new = x_d_i_info['exp']
+             delta_new = x_s_info['exp'] + (x_d_i_info['exp'] - x_d_0_info['exp'])
++            speech_gate = driving_template_dct.get('speech_gate', [1.0] * n_frames)[i]
++            for lip_idx in [6, 12, 14, 17, 19, 20]:
++                delta_new[:, lip_idx, :] = x_s_info['exp'][:, lip_idx, :] + speech_gate * (
++                    delta_new[:, lip_idx, :] - x_s_info['exp'][:, lip_idx, :]
++                )
+             # 绝对
+             # delta_new = x_s_info['exp'].clone() # 源图像的exp信息，这里delta_new用于保存源图像变化后的exp
+             # for idx in [1,2,6,11,12,13,14,15,16,17,18,19,20]:
+@@ -151,4 +166,4 @@ class LivePortraitPipelineAnimal(object):
+             images2video(I_p_lst, wfp=temp_video, fps=inf_cfg.output_fps)
+         final_video = osp.join(args.output_dir, f'{basename(args.reference)}_{basename(args.audio)}.mp4')
+         add_audio_to_video(temp_video, args.audio, final_video)
+-        return final_video
+\ No newline at end of file
++        return final_video
+diff --git a/src/live_portrait_wmg_wrapper.py b/src/live_portrait_wmg_wrapper.py
+index fb58143..04e20dc 100644
+--- a/src/live_portrait_wmg_wrapper.py
++++ b/src/live_portrait_wmg_wrapper.py
+@@ -361,6 +361,7 @@ class LivePortraitWrapper(object):
+         log(f"start loading audio from {args.audio}")
+         audio, _ = librosa.load(args.audio, sr=16000, mono=True)
+         log(f"audio loaded! {audio.shape}")
++        audio_np = audio.copy()
+         if isinstance(audio, np.ndarray):
+             audio = torch.from_numpy(audio).to(self.device)
+         assert audio.ndim == 1, 'Audio must be 1D tensor.'
+@@ -444,6 +445,24 @@ class LivePortraitWrapper(object):
+ 
+         if args.is_smooth_motion:
+             tgt_motion = smooth_(tgt_motion, method="ema")
++        if args.motion_offset_frames > 0 and tgt_motion['motion']:
++            offset = min(args.motion_offset_frames, len(tgt_motion['motion']) - 1)
++            if offset > 0:
++                tail = tgt_motion['motion'][-1]
++                tgt_motion['motion'] = tgt_motion['motion'][offset:] + [tail] * offset
++        if args.enable_speech_gate:
++            gate = []
++            samples_per_frame = 16000.0 / self.fps
++            db_range = max(args.speech_gate_ceiling_db - args.speech_gate_floor_db, 1e-6)
++            for frame_idx in range(tgt_motion['n_frames']):
++                center = (frame_idx + 0.5) * samples_per_frame
++                start = max(0, round(center - samples_per_frame))
++                end = min(len(audio_np), round(center + samples_per_frame))
++                frame_audio = audio_np[start:end]
++                rms = float(np.sqrt(np.mean(frame_audio * frame_audio))) if len(frame_audio) else 0.0
++                dbfs = 20.0 * np.log10(max(rms, 1e-9))
++                gate.append(float(np.clip((dbfs - args.speech_gate_floor_db) / db_range, 0.0, 1.0)))
++            tgt_motion['speech_gate'] = gate
+         return tgt_motion
+     
+ 
+diff --git a/src/utils/video.py b/src/utils/video.py
+index a491db5..fc20421 100644
+--- a/src/utils/video.py
++++ b/src/utils/video.py
+@@ -193,12 +193,14 @@ def add_audio_to_video(silent_video_path: str, audio_video_path: str, output_vid
+         cmd = [
+             'ffmpeg',
+             '-y',
+-            '-loglevel', 'quiet',
++            '-loglevel', 'error',
+             '-i', f'{silent_video_path}',
+             '-i', f'{audio_video_path}',
+-            '-c:v', 'libx264',
+-            '-b:v', '2M', 
+-            '-r', '25', 
++            '-map', '0:v:0',
++            '-map', '1:a:0',
++            '-c:v', 'copy',
++            '-c:a', 'aac',
++            '-shortest',
+             f'{output_video_path}'
+         ]
+     else:
+@@ -214,12 +216,13 @@ def add_audio_to_video(silent_video_path: str, audio_video_path: str, output_vid
+             f'"{output_video_path}"'
+         ]
+     try:
+-        subprocess.run(cmd)
++        subprocess.run(cmd, check=True, capture_output=True, text=True)
+         log(f"Video with audio generated successfully: {output_video_path}")
+         if remove_temp:
+             os.remove(silent_video_path)
+     except subprocess.CalledProcessError as e:
+-        log(f"Error occurred: {e}")
++        log(f"Error occurred while muxing audio: {e.stderr or e}", style="bold red")
++        raise RuntimeError(f"FFmpeg audio mux failed for {output_video_path}") from e
+ 
+ 
+ def bb_intersection_over_union(boxA, boxB):

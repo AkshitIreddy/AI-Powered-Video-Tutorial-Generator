@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "routes": [
+    {
+      "runtime": "human",
+      "profileId": "presenter-portrait.casual-anime-finn-v1",
+      "portraitArtifactHash": "98ff859669a316dcbf2f1b8edd30941b355ee244308a3b755ffd51e4630a8494",
+      "subjectId": "fictional-synthetic-casual-anime-finn-v1"
+    },
+    {
+      "runtime": "animal",
+      "profileId": "presenter-portrait.casual-cartoon-robot-pip-v1",
+      "portraitArtifactHash": "b0163d6e3250d345c97e1c261fa3ff69cf0dcab70f248cad27a06dfe5e818d29",
+      "subjectId": "fictional-synthetic-casual-cartoon-robot-pip-v1"
+    },
+    {
+      "runtime": "animal",
+      "profileId": "presenter-portrait.animal-cat-milo-v1",
+      "portraitArtifactHash": "f47095f9b54b54d53fecfa49a93241544869aa359d8ce3273b38a8575965bafd",
+      "subjectId": "fictional-synthetic-animal-cat-milo-v1"
+    },
+    {
+      "runtime": "animal",
+      "profileId": "presenter-portrait.animal-dog-buddy-v1",
+      "portraitArtifactHash": "68fa5cd79ebb50e9b0a5b00d2c28d2d636bee695f0b579f1a36afaa62aa25062",
+      "subjectId": "fictional-synthetic-animal-dog-buddy-v1"
+    },
+    {
+      "runtime": "animal",
+      "profileId": "presenter-portrait.animal-kitten-peaches-v1",
+      "portraitArtifactHash": "6cb3c5727c422ac6e717f64c8c345abb757f65c5399555e5c0058f7db3524ab1",
+      "subjectId": "fictional-synthetic-animal-kitten-peaches-v1"
+    },
+    {
+      "runtime": "animal",
+      "profileId": "presenter-portrait.animal-puppy-poppy-v1",
+      "portraitArtifactHash": "704dce7be0612822ff0dc10ebfce8627cd808e63a0b3e158fa070fe19f8d633a",
+      "subjectId": "fictional-synthetic-animal-puppy-poppy-v1"
+    },
+    {
+      "runtime": "animal",
+      "profileId": "presenter-portrait.animal-tiger-tavi-v1",
+      "portraitArtifactHash": "e8fb1f4d917377a68d379ffd734463f97b20ef2238b7f9d32fff389c86000ae5",
+      "subjectId": "fictional-synthetic-animal-tiger-tavi-v1"
+    },
+    {
+      "runtime": "animal",
+      "profileId": "presenter-portrait.animal-lion-leo-v1",
+      "portraitArtifactHash": "7694fb148894a41dcf4df55182bd803946a3d18f9a7a81daaf3cb3987411894e",
+      "subjectId": "fictional-synthetic-animal-lion-leo-v1"
+    }
+  ]
+}

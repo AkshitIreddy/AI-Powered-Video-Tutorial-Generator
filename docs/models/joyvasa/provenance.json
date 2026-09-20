@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/jdh-algo/JoyVASA.git",
+    "revision": "916a90f8de490e8648fee460c1200bd5d9a795af",
+    "license": "MIT",
+    "patchSha256": "784e5170b01e1d594f8dbf3438e6580e96d6cf2c99738580addced989f450e8a"
+  },
+  "candidateManifestSha256": "cd22d9e2d97162e1a99201a329dd436c19984f3e64123ba4674c3d6ac4df4ff6",
+  "dependencyLockSha256": "66cad1571a62ce0dd3ee86ca48017dcdf2f8bc9a7a69ad2f229a6af66adf730b",
+  "dependencyTree": {
+    "fileCount": 42871,
+    "bytes": 5977361589,
+    "sha256": "4f5b7beade14d39aa93ac50261284dec20a8e128872676284af62622b1802de8",
+    "note": "Full per-file inventory is intentionally untracked; installer recomputes this canonical digest."
+  },
+  "portablePython": {
+    "version": "3.10.6",
+    "architecture": "amd64",
+    "officialArchiveSha256": "c5e3af5d40944d1dbb03740564378f168235e316a2b47c99dcfe46ac837db3d2",
+    "pthContract": [
+      "python310.zip",
+      ".",
+      "..\\venv\\Lib\\site-packages",
+      ".."
+    ]
+  },
+  "upstreamPins": [
+    {
+      "name": "JoyVASA checkpoints",
+      "repository": "https://huggingface.co/jdh-algo/JoyVASA",
+      "revision": "b8f13fe9c23679c56f21b1baafb92ed00dc087c3",
+      "declaredLicense": "MIT"
+    },
+    {
+      "name": "Chinese HuBERT",
+      "repository": "https://huggingface.co/TencentGameMate/chinese-hubert-base",
+      "revision": "fce0375452b1dd6c080ac3248d423d4d037bc831",
+      "declaredLicense": "MIT"
+    },
+    {
+      "name": "LivePortrait checkpoints",
+      "repository": "https://huggingface.co/KlingTeam/LivePortrait",
+      "revision": "82a4fa6735ca58432b6ce39301b4b9ee066dea47",
+      "declaredLicense": "MIT",
+      "animalVersion": "v1.1"
+    }
+  ],
+  "selectedWeights": [
+    {
+      "path": "pretrained_weights/JoyVASA/motion_generator/motion_generator_hubert_chinese.pt",
+      "bytes": 414067833,
+      "sha256": "9dd869329725caedf5f0c13dd383abec1e385f566d8afe2047b141f604844e80"
+    },
+    {
+      "path": "pretrained_weights/JoyVASA/motion_template/motion_template.pkl",
+      "bytes": 3616,
+      "sha256": "294ce67350b18031b375361756f654c76d5e14c8f1e319cf9ed07f759ef81a98"
+    },
+    {
+      "path": "pretrained_weights/chinese-hubert-base/config.json",
+      "bytes": 1380,
+      "sha256": "f6bd1bdef239518d022edcef31243acf344a2afa33d5428e16f221cac09cbcd0"
+    },
+    {
+      "path": "pretrained_weights/chinese-hubert-base/preprocessor_config.json",
+      "bytes": 212,
+      "sha256": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b"
+    },
+    {
+      "path": "pretrained_weights/chinese-hubert-base/pytorch_model.bin",
+      "bytes": 377552987,
+      "sha256": "2fefccd26c2794a583b80f6f7210c721873cb7ebae2c1cde3baf9b27855e24d8"
+    },
+    {
+      "path": "pretrained_weights/liveportrait/base_models/appearance_feature_extractor.pth",
+      "bytes": 3387959,
+      "sha256": "5279bb8654293dbdf327030b397f107237dd9212fb11dd75b83dfb635211ceb5"
+    },
+    {
+      "path": "pretrained_weights/liveportrait/base_models/motion_extractor.pth",
+      "bytes": 112545506,
+      "sha256": "251e6a94ad667a1d0c69526d292677165110ef7f0cf0f6d199f0e414e8aa0ca5"
+    },
+    {
+      "path": "pretrained_weights/liveportrait/base_models/spade_generator.pth",
+      "bytes": 221813590,
+      "sha256": "4780afc7909a9f84e24c01d73b31a555ef651521a1fe3b2429bd04534d992aee"
+    },
+    {
+      "path": "pretrained_weights/liveportrait/base_models/warping_module.pth",
+      "bytes": 182180086,
+      "sha256": "2f61a6f265fe344f14132364859a78bdbbc2068577170693da57fb96d636e282"
+    },
+    {
+      "path": "pretrained_weights/liveportrait_animals/base_models_v1.1/appearance_feature_extractor.pth",
+      "bytes": 3386487,
+      "sha256": "7e320d545579caa83c7b094cef8b7b43fe92a2e410c219ffa97b08be549f45bf"
+    },
+    {
+      "path": "pretrained_weights/liveportrait_animals/base_models_v1.1/motion_extractor.pth",
+      "bytes": 112542562,
+      "sha256": "827d0ea4c56ff252dba50feece3bc62ced365ecae5edb86db07eb71b2f39a696"
+    },
+    {
+      "path": "pretrained_weights/liveportrait_animals/base_models_v1.1/spade_generator.pth",
+      "bytes": 221811030,
+      "sha256": "6ac31a9b608f3920ec41a402b1c4e29d22007dafd79a855f204aae9307039445"
+    },
+    {
+      "path": "pretrained_weights/liveportrait_animals/base_models_v1.1/warping_module.pth",
+      "bytes": 182178742,
+      "sha256": "7dfd251dc6b3a1baefebfc658f5bb2a2c565649cdb9aa75032591e824a0bfcee"
+    }
+  ],
+  "excludedReviewedWeight": {
+    "path": "pretrained_weights/liveportrait/retargeting_models/stitching_retargeting_module.pth",
+    "reason": "No-crop adapter disables stitching and does not load this checkpoint."
+  },
+  "runtimeContract": {
+    "humanPipeline": "src.live_portrait_wmg_pipeline.LivePortraitPipeline",
+    "animalPipeline": "src.live_portrait_wmg_pipeline_animal.LivePortraitPipelineAnimal",
+    "executeReturn": "absolute final video path string",
+    "outputFps": 25,
+    "cfgScale": 2.0,
+    "motionSeed": 20260920,
+    "motionOffsetFrames": 8,
+    "speechGate": {
+      "enabled": true,
+      "floorDb": -55.0,
+      "ceilingDb": -35.0
+    },
+    "requiredFlags": {
+      "flagDoCrop": false,
+      "flagStitching": false,
+      "flagPasteback": false,
+      "flagNormalizeLip": false,
+      "flagRelativeMotion": false,
+      "flagUseHalfPrecision": false
+    },
+    "videoHookContract": "Patch images2video and add_audio_to_video in the selected pipeline module, where they are imported and bound at module scope."
+  },
+  "qualificationBounds": {
+    "state": "eight-presenter-sampled-visual-pass",
+    "acceptedBounds": "Sampled visual qualification only: correct lower-face animation, stable noses/identity/style, and closed sampled silence frames.",
+    "limitations": [
+      "The 8-frame offset was measured on one narration and is not general phoneme-level synchronization proof.",
+      "Sampling does not prove every frame or dense full-speed motion quality.",
+      "Strict broker output and a held-out accepted narration remain required before activation.",
+      "The JoyVASA motion-generator checkpoint is executable PyTorch pickle data; keep it pinned and hash-verified."
+    ],
+    "firstBrokerFinding": "The first activated pack omitted two InferenceConfig resources. Both files are byte-identical to JoyVASA source commit 916a90f8 and are pinned in the superseding curated manifest."
+  },
+  "runtimeResources": [
+    {
+      "path": "src/utils/resources/lip_array.pkl",
+      "bytes": 658,
+      "sha256": "2d61aab1cc37a2741f4774fe9963b2db2566e063f798b1d28d791dd119352738",
+      "gitBlob": "61fe803f2326624d775674a72e1318f57577d5b1",
+      "purpose": "Loaded by InferenceConfig as the lip landmark index array."
+    },
+    {
+      "path": "src/utils/resources/mask_template.png",
+      "bytes": 3470,
+      "sha256": "4c53e64a07ae3056af2b38548ae5b6cceb04d5c3e6514c7a8d2c3aff9da1ee76",
+      "gitBlob": "bca6ca5977ba820d0d2c05b3793c6231cc82e715",
+      "purpose": "Loaded by InferenceConfig as the crop mask template."
+    }
+  ]
+}
