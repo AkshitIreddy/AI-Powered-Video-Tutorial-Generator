@@ -19,9 +19,12 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, NoReturn
 
-CONTRACT_ID = "alystria.musetalk.worker.v1"
-SUPPORTED_MODELS = frozenset({"musetalk", "musetalk-1.5", "liveportrait-musetalk-1.5"})
-ALLOWED_ROLES = frozenset(
+MUSE_TALK_CONTRACT_ID = "alystria.musetalk.worker.v1"
+JOYVASA_CONTRACT_ID = "alystria.joyvasa.worker.v1"
+MUSE_TALK_MODELS = frozenset({"musetalk", "musetalk-1.5", "liveportrait-musetalk-1.5"})
+JOYVASA_MODELS = frozenset({"joyvasa-human", "joyvasa-animal"})
+SUPPORTED_MODELS = MUSE_TALK_MODELS | JOYVASA_MODELS
+ALLOWED_MUSE_TALK_ROLES = frozenset(
     {
         "adapter-entrypoint",
         "audio-feature-config",
@@ -42,6 +45,41 @@ ALLOWED_ROLES = frozenset(
         "vae-weights",
     }
 )
+REQUIRED_MUSE_TALK_ROLES = frozenset(
+    {
+        "adapter-entrypoint",
+        "audio-feature-config",
+        "audio-feature-preprocessor",
+        "audio-feature-weights",
+        "face-detection-weights",
+        "face-landmark-weights",
+        "face-parse-weights",
+        "face-resnet-weights",
+        "musetalk-config",
+        "musetalk-inference-entrypoint",
+        "musetalk-weights",
+        "runtime-source-manifest",
+        "vae-config",
+        "vae-weights",
+    }
+)
+ALLOWED_JOYVASA_ROLES = frozenset(
+    {
+        "adapter-entrypoint",
+        "runtime-source-manifest",
+        "audio-feature-config",
+        "audio-feature-preprocessor",
+        "audio-feature-weights",
+        "motion-generator-weights",
+        "motion-template",
+        "portrait-runtime-manifest",
+    }
+)
+REQUIRED_JOYVASA_ROLES = ALLOWED_JOYVASA_ROLES
+CONTRACTS = {
+    MUSE_TALK_CONTRACT_ID: (MUSE_TALK_MODELS, ALLOWED_MUSE_TALK_ROLES, REQUIRED_MUSE_TALK_ROLES),
+    JOYVASA_CONTRACT_ID: (JOYVASA_MODELS, ALLOWED_JOYVASA_ROLES, REQUIRED_JOYVASA_ROLES),
+}
 SHA256_LENGTH = 64
 MAX_MANIFEST_BYTES = 1024 * 1024
 DENIED_NETWORK_AUDIT_EVENTS = frozenset(
@@ -109,9 +147,9 @@ def _load_manifest(path: Path) -> dict[str, Any]:
 
 
 def _load_adapter(path: Path) -> ModuleType:
-    spec = importlib.util.spec_from_file_location("alystria_pinned_musetalk_adapter", path)
+    spec = importlib.util.spec_from_file_location("alystria_pinned_presenter_adapter", path)
     if spec is None or spec.loader is None:
-        _fail("could not load pinned MuseTalk adapter")
+        _fail("could not load pinned presenter adapter")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -141,34 +179,34 @@ def _install_network_denial() -> None:
     sys.addaudithook(deny_network)
 
 
-def _verify_source_manifest(path: Path) -> None:
+def _verify_source_manifest(path: Path, label: str) -> None:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or value.get("schemaVersion") != 1:
-        _fail("MuseTalk source manifest has an invalid schema")
+        _fail(f"{label} has an invalid schema")
     root_value = value.get("root")
     files = value.get("files")
     if not isinstance(root_value, str) or not isinstance(files, list) or not files:
-        _fail("MuseTalk source manifest is incomplete")
+        _fail(f"{label} is incomplete")
     root = Path(root_value).resolve(strict=True)
     if root.is_symlink() or not root.is_dir() or len(files) > 10_000:
-        _fail("MuseTalk source root or file count is unsafe")
+        _fail(f"{label} root or file count is unsafe")
     for index, item in enumerate(files):
         if not isinstance(item, dict):
-            _fail(f"MuseTalk source manifest entry {index} is invalid")
+            _fail(f"{label} entry {index} is invalid")
         relative_value = item.get("relativePath")
         if not isinstance(relative_value, str):
-            _fail(f"MuseTalk source manifest entry {index} has no relative path")
+            _fail(f"{label} entry {index} has no relative path")
         relative = Path(relative_value)
         if relative.is_absolute() or not relative.parts or ".." in relative.parts:
-            _fail(f"MuseTalk source manifest entry {index} escapes its root")
+            _fail(f"{label} entry {index} escapes its root")
         candidate = (root / relative).resolve(strict=True)
         try:
             candidate.relative_to(root)
         except ValueError as error:
-            raise RuntimeError("MuseTalk source manifest entry escaped its root") from error
+            raise RuntimeError(f"{label} entry escaped its root") from error
         _verify_pin(
             {"path": str(candidate), "sha256": item.get("sha256")},
-            f"MuseTalk source {relative.as_posix()}",
+            f"{label} source {relative.as_posix()}",
         )
 
 
@@ -188,8 +226,13 @@ def main() -> int:
     manifest_path = _regular_file(args.job, "job manifest")
     job = _load_manifest(manifest_path)
     contract = job.get("workerContract")
-    if not isinstance(contract, dict) or contract.get("contractId") != CONTRACT_ID:
-        _fail("MuseTalk worker contract is missing or unsupported")
+    contract_id = contract.get("contractId") if isinstance(contract, dict) else None
+    contract_policy = CONTRACTS.get(contract_id)
+    if not isinstance(contract, dict) or contract_policy is None:
+        _fail("presenter worker contract is missing or unsupported")
+    contract_models, allowed_roles, required_roles = contract_policy
+    if job["model"] not in contract_models:
+        _fail("presenter model and worker contract do not match")
     worker_entrypoint = _verify_pin(contract.get("entrypoint"), "worker entrypoint")
     if worker_entrypoint.resolve(strict=True) != Path(__file__).resolve(strict=True):
         _fail("worker contract entrypoint does not identify this pinned broker")
@@ -201,40 +244,30 @@ def main() -> int:
         if not isinstance(item, dict):
             _fail(f"worker contract file {index} is invalid")
         role = item.get("role")
-        if not isinstance(role, str) or role not in ALLOWED_ROLES or role in verified:
+        if not isinstance(role, str) or role not in allowed_roles or role in verified:
             _fail(f"worker contract role {role!r} is invalid or duplicated")
         verified[role] = _verify_pin(item, f"worker contract {role}")
-    required_roles = {
-        "adapter-entrypoint",
-        "audio-feature-config",
-        "audio-feature-preprocessor",
-        "audio-feature-weights",
-        "face-detection-weights",
-        "face-landmark-weights",
-        "face-parse-weights",
-        "face-resnet-weights",
-        "musetalk-config",
-        "musetalk-inference-entrypoint",
-        "musetalk-weights",
-        "runtime-source-manifest",
-        "vae-config",
-        "vae-weights",
-    }
     if job["model"] == "liveportrait-musetalk-1.5":
-        required_roles |= {
+        required_roles = required_roles | {
             "liveportrait-motion-template",
             "liveportrait-runtime-manifest",
             "musetalk-adapter-entrypoint",
         }
     if not required_roles <= verified.keys():
         _fail("worker contract is incomplete")
-    _verify_source_manifest(verified["runtime-source-manifest"])
+    _verify_source_manifest(verified["runtime-source-manifest"], "runtime source manifest")
     if job["model"] == "liveportrait-musetalk-1.5":
-        _verify_source_manifest(verified["liveportrait-runtime-manifest"])
+        _verify_source_manifest(
+            verified["liveportrait-runtime-manifest"], "LivePortrait runtime manifest"
+        )
+    if contract_id == JOYVASA_CONTRACT_ID:
+        _verify_source_manifest(
+            verified["portrait-runtime-manifest"], "portrait runtime manifest"
+        )
 
     encoding = job.get("encoding")
     if not isinstance(encoding, dict):
-        _fail("managed MuseTalk job has no brokered encoder selection")
+        _fail("managed presenter job has no brokered encoder selection")
     _verify_pin(
         {"path": encoding.get("ffmpegPath"), "sha256": encoding.get("ffmpegSha256")},
         "presenter FFmpeg",
@@ -303,11 +336,11 @@ def main() -> int:
             stream.flush()
             os.fsync(stream.fileno())
 
-    presenter_name = (
-        "LivePortrait + MuseTalk"
-        if job["model"] == "liveportrait-musetalk-1.5"
-        else "MuseTalk"
-    )
+    presenter_name = {
+        "liveportrait-musetalk-1.5": "LivePortrait + MuseTalk",
+        "joyvasa-human": "JoyVASA human",
+        "joyvasa-animal": "JoyVASA animal",
+    }.get(job["model"], "MuseTalk")
     emit_progress("accepted", 0.0, f"{presenter_name} job accepted")
     emit_progress("verified", 0.05, "Exact-hash runtime and inputs verified")
     _install_network_denial()

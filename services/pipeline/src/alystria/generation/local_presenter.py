@@ -73,6 +73,11 @@ AUDIO_SUFFIXES = {
     "audio/x-wav": ".wav",
 }
 MUSE_TALK_CONTRACT_ID = "alystria.musetalk.worker.v1"
+JOYVASA_CONTRACT_ID = "alystria.joyvasa.worker.v1"
+MUSE_TALK_MODELS = frozenset(
+    {"musetalk", "musetalk-1.5", "liveportrait-musetalk-1.5"}
+)
+JOYVASA_MODELS = frozenset({"joyvasa-human", "joyvasa-animal"})
 ALLOWED_MUSE_TALK_FILE_ROLES = frozenset(
     {
         "adapter-entrypoint",
@@ -93,6 +98,40 @@ ALLOWED_MUSE_TALK_FILE_ROLES = frozenset(
         "vae-config",
         "vae-weights",
     }
+)
+REQUIRED_MUSE_TALK_FILE_ROLES = frozenset(
+    {
+        "adapter-entrypoint",
+        "audio-feature-config",
+        "audio-feature-preprocessor",
+        "audio-feature-weights",
+        "face-detection-weights",
+        "face-landmark-weights",
+        "face-parse-weights",
+        "face-resnet-weights",
+        "musetalk-config",
+        "musetalk-inference-entrypoint",
+        "musetalk-weights",
+        "runtime-source-manifest",
+        "vae-config",
+        "vae-weights",
+    }
+)
+ALLOWED_JOYVASA_FILE_ROLES = frozenset(
+    {
+        "adapter-entrypoint",
+        "runtime-source-manifest",
+        "audio-feature-config",
+        "audio-feature-preprocessor",
+        "audio-feature-weights",
+        "motion-generator-weights",
+        "motion-template",
+        "portrait-runtime-manifest",
+    }
+)
+REQUIRED_JOYVASA_FILE_ROLES = ALLOWED_JOYVASA_FILE_ROLES
+ALLOWED_PRESENTER_FILE_ROLES = (
+    ALLOWED_MUSE_TALK_FILE_ROLES | ALLOWED_JOYVASA_FILE_ROLES
 )
 MAX_PROGRESS_BYTES = 1024 * 1024
 MAX_PROGRESS_EVENTS = 10_000
@@ -262,8 +301,8 @@ class PresenterContractFile:
     pin: PinnedPresenterFile
 
     def __post_init__(self) -> None:
-        if self.role not in ALLOWED_MUSE_TALK_FILE_ROLES:
-            raise ValueError(f"Unsupported MuseTalk contract file role: {self.role}")
+        if self.role not in ALLOWED_PRESENTER_FILE_ROLES:
+            raise ValueError(f"Unsupported presenter contract file role: {self.role}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,31 +312,34 @@ class PresenterWorkerContract:
     files: tuple[PresenterContractFile, ...]
 
     def __post_init__(self) -> None:
-        if self.contract_id != MUSE_TALK_CONTRACT_ID:
+        contract_roles = {
+            MUSE_TALK_CONTRACT_ID: (
+                ALLOWED_MUSE_TALK_FILE_ROLES,
+                REQUIRED_MUSE_TALK_FILE_ROLES,
+                "MuseTalk",
+            ),
+            JOYVASA_CONTRACT_ID: (
+                ALLOWED_JOYVASA_FILE_ROLES,
+                REQUIRED_JOYVASA_FILE_ROLES,
+                "JoyVASA",
+            ),
+        }.get(self.contract_id)
+        if contract_roles is None:
             raise ValueError(f"Unsupported presenter worker contract: {self.contract_id}")
+        allowed, required, name = contract_roles
         roles = [item.role for item in self.files]
         if len(roles) != len(set(roles)):
-            raise ValueError("MuseTalk contract file roles must be unique")
-        required = {
-            "adapter-entrypoint",
-            "audio-feature-config",
-            "audio-feature-preprocessor",
-            "audio-feature-weights",
-            "face-detection-weights",
-            "face-landmark-weights",
-            "face-parse-weights",
-            "face-resnet-weights",
-            "musetalk-config",
-            "musetalk-inference-entrypoint",
-            "musetalk-weights",
-            "runtime-source-manifest",
-            "vae-config",
-            "vae-weights",
-        }
+            raise ValueError(f"{name} contract file roles must be unique")
+        unsupported = set(roles) - allowed
+        if unsupported:
+            raise ValueError(
+                f"{name} worker contract has unsupported roles: "
+                + ", ".join(sorted(unsupported))
+            )
         missing = required - set(roles)
         if missing:
             raise ValueError(
-                "MuseTalk worker contract is missing roles: " + ", ".join(sorted(missing))
+                f"{name} worker contract is missing roles: " + ", ".join(sorted(missing))
             )
 
 
@@ -343,6 +385,18 @@ class LocalPresenterProfileBinding:
             raise ValueError("Local presenter profile ID cannot be blank")
         if not SHA256_PATTERN.fullmatch(self.portrait_artifact_hash):
             raise ValueError("Presenter portrait must be a project CAS SHA-256 digest")
+
+
+@dataclass(frozen=True, slots=True)
+class PresenterRuntimeOverride:
+    """Bind one reviewed portrait digest to one optional runtime config."""
+
+    portrait_artifact_hash: str
+    config_path: Path
+
+    def __post_init__(self) -> None:
+        if not SHA256_PATTERN.fullmatch(self.portrait_artifact_hash):
+            raise ValueError("Presenter runtime override requires a lowercase portrait SHA-256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -425,24 +479,35 @@ class LocalPresenterRuntime:
                 raise ValueError(
                     "Managed presenter mode requires a pinned entrypoint file, not inline/module code"
                 )
-            if self.model_id.casefold() in {
-                "musetalk",
-                "musetalk-1.5",
-                "liveportrait-musetalk-1.5",
-            }:
+            model_id = self.model_id.casefold()
+            expected_contract = (
+                MUSE_TALK_CONTRACT_ID
+                if model_id in MUSE_TALK_MODELS
+                else JOYVASA_CONTRACT_ID
+                if model_id in JOYVASA_MODELS
+                else None
+            )
+            if expected_contract is not None:
+                runtime_name = "MuseTalk" if expected_contract == MUSE_TALK_CONTRACT_ID else "JoyVASA"
                 if self.encoder_policy is None:
                     raise ValueError(
-                        "Managed MuseTalk requires an explicitly probed H.264 encoder policy"
+                        f"Managed {runtime_name} requires an explicitly probed H.264 encoder policy"
                     )
                 if "{job_manifest}" not in placeholders:
                     raise ValueError(
-                        "Managed MuseTalk requires the brokered job manifest; direct upstream "
+                        f"Managed {runtime_name} requires the brokered job manifest; direct upstream "
                         "libx264 muxing is not permitted"
                     )
                 if self.worker_contract is None:
-                    raise ValueError("Managed MuseTalk requires an exact-hash worker contract")
+                    raise ValueError(
+                        f"Managed {runtime_name} requires an exact-hash worker contract"
+                    )
+                if self.worker_contract.contract_id != expected_contract:
+                    raise ValueError(
+                        f"Managed {runtime_name} model requires worker contract {expected_contract}"
+                    )
                 if self.gpu_lease is None:
-                    raise ValueError("Managed MuseTalk requires GPU lease metadata")
+                    raise ValueError(f"Managed {runtime_name} requires GPU lease metadata")
         elif not self.unsafe_test_only_acknowledged:
             raise ValueError("Unsafe test-only presenter mode requires explicit acknowledgement")
 
@@ -460,6 +525,10 @@ class LocalPresenterMediaClient:
         default_profile_id: str,
         runner: PresenterCommandRunner | None = None,
         cancel_check: Callable[[], bool] | None = None,
+        runtime_overrides: Sequence[PresenterRuntimeOverride] = (),
+        runtime_override_loader: (
+            Callable[[PresenterRuntimeOverride], LocalPresenterMediaClient] | None
+        ) = None,
     ) -> None:
         self.store = store
         self.base = base
@@ -479,12 +548,31 @@ class LocalPresenterMediaClient:
         self._cancelled = threading.Event()
         self._encoder_lock = threading.Lock()
         self._encoder_selection: PresenterEncoderSelection | None = None
+        runtime_override_items = tuple(runtime_overrides)
+        self.runtime_overrides = {
+            item.portrait_artifact_hash: item for item in runtime_override_items
+        }
+        if len(self.runtime_overrides) != len(runtime_override_items):
+            raise ValueError("Presenter runtime override portrait hashes must be unique")
+        if self.runtime_overrides and runtime_override_loader is None:
+            raise ValueError("Presenter runtime overrides require a child runtime loader")
+        self._runtime_override_loader = runtime_override_loader
+        self._runtime_override_lock = threading.Lock()
+        self._runtime_override_clients: dict[str, LocalPresenterMediaClient] = {}
 
     def cancel(self) -> None:
         self._cancelled.set()
+        with self._runtime_override_lock:
+            children = tuple(self._runtime_override_clients.values())
+        for child in children:
+            child.cancel()
 
     def reset_cancellation(self) -> None:
         self._cancelled.clear()
+        with self._runtime_override_lock:
+            children = tuple(self._runtime_override_clients.values())
+        for child in children:
+            child.reset_cancellation()
 
     def create_visual(self, scene: dict[str, Any], *, seed: int) -> GeneratedMedia:
         return self.base.create_visual(scene, seed=seed)
@@ -505,12 +593,40 @@ class LocalPresenterMediaClient:
         if not scene_id:
             raise LocalPresenterPolicyError("Presenter scene requires a stable ID")
         profile = self._profile_for_scene(scene)
-        return self._generate(
+        override = self.runtime_overrides.get(profile.portrait_artifact_hash)
+        client = self._runtime_override_client(override) if override is not None else self
+        return client._generate(
             scene_id=scene_id,
             profile=profile,
             narration_hash=narration_hash,
             seed=seed,
         )
+
+    def _runtime_override_client(
+        self, override: PresenterRuntimeOverride
+    ) -> LocalPresenterMediaClient:
+        self._raise_if_cancelled()
+        with self._runtime_override_lock:
+            cached = self._runtime_override_clients.get(override.portrait_artifact_hash)
+            if cached is not None:
+                return cached
+            loader = self._runtime_override_loader
+            if loader is None:  # constructor validation makes this defensive only
+                raise LocalPresenterRuntimeError("Presenter runtime override loader is unavailable")
+            try:
+                client = loader(override)
+            except LocalPresenterError:
+                raise
+            except (OSError, TypeError, ValueError) as error:
+                raise LocalPresenterRuntimeError(
+                    "Could not load the selected portrait runtime; repair or reinstall its "
+                    f"runtime pack ({override.config_path.name})"
+                ) from error
+            if self._cancelled.is_set():
+                client.cancel()
+                raise LocalPresenterCancelledError("Presenter generation cancelled")
+            self._runtime_override_clients[override.portrait_artifact_hash] = client
+            return client
 
     def _profile_for_scene(self, scene: Mapping[str, Any]) -> LocalPresenterProfileBinding:
         selected = scene.get("presenterProfileId")
@@ -1449,8 +1565,15 @@ def load_local_presenter_media_client(
     *,
     runner: PresenterCommandRunner | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    _allow_runtime_overrides: bool = True,
 ) -> LocalPresenterMediaClient:
-    """Load the narrow JSON setup record written by the privileged model manager."""
+    """Load the narrow JSON setup record written by the privileged model manager.
+
+    Optional portrait runtime configs are parsed only when their exact portrait
+    digest is selected, then cached for this client. Recreate the client after an
+    installer changes config semantics; pinned runtime files are still rechecked
+    before every render.
+    """
 
     try:
         path = config_path.resolve(strict=True)
@@ -1465,6 +1588,15 @@ def load_local_presenter_media_client(
         ) from error
     if not isinstance(value, dict) or value.get("schemaVersion") != 1:
         raise LocalPresenterPolicyError("Local presenter config requires schemaVersion 1")
+    if not _allow_runtime_overrides and "portraitRuntimeOverrides" in value:
+        raise LocalPresenterPolicyError(
+            "Nested portraitRuntimeOverrides are not permitted in an override config"
+        )
+    runtime_overrides = (
+        _config_runtime_overrides(value.get("portraitRuntimeOverrides", []), path.parent)
+        if _allow_runtime_overrides
+        else ()
+    )
     runtime_root = _config_path(value, "runtimeRoot", base=path.parent, must_exist=True)
     executable = _config_pin(value.get("executable"), runtime_root, "executable")
     ffprobe_value = value.get("ffprobe")
@@ -1529,6 +1661,38 @@ def load_local_presenter_media_client(
         )
     except (TypeError, ValueError) as error:
         raise LocalPresenterPolicyError(f"Invalid local presenter runtime: {error}") from error
+    def load_override(override: PresenterRuntimeOverride) -> LocalPresenterMediaClient:
+        candidate = override.config_path
+        try:
+            if candidate.is_symlink():
+                raise LocalPresenterRuntimeError(
+                    "Selected portrait runtime config must not be a symbolic link"
+                )
+            selected = candidate.resolve(strict=True)
+            selected.relative_to(path.parent.resolve(strict=True))
+            if not selected.is_file():
+                raise LocalPresenterRuntimeError(
+                    "Selected portrait runtime config must be a regular file"
+                )
+            return load_local_presenter_media_client(
+                store,
+                base,
+                selected,
+                runner=runner,
+                cancel_check=cancel_check,
+                _allow_runtime_overrides=False,
+            )
+        except LocalPresenterError as error:
+            raise LocalPresenterRuntimeError(
+                "Could not load the selected portrait runtime; repair or reinstall its "
+                f"runtime pack ({candidate.name}): {error}"
+            ) from error
+        except (OSError, ValueError) as error:
+            raise LocalPresenterRuntimeError(
+                "Could not load the selected portrait runtime; repair or reinstall its "
+                f"runtime pack ({candidate.name})"
+            ) from error
+
     return LocalPresenterMediaClient(
         store,
         base,
@@ -1537,7 +1701,57 @@ def load_local_presenter_media_client(
         default_profile_id=_config_string(value, "defaultProfileId"),
         runner=runner,
         cancel_check=cancel_check,
+        runtime_overrides=runtime_overrides,
+        runtime_override_loader=load_override if runtime_overrides else None,
     )
+
+
+def _config_runtime_overrides(
+    value: object, config_root: Path
+) -> tuple[PresenterRuntimeOverride, ...]:
+    if not isinstance(value, list):
+        raise LocalPresenterPolicyError("portraitRuntimeOverrides must be a list")
+    root = config_root.resolve(strict=True)
+    overrides: list[PresenterRuntimeOverride] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise LocalPresenterPolicyError(
+                f"portraitRuntimeOverrides[{index}] must be an object"
+            )
+        portrait_hash = _config_string(item, "portraitArtifactHash")
+        if not SHA256_PATTERN.fullmatch(portrait_hash):
+            raise LocalPresenterPolicyError(
+                f"portraitRuntimeOverrides[{index}].portraitArtifactHash must be a "
+                "lowercase SHA-256 digest"
+            )
+        if portrait_hash in seen:
+            raise LocalPresenterPolicyError(
+                "portraitRuntimeOverrides portrait hashes must be unique"
+            )
+        relative = Path(_config_string(item, "relativeConfigPath"))
+        if (
+            relative.is_absolute()
+            or bool(relative.drive)
+            or bool(relative.root)
+            or not relative.parts
+            or ".." in relative.parts
+        ):
+            raise LocalPresenterPolicyError(
+                f"portraitRuntimeOverrides[{index}].relativeConfigPath must stay inside "
+                "the primary config directory"
+            )
+        candidate = root / relative
+        try:
+            candidate.resolve(strict=False).relative_to(root)
+        except ValueError as error:
+            raise LocalPresenterPolicyError(
+                f"portraitRuntimeOverrides[{index}].relativeConfigPath escapes the "
+                "primary config directory"
+            ) from error
+        seen.add(portrait_hash)
+        overrides.append(PresenterRuntimeOverride(portrait_hash, candidate))
+    return tuple(overrides)
 
 
 def _config_worker_contract(value: object, root: Path) -> PresenterWorkerContract | None:

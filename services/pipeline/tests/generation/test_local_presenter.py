@@ -637,6 +637,275 @@ def test_json_config_loader_preserves_explicit_unsafe_policy(tmp_path: Path) -> 
         store.close()
 
 
+def _write_unsafe_presenter_config(
+    path: Path,
+    *,
+    runtime_root: Path,
+    worker: Path,
+    portrait_hash: str,
+    model_revision: str,
+    overrides: list[dict[str, str]] | None = None,
+    include_override_field: bool = False,
+) -> None:
+    value: dict[str, object] = {
+        "schemaVersion": 1,
+        "runtimeRoot": str(runtime_root),
+        "executable": {"relativePath": worker.name, "sha256": _digest(worker)},
+        "argumentTemplate": [
+            "--portrait",
+            "{portrait}",
+            "--audio",
+            "{audio}",
+            "--output",
+            "{output}",
+        ],
+        "modelId": "test-presenter",
+        "modelRevision": model_revision,
+        "executionPolicy": "unsafe-test-only",
+        "networkPolicy": "not-enforced",
+        "unsafeTestOnlyAcknowledged": True,
+        "minimumOutputBytes": 32,
+        "profiles": [{"profileId": "default", "portraitArtifactHash": portrait_hash}],
+        "defaultProfileId": "default",
+    }
+    if overrides is not None or include_override_field:
+        value["portraitRuntimeOverrides"] = overrides or []
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def test_portrait_runtime_override_is_lazy_hash_routed_and_reused(tmp_path: Path) -> None:
+    store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    default_worker = runtime_root / "default-worker.exe"
+    joy_worker = runtime_root / "joy-worker.exe"
+    default_worker.write_bytes(b"default")
+    joy_worker.write_bytes(b"joy")
+    primary = tmp_path / "presenter.json"
+    child = tmp_path / "joy.json"
+    _write_unsafe_presenter_config(
+        child,
+        runtime_root=runtime_root,
+        worker=joy_worker,
+        portrait_hash=portrait_hash,
+        model_revision="joy-selected",
+    )
+    _write_unsafe_presenter_config(
+        primary,
+        runtime_root=runtime_root,
+        worker=default_worker,
+        portrait_hash=portrait_hash,
+        model_revision="default",
+        overrides=[
+            {
+                "portraitArtifactHash": portrait_hash,
+                "relativeConfigPath": child.name,
+            }
+        ],
+    )
+    runner = FakePresenterRunner(joy_worker, None)
+    try:
+        client = load_local_presenter_media_client(
+            store, DeterministicMediaClient(), primary, runner=runner
+        )
+        first = client.create_presenter(
+            {"id": "scene-1"}, narration_hash=narration_hash, seed=7
+        )
+        child.unlink()
+        second = client.create_presenter(
+            {"id": "scene-1"}, narration_hash=narration_hash, seed=7
+        )
+        assert first.metadata["modelRevision"] == "joy-selected"
+        assert second.metadata["recoveredFromPromotion"] is True
+        assert len(runner.calls) == 1
+
+        client.cancel()
+        with pytest.raises(LocalPresenterCancelledError):
+            client.create_presenter(
+                {"id": "scene-2"}, narration_hash=narration_hash, seed=8
+            )
+        client.reset_cancellation()
+        client.create_presenter({"id": "scene-2"}, narration_hash=narration_hash, seed=8)
+        assert len(runner.calls) == 2
+    finally:
+        store.close()
+
+
+def test_unselected_missing_portrait_runtime_does_not_block_default(tmp_path: Path) -> None:
+    store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    worker = runtime_root / "default-worker.exe"
+    worker.write_bytes(b"default")
+    primary = tmp_path / "presenter.json"
+    _write_unsafe_presenter_config(
+        primary,
+        runtime_root=runtime_root,
+        worker=worker,
+        portrait_hash=portrait_hash,
+        model_revision="default",
+        overrides=[
+            {
+                "portraitArtifactHash": "a" * 64,
+                "relativeConfigPath": "optional/missing.json",
+            }
+        ],
+    )
+    runner = FakePresenterRunner(worker, None)
+    try:
+        media = load_local_presenter_media_client(
+            store, DeterministicMediaClient(), primary, runner=runner
+        ).create_presenter({"id": "scene-1"}, narration_hash=narration_hash, seed=3)
+        assert media.metadata["modelRevision"] == "default"
+    finally:
+        store.close()
+
+
+def test_selected_missing_or_nested_portrait_runtime_fails_actionably(tmp_path: Path) -> None:
+    store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    worker = runtime_root / "worker.exe"
+    worker.write_bytes(b"worker")
+    primary = tmp_path / "presenter.json"
+    _write_unsafe_presenter_config(
+        primary,
+        runtime_root=runtime_root,
+        worker=worker,
+        portrait_hash=portrait_hash,
+        model_revision="default",
+        overrides=[
+            {
+                "portraitArtifactHash": portrait_hash,
+                "relativeConfigPath": "missing.json",
+            }
+        ],
+    )
+    try:
+        client = load_local_presenter_media_client(
+            store, DeterministicMediaClient(), primary, runner=FakePresenterRunner(worker, None)
+        )
+        with pytest.raises(LocalPresenterPolicyError, match="reviewed portrait"):
+            client.create_presenter(
+                {"id": "scene-policy", "portraitArtifactHash": "b" * 64},
+                narration_hash=narration_hash,
+                seed=2,
+            )
+        with pytest.raises(LocalPresenterRuntimeError, match="repair or reinstall"):
+            client.create_presenter(
+                {"id": "scene-1"}, narration_hash=narration_hash, seed=3
+            )
+
+        nested = tmp_path / "nested.json"
+        _write_unsafe_presenter_config(
+            nested,
+            runtime_root=runtime_root,
+            worker=worker,
+            portrait_hash=portrait_hash,
+            model_revision="nested",
+            include_override_field=True,
+        )
+        value = json.loads(primary.read_text(encoding="utf-8"))
+        value["portraitRuntimeOverrides"][0]["relativeConfigPath"] = nested.name
+        primary.write_text(json.dumps(value), encoding="utf-8")
+        client = load_local_presenter_media_client(
+            store, DeterministicMediaClient(), primary, runner=FakePresenterRunner(worker, None)
+        )
+        with pytest.raises(LocalPresenterRuntimeError, match="Nested portraitRuntimeOverrides"):
+            client.create_presenter(
+                {"id": "scene-2"}, narration_hash=narration_hash, seed=4
+            )
+    finally:
+        store.close()
+
+
+def test_selected_portrait_runtime_rejects_leaf_config_symlink(tmp_path: Path) -> None:
+    store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    worker = runtime_root / "worker.exe"
+    worker.write_bytes(b"worker")
+    primary = tmp_path / "presenter.json"
+    child = tmp_path / "child.json"
+    link = tmp_path / "child-link.json"
+    _write_unsafe_presenter_config(
+        child,
+        runtime_root=runtime_root,
+        worker=worker,
+        portrait_hash=portrait_hash,
+        model_revision="child",
+    )
+    try:
+        link.symlink_to(child)
+    except OSError as error:
+        store.close()
+        pytest.skip(f"This Windows account cannot create a test symlink: {error}")
+    _write_unsafe_presenter_config(
+        primary,
+        runtime_root=runtime_root,
+        worker=worker,
+        portrait_hash=portrait_hash,
+        model_revision="default",
+        overrides=[
+            {
+                "portraitArtifactHash": portrait_hash,
+                "relativeConfigPath": link.name,
+            }
+        ],
+    )
+    try:
+        client = load_local_presenter_media_client(
+            store, DeterministicMediaClient(), primary, runner=FakePresenterRunner(worker, None)
+        )
+        assert client.runtime_overrides[portrait_hash].config_path == link
+        with pytest.raises(LocalPresenterRuntimeError, match="symbolic link"):
+            client.create_presenter(
+                {"id": "scene-1"}, narration_hash=narration_hash, seed=3
+            )
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    "overrides,error",
+    [
+        (
+            [
+                {"portraitArtifactHash": "a" * 64, "relativeConfigPath": "one.json"},
+                {"portraitArtifactHash": "a" * 64, "relativeConfigPath": "two.json"},
+            ],
+            "unique",
+        ),
+        (
+            [{"portraitArtifactHash": "a" * 64, "relativeConfigPath": "../escape.json"}],
+            "stay inside",
+        ),
+    ],
+)
+def test_portrait_runtime_override_config_rejects_ambiguous_or_escaping_routes(
+    tmp_path: Path, overrides: list[dict[str, str]], error: str
+) -> None:
+    store, portrait_hash, _ = _store_with_inputs(tmp_path)
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    worker = runtime_root / "worker.exe"
+    worker.write_bytes(b"worker")
+    primary = tmp_path / "presenter.json"
+    _write_unsafe_presenter_config(
+        primary,
+        runtime_root=runtime_root,
+        worker=worker,
+        portrait_hash=portrait_hash,
+        model_revision="default",
+        overrides=overrides,
+    )
+    try:
+        with pytest.raises(LocalPresenterPolicyError, match=error):
+            load_local_presenter_media_client(store, DeterministicMediaClient(), primary)
+    finally:
+        store.close()
+
+
 def test_managed_musetalk_config_loads_brokered_encoder_policy(tmp_path: Path) -> None:
     store, portrait_hash, narration_hash = _store_with_inputs(tmp_path)
     runtime_root = tmp_path / "runtime"
@@ -1117,6 +1386,194 @@ def test_pinned_worker_validates_contract_and_emits_progress(tmp_path: Path) -> 
     assert events[-1]["stage"] == "complete"
     assert events[-1]["progress"] == 1.0
     assert output.read_bytes() == _mp4()
+
+
+def test_managed_joyvasa_runtime_requires_matching_exact_hash_contract(tmp_path: Path) -> None:
+    pin = PinnedPresenterFile(tmp_path / "pinned.bin", "0" * 64)
+    joy_roles = (
+        "adapter-entrypoint",
+        "runtime-source-manifest",
+        "audio-feature-config",
+        "audio-feature-preprocessor",
+        "audio-feature-weights",
+        "motion-generator-weights",
+        "motion-template",
+        "portrait-runtime-manifest",
+    )
+    joy_contract = PresenterWorkerContract(
+        "alystria.joyvasa.worker.v1",
+        pin,
+        tuple(PresenterContractFile(role, pin) for role in joy_roles),
+    )
+    common = {
+        "runtime_root": tmp_path,
+        "executable": pin,
+        "ffprobe": pin,
+        "argument_template": (
+            "--portrait",
+            "{portrait}",
+            "--audio",
+            "{audio}",
+            "--output",
+            "{output}",
+            "--job",
+            "{job_manifest}",
+        ),
+        "model_id": "joyvasa-animal",
+        "model_revision": "joyvasa-pinned",
+        "encoder_policy": PresenterEncoderPolicy(pin.path, pin.sha256),
+        "gpu_lease": PresenterGpuLeaseMetadata(
+            "test-lease", "pytest", "global\\alystria-test-gpu", "cuda:0", 4 * 1024**3
+        ),
+    }
+    runtime = LocalPresenterRuntime(**common, worker_contract=joy_contract)
+    assert runtime.worker_contract is joy_contract
+
+    muse_contract = _runtime(tmp_path / "muse-runtime")[0].worker_contract
+    assert muse_contract is not None
+    with pytest.raises(
+        ValueError, match=r"requires worker contract alystria\.joyvasa\.worker\.v1"
+    ):
+        LocalPresenterRuntime(**common, worker_contract=muse_contract)
+
+
+def test_pinned_worker_supports_joyvasa_and_rejects_contract_model_mismatch(
+    tmp_path: Path,
+) -> None:
+    worker = Path(__file__).parents[2] / "scripts" / "local_presenter_worker.py"
+    adapter = tmp_path / "joy-adapter.py"
+    portrait = tmp_path / "portrait.png"
+    audio = tmp_path / "audio.wav"
+    workspace = tmp_path / "workspace"
+    output_root = tmp_path / "output"
+    output = output_root / "presenter.mp4"
+    progress = tmp_path / "progress.ndjson"
+    ffmpeg = tmp_path / "ffmpeg.exe"
+    source_root = tmp_path / "joy-source"
+    portrait_root = tmp_path / "portrait-runtime"
+    workspace.mkdir()
+    output_root.mkdir()
+    source_root.mkdir()
+    portrait_root.mkdir()
+    ffmpeg.write_bytes(b"pinned ffmpeg")
+    adapter.write_text(
+        "def run_presenter_job(job, emit_progress):\n"
+        "    from pathlib import Path\n"
+        "    assert job['model'] == 'joyvasa-animal'\n"
+        "    emit_progress('inference', 0.6, 'fake JoyVASA inference')\n"
+        "    Path(job['output']['path']).write_bytes(" + repr(_mp4()) + ")\n"
+        "    emit_progress('encoding', 0.9, 'fake encoding')\n"
+        "    return 0\n",
+        encoding="utf-8",
+    )
+    source_file = source_root / "inference.py"
+    portrait_file = portrait_root / "base-weights.bin"
+    source_file.write_text("# exact JoyVASA source\n", encoding="utf-8")
+    portrait_file.write_bytes(b"exact portrait base weights")
+
+    role_paths = {
+        "adapter-entrypoint": adapter,
+        "audio-feature-config": tmp_path / "audio-config.json",
+        "audio-feature-preprocessor": tmp_path / "audio-preprocessor.bin",
+        "audio-feature-weights": tmp_path / "audio-weights.bin",
+        "motion-generator-weights": tmp_path / "motion-generator.bin",
+        "motion-template": tmp_path / "motion-template.pkl",
+        "runtime-source-manifest": tmp_path / "joy-source-manifest.json",
+        "portrait-runtime-manifest": tmp_path / "portrait-runtime-manifest.json",
+    }
+    for role, path in role_paths.items():
+        if role not in {"adapter-entrypoint", "runtime-source-manifest", "portrait-runtime-manifest"}:
+            path.write_bytes(f"exact {role}".encode())
+    role_paths["runtime-source-manifest"].write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "root": str(source_root),
+                "files": [{"relativePath": source_file.name, "sha256": _digest(source_file)}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    role_paths["portrait-runtime-manifest"].write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "root": str(portrait_root),
+                "files": [
+                    {"relativePath": portrait_file.name, "sha256": _digest(portrait_file)}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    portrait.write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(64))
+    audio.write_bytes(b"RIFF" + bytes(64))
+    manifest = tmp_path / "joy-job.json"
+    job = {
+        "schemaVersion": 2,
+        "model": "joyvasa-animal",
+        "modelRevision": "joyvasa-pinned-test",
+        "seed": 21,
+        "inputs": {
+            "portrait": {"path": str(portrait), "sha256": _digest(portrait)},
+            "audio": {"path": str(audio), "sha256": _digest(audio)},
+        },
+        "output": {"path": str(output), "mediaType": "video/mp4"},
+        "progress": {"path": str(progress), "schemaVersion": 1},
+        "encoding": {
+            "policy": "alystria-presenter-h264-v1",
+            "encoder": "h264_nvenc",
+            "codecArguments": ["-c:v", "h264_nvenc"],
+            "ffmpegPath": str(ffmpeg),
+            "ffmpegSha256": _digest(ffmpeg),
+        },
+        "gpuLease": {
+            "leaseId": "test-lease",
+            "owner": "pytest",
+            "mutexName": "global\\alystria-test-gpu",
+            "deviceId": "cuda:0",
+            "vramBytes": 4294967296,
+        },
+        "workerContract": {
+            "contractId": "alystria.joyvasa.worker.v1",
+            "entrypoint": {"path": str(worker), "sha256": _digest(worker)},
+            "files": [
+                {"role": role, "path": str(path), "sha256": _digest(path)}
+                for role, path in role_paths.items()
+            ],
+        },
+    }
+    manifest.write_text(json.dumps(job), encoding="utf-8")
+    command = (
+        sys.executable,
+        str(worker),
+        "--job",
+        str(manifest),
+        "--portrait",
+        str(portrait),
+        "--audio",
+        str(audio),
+        "--output",
+        str(output),
+        "--workspace",
+        str(workspace),
+        "--seed",
+        "21",
+    )
+    result = subprocess.run(command, cwd=tmp_path, capture_output=True, check=False, timeout=10)
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    events = [json.loads(line) for line in progress.read_text(encoding="utf-8").splitlines()]
+    assert events[0]["message"] == "JoyVASA animal job accepted"
+    assert events[-1]["stage"] == "complete"
+    assert output.read_bytes() == _mp4()
+
+    job["model"] = "musetalk"
+    manifest.write_text(json.dumps(job), encoding="utf-8")
+    mismatch = subprocess.run(
+        command, cwd=tmp_path, capture_output=True, check=False, timeout=10
+    )
+    assert mismatch.returncode == 1
+    assert b"model and worker contract do not match" in mismatch.stderr
 
 
 def test_cross_connection_job_cancellation_reaches_presenter_client(tmp_path: Path) -> None:
