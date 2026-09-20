@@ -19,6 +19,13 @@ const choices: PresenterChoice[] = [
     ],
   } },
   { id: "legacy", label: "Legacy guide", src: "legacy.png", focalPoint: "50% 20%" },
+  { id: "finn-v1", label: "Finn · legacy portrait (static only)", src: "finn-v1.png", focalPoint: "50% 20%", hiddenFromGallery: true, portraitArtifactHash: "c".repeat(64), lipSync: {
+    preferredEngineId: "joyvasa-human",
+    qualifications: [
+      { engineId: "liveportrait-musetalk-1.5", displayName: "LivePortrait + MuseTalk 1.5", outcome: "incompatible", notes: "Rejected." },
+      { engineId: "joyvasa-human", displayName: "JoyVASA human route", outcome: "incompatible", notes: "Rejected after visual review." },
+    ],
+  } },
 ];
 
 const value: PresenterSelection = { schemaVersion: 1, mode: "on", presenters: [], sceneAssignments: [] };
@@ -107,6 +114,23 @@ describe("PresenterPicker", () => {
     const milo = screen.getByRole("button", { name: "Select Milo · cat tutor" });
     expect(milo).toBeEnabled();
     await user.click(milo);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ presenters: [] }));
+  });
+
+  it("hides a superseded portrait from discovery while preserving removal and capability validation for saved projects", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<PresenterPicker
+      choices={choices}
+      value={{ ...value, presenters: [{ presenterId: "finn-v1", portraitAssetId: "finn-v1" }] }}
+      onChange={onChange}
+      runtime={{ activeEngineId: "joyvasa-human", portraitStatuses: [{ portraitArtifactHash: "c".repeat(64), modelId: "joyvasa-human", configured: true, reason: "Configured." }] }}
+    />);
+
+    expect(screen.queryByRole("button", { name: "Select Finn · legacy portrait (static only)" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Finn · legacy portrait (static only)")).toHaveLength(2);
+    expect(screen.getByText(/rejected after visual review/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove Finn · legacy portrait (static only)" }));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ presenters: [] }));
   });
 });

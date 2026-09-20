@@ -18,6 +18,7 @@ export type CasualPresenterId =
   | "presenter-portrait.casual-cartoon-chloe-v1"
   | "presenter-portrait.casual-realistic-maya-v1"
   | "presenter-portrait.casual-anime-finn-v1"
+  | "presenter-portrait.casual-anime-finn-v2"
   | "presenter-portrait.casual-anime-lena-v1"
   | "presenter-portrait.casual-cartoon-robot-pip-v1"
   | "presenter-portrait.animal-cat-milo-v1"
@@ -34,6 +35,8 @@ export interface CasualPresenterPlan {
   readonly styleGroup: CasualPresenterStyleGroup;
   /** Lower values appear first in the default presenter gallery. */
   readonly featuredRank?: number;
+  /** Legacy portraits stay addressable for saved projects without appearing as new choices. */
+  readonly galleryVisibility?: "selectable" | "legacy-hidden";
 }
 
 /**
@@ -48,7 +51,8 @@ export const CASUAL_PRESENTER_PLANS = [
   { id: "presenter-portrait.casual-realistic-noah-v1", slug: "casual-realistic-noah-v1", displayName: "Noah", styleGroup: "Realistic", featuredRank: 2 },
   { id: "presenter-portrait.casual-cartoon-chloe-v1", slug: "casual-cartoon-chloe-v1", displayName: "Chloe", styleGroup: "Cartoon", featuredRank: 3 },
   { id: "presenter-portrait.casual-realistic-maya-v1", slug: "casual-realistic-maya-v1", displayName: "Maya", styleGroup: "Realistic" },
-  { id: "presenter-portrait.casual-anime-finn-v1", slug: "casual-anime-finn-v1", displayName: "Finn", styleGroup: "Anime" },
+  { id: "presenter-portrait.casual-anime-finn-v1", slug: "casual-anime-finn-v1", displayName: "Finn (legacy)", styleGroup: "Anime", galleryVisibility: "legacy-hidden" },
+  { id: "presenter-portrait.casual-anime-finn-v2", slug: "casual-anime-finn-v2", displayName: "Finn", styleGroup: "Anime" },
   { id: "presenter-portrait.casual-anime-lena-v1", slug: "casual-anime-lena-v1", displayName: "Lena", styleGroup: "Anime" },
   { id: "presenter-portrait.casual-cartoon-robot-pip-v1", slug: "casual-cartoon-robot-pip-v1", displayName: "Pip", styleGroup: "Character" },
   { id: "presenter-portrait.animal-cat-milo-v1", slug: "animal-cat-milo-v1", displayName: "Milo", styleGroup: "Animal" },
@@ -61,6 +65,12 @@ export const CASUAL_PRESENTER_PLANS = [
 
 export const CASUAL_PRESENTER_IDS = Object.freeze(
   CASUAL_PRESENTER_PLANS.map((presenter) => presenter.id),
+);
+
+export const CASUAL_PRESENTER_SELECTABLE_IDS = Object.freeze(
+  CASUAL_PRESENTER_PLANS
+    .filter((presenter) => !("galleryVisibility" in presenter) || presenter.galleryVisibility !== "legacy-hidden")
+    .map((presenter) => presenter.id),
 );
 
 export type CasualPresenterLipSyncEngineId =
@@ -247,7 +257,37 @@ const MUSETALK_REVIEWED_IDS = new Set<CasualPresenterId>([
   "presenter-portrait.casual-anime-lena-v1",
 ]);
 
+const JOYVASA_REVIEWED_IDS = new Set<CasualPresenterId>([
+  "presenter-portrait.casual-anime-finn-v2",
+  "presenter-portrait.casual-cartoon-robot-pip-v1",
+  "presenter-portrait.animal-cat-milo-v1",
+  "presenter-portrait.animal-kitten-peaches-v1",
+  "presenter-portrait.animal-dog-buddy-v1",
+  "presenter-portrait.animal-puppy-poppy-v1",
+  "presenter-portrait.animal-tiger-tavi-v1",
+  "presenter-portrait.animal-lion-leo-v1",
+]);
+
 function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncReview {
+  if (plan.id === "presenter-portrait.casual-anime-finn-v1") {
+    return {
+      preferredEngineId: "joyvasa-human",
+      qualifications: [
+        {
+          engineId: "liveportrait-musetalk-1.5",
+          displayName: "LivePortrait + MuseTalk 1.5",
+          outcome: "incompatible",
+          notes: "The MuseTalk result replaced the illustrated mouth style, so this legacy portrait was rejected for animation.",
+        },
+        {
+          engineId: "joyvasa-human",
+          displayName: "JoyVASA illustrated-human route",
+          outcome: "incompatible",
+          notes: "Bounded review found a fixed smile plus a second animated mouth at the chin shadow. Keep existing projects static or replace this portrait with Finn v2.",
+        },
+      ],
+    };
+  }
   const museTalk: CasualPresenterLipSyncQualification = MUSETALK_REVIEWED_IDS.has(plan.id)
     ? {
       engineId: "liveportrait-musetalk-1.5",
@@ -263,17 +303,26 @@ function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncRevi
         ? "The human-face MuseTalk route is not valid for this animal portrait. Use a separately reviewed animal route."
         : plan.styleGroup === "Character"
           ? "The human-face MuseTalk route did not produce a valid result for this character portrait."
+          : plan.id === "presenter-portrait.casual-anime-finn-v2"
+            ? "Finn v2 is qualified on the pinned JoyVASA illustrated-human route and has not been qualified for MuseTalk, so MuseTalk is not offered for this portrait."
           : "The MuseTalk result replaced the portrait's illustrated mouth style, so this route was rejected.",
     };
   if (MUSETALK_REVIEWED_IDS.has(plan.id)) {
     return { preferredEngineId: museTalk.engineId, qualifications: [museTalk] };
   }
   const usesAnimalRoute = plan.styleGroup === "Animal" || plan.id === "presenter-portrait.casual-cartoon-robot-pip-v1";
+  const joyVasaReviewed = JOYVASA_REVIEWED_IDS.has(plan.id);
   const joyVasa: CasualPresenterLipSyncQualification = {
     engineId: usesAnimalRoute ? "joyvasa-animal" : "joyvasa-human",
     displayName: usesAnimalRoute ? "JoyVASA animal and character route" : "JoyVASA illustrated-human route",
-    outcome: "pending-review",
-    notes: "A pinned local route is under bounded visual review. It is not offered as compatible until exact artifacts and rest-mouth behavior are accepted.",
+    outcome: joyVasaReviewed ? "reviewed-compatible" : "pending-review",
+    notes: joyVasaReviewed
+      ? plan.id === "presenter-portrait.casual-anime-finn-v2"
+        ? "Primary and held-out short narration renders on the pinned installed route preserved the illustrated face, placed speech at the real mouth, and returned to a closed mouth during detected silence on 2026-09-20. This is bounded evidence, not a claim about every phoneme."
+        : plan.styleGroup === "Animal"
+          ? "Strict short-sample renders on the pinned installed animal route preserved identity, placed speech at the mouth, and closed during silence on 2026-09-20. Peak speech can exaggerate the tongue or teeth, so this is not a universal phoneme claim."
+          : "A strict short-sample render on the pinned installed character route preserved identity, placed speech at the mouth, and closed during silence on 2026-09-20. Bright mouth highlights can look jagged at peaks."
+      : "A pinned local route is under bounded visual review. It is not offered as compatible until exact artifacts and rest-mouth behavior are accepted.",
   };
   return { preferredEngineId: joyVasa.engineId, qualifications: [museTalk, joyVasa] };
 }
@@ -336,15 +385,26 @@ export const CASUAL_PRESENTER_CATALOG = Object.freeze([
     byteSize: 2325687,
   }),
   catalogPresenter("presenter-portrait.casual-anime-finn-v1", {
-    label: "Finn · retro anime maker tutor",
-    description: "Fictional synthetic adult engineering tutor in a distinctive retro cel-anime workshop.",
-    tags: ["presenter", "casual", "anime", "retro", "engineering", "maker", "bundled", "synthetic"],
+    label: "Finn · legacy portrait (static only)",
+    description: "Legacy fictional synthetic engineering tutor retained for existing projects and static use only.",
+    tags: ["presenter", "casual", "anime", "retro", "engineering", "maker", "legacy", "static-only", "bundled", "synthetic"],
     style: "Retro 1990s cel anime",
     background: "Sunlit electronics workshop",
     focalPoint: "50% 19%",
     voiceDirection: "Confident adult engineering tutor · practical, concise, upbeat",
     contentHash: "98ff859669a316dcbf2f1b8edd30941b355ee244308a3b755ffd51e4630a8494",
     byteSize: 1850287,
+  }),
+  catalogPresenter("presenter-portrait.casual-anime-finn-v2", {
+    label: "Finn · retro anime maker tutor",
+    description: "Fictional synthetic adult engineering tutor with a clean front-facing cel-anime design in a sunlit electronics workshop.",
+    tags: ["presenter", "casual", "anime", "retro", "engineering", "maker", "bundled", "synthetic"],
+    style: "Retro 1990s cel anime",
+    background: "Sunlit electronics workshop",
+    focalPoint: "50% 19%",
+    voiceDirection: "Confident adult engineering tutor · practical, concise, upbeat",
+    contentHash: "74d2677cf5666de2bf2702da0ea24703d636dbcc121fa28735e20bfde86e43a1",
+    byteSize: 1784995,
   }),
   catalogPresenter("presenter-portrait.casual-anime-lena-v1", {
     label: "Lena · hand-painted anime nature tutor",

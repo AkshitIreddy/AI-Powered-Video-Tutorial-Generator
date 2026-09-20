@@ -21,6 +21,7 @@ export interface PresenterChoice {
   styleGroup?: PresenterStyleGroup;
   filterTags?: readonly string[];
   featuredRank?: number;
+  hiddenFromGallery?: boolean;
   portraitArtifactHash?: string;
   lipSync?: CasualPresenterLipSyncReview;
 }
@@ -46,6 +47,7 @@ export function PresenterPicker({ choices, value, onChange, runtime = { activeEn
   const [filter, setFilter] = useState<"All styles" | PresenterStyleGroup>("All styles");
   const selectedIds = new Set(value.presenters.map((entry) => entry.portraitAssetId));
   const visible = choices.filter((choice) => {
+    if (choice.hiddenFromGallery) return false;
     const searchable = `${choice.label} ${choice.style ?? ""} ${choice.background ?? ""} ${(choice.filterTags ?? []).join(" ")}`.toLowerCase();
     return searchable.includes(query.trim().toLowerCase()) && (filter === "All styles" || (choice.styleGroup ?? "Other") === filter);
   });

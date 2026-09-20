@@ -15,14 +15,14 @@ describe("built-in starter kit", () => {
   it("keeps the checked-in native starter manifest identical to the TypeScript catalog", async () => {
     const manifest = JSON.parse(await readFile(resolve(process.cwd(), "starter-kits/core.v1.json"), "utf8")) as unknown;
     expect(manifest).toEqual(BUILT_IN_STARTER_KIT);
-    expect((manifest as typeof BUILT_IN_STARTER_KIT).assets.filter((asset) => asset.source.availability === "ready" && asset.technical.mediaType.startsWith("image/"))).toHaveLength(55);
-    expect((manifest as typeof BUILT_IN_STARTER_KIT).assets.filter((asset) => asset.kind === "presenter-portrait")).toHaveLength(52);
+    expect((manifest as typeof BUILT_IN_STARTER_KIT).assets.filter((asset) => asset.source.availability === "ready" && asset.technical.mediaType.startsWith("image/"))).toHaveLength(56);
+    expect((manifest as typeof BUILT_IN_STARTER_KIT).assets.filter((asset) => asset.kind === "presenter-portrait")).toHaveLength(53);
   });
 
   it("offers substantial choice with audio remaining opt-in", () => {
     expect(STARTER_ASSET_COUNTS).toMatchObject({
       background: 13, transition: 8, font: 14, "presenter-style": 12,
-      "presenter-portrait": 52, music: 2, "sound-effect": 14,
+      "presenter-portrait": 53, music: 2, "sound-effect": 14,
     });
     const audio = BUILT_IN_STARTER_KIT.assets.filter((asset) => asset.kind === "music" || asset.kind === "sound-effect");
     expect(audio).toHaveLength(16);
@@ -47,7 +47,7 @@ describe("built-in starter kit", () => {
 
   it("binds every bundled generated image to its actual bytes", async () => {
     const bundled = BUILT_IN_STARTER_KIT.assets.filter((asset) => asset.source.delivery === "bundled-file");
-    expect(bundled).toHaveLength(71);
+    expect(bundled).toHaveLength(72);
     for (const asset of bundled) {
       const bytes = await readFile(resolve(process.cwd(), "../..", asset.source.relativePath!));
       expect(bytes.byteLength, asset.id).toBe(asset.source.byteSize);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CASUAL_PRESENTER_CATALOG } from "@alystria/themes";
+import { CASUAL_PRESENTER_CATALOG, CASUAL_PRESENTER_SELECTABLE_IDS } from "@alystria/themes";
 import {
   CASUAL_PRESENTER_ASSETS,
   CASUAL_PRESENTER_IDS,
@@ -8,7 +8,7 @@ import {
 
 describe("casual presenter desktop library", () => {
   it("keeps the static imports, canonical metadata, and studio assets in lockstep", () => {
-    expect(CASUAL_PRESENTER_IDS).toHaveLength(14);
+    expect(CASUAL_PRESENTER_IDS).toHaveLength(15);
     expect(Object.keys(CASUAL_PRESENTER_PERSONAS)).toEqual(CASUAL_PRESENTER_IDS);
     expect(CASUAL_PRESENTER_ASSETS.map((asset) => asset.id)).toEqual(CASUAL_PRESENTER_IDS);
 
@@ -29,6 +29,9 @@ describe("casual presenter desktop library", () => {
         rightsStatus: "cleared",
       });
     }
+    expect(CASUAL_PRESENTER_SELECTABLE_IDS).toHaveLength(14);
+    expect(CASUAL_PRESENTER_PERSONAS["presenter-portrait.casual-anime-finn-v1"].hiddenFromGallery).toBe(true);
+    expect(CASUAL_PRESENTER_PERSONAS["presenter-portrait.casual-anime-finn-v2"].hiddenFromGallery).toBeUndefined();
   });
 
   it("features the requested woman, anime, man, and cartoon sequence first", () => {

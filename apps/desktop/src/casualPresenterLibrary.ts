@@ -12,7 +12,8 @@ import animalKittenPeaches from "./assets/presenters/animal-kitten-peaches-v1.pn
 import animalLionLeo from "./assets/presenters/animal-lion-leo-v1.png";
 import animalPuppyPoppy from "./assets/presenters/animal-puppy-poppy-v1.png";
 import animalTigerTavi from "./assets/presenters/animal-tiger-tavi-v1.png";
-import casualAnimeFinn from "./assets/presenters/casual-anime-finn-v1.png";
+import casualAnimeFinnV1 from "./assets/presenters/casual-anime-finn-v1.png";
+import casualAnimeFinnV2 from "./assets/presenters/casual-anime-finn-v2.png";
 import casualAnimeLena from "./assets/presenters/casual-anime-lena-v1.png";
 import casualAnimeYuki from "./assets/presenters/casual-anime-yuki-v1.png";
 import casualCartoonChloe from "./assets/presenters/casual-cartoon-chloe-v1.png";
@@ -27,7 +28,8 @@ const SOURCE_BY_ID = {
   "presenter-portrait.casual-realistic-noah-v1": casualRealisticNoah,
   "presenter-portrait.casual-cartoon-chloe-v1": casualCartoonChloe,
   "presenter-portrait.casual-realistic-maya-v1": casualRealisticMaya,
-  "presenter-portrait.casual-anime-finn-v1": casualAnimeFinn,
+  "presenter-portrait.casual-anime-finn-v1": casualAnimeFinnV1,
+  "presenter-portrait.casual-anime-finn-v2": casualAnimeFinnV2,
   "presenter-portrait.casual-anime-lena-v1": casualAnimeLena,
   "presenter-portrait.casual-cartoon-robot-pip-v1": casualCartoonRobotPip,
   "presenter-portrait.animal-cat-milo-v1": animalCatMilo,
@@ -47,6 +49,7 @@ export interface CasualPresenterPersona {
   readonly styleGroup: CasualPresenterStyleGroup;
   readonly filterTags: readonly string[];
   readonly featuredRank?: number;
+  readonly hiddenFromGallery?: boolean;
   readonly lipSync: CasualPresenterLipSyncReview;
 }
 
@@ -63,6 +66,7 @@ export const CASUAL_PRESENTER_PERSONAS = Object.freeze(Object.fromEntries(
     styleGroup: presenter.styleGroup,
     filterTags: presenter.tags,
     ...(presenter.featuredRank === undefined ? {} : { featuredRank: presenter.featuredRank }),
+    ...(presenter.galleryVisibility === "legacy-hidden" ? { hiddenFromGallery: true } : {}),
     lipSync: presenter.lipSync,
   }]),
 )) as Readonly<Record<CasualPresenterId, CasualPresenterPersona>>;

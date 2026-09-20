@@ -10,9 +10,11 @@ describe("presenter collection categories", () => {
     expect(LEGACY_PRESENTER_STYLE_GROUPS["presenter-portrait.cartoon-oliver-v1"]).toBe("Cartoon");
   });
 
-  it("adds the fourteen casual portraits without dropping legacy ids", () => {
-    expect(presenterCollection.size).toBe(46);
+  it("adds fourteen current casual portraits and keeps the superseded Finn id resolvable", () => {
+    expect(presenterCollection.size).toBe(47);
     expect(presenterCollection.has("presenter-portrait.casual-realistic-emma-v1")).toBe(true);
+    expect(presenterCollection.has("presenter-portrait.casual-anime-finn-v1")).toBe(true);
+    expect(presenterCollection.has("presenter-portrait.casual-anime-finn-v2")).toBe(true);
     expect(presenterCollection.has("presenter-portrait.animal-lion-leo-v1")).toBe(true);
   });
 });

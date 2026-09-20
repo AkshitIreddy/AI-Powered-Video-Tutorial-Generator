@@ -590,6 +590,7 @@ interface PresenterPersona {
   readonly styleGroup?: PresenterStyleGroup;
   readonly filterTags?: readonly string[];
   readonly featuredRank?: number;
+  readonly hiddenFromGallery?: boolean;
   readonly lipSync?: CasualPresenterLipSyncReview;
 }
 
@@ -642,6 +643,7 @@ const PRESENTER_CHOICES = DEFAULT_CANVAS_CUSTOMIZATION.assets
       filterTags: persona.filterTags ?? [],
       ...(asset.sha256 ? { portraitArtifactHash: asset.sha256 } : {}),
       ...(persona.featuredRank === undefined ? {} : { featuredRank: persona.featuredRank }),
+      ...(persona.hiddenFromGallery ? { hiddenFromGallery: true } : {}),
       ...(persona.background ? { background: persona.background } : {}),
       ...(persona.lipSync ? { lipSync: persona.lipSync } : {}),
     }] : [];

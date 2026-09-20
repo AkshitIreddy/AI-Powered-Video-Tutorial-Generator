@@ -5473,8 +5473,8 @@
     {
       "id": "presenter-portrait.casual-anime-finn-v1",
       "kind": "presenter-portrait",
-      "name": "Finn · retro anime maker tutor",
-      "description": "Fictional synthetic adult engineering tutor in a distinctive retro cel-anime workshop.",
+      "name": "Finn · legacy portrait (static only)",
+      "description": "Legacy fictional synthetic engineering tutor retained for existing projects and static use only.",
       "tags": [
         "presenter",
         "casual",
@@ -5482,6 +5482,8 @@
         "retro",
         "engineering",
         "maker",
+        "legacy",
+        "static-only",
         "bundled",
         "synthetic"
       ],
@@ -5518,7 +5520,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-human pending-review."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-human incompatible."
       },
       "technical": {
         "mediaType": "image/png",
@@ -5534,7 +5536,74 @@
       "accessibility": {
         "reducedMotionSafe": true,
         "highContrastSafe": true,
-        "description": "Fictional synthetic adult engineering tutor in a distinctive retro cel-anime workshop."
+        "description": "Legacy fictional synthetic engineering tutor retained for existing projects and static use only."
+      }
+    },
+    {
+      "id": "presenter-portrait.casual-anime-finn-v2",
+      "kind": "presenter-portrait",
+      "name": "Finn · retro anime maker tutor",
+      "description": "Fictional synthetic adult engineering tutor with a clean front-facing cel-anime design in a sunlit electronics workshop.",
+      "tags": [
+        "presenter",
+        "casual",
+        "anime",
+        "retro",
+        "engineering",
+        "maker",
+        "bundled",
+        "synthetic"
+      ],
+      "source": {
+        "delivery": "bundled-file",
+        "availability": "ready",
+        "relativePath": "apps/desktop/src/assets/presenters/casual-anime-finn-v2.png",
+        "contentHash": "74d2677cf5666de2bf2702da0ea24703d636dbcc121fa28735e20bfde86e43a1",
+        "byteSize": 1784995
+      },
+      "license": {
+        "status": "cleared",
+        "expression": "LicenseRef-USER-OWNED",
+        "name": "User-owned generated starter asset",
+        "copyrightNotice": "Generated for the Alystria Studio project by the project owner",
+        "attributionRequired": false,
+        "redistributionAllowed": true,
+        "commercialUseAllowed": true,
+        "derivativesAllowed": true,
+        "exportAllowed": true,
+        "restrictions": [
+          "Retain the embedded C2PA metadata and synthetic-origin provenance when the original file is redistributed."
+        ]
+      },
+      "provenance": {
+        "origin": "generated",
+        "creator": "Alystria Studio project owner",
+        "creationMethod": "generative-model",
+        "tool": "image_gen",
+        "model": "OpenAI image_gen (model not exposed)",
+        "promptAvailability": "artifact-recorded",
+        "synthetic": true,
+        "c2paStatus": "present-embedded",
+        "ingredientAssetIds": [],
+        "recordedAt": "2026-09-20T00:00:00.000Z",
+        "reviewStatus": "verified",
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-human reviewed-compatible."
+      },
+      "technical": {
+        "mediaType": "image/png",
+        "renderSafe": true,
+        "remoteFetchRequired": false,
+        "dimensions": {
+          "width": 1254,
+          "height": 1254
+        },
+        "safeAreaPercent": 5,
+        "transparentBackground": false
+      },
+      "accessibility": {
+        "reducedMotionSafe": true,
+        "highContrastSafe": true,
+        "description": "Fictional synthetic adult engineering tutor with a clean front-facing cel-anime design in a sunlit electronics workshop."
       }
     },
     {
@@ -5652,7 +5721,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal reviewed-compatible."
       },
       "technical": {
         "mediaType": "image/png",
@@ -5719,7 +5788,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal reviewed-compatible."
       },
       "technical": {
         "mediaType": "image/png",
@@ -5786,7 +5855,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal reviewed-compatible."
       },
       "technical": {
         "mediaType": "image/png",
@@ -5853,7 +5922,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal reviewed-compatible."
       },
       "technical": {
         "mediaType": "image/png",
@@ -5920,7 +5989,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal reviewed-compatible."
       },
       "technical": {
         "mediaType": "image/png",
@@ -5987,7 +6056,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal reviewed-compatible."
       },
       "technical": {
         "mediaType": "image/png",
@@ -6054,7 +6123,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal pending-review."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-animal reviewed-compatible."
       },
       "technical": {
         "mediaType": "image/png",

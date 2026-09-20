@@ -20,6 +20,8 @@ test("@casual-presenters shows featured tutors, explicit animal filters, and leg
   await expect(gallery.getByRole("button").nth(1)).toHaveAccessibleName("Select Yuki · casual anime coding tutor");
   await expect(gallery.getByRole("button").nth(2)).toHaveAccessibleName("Select Noah · casual maker tutor");
   await expect(gallery.getByRole("button").nth(3)).toHaveAccessibleName("Select Chloe · cartoon science creator");
+  await expect(gallery.getByRole("button", { name: "Select Finn · retro anime maker tutor" })).toBeVisible();
+  await expect(gallery.getByRole("button", { name: /Finn · legacy portrait/ })).toHaveCount(0);
   await expect.poll(() => gallery.locator("img").evaluateAll((images: HTMLImageElement[]) => images.slice(0, 4).every((image) => image.complete && image.naturalWidth === 1254 && image.naturalHeight === 1254))).toBe(true);
 
   await wizard.getByLabel("Presenter visual style").selectOption("Animal");
