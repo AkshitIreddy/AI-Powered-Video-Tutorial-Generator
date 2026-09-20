@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import base64
 import binascii
 import struct
 import zlib
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
-from alystria.generation.adapters import GeneratedMedia
+from alystria.generation.adapters import DeterministicMediaClient, GeneratedMedia
 from alystria.jobs.runtime import CancellationRequested
 from alystria.project import ProjectStore
 from alystria.project_assets import validate_selected_presenter_for_export
+from alystria.providers.comfyui_local import ComfyGenerationMediaClient
+from alystria.providers.types import MediaAsset, MediaOutput, ProviderResult, Usage
 from alystria.visual_candidates import (
     VisualCandidateGenerationError,
     accept_visual_candidate,
@@ -600,3 +604,39 @@ def test_reject_and_stale_accept_preserve_the_current_scene(tmp_path: Path) -> N
                     "candidateId": candidate_id,
                 },
             )
+
+
+def test_real_comfy_media_contract_reaches_candidate_acceptance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = MagicMock()
+    runtime.__enter__.return_value.invoke.return_value = ProviderResult(
+        "comfyui-local", "local/sdxl-base-1.0",
+        MediaOutput((MediaAsset(
+            data_base64=base64.b64encode(_png()).decode(),
+            media_type="image/png", width=8, height=8,
+        ),)),
+        Usage("comfyui-local", "local/sdxl-base-1.0", {"images": 1.0, "steps": 25.0}, 0),
+    )
+    monkeypatch.setattr("alystria.providers.comfyui_local.ComfyUiRuntime", lambda *args, **kwargs: runtime)
+    client = ComfyGenerationMediaClient(DeterministicMediaClient(), tmp_path, gpu_lock=tmp_path / "gpu.txt")
+    with _project(tmp_path) as store:
+        head = store.head_revision()
+        assert head is not None
+        context = Context()
+        result = generate_visual_candidates(store, client, context, _params(head.revision_id, alternatives=1))
+        assert result["readyCount"] == 1
+        current = store.head_revision()
+        assert current is not None
+        candidate = current.snapshot["sceneCandidates"][0]
+        assert candidate["rights"]["exportEligible"] is True
+        assert candidate["provider"] == "comfyui-local"
+        assert store.cas.verify(candidate["artifactHash"])
+        accept_visual_candidate(store, {
+            "expectedHeadRevisionId": current.revision_id,
+            "candidateId": candidate["id"],
+        })
+        accepted = store.head_revision()
+        assert accepted is not None
+        assert accepted.snapshot["sceneCandidates"][0]["status"] == "accepted"
+        assert len(context.checkpoints) == 1

@@ -820,7 +820,7 @@ class ComfyGenerationMediaClient:
         metadata = {
             **result.value.metadata,
             "recipeId": SDXL_RECIPE_ID if role == "presenter" else SDXL_SCENE_RECIPE_ID,
-            "origin": "local-generated",
+            "origin": "aiGenerated",
             "rightsStatus": "verified",
             "licenseId": SDXL_BUNDLE.license,
             "sourceUri": SDXL_BUNDLE.source_url,
