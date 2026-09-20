@@ -13,6 +13,7 @@ import {
 } from "@alystria/scenes";
 import { compileTheme, type ResolvedTheme, type ThemePackId } from "@alystria/themes";
 import type { ProjectRecord, Scene } from "./types";
+import { customizedSceneTheme } from "./sceneThemeCustomization";
 
 interface SharedScenePreviewProps {
   scene: Scene;
@@ -169,25 +170,4 @@ function sceneTheme(theme: ResolvedTheme): SceneTheme {
 
 function fontStack(families: readonly string[]): string {
   return families.map((family) => family.includes(" ") ? `"${family}"` : family).join(", ");
-}
-
-/** Match the closed palette projection used by the final renderer. */
-function customizedSceneTheme(base: SceneTheme, customization: ProjectRecord["customization"]): SceneTheme {
-  if (!customization) return base;
-  const { paper, ink, accent: primary, evidence: secondary } = customization.colors;
-  if (![paper, ink, primary, secondary].every((value) => /^#[0-9a-f]{6}$/iu.test(value))) return base;
-  const mix = (first: string, second: string, amount: number) => `#${[1, 3, 5].map((offset) => {
-    const left = Number.parseInt(first.slice(offset, offset + 2), 16);
-    const right = Number.parseInt(second.slice(offset, offset + 2), 16);
-    return Math.round(left + (right - left) * amount).toString(16).padStart(2, "0");
-  }).join("")}`.toUpperCase();
-  return {
-    ...base, paper, ink, primary, secondary,
-    mutedInk: mix(ink, paper, .34), surface: mix(paper, ink, .035),
-    surfaceRaised: mix(paper, primary, .075), line: mix(paper, ink, .17),
-    codeBackground: mix(ink, paper, .045), codeInk: paper,
-    radius: customization.cornerRadius,
-    fontDisplay: fontStack([customization.displayFont, "Segoe UI", "sans-serif"]),
-    fontBody: fontStack([customization.bodyFont, "Segoe UI", "sans-serif"]),
-  };
 }
