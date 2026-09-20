@@ -110,6 +110,8 @@ describe("catalog selection controls", () => {
     expect(screen.queryByRole("button", { name: "Select model" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Inspect details" })).not.toBeInTheDocument();
     expect(screen.getByText("Technical details")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Downloadable model" }).closest(".aly-catalog-card")?.querySelector(".aly-catalog-download-state")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Download" }));
     expect(onDownload).toHaveBeenCalledWith(item);
 
@@ -134,7 +136,8 @@ describe("catalog selection controls", () => {
       />,
     );
 
-    expect(screen.getByText("Downloading 42%")).toBeVisible();
+    expect(screen.getByText("Downloading")).toBeVisible();
+    expect(screen.getByText("42% downloaded")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Downloading 42%" })).not.toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "Downloading model download progress" })).toHaveAttribute("value", "42");
     expect(screen.getByText(longPackageNote)).not.toBeVisible();
@@ -145,6 +148,43 @@ describe("catalog selection controls", () => {
     const unavailableCard = screen.getByRole("heading", { name: "Unmanaged model" }).closest<HTMLElement>(".aly-catalog-card")!;
     await user.click(within(unavailableCard).getByText("Technical details"));
     expect(packageNote).toBeVisible();
+  });
+
+  it("uses one progress action and keeps raw local diagnostics inside technical details", async () => {
+    const user = userEvent.setup();
+    const path = "C:\\Users\\Akshit\\AppData\\Local\\Alystria\\models\\stable-diffusion-xl-base-1.0\\sd_xl_base_1.0_0.9vae.safetensors";
+    const fingerprint = "b".repeat(64);
+    const item = catalogFixture({
+      name: "Long local package",
+      availability: "installed",
+      localInstall: { path, fingerprint, installedAt: "2026-09-21T00:00:00Z", lastVerifiedAt: "2026-09-21T00:00:00Z", status: "verified" },
+    });
+    render(
+      <ModelLibrary
+        items={[item]}
+        compatibilityContext={contextFixture()}
+        onDownload={vi.fn()}
+        downloadState={() => ({
+          label: "Downloading · view progress",
+          disabled: false,
+          detail: `Verifying artifact ${path} with sha256:${fingerprint}.`,
+          progressPercent: 100,
+        })}
+      />,
+    );
+
+    const card = screen.getByRole("heading", { name: "Long local package" }).closest<HTMLElement>(".aly-catalog-card")!;
+    expect(within(card).getByText("Verifying package")).toBeVisible();
+    expect(within(card).getByText("Download complete · checking files")).toBeVisible();
+    expect(within(card).getByRole("button", { name: "View progress" })).toBeEnabled();
+    expect(within(card).queryByText(path)).not.toBeVisible();
+    expect(within(card).queryByText(fingerprint)).not.toBeVisible();
+    expect(within(card).queryByText(/sha256:/i)).not.toBeVisible();
+
+    await user.click(within(card).getByText("Technical details"));
+    expect(within(card).getByText(path)).toBeVisible();
+    expect(within(card).getByText(fingerprint)).toBeVisible();
+    expect(within(card).getByText(/Verifying artifact/)).toBeVisible();
   });
 
   it("never offers a download action for a cloud-only model", () => {
@@ -240,9 +280,9 @@ describe("catalog selection controls", () => {
     );
 
     expect(screen.getByRole("button", { name: "Add to route" })).toBeDisabled();
-    const setupReasons = screen.getAllByText("This catalog item has no verified local installation.");
-    expect(setupReasons).toHaveLength(2);
-    expect(setupReasons[0]).toBeVisible();
+    const setupReason = screen.getByText("This catalog item has no verified local installation.");
+    expect(setupReason).not.toBeVisible();
+    expect(screen.getByText("Technical details")).toBeVisible();
   });
 
   it("labels and disables route choices that have not passed compatibility", () => {

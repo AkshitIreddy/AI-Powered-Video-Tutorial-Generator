@@ -267,6 +267,8 @@ export function ModelLibrary({
             const cardFacts = catalogCardFacts(item, compatibility.level, isLocalModel);
             const technicalFacts = catalogTechnicalFacts(item, isLocalModel);
             const hasTechnicalDetails = technicalFacts.length > 0 || Boolean(compatibility.reasons[0] || resolvedDownloadState?.detail);
+            const showDownloadStatus = Boolean(resolvedDownloadState
+              && (resolvedDownloadState.disabled || resolvedDownloadState.progressPercent !== undefined));
             const hasVisibleActions = Boolean((resolvedDownloadState && !resolvedDownloadState.disabled) || onAddToRoute || canStageWritingProfile || onSelect);
             return (
             <li className="aly-catalog-card" key={`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`}>
@@ -288,10 +290,9 @@ export function ModelLibrary({
               <dl className="aly-catalog-metrics">
                 {cardFacts.map((fact) => <div key={fact.label}><dt>{fact.icon === "cloud" ? <Cloud size={14} aria-hidden="true" /> : fact.icon === "local" ? <HardDrive size={14} aria-hidden="true" /> : null}{fact.label}</dt><dd>{fact.value}</dd></div>)}
               </dl>
-              {compatibility.reasons[0] && <p className="aly-catalog-card__reason">{compatibility.reasons[0].message}</p>}
-              {resolvedDownloadState && (
+              {showDownloadStatus && resolvedDownloadState && (
                 <div className={`aly-catalog-download-state${resolvedDownloadState.progressPercent === undefined ? "" : " is-active"}`} role="status">
-                  <span><strong>{resolvedDownloadState.label}</strong><small>{downloadStateSummary(resolvedDownloadState)}</small></span>
+                  <span><strong>{downloadStatusLabel(resolvedDownloadState)}</strong><small>{downloadStateSummary(resolvedDownloadState)}</small></span>
                   {resolvedDownloadState.progressPercent !== undefined && (
                     <progress
                       aria-label={`${item.identity.name} download progress`}
@@ -303,7 +304,7 @@ export function ModelLibrary({
               )}
               {hasTechnicalDetails && (
                 <details className="aly-catalog-card__details">
-                  <summary><span><strong>Technical details</strong><small>{isLocalModel ? "Version, package, and setup notes" : "Version and setup notes"}</small></span><ChevronDown size={16} aria-hidden="true" /></summary>
+                  <summary><span><strong>Technical details</strong><small>{isLocalModel ? "Package, version, and setup" : "Version and provider setup"}</small></span><ChevronDown size={16} aria-hidden="true" /></summary>
                   <div className="aly-catalog-card__details-body">
                     {technicalFacts.length > 0 && <dl>{technicalFacts.map((fact) => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}</dl>}
                     {compatibility.reasons[0] && <section><h4>Setup check</h4><p>{compatibility.reasons[0].message}</p></section>}
@@ -313,7 +314,7 @@ export function ModelLibrary({
               )}
               {hasVisibleActions && (
                 <div className="aly-catalog-card__actions">
-                  {resolvedDownloadState && !resolvedDownloadState.disabled && <button type="button" className={actionClass("download")} disabled={!onDownload} onClick={() => onDownload?.(item)}>{resolvedDownloadState.label}</button>}
+                  {resolvedDownloadState && !resolvedDownloadState.disabled && <button type="button" className={actionClass("download")} disabled={!onDownload} onClick={() => onDownload?.(item)}>{downloadActionLabel(resolvedDownloadState)}</button>}
                   {onAddToRoute && <button type="button" className={actionClass("route")} disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Add this ready item to a capability route" : "Resolve compatibility checks before routing this item"} onClick={() => onAddToRoute(selectionFromCatalogItem(item))}>Add to route</button>}
                   {canStageWritingProfile && <button type="button" className={actionClass("writing")} disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Stage this exact model in the active writing profile; use Save setup below to keep it" : "Connect the provider and resolve its compatibility checks before using it"} onClick={() => onUseForWritingProfile?.(item)}>Use in writing profile</button>}
                   {onSelect && <button type="button" className={actionClass("select")} disabled={!compatibility.canSelect} onClick={() => onSelect(item)}>Select model</button>}
@@ -365,6 +366,9 @@ function catalogTechnicalFacts(item: CatalogItem, isLocalModel: boolean): Catalo
     ...(isLocalModel && item.requirements.downloadBytes !== null ? [{ label: "Download", value: formatBytes(item.requirements.downloadBytes) }] : []),
     ...(isLocalModel && item.requirements.installedBytes !== null ? [{ label: "Installed size", value: formatBytes(item.requirements.installedBytes) }] : []),
     ...(isLocalModel && item.execution.runtimes.length > 0 ? [{ label: "Runtime", value: item.execution.runtimes.join(", ") }] : []),
+    ...(isLocalModel && item.identity.immutableHash ? [{ label: "Manifest SHA-256", value: item.identity.immutableHash }] : []),
+    ...(isLocalModel && item.localInstall?.path ? [{ label: "Installed path", value: item.localInstall.path }] : []),
+    ...(isLocalModel && item.localInstall?.fingerprint ? [{ label: "Install fingerprint", value: item.localInstall.fingerprint }] : []),
   ];
 }
 
@@ -389,10 +393,23 @@ function choosePrimaryAction({
 }
 
 function downloadStateSummary(state: CatalogDownloadActionState): string {
-  if (state.progressPercent !== undefined) return `${Math.round(Math.max(0, Math.min(100, state.progressPercent)))}% complete`;
+  if (state.progressPercent !== undefined) {
+    const percent = Math.round(Math.max(0, Math.min(100, state.progressPercent)));
+    return percent >= 100 ? "Download complete · checking files" : `${percent}% downloaded`;
+  }
   if (/installed|ready|verified/i.test(state.label)) return "Available on this device";
   if (state.disabled) return "Open technical details for the setup reason";
   return "Managed package available";
+}
+
+function downloadStatusLabel(state: CatalogDownloadActionState): string {
+  if (state.progressPercent !== undefined && state.progressPercent >= 100) return "Verifying package";
+  const phase = state.label.split("·", 1)[0]?.replace(/\s+\d+%.*$/u, "").trim();
+  return phase || "Download status";
+}
+
+function downloadActionLabel(state: CatalogDownloadActionState): string {
+  return /·\s*view progress/iu.test(state.label) ? "View progress" : state.label;
 }
 
 function defaultDownloadState(item: CatalogItem): CatalogDownloadActionState {
