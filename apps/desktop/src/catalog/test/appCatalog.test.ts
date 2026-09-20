@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alystriaCatalogItems, catalogHardwareFromDiagnostics, cloudflareCatalogItem, pinnedLocalImageCatalogItems, stockAndReviewCloudCatalogItems, structuredCloudCatalogItems } from "../../appCatalog";
+import { alystriaCatalogItems, catalogHardwareFromDiagnostics, cloudflareCatalogItem, pinnedLocalImageCatalogItems, soulxFlashHeadCatalogItem, stockAndReviewCloudCatalogItems, structuredCloudCatalogItems } from "../../appCatalog";
 import type { DiagnosticReport } from "../../native";
 import { evaluateCatalogCompatibility } from "../compatibility";
 import { contextFixture } from "./fixtures";
@@ -176,6 +176,16 @@ describe("pinned local image downloads", () => {
       expect(item.localInstall).toBeNull();
       expect(item.execution.runtimes).toContain("comfyui");
     }
+  });
+
+  it("offers the verified presenter engine without claiming it is already installed", () => {
+    expect(alystriaCatalogItems).toContain(soulxFlashHeadCatalogItem);
+    expect(soulxFlashHeadCatalogItem.identity.sourceId).toBe("local/soulx-flashhead-pro");
+    expect(soulxFlashHeadCatalogItem.identity.revision).toContain("+pro-59119b6c");
+    expect(soulxFlashHeadCatalogItem.identity.immutableHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(soulxFlashHeadCatalogItem.localInstall).toBeNull();
+    expect(soulxFlashHeadCatalogItem.requirements.estimatedVramBytes).toBe(12 * 1024 ** 3);
+    expect(soulxFlashHeadCatalogItem.requirements.estimatedRamBytes).toBe(24 * 1024 ** 3);
   });
 
   it("pins every multi-file Comfy bundle to the stable runtime and exact component hashes", () => {

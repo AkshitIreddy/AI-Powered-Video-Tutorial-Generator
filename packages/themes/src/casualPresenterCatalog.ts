@@ -74,6 +74,7 @@ export const CASUAL_PRESENTER_SELECTABLE_IDS = Object.freeze(
 );
 
 export type CasualPresenterLipSyncEngineId =
+  | "soulx-flashhead-pro"
   | "liveportrait-musetalk-1.5"
   | "joyvasa-human"
   | "joyvasa-animal";

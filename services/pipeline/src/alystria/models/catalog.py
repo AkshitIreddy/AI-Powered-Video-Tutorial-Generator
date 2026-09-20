@@ -240,6 +240,26 @@ BUILTIN_CATALOG = ModelCatalog(
             ),
         ),
         ModelCatalogEntry(
+            model_id="soulx-flashhead-pro",
+            display_name="SoulX-FlashHead Pro",
+            upstream="Soul-AILab/SoulX-FlashHead-1_3B",
+            capabilities=(Capability.AVATAR, Capability.LIP_SYNC),
+            runtime="soulx-flashhead-worker",
+            preferred_serialization=SerializationFormat.SAFETENSORS,
+            resources=ResourceEstimate(24 * GIB, 24 * GIB, 12 * GIB, 4, True),
+            supported_backends=frozenset({ComputeBackend.NVIDIA_CUDA}),
+            verified_revision="soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+            license_id="Apache-2.0",
+            optional=True,
+            notes=(
+                "Bounded Windows reference probes at 512x512/25fps produced coherent "
+                "realistic, anime and cartoon speech with natural blinks. The first "
+                "eight-second probe took 199 seconds and peaked at 8196 MiB device "
+                "memory on an RTX 4080 Laptop with 32 GiB RAM. Preview new portraits; "
+                "a completed inference is not a guarantee of visual quality."
+            ),
+        ),
+        ModelCatalogEntry(
             model_id="echomimicv3-flash",
             display_name="EchoMimicV3 Flash",
             upstream="antgroup/echomimic_v3",

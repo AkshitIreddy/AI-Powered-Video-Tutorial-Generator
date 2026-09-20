@@ -97,6 +97,29 @@ const apacheModelLicense = {
   notes: ["Preserve the license and required notices when redistributing model artifacts or derivatives."],
 } as const;
 
+export const soulxFlashHeadCatalogItem: CatalogItem = adaptCuratedEntry({
+  id: "local/soulx-flashhead-pro",
+  providerId: "local",
+  publisher: "Soul AI Lab",
+  name: "SoulX-FlashHead Pro",
+  revision: "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+  immutableHash: "e47e61b9023ea1aac60c0c0fff077289bc6cca443c71907e5a76a411480af250",
+  capabilities: ["presenter.generate", "portrait.animate", "lipsync.generate"],
+  artifactType: "workflow",
+  modalities: ["image", "audio", "video"],
+  architecture: "SoulX-FlashHead Pro 1.3B",
+  tags: ["presenter", "lip-sync", "blinking", "anime", "cartoon", "pinned-download"],
+  boundaries: ["local"],
+  runtimes: ["python", "pytorch", "cuda"],
+  requirements: { downloadBytes: 10_464_991_863, estimatedVramBytes: 12 * GIB, estimatedRamBytes: 24 * GIB },
+  license: apacheModelLicense,
+  description: "Turn a portrait and narration into a speaking presenter with natural head motion and blinking. Tested at 512 px on a 12 GB NVIDIA laptop GPU with realistic, anime and cartoon hosts; preview each new character before use.",
+  sourceUrl: "https://github.com/Soul-AILab/SoulX-FlashHead",
+  testedRecipeIds: ["soulx-flashhead-pro-windows-512"],
+  publisherVerifiedBySource: true,
+  retrievedAt: "2026-09-21T00:00:00.000Z",
+});
+
 const sdxlOpenRailLicense = {
   identifier: "openrail++",
   name: "CreativeML Open RAIL++-M",
@@ -618,6 +641,7 @@ export const stockAndReviewCloudCatalogItems: readonly CatalogItem[] = Object.fr
 ]);
 
 export const alystriaCatalogItems: readonly CatalogItem[] = Object.freeze([
+  soulxFlashHeadCatalogItem,
   ...localRecipeCatalogItems,
   ...pinnedLocalImageCatalogItems,
   ...structuredCloudCatalogItems,

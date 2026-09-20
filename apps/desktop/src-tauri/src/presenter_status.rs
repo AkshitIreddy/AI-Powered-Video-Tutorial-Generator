@@ -17,6 +17,17 @@ const JOY_ROLES: [&str; 8] = [
     "portrait-runtime-manifest",
 ];
 
+const SOULX_ROLES: [&str; 8] = [
+    "adapter-entrypoint",
+    "runtime-source-manifest",
+    "audio-feature-config",
+    "audio-feature-preprocessor",
+    "audio-feature-weights",
+    "flashhead-config",
+    "flashhead-weights",
+    "vae-weights",
+];
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresenterPortraitRuntimeStatus {
@@ -115,6 +126,7 @@ fn inspect_config(models: &Path, child: &Path, is_primary: bool) -> Result<Value
             | "musetalk"
             | "musetalk-1.5"
             | "liveportrait-musetalk-1.5"
+            | "soulx-flashhead-pro"
     ) {
         return Err("The selected character animation engine is not supported.");
     }
@@ -133,7 +145,10 @@ fn inspect_config(models: &Path, child: &Path, is_primary: bool) -> Result<Value
     }
     let contract = &config["workerContract"];
     let is_joy = model.starts_with("joyvasa-");
-    let expected_contract = if is_joy {
+    let is_soulx = model == "soulx-flashhead-pro";
+    let expected_contract = if is_soulx {
+        "alystria.soulx-flashhead.worker.v1"
+    } else if is_joy {
         "alystria.joyvasa.worker.v1"
     } else {
         "alystria.musetalk.worker.v1"
@@ -165,6 +180,9 @@ fn inspect_config(models: &Path, child: &Path, is_primary: bool) -> Result<Value
         .filter_map(|file| file["role"].as_str())
         .collect();
     if is_joy && (files.len() != JOY_ROLES.len() || roles != JOY_ROLES.into_iter().collect()) {
+        return Err("The character animation runtime file declarations are incomplete.");
+    }
+    if is_soulx && (files.len() != SOULX_ROLES.len() || roles != SOULX_ROLES.into_iter().collect()) {
         return Err("The character animation runtime file declarations are incomplete.");
     }
     for file in files {
@@ -305,6 +323,30 @@ mod tests {
             statuses[0].model_id.as_deref(),
             Some("liveportrait-musetalk-1.5")
         );
+    }
+
+    #[test]
+    fn discovers_flashhead_and_rejects_a_missing_audio_encoder_role() {
+        let temp = setup();
+        let mut config = json_file(&temp.path().join("animal.json")).unwrap();
+        config["modelId"] = json!("soulx-flashhead-pro");
+        config["workerContract"]["contractId"] = json!("alystria.soulx-flashhead.worker.v1");
+        config["workerContract"]["files"] = json!(SOULX_ROLES
+            .iter()
+            .map(|role| json!({"role":role,"relativePath":"worker.py","sha256":"a".repeat(64)}))
+            .collect::<Vec<_>>());
+        let path = temp.path().join("presenter-runtime.json");
+        fs::write(&path, config.to_string()).unwrap();
+        let statuses = inspect(temp.path());
+        assert_eq!(statuses.len(), 1);
+        assert!(statuses[0].configured);
+        assert_eq!(statuses[0].model_id.as_deref(), Some("soulx-flashhead-pro"));
+        config["workerContract"]["files"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|file| file["role"] != "audio-feature-weights");
+        fs::write(&path, config.to_string()).unwrap();
+        assert!(!inspect(temp.path())[0].configured);
     }
 
     #[test]
