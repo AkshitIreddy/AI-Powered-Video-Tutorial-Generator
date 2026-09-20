@@ -19,10 +19,12 @@ export const marketingCaptionStyle = Object.freeze({
   fontFamily: "Segoe UI Semibold",
   fontSizeAt1440x810: 34,
   textColor: "#FFFDF8",
-  panelColor: "#101522",
-  panelOpacity: 0.82,
+  treatment: "blurred-transparent-glass",
+  panelColor: "#101722",
+  panelOpacityRange: [0.36, 0.48],
+  backdropBlurRadius: 10,
   borderColor: "#FFFFFF",
-  borderOpacity: 0.12,
+  borderOpacity: 0.3,
   maximumWidthPercent: 76,
   cornerRadiusPixels: 14,
   horizontalPaddingPixels: 28,
@@ -322,7 +324,12 @@ export async function validateMarketingAssetManifest(manifestPath, { ffprobePath
   return { manifest, edit, probes };
 }
 
-export function buildMarketingTutorialProjectDocument({ teachingDurationSeconds, captions, mode = "final" }) {
+export function buildMarketingTutorialProjectDocument({
+  teachingDurationSeconds,
+  captions,
+  mode = "final",
+  presenterRouteModel = "receipt-bound-reviewed-output",
+}) {
   assertDuration(teachingDurationSeconds, "teaching narration", 7, 25);
   validateCaptionSequence(captions, teachingDurationSeconds, marketingTeachingScript);
   return {
@@ -358,7 +365,7 @@ export function buildMarketingTutorialProjectDocument({ teachingDurationSeconds,
       privacyMode: "local",
       dataClassification: "project",
       approvals: [],
-      routes: [{ capability: "lipsync.generate", model: "receipt-bound-reviewed-output", providerIds: ["local-runtime"], voice: null }],
+      routes: [{ capability: "lipsync.generate", model: presenterRouteModel, providerIds: ["local-runtime"], voice: null }],
     },
     marketingDemo: { schemaVersion: 1, mode, exactTeachingScript: marketingTeachingScript, designedVisualIds: rayleighVisuals.map((visual) => visual.id) },
   };
@@ -392,11 +399,17 @@ export async function prepareMarketingTutorialInNativeEditor({
   invokeNative,
   ffprobePath,
   assetManifest,
+  presenterRouteModel = "receipt-bound-reviewed-output",
   actionTimeoutMs = 45_000,
   jobTimeoutMs = 600_000,
 }) {
   const timing = deriveNativeSceneTiming(assetManifest.teachingCaptions, assetManifest.assets.teachingVoice.durationSeconds);
-  const initialSnapshot = buildMarketingTutorialProjectDocument({ teachingDurationSeconds: timing.durationSeconds, captions: assetManifest.teachingCaptions, mode: assetManifest.mode });
+  const initialSnapshot = buildMarketingTutorialProjectDocument({
+    teachingDurationSeconds: timing.durationSeconds,
+    captions: assetManifest.teachingCaptions,
+    mode: assetManifest.mode,
+    presenterRouteModel,
+  });
   const handle = await invokeNative(page, "project_create", {
     parentDirectory: projectsPath,
     directoryName: `rayleigh-marketing-${Date.now().toString(36)}`,

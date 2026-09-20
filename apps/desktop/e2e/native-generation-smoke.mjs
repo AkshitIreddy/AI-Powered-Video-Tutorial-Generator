@@ -22,6 +22,10 @@ import {
   preparePresenterComparison,
   recordNativeWalkthrough,
 } from "./native-walkthrough-recording.mjs";
+import {
+  preflightNativeMarketingFeatureScenario,
+  runNativeMarketingFeatureScenario,
+} from "./native-marketing-feature-scenario.mjs";
 
 // Opt-in real native acceptance. The cloud path uses the product's smallest
 // one-minute duration, stops before media unless planning produced three scenes,
@@ -125,6 +129,17 @@ const walkthroughPreflight = parsed.recordWalkthrough
     voiceoverDurationsSeconds: readmeVoiceover.durationsSecondsById,
   })
   : null;
+const marketingFeaturePreflight = parsed.marketingFeatureScenario
+  ? await preflightNativeMarketingFeatureScenario({
+    manifestPath: parsed.marketingManifest,
+    customPortraitPath: parsed.customPortrait,
+    customPortraitSha256: parsed.customPortraitSha256,
+    ffprobePath,
+    gpuCoordinationPath: parsed.gpuCoordinationPath,
+    gifsmithRoot: parsed.gifsmithRoot,
+    recordCapture: parsed.recordMarketingDemo,
+  })
+  : null;
 await rotateExistingPath(readyPath);
 
 try {
@@ -145,7 +160,7 @@ try {
   bootstrapLaunch = undefined;
   await rotateExistingPath(readyPath, "bootstrap-ready");
   await configurePortableTestProfile();
-  const alignmentRuntime = parsed.localImageOnly ? null : await assertInstalledAlignmentRuntime();
+  const alignmentRuntime = parsed.localImageOnly || parsed.marketingFeatureScenario ? null : await assertInstalledAlignmentRuntime();
 
   launch = await startNative("desktop");
   const { page } = launch;
@@ -161,7 +176,7 @@ try {
     });
     if (message.type() === "error") consoleErrors.push(message.text());
   });
-  const recordingWindow = parsed.recordWalkthrough
+  const recordingWindow = parsed.recordWalkthrough || parsed.recordMarketingDemo
     ? await prepareNativeRecordingWindow({ page, desktopPid: launch.child.pid })
     : null;
 
@@ -192,7 +207,69 @@ try {
     : null;
   await page.screenshot({ path: path.join(runRoot, "01-native-home.png"), fullPage: true });
 
-  if (parsed.localImageOnly) {
+  if (parsed.marketingFeatureScenario) {
+    const feature = await runNativeMarketingFeatureScenario({
+      page,
+      projectsPath,
+      invokeNative,
+      invokeNativeWithoutInput,
+      ffprobePath,
+      assetManifest: marketingFeaturePreflight.assetManifest,
+      preflight: marketingFeaturePreflight,
+      runRoot,
+      customPresenterName: parsed.customPresenterName,
+      musicQuery: parsed.musicQuery,
+      musicMood: parsed.musicMood,
+      actionTimeoutMs: parsed.actionTimeoutMs,
+      jobTimeoutMs: parsed.jobTimeoutMs,
+      recording: parsed.recordMarketingDemo ? {
+        cdpPort: launch.port,
+        gifsmithRoot: parsed.gifsmithRoot,
+        recordingWindow,
+      } : null,
+    });
+    activeProjectIdentity = { projectId: feature.project.id, projectDirectory: feature.project.directory };
+    if (pageErrors.length || consoleErrors.length) {
+      throw new Error(`Native WebView emitted errors: ${JSON.stringify({ pageErrors, consoleErrors })}`);
+    }
+    const packageManifestText = await readFile(packageManifestPath, "utf8");
+    const packageManifest = JSON.parse(packageManifestText);
+    await writeFile(path.join(runRoot, "test-area-manifest.json"), packageManifestText, "utf8");
+    report = {
+      schemaVersion: 1,
+      state: "passed",
+      evidenceClass: feature.evidenceClass,
+      actualNativeWebView: true,
+      hiddenLaunch: true,
+      realProviderCalls: false,
+      localGpuGeneration: true,
+      modelDownloadsStarted: 0,
+      projectId: feature.project.id,
+      relativeProjectDirectory: containedRelativePath(projectsPath, feature.project.directory, "native marketing feature project"),
+      relativeMediaPath: containedRelativePath(feature.project.directory, feature.project.cleanEditorRenderPath, "native marketing feature render"),
+      featureScenario: {
+        ...feature,
+        project: {
+          ...feature.project,
+          directory: undefined,
+          cleanEditorRenderPath: undefined,
+        },
+      },
+      packageManifest: {
+        createdAt: packageManifest.createdAt,
+        desktop: packageManifest.desktop,
+        pipelineWorker: packageManifest.pipelineWorker,
+        rendererRuntime: packageManifest.rendererRuntime,
+      },
+      executableSha256: await sha256File(executable),
+      workerSha256: await sha256File(workerExecutable),
+      bootstrapDesktopPid,
+      bootstrapWorkerPid,
+      desktopPid: launch.child.pid,
+      workerPid: launch.workerPid,
+      finishedAtUtc: new Date().toISOString(),
+    };
+  } else if (parsed.localImageOnly) {
     const localImage = resumeLocalImageSource
       ? await continueAcceptedLocalImage(page, resumeLocalImageSource, consoleMessages, pageErrors)
       : await runLocalImageOnlyAcceptance(page);
@@ -620,6 +697,8 @@ if (workError || cleanupError) {
     runEvidenceDirectory: runRoot,
     evidenceClass: parsed.recordWalkthrough
       ? "actual-native-gifsmith-walkthrough"
+      : parsed.marketingFeatureScenario
+      ? "actual-native-marketing-feature-scenario"
       : parsed.localImageOnly
       ? parsed.resumeLocalImageRun
         ? "bounded-real-native-local-sdxl-image-continuation"
@@ -1927,6 +2006,14 @@ function parseArguments(arguments_) {
     editorSmoke: false,
     recoverySmoke: false,
     recordWalkthrough: false,
+    marketingFeatureScenario: false,
+    recordMarketingDemo: false,
+    marketingManifest: null,
+    customPortrait: null,
+    customPortraitSha256: null,
+    customPresenterName: "Nova Science",
+    musicQuery: "thoughtful atmospheric science lesson",
+    musicMood: "curious",
     walkthroughLocalImageRun: localImageWalkthroughRunId,
     presenterAcceptanceRoots: { ...defaultPresenterAcceptanceRoots },
     readmeVoiceoverManifest: defaultReadmeVoiceoverManifest,
@@ -1960,6 +2047,15 @@ function parseArguments(arguments_) {
       result.recordWalkthrough = true;
       continue;
     }
+    if (name === "--marketing-feature-scenario") {
+      result.marketingFeatureScenario = true;
+      continue;
+    }
+    if (name === "--record-marketing-demo") {
+      result.recordMarketingDemo = true;
+      result.marketingFeatureScenario = true;
+      continue;
+    }
     const value = arguments_[index + 1];
     if (name === "--portable-root") result.portableRoot = requiredText(value, name, 500);
     else if (name === "--profile-id") result.profileId = requiredText(value, name, 100);
@@ -1975,6 +2071,12 @@ function parseArguments(arguments_) {
     else if (name === "--presenter-chloe-root") result.presenterAcceptanceRoots.chloe = path.resolve(requiredText(value, name, 500));
     else if (name === "--readme-voiceover-manifest") result.readmeVoiceoverManifest = path.resolve(requiredText(value, name, 500));
     else if (name === "--gifsmith-root") result.gifsmithRoot = path.resolve(requiredText(value, name, 500));
+    else if (name === "--marketing-manifest") result.marketingManifest = path.resolve(requiredText(value, name, 500));
+    else if (name === "--custom-portrait") result.customPortrait = path.resolve(requiredText(value, name, 500));
+    else if (name === "--custom-portrait-sha256") result.customPortraitSha256 = requiredText(value, name, 64).toLowerCase();
+    else if (name === "--custom-presenter-name") result.customPresenterName = requiredText(value, name, 120);
+    else if (name === "--music-query") result.musicQuery = requiredText(value, name, 240);
+    else if (name === "--music-mood") result.musicMood = requiredText(value, name, 20).toLowerCase();
     else if (name === "--topic") result.topic = requiredText(value, name, 240);
     else if (name === "--startup-timeout-ms") result.startupTimeoutMs = positiveNumber(value, name);
     else if (name === "--action-timeout-ms") result.actionTimeoutMs = positiveNumber(value, name);
@@ -2034,6 +2136,20 @@ function parseArguments(arguments_) {
       throw new Error("--walkthrough-local-image-run must be one native generation evidence run ID");
     }
   }
+  if (result.marketingFeatureScenario) {
+    if (result.localImageOnly || result.resumeCreativeRun || result.resumeCompletedRun || result.resumeLocalImageRun
+      || result.recordWalkthrough || result.creativeOnly || result.editorSmoke || result.recoverySmoke) {
+      throw new Error("--marketing-feature-scenario is an isolated native workflow and cannot be combined with generation, walkthrough, editor, or recovery modes");
+    }
+    if (!result.marketingManifest || !result.customPortrait || !result.customPortraitSha256 || !result.gpuCoordinationPath) {
+      throw new Error("--marketing-feature-scenario requires --marketing-manifest, --custom-portrait, --custom-portrait-sha256, and --gpu-coordination-path");
+    }
+    if (!/^[0-9a-f]{64}$/u.test(result.customPortraitSha256)) throw new Error("--custom-portrait-sha256 must be one lowercase SHA-256");
+    if (!["curious", "focused", "calm", "hopeful", "playful", "reflective", "energetic"].includes(result.musicMood)) {
+      throw new Error("--music-mood must be one MusicBrowser mood");
+    }
+  }
+  if (result.recordMarketingDemo && !result.gifsmithRoot) throw new Error("--record-marketing-demo requires --gifsmith-root");
   return result;
 }
 
@@ -3325,7 +3441,7 @@ function nativeLaunchEnvironment(port) {
     ...process.env,
     ALYSTRIA_HEADLESS_ACCEPTANCE: "1",
     ALYSTRIA_HEADLESS_ACCEPTANCE_CDP_PORT: String(port),
-    ...(parsed.recordWalkthrough ? {
+    ...(parsed.recordWalkthrough || parsed.recordMarketingDemo ? {
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-allow-origins=*`,
     } : {}),
     ...(parsed.gpuCoordinationPath ? { ALYSTRIA_GPU_LOCK_PATH: parsed.gpuCoordinationPath } : {}),

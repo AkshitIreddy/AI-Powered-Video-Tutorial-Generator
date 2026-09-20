@@ -192,8 +192,11 @@ export async function renderMarketingDemo({ manifestPath, outputDirectory, ffmpe
   for (let index = 0; index < plan.mp4.segments.length; index += 1) {
     const segment = plan.mp4.segments[index];
     const output = path.join(mp4Segments, `${String(index + 1).padStart(2, "0")}-${segment.id}.mp4`);
-    const captionLayers = segment.captionLayers?.map((layer) => ({ ...layer, path: captionReceipts[layer.id]?.path }))
-      ?? (captionReceipts[segment.id] ? [{ path: captionReceipts[segment.id].path }] : []);
+    const captionLayers = segment.captionLayers?.map((layer) => ({
+      ...layer,
+      path: captionReceipts[layer.id]?.path,
+      maskPath: captionReceipts[layer.id]?.maskPath,
+    })) ?? (captionReceipts[segment.id] ? [{ path: captionReceipts[segment.id].path, maskPath: captionReceipts[segment.id].maskPath }] : []);
     await renderVideoSegment({ ffmpegPath, encoder, manifest, plan, segment, output, captionLayers, width: plan.mp4.width, height: plan.mp4.height, fps: plan.mp4.fps, draftWatermark: plan.draftWatermark });
     renderedMp4Segments.push({ ...segment, path: output, sha256: await sha256File(output) });
   }
@@ -214,7 +217,7 @@ export async function renderMarketingDemo({ manifestPath, outputDirectory, ffmpe
   for (let index = 0; index < plan.webp.segments.length; index += 1) {
     const segment = plan.webp.segments[index];
     const output = path.join(webpSegments, `${String(index + 1).padStart(2, "0")}-${segment.id}.mp4`);
-    const captionLayers = segment.captionText && captionReceipts["native-editor-webp"] ? [{ path: captionReceipts["native-editor-webp"].path }] : [];
+    const captionLayers = segment.captionText && captionReceipts["native-editor-webp"] ? [{ path: captionReceipts["native-editor-webp"].path, maskPath: captionReceipts["native-editor-webp"].maskPath }] : [];
     await renderVideoSegment({ ffmpegPath, encoder, manifest, plan, segment, output, captionLayers, width: plan.webp.width, height: plan.webp.height, fps: plan.webp.fps, draftWatermark: plan.draftWatermark });
     renderedWebpSegments.push({ ...segment, path: output, sha256: await sha256File(output) });
   }
@@ -259,6 +262,7 @@ async function renderCaptionOverlays({ plan, directory, browserType }) {
     const receipts = {};
     for (const item of requested) {
       const output = path.join(directory, `${item.id}.png`);
+      const maskOutput = path.join(directory, `${item.id}.glass-mask.png`);
       const page = await browser.newPage({ viewport: { width: item.width, height: item.height }, deviceScaleFactor: 1 });
       const scale = item.width / 1440;
       const lines = balanceMarketingCaption(item.text, item.width < 1200 ? 36 : 48);
@@ -271,13 +275,33 @@ async function renderCaptionOverlays({ plan, directory, browserType }) {
       const horizontalMargin = Math.round(48 * scale);
       const panelX = item.placement === "top-left" ? horizontalMargin : item.placement === "top-right" ? item.width - panelWidth - horizontalMargin : Math.round((item.width - panelWidth) / 2);
       const panelY = item.placement?.startsWith("top") ? Math.round(58 * scale) : Math.round(item.height - panelHeight - 30 * scale);
-      const baseline = panelY + 20 * scale + fontSize;
+      const baseline = panelY + 18 * scale + fontSize;
       const tspans = lines.map((line, index) => `<tspan x="${panelX + panelWidth / 2}" y="${baseline + index * lineHeight}">${escapeXml(line)}</tspan>`).join("");
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${item.width}" height="${item.height}"><rect width="100%" height="100%" fill="none"/><rect x="${panelX}" y="${panelY}" width="${panelWidth}" height="${panelHeight}" rx="${14 * scale}" fill="#101522" fill-opacity=".82" stroke="#FFFFFF" stroke-opacity=".12"/><text text-anchor="middle" fill="#FFFDF8" font-family="Segoe UI,Arial,sans-serif" font-size="${fontSize}" font-weight="600">${tspans}</text></svg>`;
+      const radius = 16 * scale;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${item.width}" height="${item.height}"><defs><filter id="text-shadow" x="-20%" y="-30%" width="140%" height="170%"><feDropShadow dx="0" dy="${1.15 * scale}" stdDeviation="${1.6 * scale}" flood-color="#05070C" flood-opacity=".58"/></filter><linearGradient id="glass-tint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#27334A" stop-opacity=".48"/><stop offset="1" stop-color="#101722" stop-opacity=".36"/></linearGradient></defs><rect width="100%" height="100%" fill="none"/><rect x="${panelX}" y="${panelY}" width="${panelWidth}" height="${panelHeight}" rx="${radius}" fill="url(#glass-tint)" stroke="#FFFFFF" stroke-opacity=".3" stroke-width="${Math.max(1, 1.1 * scale)}"/><path d="M ${panelX + radius} ${panelY + 1.5 * scale} H ${panelX + panelWidth - radius}" stroke="#FFFFFF" stroke-opacity=".22" stroke-width="${Math.max(1, scale)}" stroke-linecap="round"/><text text-anchor="middle" fill="#FFFDF8" font-family="Segoe UI,Arial,sans-serif" font-size="${fontSize}" font-weight="600" filter="url(#text-shadow)">${tspans}</text></svg>`;
       await page.setContent(`<style>html,body{margin:0;background:transparent;overflow:hidden}</style>${svg}`);
       await page.screenshot({ path: output, omitBackground: true });
+      const maskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${item.width}" height="${item.height}"><rect width="100%" height="100%" fill="#000000"/><rect x="${panelX}" y="${panelY}" width="${panelWidth}" height="${panelHeight}" rx="${radius}" fill="#FFFFFF"/></svg>`;
+      await page.setContent(`<style>html,body{margin:0;background:#000;overflow:hidden}</style>${maskSvg}`);
+      await page.screenshot({ path: maskOutput });
       await page.close();
-      receipts[item.id] = { path: output, sha256: await sha256File(output), width: item.width, height: item.height, lines, panelWidth, panelHeight, panelX, panelY, placement: item.placement };
+      receipts[item.id] = {
+        path: output,
+        sha256: await sha256File(output),
+        maskPath: maskOutput,
+        maskSha256: await sha256File(maskOutput),
+        width: item.width,
+        height: item.height,
+        lines,
+        panelWidth,
+        panelHeight,
+        panelX,
+        panelY,
+        placement: item.placement,
+        treatment: "blurred-transparent-glass",
+        tintOpacityRange: [0.36, 0.48],
+        backdropBlurRadius: 10,
+      };
     }
     return receipts;
   } finally {
@@ -303,7 +327,10 @@ async function renderVideoSegment({ ffmpegPath, encoder, manifest, segment, outp
   filters.push(`tpad=stop_mode=clone:stop_duration=${segment.durationSeconds},trim=duration=${segment.durationSeconds},setpts=PTS-STARTPTS`);
   filters.push(`zoompan=z='${zoomExpression}':x='max(0,min(iw-iw/zoom,${focusX}*iw-iw/zoom/2))':y='max(0,min(ih-ih/zoom,${focusY}*ih-ih/zoom/2))':d=1:s=${width}x${height}:fps=${fps}`);
   const args = ["-hide_banner", "-loglevel", "error", "-y", ...inputArgs];
-  for (const layer of captionLayers) args.push("-loop", "1", "-i", layer.path);
+  for (const layer of captionLayers) {
+    if (!layer.maskPath) throw new Error(`Caption layer ${layer.path} is missing its glass blur mask`);
+    args.push("-loop", "1", "-i", layer.path, "-loop", "1", "-i", layer.maskPath);
+  }
   const watermark = draftWatermark ? `drawbox=x=0:y=0:w=${width}:h=${Math.round(30 * width / 1440)}:color=#9C3140@0.88:t=fill,drawtext=fontfile='C\\:/Windows/Fonts/seguisb.ttf':text='${escapeFilterText(draftWatermark)}':fontcolor=white:fontsize=${Math.round(15 * width / 1440)}:x=(w-text_w)/2:y=${Math.round(7 * width / 1440)}` : null;
   if (captionLayers.length) {
     const chain = filters.slice(0, 3).join(",");
@@ -311,8 +338,21 @@ async function renderVideoSegment({ ffmpegPath, encoder, manifest, segment, outp
     let prior = "base";
     captionLayers.forEach((layer, index) => {
       const next = `captioned${index}`;
+      const kept = `kept${index}`;
+      const blurSource = `blurSource${index}`;
+      const blurred = `blurred${index}`;
+      const mask = `mask${index}`;
+      const glass = `glass${index}`;
+      const glassed = `glassed${index}`;
       const enable = Number.isFinite(layer.startSeconds) && Number.isFinite(layer.endSeconds) ? `:enable='between(t,${layer.startSeconds},${layer.endSeconds})'` : "";
-      overlays.push(`[${prior}][${index + 1}:v]overlay=0:0:format=auto${enable}[${next}]`);
+      const foregroundInput = index * 2 + 1;
+      const maskInput = index * 2 + 2;
+      overlays.push(`[${prior}]split=2[${kept}][${blurSource}]`);
+      overlays.push(`[${blurSource}]gblur=sigma=10:steps=2,format=rgba[${blurred}]`);
+      overlays.push(`[${maskInput}:v]format=gray[${mask}]`);
+      overlays.push(`[${blurred}][${mask}]alphamerge[${glass}]`);
+      overlays.push(`[${kept}][${glass}]overlay=0:0:format=auto${enable}[${glassed}]`);
+      overlays.push(`[${glassed}][${foregroundInput}:v]overlay=0:0:format=auto${enable}[${next}]`);
       prior = next;
     });
     const tailFilters = [watermark, segment.id === "end-card" ? `fade=t=out:st=${Math.max(0, segment.durationSeconds - 0.35)}:d=0.35` : null].filter(Boolean);

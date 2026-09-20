@@ -77,16 +77,18 @@ test("animated WebP samples all four presenter styles in order before the native
   assert.equal(edit.webp.beats.at(-1).out, edit.webp.durationSeconds);
 });
 
-test("product UI beats use readable close-ups and a branded two-line caption plate", () => {
+test("product UI beats use readable close-ups and compact blurred glass captions", () => {
   const edit = deriveAdaptiveMarketingEdit({ teachingDurationSeconds: 12.4, teachingSegments: teachingCaptions, productSegments });
   const productBeats = edit.mp4.beats.slice(3, 8);
   assert.deepEqual(productBeats.map((beat) => beat.focusRegion), ["review-player", "editor-transcript-dock-timeline", "presenter-gallery-and-teaching-library", "model-card-and-download-panel", "review-export"]);
   assert.ok(productBeats.slice(1, 4).every((beat) => beat.editorialZoom >= 1.2 && beat.editorialZoom <= 1.4));
   assert.equal(marketingCaptionStyle.maximumLines, 2);
   assert.equal(marketingCaptionStyle.maximumWidthPercent, 76);
-  assert.equal(marketingCaptionStyle.panelColor, "#101522");
-  assert.equal(marketingCaptionStyle.panelOpacity, 0.82);
-  assert.equal(marketingCaptionStyle.borderOpacity, 0.12);
+  assert.equal(marketingCaptionStyle.treatment, "blurred-transparent-glass");
+  assert.equal(marketingCaptionStyle.panelColor, "#101722");
+  assert.deepEqual(marketingCaptionStyle.panelOpacityRange, [0.36, 0.48]);
+  assert.equal(marketingCaptionStyle.backdropBlurRadius, 10);
+  assert.equal(marketingCaptionStyle.borderOpacity, 0.3);
 });
 
 test("native tutorial project uses three factual scenes and exact phrase captions", () => {
@@ -96,6 +98,21 @@ test("native tutorial project uses three factual scenes and exact phrase caption
   assert.deepEqual(project.scenes.map((scene) => scene.visual), rayleighVisuals.map((visual) => visual.id));
   assert.equal(project.scenes.map((scene) => scene.narration).join(" "), marketingTeachingScript);
   assert.equal(project.marketingDemo.exactTeachingScript, marketingTeachingScript);
+});
+
+test("native marketing scenario can bind the exact selected SoulX route without changing the lesson", () => {
+  const document = buildMarketingTutorialProjectDocument({
+    teachingDurationSeconds: 12.4,
+    captions: teachingCaptions,
+    presenterRouteModel: "local/soulx-flashhead-pro",
+  });
+  assert.deepEqual(document.providerRoutingPolicy.routes, [{
+    capability: "lipsync.generate",
+    model: "local/soulx-flashhead-pro",
+    providerIds: ["local-runtime"],
+    voice: null,
+  }]);
+  assert.equal(document.scenes.map((scene) => scene.narration).join(" "), marketingTeachingScript);
 });
 
 test("project construction rejects caption gaps and paraphrases", () => {
