@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)][string]$PortableRoot,
     [string]$KeyFile,
     [switch]$ImportCredentialFile,
-    [string]$ForcedAlignerConfigPath = "E:\temp\alystria-aligner-runtime\alignment-runtime.json"
+    [string]$ForcedAlignerConfigPath = "E:\temp\AI Video Tutorial Generator\runtimes\forced-alignment\wav2vec2-large-xlsr-english-a5a0efb\alignment-runtime.json"
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,7 +47,10 @@ if ($ForcedAlignerConfigPath) {
         }
         $PortableModels = Join-Path $PortableRoot "Models"
         New-Item -ItemType Directory -Path $PortableModels -Force | Out-Null
-        Copy-Item -LiteralPath $ForcedAlignerConfigPath -Destination (Join-Path $PortableModels "alignment-runtime.json") -Force
+        $PortableAlignerConfigPath = [IO.Path]::GetFullPath((Join-Path $PortableModels "alignment-runtime.json"))
+        if (-not $ForcedAlignerConfigPath.Equals($PortableAlignerConfigPath, [StringComparison]::OrdinalIgnoreCase)) {
+            Copy-Item -LiteralPath $ForcedAlignerConfigPath -Destination $PortableAlignerConfigPath -Force
+        }
     }
 }
 
