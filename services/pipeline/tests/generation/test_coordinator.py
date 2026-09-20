@@ -30,6 +30,7 @@ from alystria.generation import (
 )
 from alystria.generation.caption_bundle import CAPTION_COMPILER_VERSION
 from alystria.generation.coordinator import _prepare_failed_media_reapproval
+from alystria.generation.education_provider import StructuredWritingEducationalProvider
 from alystria.generation.forced_alignment import AlignmentInput
 from alystria.generation.workflow import (
     _apply_presenter_selection,
@@ -46,6 +47,10 @@ from alystria.project.errors import RevisionConflictError
 from alystria.providers import (
     FailureCode,
     ProviderFailure,
+    ProviderResult,
+    TextOutput,
+    TextRequest,
+    Usage,
 )
 from alystria.qa import Finding, GateStatus, QualityGate, Severity
 from alystria.research import DeterministicOfflineProvider, GroundingMode
@@ -94,6 +99,105 @@ class TerminalUsageEducationProvider(DeterministicOfflineProvider):
                 },
             },
         )
+
+
+class GroundedResearchTextClient:
+    def __init__(self) -> None:
+        self.requests: list[TextRequest] = []
+
+    def generate(
+        self, request: TextRequest, *, idempotency_key: str
+    ) -> ProviderResult[TextOutput]:
+        assert idempotency_key.startswith("education-web-research-")
+        self.requests.append(request)
+        return ProviderResult(
+            "gemini",
+            "gemini-2.5-flash-001",
+            TextOutput(
+                json.dumps(
+                    {
+                        "findings": [
+                            {
+                                "statement": "Binary search preserves a target-containing interval while halving its size.",
+                                "teachingUse": "Explain why discarded halves are safe.",
+                            }
+                        ]
+                    }
+                ),
+                citations=(
+                    {
+                        "url": "https://example.test/binary-search",
+                        "title": "Binary search reference",
+                    },
+                ),
+            ),
+            Usage(
+                "gemini",
+                "gemini-2.5-flash",
+                {"input_tokens": 90, "output_tokens": 55, "search_requests": 1},
+                165,
+                request_id="research-response-1",
+            ),
+            raw_id="research-response-1",
+        )
+
+
+def test_grounded_ingest_consumes_web_research_once_with_durable_usage(
+    tmp_path: Path,
+) -> None:
+    store = ProjectStore.create(tmp_path / "Grounded research", name="Grounded research")
+    client = GroundedResearchTextClient()
+    coordinator = GenerationCoordinator(
+        store,
+        educational_provider=StructuredWritingEducationalProvider(
+            client, model="writer-v1", research_model="gemini-2.5-flash"
+        ),
+    )
+    try:
+        generation_id = coordinator.start(
+            GenerationRequest(
+                topic="Binary search invariants",
+                audience="Beginning computer-science learners",
+                duration_seconds=60,
+                grounding_mode=GroundingMode.GROUNDED,
+            )
+        ).generation_id
+        ran = coordinator.runtime.run_once(coordinator.workflow.handlers)
+        assert ran is not None
+        assert len(client.requests) == 1
+
+        ingest = next(
+            job
+            for job in coordinator._jobs(generation_id)
+            if job.parameters["stage"] == GenerationStage.INGEST_RESEARCH.value
+        )
+        assert ingest.result is not None
+        web_research = ingest.result["payload"]["webResearch"]
+        assert web_research["providerId"] == "gemini"
+        assert web_research["model"] == "gemini-2.5-flash"
+        assert web_research["requestId"] == "research-response-1"
+        assert web_research["resultCount"] == len(web_research["findings"]) == 1
+        assert web_research["citationCount"] == len(web_research["citations"]) == 1
+        assert web_research["provenanceScope"] == "response"
+        assert json.loads(web_research["query"])["topic"] == "Binary search invariants"
+
+        rows = store.connection.execute(
+            "SELECT provider,model,unit,quantity,cost_micros,metadata_json FROM usage_records"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["provider"] == "gemini"
+        assert rows[0]["model"] == "gemini-2.5-flash"
+        assert rows[0]["unit"] == "tokens"
+        assert rows[0]["quantity"] == 145
+        assert rows[0]["cost_micros"] == 165
+        metadata = json.loads(str(rows[0]["metadata_json"]))
+        assert metadata["incurred"] is True
+        assert metadata["capability"] == "research.web"
+        assert metadata["usageComplete"] is True
+        assert metadata["searchRequests"] == 1
+        assert metadata["providerRequestId"] == "research-response-1"
+    finally:
+        store.close()
 
 
 def test_terminal_structured_repair_usage_reaches_the_learning_plan_ledger(

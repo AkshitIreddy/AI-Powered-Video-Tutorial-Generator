@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any
 
 from alystria.providers import (
@@ -279,6 +280,97 @@ def _validate_outline_references(
     return validated
 
 
+@dataclass(frozen=True, slots=True)
+class WebResearchOutcome:
+    """Compact grounded findings plus the provider result used for accounting."""
+
+    query: str
+    findings: tuple[Mapping[str, str], ...]
+    citations: tuple[Mapping[str, str], ...]
+    provider_result: ProviderResult[TextOutput]
+
+    def public_payload(self) -> dict[str, Any]:
+        result = self.provider_result
+        return {
+            "providerId": result.provider_id,
+            "model": result.usage.model,
+            "responseModel": result.model,
+            "requestId": result.raw_id,
+            "query": self.query,
+            "resultCount": len(self.findings),
+            "citationCount": len(self.citations),
+            "provenanceScope": "response",
+            "findings": [dict(item) for item in self.findings],
+            "citations": [dict(item) for item in self.citations],
+        }
+
+
+def validate_web_research_payload(value: object) -> dict[str, Any]:
+    """Validate the compact receipt read from a durable provider checkpoint."""
+
+    if not isinstance(value, Mapping):
+        raise ValueError("Web research checkpoint is not an object")
+    provider_id = _clean_text(value.get("providerId"), "research provider", 80)
+    model = _clean_text(value.get("model"), "research model", 160)
+    response_model = _clean_text(
+        value.get("responseModel", model), "research response model", 160
+    )
+    request_id = _clean_text(value.get("requestId"), "research request ID", 240)
+    query = _clean_text(value.get("query"), "research query", 8_000)
+    raw_findings = _object_list(value.get("findings"), "web research findings")
+    if len(raw_findings) > 8:
+        raise ValueError("Web research returned too many findings")
+    findings = [
+        {
+            "statement": _clean_text(item.get("statement"), "research finding", 500),
+            "teachingUse": _clean_text(item.get("teachingUse"), "research teaching use", 240),
+        }
+        for item in raw_findings
+    ]
+    raw_citations = value.get("citations")
+    if (
+        not isinstance(raw_citations, list)
+        or not raw_citations
+        or len(raw_citations) > 16
+        or not all(isinstance(item, Mapping) for item in raw_citations)
+    ):
+        raise ValueError("Web research returned no usable citations")
+    citations: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+    for item in raw_citations:
+        url = _clean_text(item.get("url"), "research citation URL", 2_048)
+        if not re.fullmatch(r"https?://[^\s]+", url, flags=re.IGNORECASE):
+            raise ValueError("Web research returned an invalid citation URL")
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        title_value = item.get("title")
+        title = (
+            _clean_text(title_value, "research citation title", 300)
+            if isinstance(title_value, str) and title_value.strip()
+            else url
+        )
+        citations.append({"url": url, "title": title})
+    if value.get("resultCount") != len(findings):
+        raise ValueError("Web research result count does not match its findings")
+    if value.get("citationCount") != len(citations):
+        raise ValueError("Web research citation count does not match its sources")
+    if value.get("provenanceScope") != "response":
+        raise ValueError("Web research provenance scope is invalid")
+    return {
+        "providerId": provider_id,
+        "model": model,
+        "responseModel": response_model,
+        "requestId": request_id,
+        "query": query,
+        "resultCount": len(findings),
+        "citationCount": len(citations),
+        "provenanceScope": "response",
+        "findings": findings,
+        "citations": citations,
+    }
+
+
 class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
     """Use the project's explicitly approved structured-writing route.
 
@@ -287,16 +379,162 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
     all visible typography, so image providers never need to draw slide text.
     """
 
-    def __init__(self, client: ProviderTextClient, *, model: str) -> None:
+    def __init__(
+        self,
+        client: ProviderTextClient,
+        *,
+        model: str,
+        research_model: str | None = None,
+        research_context: Mapping[str, Any] | None = None,
+    ) -> None:
         if not model.strip():
             raise ValueError("structured writing model must not be blank")
         self.client = client
         self.model = model.strip()
+        self.research_model = research_model.strip() if research_model else None
+        self.research_context = (
+            validate_web_research_payload(research_context)
+            if research_context is not None
+            else None
+        )
 
     @classmethod
     def from_runtime(cls, runtime: ProviderRuntime) -> StructuredWritingEducationalProvider:
         route = runtime.policy.route_for(Capability.LLM_STRUCTURED)
-        return cls(ProviderTextClient(runtime), model=route.model)
+        try:
+            research_model = runtime.policy.route_for(Capability.RESEARCH).model
+        except ValueError:
+            research_model = None
+        return cls(
+            ProviderTextClient(runtime), model=route.model, research_model=research_model
+        )
+
+    @property
+    def supports_web_research(self) -> bool:
+        return self.research_model is not None
+
+    def research_web(
+        self,
+        query: str,
+        *,
+        locale: str,
+        idempotency_key: str,
+    ) -> WebResearchOutcome:
+        """Run one approved search call and locally parse its bounded JSON prose."""
+
+        if self.research_model is None:
+            raise ValueError("No approved web-research route is configured")
+        result = self.client.generate(
+            TextRequest(
+                prompt=json.dumps(
+                    {
+                        "task": "Research this tutorial brief on the current public web.",
+                        "query": query,
+                        "locale": locale,
+                        "outputContract": {
+                            "findings": [
+                                {"statement": "8-500 chars", "teachingUse": "3-240 chars"}
+                            ]
+                        },
+                        "requirements": [
+                            "Use the configured web-search tool; do not answer from memory alone.",
+                            "Return one JSON object only, with one to eight findings and no markdown.",
+                            "Verify supplied claims and omit any the sources do not support.",
+                            "Prefer primary or authoritative and current sources.",
+                            "Do not put URLs in the JSON; grounding metadata supplies provenance.",
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                system=(
+                    "You are Alystria's research editor. Search the public web, synthesize only "
+                    "source-supported findings, and obey the compact JSON contract exactly."
+                ),
+                model=self.research_model,
+                max_output_tokens=2_048,
+                temperature=0.1,
+                # The reviewed Gemini 2.5 route cannot combine native
+                # structured output with tools. Local validation also keeps
+                # this request portable across approved research adapters.
+                research=True,
+                max_correction_attempts=0,
+            ),
+            idempotency_key=idempotency_key,
+        )
+        if result.raw_id is None or not result.raw_id.strip():
+            raise ProviderFailure(
+                FailureCode.MALFORMED_RESPONSE,
+                "Web-research provider omitted its request identity",
+                provider_id=result.provider_id,
+            )
+        payload = _parsed_object(
+            result.value.parsed
+            if isinstance(result.value.parsed, Mapping)
+            else result.value.text,
+            "web research",
+        )
+        raw_findings = _object_list(payload.get("findings"), "web research findings")
+        if len(raw_findings) > 8:
+            raise ProviderFailure(
+                FailureCode.MALFORMED_RESPONSE,
+                "Web-research provider returned too many findings",
+                provider_id=result.provider_id,
+                request_id=result.raw_id,
+            )
+        findings = tuple(
+            {
+                "statement": _clean_text(item.get("statement"), "research finding", 500),
+                "teachingUse": _clean_text(
+                    item.get("teachingUse"), "research teaching use", 240
+                ),
+            }
+            for item in raw_findings
+        )
+        citations: list[Mapping[str, str]] = []
+        seen_urls: set[str] = set()
+        for item in result.value.citations:
+            if not isinstance(item, Mapping) or not isinstance(item.get("url"), str):
+                continue
+            url = str(item["url"]).strip()
+            if (
+                not re.fullmatch(r"https?://[^\s]+", url, flags=re.IGNORECASE)
+                or url in seen_urls
+            ):
+                continue
+            seen_urls.add(url)
+            title_value = item.get("title")
+            citations.append(
+                {
+                    "url": url,
+                    "title": (
+                        re.sub(r"\s+", " ", title_value).strip()[:300]
+                        if isinstance(title_value, str) and title_value.strip()
+                        else url
+                    ),
+                }
+            )
+            if len(citations) == 16:
+                break
+        if not citations:
+            raise ProviderFailure(
+                FailureCode.MALFORMED_RESPONSE,
+                "Web-research provider returned findings without citation provenance",
+                provider_id=result.provider_id,
+                request_id=result.raw_id,
+            )
+        outcome = WebResearchOutcome(query, findings, tuple(citations), result)
+        validate_web_research_payload(outcome.public_payload())
+        return outcome
+
+    def with_research_context(
+        self, value: Mapping[str, Any]
+    ) -> StructuredWritingEducationalProvider:
+        return StructuredWritingEducationalProvider(
+            self.client,
+            model=self.model,
+            research_model=self.research_model,
+            research_context=value,
+        )
 
     def build_outline(
         self,
@@ -339,6 +577,11 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                 },
                 "objectives": objective_payload,
                 "targetDurationSeconds": target_duration_seconds,
+                **(
+                    {"webResearch": self.research_context}
+                    if self.research_context is not None
+                    else {}
+                ),
                 "requirements": [
                     f"Use {minimum_sections} to seven purposeful sections in a coherent teaching arc.",
                     *(
@@ -517,6 +760,11 @@ class StructuredWritingEducationalProvider(DeterministicOfflineProvider):
                     }
                     for section in plan.outline
                 ],
+                **(
+                    {"webResearch": self.research_context}
+                    if self.research_context is not None
+                    else {}
+                ),
                 "requirements": [
                     "Return exactly one section for every supplied outline ID, in the same order.",
                     "Open with a concrete learner-facing question, then answer it rather than lingering.",

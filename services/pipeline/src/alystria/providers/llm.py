@@ -390,6 +390,12 @@ class GeminiGenerateContentAdapter(BaseLLMAdapter):
                     "Gemini generateContent does not declare web-search domain allowlisting",
                     provider_id=self.descriptor.provider_id,
                 )
+            if request.json_schema is not None:
+                raise ProviderFailure(
+                    FailureCode.UNSUPPORTED_CAPABILITY,
+                    "Gemini 2.5 does not support structured output combined with Google Search",
+                    provider_id=self.descriptor.provider_id,
+                )
             body["tools"] = [{"google_search": {}}]
         return HttpRequest(
             "POST",

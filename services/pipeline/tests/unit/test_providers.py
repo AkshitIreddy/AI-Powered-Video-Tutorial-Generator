@@ -278,7 +278,7 @@ def test_anthropic_uses_output_config_and_versioned_research_tool() -> None:
     assert result.value.citations[0]["url"] == "https://source.test"
 
 
-def test_gemini_uses_generate_content_schema_and_usage_shape() -> None:
+def test_gemini_research_uses_search_without_unsupported_structured_output() -> None:
     transport = FakeTransport(
         response(
             {
@@ -320,7 +320,6 @@ def test_gemini_uses_generate_content_schema_and_usage_shape() -> None:
             GEMINI_2_5_FLASH_MODEL,
             system="Return one answer.",
             temperature=0.2,
-            json_schema=SCHEMA,
             research=True,
         ),
         context("gemini"),
@@ -333,11 +332,9 @@ def test_gemini_uses_generate_content_schema_and_usage_shape() -> None:
     assert sent.json_body["generationConfig"] == {
         "maxOutputTokens": 2048,
         "temperature": 0.2,
-        "responseMimeType": "application/json",
-        "responseJsonSchema": SCHEMA,
     }
     assert sent.json_body["tools"] == [{"google_search": {}}]
-    assert result.value.parsed == {"answer": "yes"}
+    assert result.value.parsed is None
     assert result.value.citations == (
         {
             "url": "https://source.test/gemini",
@@ -349,6 +346,25 @@ def test_gemini_uses_generate_content_schema_and_usage_shape() -> None:
     assert result.usage.units["search_requests"] == 1
     assert result.model == "gemini-2.5-flash-001"
     assert result.usage.request_id == "resp_1"
+
+
+def test_gemini_25_rejects_structured_output_combined_with_search() -> None:
+    transport = FakeTransport()
+    adapter = GeminiGenerateContentAdapter(transport)
+
+    with pytest.raises(ProviderFailure, match="structured output combined") as caught:
+        adapter.invoke(
+            TextRequest(
+                "Research",
+                GEMINI_2_5_FLASH_MODEL,
+                json_schema=SCHEMA,
+                research=True,
+            ),
+            context("gemini"),
+        )
+
+    assert caught.value.code is FailureCode.UNSUPPORTED_CAPABILITY
+    assert transport.requests == []
 
 
 def test_gemini_research_rejects_unadvertised_domain_filter_before_network() -> None:

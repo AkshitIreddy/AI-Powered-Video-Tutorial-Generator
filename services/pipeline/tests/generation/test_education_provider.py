@@ -15,6 +15,7 @@ from alystria.generation.education_provider import (
 from alystria.generation.workflow import _fit_storyboard_to_narration, _paced_scene_ticks
 from alystria.providers import (
     DataClassification,
+    FailureCode,
     PrivacyMode,
     ProviderFailure,
     ProviderResult,
@@ -79,6 +80,82 @@ class FakeTextClient:
             Usage("nvidia-nim", request.model, {"output_tokens": 400}, 123),
             correction_attempts=correction_attempts,
         )
+
+
+class FakeResearchTextClient:
+    def __init__(self, citations: tuple[dict[str, str], ...]) -> None:
+        self.citations = citations
+        self.requests: list[TextRequest] = []
+
+    def generate(
+        self, request: TextRequest, *, idempotency_key: str
+    ) -> ProviderResult[TextOutput]:
+        assert idempotency_key == "education-web-research-test"
+        self.requests.append(request)
+        payload = {
+            "findings": [
+                {
+                    "statement": "Karatsuba replaces four half-size products with three.",
+                    "teachingUse": "Explain where the recursive saving comes from.",
+                }
+            ]
+        }
+        return ProviderResult(
+            "gemini",
+            "gemini-2.5-flash-001",
+            TextOutput(json.dumps(payload), citations=self.citations),
+            Usage(
+                "gemini",
+                "gemini-2.5-flash",
+                {"input_tokens": 120, "output_tokens": 80, "search_requests": 1},
+                236,
+                request_id="gemini-research-1",
+            ),
+            raw_id="gemini-research-1",
+        )
+
+
+def test_structured_provider_runs_one_prose_research_request_with_provenance() -> None:
+    client = FakeResearchTextClient(
+        ({"url": "https://example.test/karatsuba", "title": "Karatsuba reference"},)
+    )
+    provider = StructuredWritingEducationalProvider(
+        client, model="writer-v1", research_model="gemini-2.5-flash"
+    )
+
+    outcome = provider.research_web(
+        "Research Karatsuba for beginning learners.",
+        locale="en-US",
+        idempotency_key="education-web-research-test",
+    )
+
+    assert len(client.requests) == 1
+    sent = client.requests[0]
+    assert sent.research is True
+    assert sent.model == "gemini-2.5-flash"
+    assert sent.json_schema is None
+    assert sent.max_correction_attempts == 0
+    assert outcome.public_payload()["requestId"] == "gemini-research-1"
+    assert outcome.public_payload()["resultCount"] == 1
+    assert outcome.public_payload()["citationCount"] == 1
+
+
+def test_structured_provider_rejects_research_without_citation_provenance() -> None:
+    provider = StructuredWritingEducationalProvider(
+        FakeResearchTextClient(()),
+        model="writer-v1",
+        research_model="gemini-2.5-flash",
+    )
+
+    with pytest.raises(ProviderFailure) as raised:
+        provider.research_web(
+            "Research Karatsuba.",
+            locale="en-US",
+            idempotency_key="education-web-research-test",
+        )
+
+    assert raised.value.code is FailureCode.MALFORMED_RESPONSE
+    assert "citation provenance" in str(raised.value)
 
 
 class EducationSequenceTransport:
@@ -239,8 +316,34 @@ def _paced_narration_response(section_ids: Sequence[str]) -> dict[str, Any]:
 
 
 def test_structured_provider_authors_exact_timed_plan_and_semantic_slides() -> None:
+    research_context = {
+        "providerId": "gemini",
+        "model": "gemini-2.5-flash",
+        "responseModel": "gemini-2.5-flash-001",
+        "requestId": "research-1",
+        "query": "Research Karatsuba for beginners.",
+        "resultCount": 1,
+        "citationCount": 1,
+        "provenanceScope": "response",
+        "findings": [
+            {
+                "statement": "Karatsuba replaces four half-size products with three.",
+                "teachingUse": "Explain the recursive saving.",
+            }
+        ],
+        "citations": [
+            {
+                "url": "https://example.test/karatsuba",
+                "title": "Karatsuba reference",
+            }
+        ],
+    }
     client = FakeTextClient([_outline_response()])
-    provider = StructuredWritingEducationalProvider(client, model="meta/llama-3.3-70b-instruct")
+    provider = StructuredWritingEducationalProvider(
+        client,
+        model="meta/llama-3.3-70b-instruct",
+        research_context=research_context,
+    )
     learner = LearnerProfile("curious beginners", ExperienceLevel.BEGINNER)
 
     outline = provider.build_outline("Karatsuba multiplication", learner, _objectives(), 60)
@@ -253,10 +356,13 @@ def test_structured_provider_authors_exact_timed_plan_and_semantic_slides() -> N
     }
     assert client.requests[0].json_schema is not None
     assert "placeholders" in (client.requests[0].system or "")
+    assert json.loads(client.requests[0].prompt)["webResearch"] == research_context
 
     script_client = FakeTextClient([_script_response([section.id for section in outline])])
     script_provider = StructuredWritingEducationalProvider(
-        script_client, model="meta/llama-3.3-70b-instruct"
+        script_client,
+        model="meta/llama-3.3-70b-instruct",
+        research_context=research_context,
     )
     plan = LearningPlan(
         "Karatsuba multiplication",
@@ -289,6 +395,7 @@ def test_structured_provider_authors_exact_timed_plan_and_semantic_slides() -> N
         "properties"
     ]["informationUnits"]["items"]["properties"]["role"]["enum"]
     script_prompt = json.loads(script_request.prompt)
+    assert script_prompt["webResearch"] == research_context
     assert script_prompt["informationUnitRoleVocabulary"] == role_enum
     assert any(
         "never invent, rename, or reclassify a role" in requirement

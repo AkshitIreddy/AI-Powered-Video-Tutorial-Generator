@@ -99,7 +99,12 @@ from .adapters import (
     GenerationMediaClient,
     RendererClient,
 )
-from .education_provider import capture_structured_writing_usage
+from .education_provider import (
+    StructuredWritingEducationalProvider,
+    WebResearchOutcome,
+    capture_structured_writing_usage,
+    validate_web_research_payload,
+)
 from .forced_alignment import AlignmentInput, ForcedAlignmentClient
 from .models import (
     PRE_APPROVAL_STAGES,
@@ -119,7 +124,7 @@ from .narration_cache import (
 from .narration_cache import fingerprint as narration_cache_fingerprint
 from .spoken_text import normalize_spoken_text
 
-IMPLEMENTATION_VERSION = "generation-v12-brief-aware-objectives"
+IMPLEMENTATION_VERSION = "generation-v13-grounded-web-research"
 PROMPT_VERSION = "offline-education-v4-spoken-math-and-exact-roles"
 MODEL_REVISION = "deterministic-v1"
 TICKS_PER_MILLISECOND = TICKS_PER_SECOND // 1_000
@@ -215,6 +220,98 @@ def _record_structured_provider_usage(
             "providerRequestId": result.raw_id,
         },
         incurred=True,
+    )
+
+
+def _record_web_research_acceptance(
+    context: JobContext,
+    idempotency_key: str,
+    outcome: WebResearchOutcome,
+) -> dict[str, Any]:
+    """Atomically retain one accepted search response and its actual usage."""
+
+    result = outcome.provider_result
+    usage = result.usage
+    input_tokens = usage.units.get("input_tokens")
+    output_tokens = usage.units.get("output_tokens")
+    search_requests = usage.units.get("search_requests")
+    if not all(
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+        for value in (input_tokens, output_tokens)
+    ):
+        raise ProviderFailure(
+            FailureCode.MALFORMED_RESPONSE,
+            "Web-research provider omitted billable token usage",
+            provider_id=result.provider_id,
+            request_id=result.raw_id,
+        )
+    if (
+        not isinstance(search_requests, int | float)
+        or isinstance(search_requests, bool)
+        or not math.isfinite(search_requests)
+        or search_requests < 1
+    ):
+        raise ProviderFailure(
+            FailureCode.MALFORMED_RESPONSE,
+            "Web-research provider did not report a search request",
+            provider_id=result.provider_id,
+            request_id=result.raw_id,
+        )
+    if usage.actual_cost_micros is None:
+        raise ProviderFailure(
+            FailureCode.MALFORMED_RESPONSE,
+            "Web-research provider omitted actual usage cost",
+            provider_id=result.provider_id,
+            request_id=result.raw_id,
+        )
+    assert isinstance(input_tokens, int | float)
+    assert isinstance(output_tokens, int | float)
+    payload = validate_web_research_payload(outcome.public_payload())
+    return context.record_provider_acceptance(
+        idempotency_key=idempotency_key,
+        provider=result.provider_id,
+        model=usage.model,
+        provider_request_id=result.raw_id,
+        result=payload,
+        unit="tokens",
+        quantity=float(input_tokens) + float(output_tokens),
+        cost_micros=usage.actual_cost_micros,
+        usage_metadata={
+            "kind": "web-research",
+            "capability": "research.web",
+            "incurred": True,
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+            "searchRequests": search_requests,
+            "providerRequestId": result.raw_id,
+            "researchRequestId": idempotency_key,
+            "querySha256": hashlib.sha256(outcome.query.encode()).hexdigest(),
+            "resultCount": len(outcome.findings),
+            "citationCount": len(outcome.citations),
+            "usageComplete": True,
+        },
+    )
+
+
+def _web_research_query(request: GenerationRequest) -> str:
+    return json.dumps(
+        {
+            "topic": request.topic,
+            "audience": request.audience,
+            "locale": request.locale,
+            "objectives": [item.statement for item in request.objectives],
+            "claimsToVerify": [item.statement for item in request.claims],
+            "instruction": (
+                "Find current, authoritative facts and explanations that directly support this "
+                "tutorial. Verify claimsToVerify explicitly when present."
+            ),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
 
 
@@ -697,6 +794,62 @@ class GenerationWorkflow:
                     ),
                 )
             )
+        web_research: dict[str, Any] | None = None
+        if (
+            request.grounding_mode is not GroundingMode.CREATIVE
+            and isinstance(self.educational_provider, StructuredWritingEducationalProvider)
+            and self.educational_provider.supports_web_research
+        ):
+            context.set_progress(0.2, message="Researching the teaching brief")
+            query = _web_research_query(request)
+            research_key = f"education-web-research-{_fingerprint(query)[:32]}"
+            accepted = context.provider_acceptance(research_key)
+            if accepted is not None:
+                web_research = validate_web_research_payload(accepted["result"])
+            else:
+                outcome = self.educational_provider.research_web(
+                    query,
+                    locale=request.locale,
+                    idempotency_key=research_key,
+                )
+                accepted = _record_web_research_acceptance(context, research_key, outcome)
+                web_research = validate_web_research_payload(accepted["result"])
+            research_source_id = _stable_id(
+                "source-web-research",
+                web_research["providerId"],
+                web_research["requestId"],
+            )
+            documents.append(
+                (
+                    research_source_id,
+                    SourceDocument.create(
+                        "\n\n".join(
+                            str(item["statement"]) for item in web_research["findings"]
+                        ),
+                        SourceMetadata(
+                            SourceKind.NOTES,
+                            "Grounded web research synthesis",
+                            (
+                                f"provider-research://{web_research['providerId']}/"
+                                f"{web_research['requestId']}"
+                            ),
+                            "text/plain",
+                            PrivacyClass.PROJECT_LOCAL,
+                            RetentionClass.PROJECT,
+                            request.locale,
+                            str(web_research["providerId"]),
+                            None,
+                            attributes={
+                                "providerId": web_research["providerId"],
+                                "model": web_research["model"],
+                                "requestId": web_research["requestId"],
+                                "provenanceScope": "response",
+                                "citations": copy.deepcopy(web_research["citations"]),
+                            },
+                        ),
+                    ),
+                )
+            )
         ledger = EvidenceLedger()
         chunks_by_source: dict[str, tuple[EvidenceChunk, ...]] = {}
         for source_id, document in documents:
@@ -716,7 +869,7 @@ class GenerationWorkflow:
                 ]
             for index, statement in enumerate(objective_statements):
                 selected_source_id = (
-                    source_specs[index % len(source_specs)].source_id if source_specs else None
+                    documents[index % len(documents)][0] if documents else None
                 )
                 generated_id = _stable_id("claim", request.topic, index, statement)
                 generated_objective_claim_ids.add(generated_id)
@@ -749,8 +902,8 @@ class GenerationWorkflow:
             else:
                 candidate_chunks = tuple(
                     chunk
-                    for source_spec in source_specs
-                    for chunk in chunks_by_source.get(source_spec.source_id, ())
+                    for source_id, _document in documents
+                    for chunk in chunks_by_source.get(source_id, ())
                 )
             match = verify_claim_evidence(claim, candidate_chunks)
             if match is not None:
@@ -823,6 +976,7 @@ class GenerationWorkflow:
                 "accepted": policy.accepted,
                 "findings": [asdict(item) for item in policy.findings],
             },
+            **({"webResearch": web_research} if web_research is not None else {}),
         }
         return self._persist_stage(context, parameters, payload, upstream_stages=[])
 
@@ -869,7 +1023,15 @@ class GenerationWorkflow:
         prerequisites = tuple(
             Prerequisite.create(label, assumed=True) for label in request.prerequisites
         )
-        workflow = EducationalWorkflow(self.educational_provider)
+        educational_provider = self.educational_provider
+        if (
+            isinstance(educational_provider, StructuredWritingEducationalProvider)
+            and isinstance(previous.get("webResearch"), Mapping)
+        ):
+            educational_provider = educational_provider.with_research_context(
+                previous["webResearch"]
+            )
+        workflow = EducationalWorkflow(educational_provider)
         presenter_plan = _presenter_plan(request)
         try:
             with capture_structured_writing_usage(
@@ -919,13 +1081,21 @@ class GenerationWorkflow:
         request = _request(parameters)
         context.set_progress(0.12, message="Drafting and reviewing script")
         plan = _plan_from_dict(previous["learningPlan"])
+        educational_provider = self.educational_provider
+        if (
+            isinstance(educational_provider, StructuredWritingEducationalProvider)
+            and isinstance(previous.get("webResearch"), Mapping)
+        ):
+            educational_provider = educational_provider.with_research_context(
+                previous["webResearch"]
+            )
         try:
             with capture_structured_writing_usage(
                 lambda key, provider_result: _record_structured_provider_usage(
                     context, key, provider_result
                 )
             ):
-                result = EducationalWorkflow(self.educational_provider).create_script(
+                result = EducationalWorkflow(educational_provider).create_script(
                     plan,
                     grounding=request.grounding_mode,
                 )
