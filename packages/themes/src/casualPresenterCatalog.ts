@@ -263,8 +263,11 @@ const JOYVASA_REVIEWED_IDS = new Set<CasualPresenterId>([
   "presenter-portrait.animal-cat-milo-v1",
   "presenter-portrait.animal-kitten-peaches-v1",
   "presenter-portrait.animal-dog-buddy-v1",
-  "presenter-portrait.animal-puppy-poppy-v1",
   "presenter-portrait.animal-tiger-tavi-v1",
+]);
+
+const JOYVASA_REJECTED_IDS = new Set<CasualPresenterId>([
+  "presenter-portrait.animal-puppy-poppy-v1",
   "presenter-portrait.animal-lion-leo-v1",
 ]);
 
@@ -321,8 +324,10 @@ function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncRevi
   const joyVasa: CasualPresenterLipSyncQualification = {
     engineId: usesAnimalRoute ? "joyvasa-animal" : "joyvasa-human",
     displayName: usesAnimalRoute ? "JoyVASA animal and character route" : "JoyVASA illustrated-human route",
-    outcome: joyVasaReviewed ? "reviewed-compatible" : "pending-review",
-    notes: joyVasaReviewed
+    outcome: JOYVASA_REJECTED_IDS.has(plan.id) ? "incompatible" : joyVasaReviewed ? "reviewed-compatible" : "pending-review",
+    notes: (JOYVASA_REJECTED_IDS.has(plan.id)
+      ? "This portrait is available as a still image. Dense review rejected its current JoyVASA speech because repeated human-like lip and teeth strips distort the muzzle, even with reduced motion. Animation is disabled for this route."
+      : joyVasaReviewed
       ? plan.id === "presenter-portrait.casual-anime-finn-v2"
         ? "Primary and held-out short narration renders on the pinned installed route preserved the illustrated face, placed speech at the real mouth, and returned to a closed mouth during detected silence on 2026-09-20. This is bounded evidence, not a claim about every phoneme."
         : plan.id === "presenter-portrait.casual-anime-yuki-v1"
@@ -332,9 +337,9 @@ function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncRevi
         : plan.id === "presenter-portrait.casual-cartoon-chloe-v1"
           ? "Primary and held-out short narration renders on the pinned installed JoyVASA human route kept the mouth corners coherent, preserved sharp cartoon shading, and closed during silence in visual review on 2026-09-20. Peak teeth can look mildly jagged, so this is not a universal phoneme claim."
         : plan.styleGroup === "Animal"
-          ? "Strict short-sample renders on the pinned installed animal route preserved identity, placed speech at the mouth, and closed during silence on 2026-09-20. Peak speech can exaggerate the tongue or teeth, so this is not a universal phoneme claim."
-          : "A strict short-sample render on the pinned installed character route preserved identity, placed speech at the mouth, and closed during silence on 2026-09-20. Bright mouth highlights can look jagged at peaks."
-      : "A pinned local route is under bounded visual review. It is not offered as compatible until exact artifacts and rest-mouth behavior are accepted.",
+          ? "The source-anchored animal route keeps the background and body still and uses restrained mouth movement. Short reviewed samples preserve identity and close during longer silence. Pink lips or teeth can still look humanized; preview each narration before export. This is not animal-natural or phoneme-perfect animation."
+          : "The source-anchored character route keeps the background and body still and uses restrained mouth movement. A bright teeth bar or dark mechanical mouth seam can still appear; preview each narration before export."
+      : "A pinned local route is under bounded visual review. It is not offered as compatible until exact artifacts and rest-mouth behavior are accepted.") + (joyVasaReviewed && !usesAnimalRoute ? " The corrected source-anchored route keeps the original background and body still while the face speaks; earlier full-frame wobble was rejected." : ""),
   };
   return { preferredEngineId: joyVasa.engineId, qualifications: [museTalk, joyVasa] };
 }

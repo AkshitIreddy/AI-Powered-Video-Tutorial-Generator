@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CASUAL_PRESENTER_CATALOG } from "@alystria/themes";
 import type { PresenterChoice } from "../PresenterPicker";
 import {
   presenterAnimationReadiness,
@@ -25,6 +26,21 @@ const emma: PresenterChoice = {
 };
 
 describe("presenter animation capabilities", () => {
+  it.each(["Poppy", "Leo"])("blocks rejected %s animation even when its exact runtime is installed", (name) => {
+    const portrait = CASUAL_PRESENTER_CATALOG.find((entry) => entry.displayName === name)!;
+    const choice: PresenterChoice = {
+      ...emma,
+      id: portrait.id,
+      label: portrait.label,
+      portraitArtifactHash: portrait.contentHash,
+      lipSync: portrait.lipSync,
+    };
+    expect(presenterAnimationReadiness(choice, {
+      activeEngineId: "liveportrait-musetalk-1.5",
+      portraitStatuses: [{ portraitArtifactHash: portrait.contentHash, modelId: "joyvasa-animal", configured: true, reason: "Installed." }],
+    })).toMatchObject({ state: "incompatible", blocksSelection: true, detail: expect.stringContaining("teeth strips") });
+  });
+
   it("maps saved route aliases to the exact worker model identity", () => {
     expect(presenterLipSyncEngineForRouteModel("local/musetalk-1.5")).toBe("liveportrait-musetalk-1.5");
     expect(presenterLipSyncEngineForRouteModel("joyvasa-animal")).toBe("joyvasa-animal");

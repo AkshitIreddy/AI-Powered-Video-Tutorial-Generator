@@ -63,7 +63,7 @@ describe("casual presenter catalog", () => {
     expect(CASUAL_PRESENTER_STARTER_ASSETS.map((entry) => entry.id)).toEqual(CASUAL_PRESENTER_IDS);
     expect(CASUAL_PRESENTER_STARTER_ASSETS.every((entry) => entry.source.availability === "ready")).toBe(true);
     expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.lipSync.qualifications.some((review) => review.outcome === "reviewed-compatible")).map((entry) => entry.displayName))
-      .toEqual(["Emma", "Yuki", "Noah", "Chloe", "Maya", "Finn", "Lena", "Pip", "Milo", "Peaches", "Buddy", "Poppy", "Tavi", "Leo"]);
+      .toEqual(["Emma", "Yuki", "Noah", "Chloe", "Maya", "Finn", "Lena", "Pip", "Milo", "Peaches", "Buddy", "Tavi"]);
     const yukiReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-anime-yuki-v1")?.lipSync;
     expect(yukiReview?.preferredEngineId).toBe("joyvasa-human");
     expect(yukiReview?.qualifications).toEqual(expect.arrayContaining([
@@ -85,7 +85,8 @@ describe("casual presenter catalog", () => {
     expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.styleGroup === "Animal").every((entry) => (
       entry.lipSync.preferredEngineId === "joyvasa-animal"
       && entry.lipSync.qualifications.some((review) => review.engineId === "liveportrait-musetalk-1.5" && review.outcome === "incompatible")
-      && entry.lipSync.qualifications.some((review) => review.engineId === "joyvasa-animal" && review.outcome === "reviewed-compatible")
+      && entry.lipSync.qualifications.some((review) => review.engineId === "joyvasa-animal"
+        && review.outcome === (["Poppy", "Leo"].includes(entry.displayName) ? "incompatible" : "reviewed-compatible"))
     ))).toBe(true);
     const legacyFinn = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-anime-finn-v1");
     expect(legacyFinn?.galleryVisibility).toBe("legacy-hidden");
