@@ -3,12 +3,14 @@ from __future__ import annotations
 import base64
 import binascii
 import struct
+import subprocess
 import zlib
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+import alystria.providers.comfyui_local as comfy_module
 from alystria.generation.adapters import DeterministicMediaClient
 from alystria.gpu_guard import GpuExecutionGuard, GpuGuardBusyError
 from alystria.providers.comfyui_local import (
@@ -46,9 +48,7 @@ class FakeApi:
         self.output_name = output_name
         self.requests: list[tuple[str, str, dict[str, Any] | None]] = []
 
-    def json(
-        self, method: str, path: str, body: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    def json(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         self.requests.append((method, path, body))
         if path == "/prompt":
             return {"prompt_id": "prompt-1"}
@@ -255,6 +255,7 @@ def test_runtime_releases_gpu_lock_when_hidden_process_cannot_start(
         "preflight",
         lambda *_args: {"executable": True},
     )
+
     def fail_start(*_args: object, **_kwargs: object) -> None:
         assert gpu_lock.read_text(encoding="utf-8") == "yes\n"
         raise OSError("launch failed")
@@ -342,9 +343,7 @@ def test_generation_media_client_executes_presenter_recipe_seed_and_lora(
         def __exit__(self, *_args: object) -> None:
             return None
 
-    def runtime_factory(
-        runtime_root: Path, *, port: int, gpu_lock: Path
-    ) -> FakeRuntime:
+    def runtime_factory(runtime_root: Path, *, port: int, gpu_lock: Path) -> FakeRuntime:
         runtime_calls.append((runtime_root, port, gpu_lock))
         return FakeRuntime()
 
@@ -403,3 +402,43 @@ def test_generation_media_client_executes_presenter_recipe_seed_and_lora(
         seed=92,
     )
     assert scene_media.metadata["recipeId"] == SDXL_SCENE_RECIPE_ID
+
+
+def test_runtime_retries_partial_extraction_before_reusing_entrypoints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installer = ComfyBundleInstaller(tmp_path)
+    extractions = 0
+
+    def downloaded(file: DownloadFile, root: Path, *_args: Any) -> Path:
+        archive = root / file.relative_path
+        archive.write_bytes(b"verified archive fixture")
+        return archive
+
+    def extract(args: tuple[str, ...], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal extractions
+        assert kwargs["creationflags"] == getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if "-tf" in args:
+            return subprocess.CompletedProcess(
+                args, 0, "ComfyUI_windows_portable/ComfyUI/main.py\n", ""
+            )
+        extractions += 1
+        installer.python_executable.parent.mkdir(parents=True, exist_ok=True)
+        installer.python_executable.write_bytes(b"python fixture")
+        installer.comfy_root.mkdir(parents=True, exist_ok=True)
+        (installer.comfy_root / "main.py").write_text("# entrypoint", encoding="utf-8")
+        return subprocess.CompletedProcess(args, 1 if extractions == 1 else 0, "", "")
+
+    monkeypatch.setattr(comfy_module, "_download_verified", downloaded)
+    monkeypatch.setattr(comfy_module.subprocess, "run", extract)
+    with pytest.raises(RuntimeError, match="could not be extracted"):
+        installer.install_runtime()
+    assert (tmp_path / ".comfyui-extraction-pending").is_file()
+    assert installer.preflight(SDXL_MODEL_ID)["runtimeReady"] is False
+    with pytest.raises(RuntimeError, match="Install the pinned ComfyUI runtime"):
+        installer.install_bundle(SDXL_MODEL_ID)
+    assert installer.install_runtime() == installer.comfy_root
+    assert not (tmp_path / ".comfyui-extraction-pending").exists()
+    assert extractions == 2
+    assert installer.install_runtime() == installer.comfy_root
+    assert extractions == 2

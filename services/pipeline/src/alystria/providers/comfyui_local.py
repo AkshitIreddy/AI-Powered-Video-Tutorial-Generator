@@ -252,7 +252,12 @@ class ComfyBundleInstaller:
         return manual if manual.is_file() else portable
 
     def install_runtime(self, *, extractor: str = "tar.exe") -> Path:
-        if self.python_executable.is_file() and (self.comfy_root / "main.py").is_file():
+        pending = self.runtime_root / ".comfyui-extraction-pending"
+        if (
+            not pending.exists()
+            and self.python_executable.is_file()
+            and (self.comfy_root / "main.py").is_file()
+        ):
             return self.comfy_root
         self.runtime_root.mkdir(parents=True, exist_ok=True)
         archive = self.runtime_root / f"ComfyUI-{COMFYUI_RUNTIME_TAG}-nvidia.7z"
@@ -273,6 +278,7 @@ class ComfyBundleInstaller:
             capture_output=True,
             text=True,
             timeout=300,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             shell=False,
             check=False,
         )
@@ -284,6 +290,10 @@ class ComfyBundleInstaller:
             for member in members
         ):
             raise RuntimeError("The ComfyUI archive contains an unsafe member path")
+        # tar can leave the two entry points behind before failing on later
+        # dependencies. Preserve an interruption marker until the whole archive
+        # is extracted so a retry cannot publish that partial runtime as Ready.
+        pending.write_text(COMFYUI_RUNTIME_REVISION, encoding="utf-8")
         extracted = subprocess.run(
             (extractor, "-xf", str(archive)),
             cwd=self.runtime_root,
@@ -291,6 +301,7 @@ class ComfyBundleInstaller:
             capture_output=True,
             text=True,
             timeout=1_800,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             shell=False,
             check=False,
         )
@@ -298,6 +309,7 @@ class ComfyBundleInstaller:
             raise RuntimeError("The verified ComfyUI archive could not be extracted")
         if not self.python_executable.is_file() or not (self.comfy_root / "main.py").is_file():
             raise RuntimeError("The extracted ComfyUI runtime is incomplete")
+        pending.unlink()
         return self.comfy_root
 
     def install_bundle(self, model_id: str) -> dict[str, Any]:
@@ -305,7 +317,9 @@ class ComfyBundleInstaller:
             bundle = COMFY_BUNDLES[model_id]
         except KeyError as error:
             raise ValueError(f"Unknown local image bundle: {model_id}") from error
-        if not (self.comfy_root / "main.py").is_file():
+        if (self.runtime_root / ".comfyui-extraction-pending").exists() or not (
+            self.comfy_root / "main.py"
+        ).is_file():
             raise RuntimeError("Install the pinned ComfyUI runtime before a model bundle")
         installed = []
         for file in bundle.files:
@@ -340,9 +354,11 @@ class ComfyBundleInstaller:
             if valid:
                 valid = _sha256(path) == item.sha256
             files.append({"path": str(path), "verified": valid})
-        runtime_ready = self.python_executable.is_file() and (
-            self.comfy_root / "main.py"
-        ).is_file()
+        runtime_ready = (
+            not (self.runtime_root / ".comfyui-extraction-pending").exists()
+            and self.python_executable.is_file()
+            and (self.comfy_root / "main.py").is_file()
+        )
         return {
             "runtimeReady": runtime_ready,
             "modelId": model_id,

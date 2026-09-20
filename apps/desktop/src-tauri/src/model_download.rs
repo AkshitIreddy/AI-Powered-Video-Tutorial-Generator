@@ -1902,6 +1902,11 @@ fn runtime_install_fingerprint() -> String {
 }
 
 fn validate_managed_runtime(runtime_root: &Path) -> Result<PathBuf, CommandError> {
+    if runtime_root.join(".comfyui-extraction-pending").exists() {
+        return Err(download_error(
+            "ComfyUI extraction was interrupted. Retry the runtime download to finish installation.",
+        ));
+    }
     let manual_comfy = runtime_root.join("ComfyUI");
     let portable_comfy = runtime_root
         .join("ComfyUI_windows_portable")
@@ -2305,6 +2310,15 @@ mod tests {
         assert_eq!(SDXL.model_id, "local/sdxl-base-1.0");
         assert_eq!(FLUX_KLEIN.model_id, "local/flux.2-klein-4b-fp8");
         assert_eq!(Z_IMAGE.model_id, "local/z-image-turbo-int8");
+    }
+
+    #[test]
+    fn interrupted_extraction_cannot_publish_runtime_ready() {
+        let directory = tempdir().expect("tempdir");
+        fs::write(directory.path().join(".comfyui-extraction-pending"), "pending")
+            .expect("interruption marker");
+        let failure = validate_managed_runtime(directory.path()).expect_err("partial runtime");
+        assert!(failure.message.contains("interrupted"));
     }
 
     #[test]
