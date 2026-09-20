@@ -5385,7 +5385,7 @@
         "ingredientAssetIds": [],
         "recordedAt": "2026-09-20T00:00:00.000Z",
         "reviewStatus": "verified",
-        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 reviewed-compatible."
+        "notes": "Entirely fictional synthetic presenter; no real person is intended or depicted. Prompt record: docs/assets/casual-presenter-prompts-2026-09-20.json. Lip-sync qualifications: liveportrait-musetalk-1.5 incompatible, joyvasa-human reviewed-compatible."
       },
       "technical": {
         "mediaType": "image/png",

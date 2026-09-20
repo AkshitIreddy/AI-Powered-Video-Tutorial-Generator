@@ -64,6 +64,12 @@ describe("casual presenter catalog", () => {
     expect(CASUAL_PRESENTER_STARTER_ASSETS.every((entry) => entry.source.availability === "ready")).toBe(true);
     expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.lipSync.qualifications.some((review) => review.outcome === "reviewed-compatible")).map((entry) => entry.displayName))
       .toEqual(["Emma", "Yuki", "Noah", "Chloe", "Maya", "Finn", "Lena", "Pip", "Milo", "Peaches", "Buddy", "Poppy", "Tavi", "Leo"]);
+    const chloeReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-cartoon-chloe-v1")?.lipSync;
+    expect(chloeReview?.preferredEngineId).toBe("joyvasa-human");
+    expect(chloeReview?.qualifications).toEqual(expect.arrayContaining([
+      expect.objectContaining({ engineId: "liveportrait-musetalk-1.5", outcome: "incompatible", notes: expect.stringMatching(/owner rejected.+lips.+distorted/i) }),
+      expect.objectContaining({ engineId: "joyvasa-human", outcome: "reviewed-compatible", notes: expect.stringMatching(/held-out.+mouth corners coherent.+silence/i) }),
+    ]));
     expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.styleGroup === "Animal").every((entry) => (
       entry.lipSync.preferredEngineId === "joyvasa-animal"
       && entry.lipSync.qualifications.some((review) => review.engineId === "liveportrait-musetalk-1.5" && review.outcome === "incompatible")

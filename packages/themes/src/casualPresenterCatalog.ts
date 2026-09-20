@@ -252,12 +252,12 @@ const MUSETALK_REVIEWED_IDS = new Set<CasualPresenterId>([
   "presenter-portrait.casual-realistic-emma-v1",
   "presenter-portrait.casual-anime-yuki-v1",
   "presenter-portrait.casual-realistic-noah-v1",
-  "presenter-portrait.casual-cartoon-chloe-v1",
   "presenter-portrait.casual-realistic-maya-v1",
   "presenter-portrait.casual-anime-lena-v1",
 ]);
 
 const JOYVASA_REVIEWED_IDS = new Set<CasualPresenterId>([
+  "presenter-portrait.casual-cartoon-chloe-v1",
   "presenter-portrait.casual-anime-finn-v2",
   "presenter-portrait.casual-cartoon-robot-pip-v1",
   "presenter-portrait.animal-cat-milo-v1",
@@ -303,6 +303,8 @@ function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncRevi
         ? "The human-face MuseTalk route is not valid for this animal portrait. Use a separately reviewed animal route."
         : plan.styleGroup === "Character"
           ? "The human-face MuseTalk route did not produce a valid result for this character portrait."
+          : plan.id === "presenter-portrait.casual-cartoon-chloe-v1"
+            ? "The owner rejected Chloe's native MuseTalk render after dense review because the animated lips were visibly distorted. Keep this static portrait off MuseTalk."
           : plan.id === "presenter-portrait.casual-anime-finn-v2"
             ? "Finn v2 is qualified on the pinned JoyVASA illustrated-human route and has not been qualified for MuseTalk, so MuseTalk is not offered for this portrait."
           : "The MuseTalk result replaced the portrait's illustrated mouth style, so this route was rejected.",
@@ -319,6 +321,8 @@ function lipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSyncRevi
     notes: joyVasaReviewed
       ? plan.id === "presenter-portrait.casual-anime-finn-v2"
         ? "Primary and held-out short narration renders on the pinned installed route preserved the illustrated face, placed speech at the real mouth, and returned to a closed mouth during detected silence on 2026-09-20. This is bounded evidence, not a claim about every phoneme."
+        : plan.id === "presenter-portrait.casual-cartoon-chloe-v1"
+          ? "Primary and held-out short narration renders on the pinned installed JoyVASA human route kept the mouth corners coherent, preserved sharp cartoon shading, and closed during silence in owner and independent review on 2026-09-20. Peak teeth can look mildly jagged, so this is not a universal phoneme claim."
         : plan.styleGroup === "Animal"
           ? "Strict short-sample renders on the pinned installed animal route preserved identity, placed speech at the mouth, and closed during silence on 2026-09-20. Peak speech can exaggerate the tongue or teeth, so this is not a universal phoneme claim."
           : "A strict short-sample render on the pinned installed character route preserved identity, placed speech at the mouth, and closed during silence on 2026-09-20. Bright mouth highlights can look jagged at peaks."
