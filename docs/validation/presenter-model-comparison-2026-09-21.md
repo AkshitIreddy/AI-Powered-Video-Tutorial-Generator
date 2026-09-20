@@ -35,10 +35,14 @@ they are not real-time throughput claims.
 | Pip v1 | 132.700 | Rejected: mechanical mouth seam and glossy eyes remain static despite head movement. |
 | Peaches v1 | 132.665 | Rejected: blinks occur, but mouth does not produce useful speech. |
 | Milo | 117.598 | Rejected: speech is visible but invents human-like dental rows inside the cat muzzle. |
+| Peaches v2 | 127.505 | Revised portrait preserves a coherent cat mouth, useful speech and full blinks at approximately 5.08 and 7.16 seconds. Quiet mouth can remain thinly parted. |
+| Pip v2 | 127.453 | Revised robot mouth now speaks, but dense review of all 200 frames found no full blink. Not qualified. |
 
 These seven human/anime/cartoon portraits prefer the exact reviewed SoulX
 revision. This does not qualify arbitrary portraits or animal faces. Additional
 animal/robot experiments remain separate until their actual output is reviewed.
+Peaches v2 is the first separately reviewed animal source to prefer this runtime;
+it does not establish acceptance for other cats or animals.
 The reviewed legacy Finn v1 portrait remains hidden from new gallery choices.
 
 ## Evidence identities
@@ -55,6 +59,26 @@ published. Their artifact hashes allow the local evidence to be identified:
 | Maya | `412d687f69d59941781f653b66302175f15cfcd5d22f34460e0b82a4c6a5293e` |
 | Finn v2 | `446c5b947a699a3de10197942ad69e9314be2ff838131e2b51dccfbbeb38ffa0` |
 | Lena | `ce35b94733764e7b8555951ba2176948c26c453781955255713195e34cc0d8dd` |
+| Peaches v2 | `02a5f7d3c78b83fe48b0218d269e94022c400623256ce3240202e6ee98e30039` |
+| Pip v2 | `5eab9e1c0ca93a50e2642ec5cd3bad095f7cb6141e70b4711c2d4b74cb47e74c` |
+
+## Rejected alternatives
+
+One isolated [IMTalker](https://github.com/bigai-nlco/IMTalker) Emma probe used
+source `bd91867e93c3880db271579c14ef5ccb2e0d404b` and weights
+`9e3149b5d8eaa0210406f127a6c77354c7c57d4c`. It rendered eight seconds in
+81.859 seconds at 512×512/25 fps, peaking at 3,920 MiB total GPU memory and
+approximately 11.8 GB private memory. Mouth anatomy and blinks were coherent,
+but opening blur, body reframing and background breathing recreated the owner's
+stability complaint. The output remains rejected, SHA-256
+`c5f99c4422c5d65a011c6cb593b93d9b3e94080cdd1b78e835e13b950c1235ce`.
+
+An isolated JoyVASA crop experiment aligned Milo and Peaches more accurately and
+kept their backgrounds steady, but inserted human teeth/lips. It is not an
+accepted animal solution. The official LivePortrait animal path currently
+[documents untrained animal retargeting modules](https://github.com/KlingAIResearch/LivePortrait/blob/main/assets/docs/changelog/2024-08-02.md);
+using its human eye checkpoint cannot be represented as a generally qualified
+animal blink implementation.
 
 ## Acceptance boundary
 

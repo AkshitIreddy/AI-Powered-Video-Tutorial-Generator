@@ -111,7 +111,7 @@ export const soulxFlashHeadCatalogItem: CatalogItem = adaptCuratedEntry({
   tags: ["presenter", "lip-sync", "blinking", "anime", "cartoon", "pinned-download"],
   boundaries: ["local"],
   runtimes: ["python", "pytorch", "cuda"],
-  requirements: { downloadBytes: 10_464_991_863, estimatedVramBytes: 12 * GIB, estimatedRamBytes: 24 * GIB },
+  requirements: { downloadBytes: 10_394_156_663, estimatedVramBytes: 12 * GIB, estimatedRamBytes: 24 * GIB },
   license: apacheModelLicense,
   description: "Turn a portrait and narration into a speaking presenter with natural head motion and blinking. Tested at 512 px on a 12 GB NVIDIA laptop GPU with realistic, anime and cartoon hosts; preview each new character before use.",
   sourceUrl: "https://github.com/Soul-AILab/SoulX-FlashHead",
