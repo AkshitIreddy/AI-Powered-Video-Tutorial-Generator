@@ -13,6 +13,21 @@ export function editorWaveformGet(input: EditorWaveformNativeRequest): Promise<E
 }
 
 export type DesktopEnvironment = "native" | "browser-demo";
+
+/** Configuration discovery only; the worker verifies complete runtime hashes before rendering. */
+export interface LocalPresenterPortraitRuntimeStatus {
+  portraitArtifactHash: string;
+  modelId: string | null;
+  modelRevision: string | null;
+  installFingerprint: string | null;
+  configured: boolean;
+  reason: string;
+}
+
+export function loadLocalPresenterRuntimeStatus(): Promise<LocalPresenterPortraitRuntimeStatus[]> {
+  return command("local_presenter_runtime_status", undefined, () => []);
+}
+
 export type GroundingMode = "creative" | "grounded" | "strict";
 export type QualityPreset = "draft" | "standard" | "maximum";
 export type PrivacyMode = "local" | "hybrid" | "cloud";

@@ -6,6 +6,7 @@ mod error;
 pub mod generated;
 mod model_download;
 mod model_setup;
+mod presenter_status;
 mod process_tree;
 mod project_store;
 mod runtime;
@@ -212,6 +213,7 @@ pub fn run() {
             local_model_setup_save,
             local_model_download_catalog,
             local_model_download_status,
+            local_presenter_runtime_status,
             local_model_download_start,
             runtime_manifest,
             updater_status,

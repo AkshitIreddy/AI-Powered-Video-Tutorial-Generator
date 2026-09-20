@@ -946,6 +946,13 @@ pub fn local_model_download_status(state: State<'_, AppState>) -> Vec<ModelDownl
 }
 
 #[tauri::command]
+pub fn local_presenter_runtime_status(
+    state: State<'_, AppState>,
+) -> Vec<crate::presenter_status::PresenterPortraitRuntimeStatus> {
+    crate::presenter_status::inspect(&state.paths.models)
+}
+
+#[tauri::command]
 pub fn local_model_download_start(
     input: ModelDownloadStartRequest,
     state: State<'_, AppState>,
