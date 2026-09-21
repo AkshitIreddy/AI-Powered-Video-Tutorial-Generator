@@ -659,7 +659,9 @@ export async function recordNativeWalkthrough({
   }
   if (!recordingWindow || !Number.isSafeInteger(recordingWindow.captureViewport?.width)
     || !Number.isSafeInteger(recordingWindow.captureViewport?.height)
-    || recordingWindow.win32?.contained !== true || recordingWindow.win32?.selectedMonitor?.primary !== false) {
+    || recordingWindow.win32?.contained !== true
+    || !(recordingWindow.win32?.selectedMonitor?.primary === false
+      || (recordingWindow.win32?.selectedMonitor?.primary === true && recordingWindow.win32?.monitors?.length === 1))) {
     throw new Error("Native recording window was not prepared before comparison export");
   }
   await navigateGlobal(page, "Home");
@@ -1436,18 +1438,18 @@ if ($previousDpiContext -eq [IntPtr]::Zero) { throw 'Could not enable per-monito
 Add-Type -AssemblyName System.Windows.Forms
 $screens = @([System.Windows.Forms.Screen]::AllScreens)
 $secondary = @($screens | Where-Object { -not $_.Primary } | Sort-Object { $_.WorkingArea.Width * $_.WorkingArea.Height } -Descending | Select-Object -First 1)
-if ($secondary.Count -ne 1) { throw 'A secondary monitor is required for the authorized visible recording.' }
-$selected = $secondary[0]
+$selected = if ($secondary.Count -eq 1) { $secondary[0] } else { $screens | Sort-Object Primary -Descending | Select-Object -First 1 }
+if ($null -eq $selected) { throw 'No connected display is available for the native recording.' }
 $work = $selected.WorkingArea
 $handle = [AlystriaRecordingWindow]::FindForProcess($ownedPid)
 if ($handle -eq [IntPtr]::Zero) { throw 'Owned native process has no top-level window.' }
 # The first SetWindowPos includes SWP_SHOWWINDOW, so reveal the owned window
-# only after moving it inside the secondary screen's working area.
+# only after moving it inside the selected screen's working area.
 $window = New-Object AlystriaRecordingWindow+Rect
 $client = New-Object AlystriaRecordingWindow+Rect
 $provisionalWidth = [Math]::Min(1280, $work.Width - 96)
 $provisionalHeight = [Math]::Min(800, $work.Height - 96)
-if (-not [AlystriaRecordingWindow]::SetWindowPos($handle, [IntPtr]::Zero, $work.X + 48, $work.Y + 48, $provisionalWidth, $provisionalHeight, 0x54)) { throw 'Initial secondary-monitor placement failed.' }
+if (-not [AlystriaRecordingWindow]::SetWindowPos($handle, [IntPtr]::Zero, $work.X + 48, $work.Y + 48, $provisionalWidth, $provisionalHeight, 0x54)) { throw 'Initial display-contained placement failed.' }
 [Threading.Thread]::Sleep(500)
 $iterations = 0
 for ($iterations = 1; $iterations -le 4; $iterations++) {
@@ -1460,20 +1462,20 @@ for ($iterations = 1; $iterations -le 4; $iterations++) {
   $availableClientWidth = $work.Width - 96 - $chromeWidth
   $availableClientHeight = $work.Height - 96 - $chromeHeight
   $units = [Math]::Min([Math]::Floor($availableClientWidth / 16), [Math]::Floor($availableClientHeight / 9))
-  if ($units -lt 60) { throw 'Secondary monitor work area is too small for the native walkthrough.' }
+  if ($units -lt 60) { throw 'Selected display work area is too small for the native walkthrough.' }
   $targetWidth = [int]($units * 16)
   $targetHeight = [int]($units * 9)
   $outerWidth = $targetWidth + $chromeWidth
   $outerHeight = $targetHeight + $chromeHeight
   $targetX = [int]($work.X + (($work.Width - $outerWidth) / 2))
   $targetY = [int]($work.Y + (($work.Height - $outerHeight) / 2))
-  if (-not [AlystriaRecordingWindow]::SetWindowPos($handle, [IntPtr]::Zero, $targetX, $targetY, $outerWidth, $outerHeight, 0x54)) { throw 'Contained secondary-monitor resize failed.' }
+  if (-not [AlystriaRecordingWindow]::SetWindowPos($handle, [IntPtr]::Zero, $targetX, $targetY, $outerWidth, $outerHeight, 0x54)) { throw 'Contained display resize failed.' }
   [Threading.Thread]::Sleep(250)
 }
 if (-not [AlystriaRecordingWindow]::GetWindowRect($handle, [ref]$window)) { throw 'Final GetWindowRect failed.' }
 if (-not [AlystriaRecordingWindow]::GetClientRect($handle, [ref]$client)) { throw 'Final GetClientRect failed.' }
 $contained = $window.Left -ge $work.Left -and $window.Top -ge $work.Top -and $window.Right -le $work.Right -and $window.Bottom -le $work.Bottom
-if (-not $contained) { throw 'Final native recording window spans outside the selected secondary monitor work area.' }
+if (-not $contained) { throw 'Final native recording window spans outside the selected display work area.' }
 [pscustomobject]@{
   processId = $ownedPid
   iterations = $iterations

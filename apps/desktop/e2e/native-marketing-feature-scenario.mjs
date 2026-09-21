@@ -519,8 +519,10 @@ async function renderAcceptedMusicTimeline({ page, invokeNative, identity, proje
 }
 
 export async function recordNativeMarketingCapture({ page, cdpPort, gifsmithRoot, runRoot, edit, projectTitle, recordingWindow, preflight }) {
-  if (!preflight?.validated || recordingWindow?.win32?.contained !== true || recordingWindow.win32?.selectedMonitor?.primary !== false) {
-    throw new Error("Marketing capture requires preflighted Gifsmith and a contained secondary-monitor native window");
+  if (!preflight?.validated || recordingWindow?.win32?.contained !== true
+    || !(recordingWindow.win32?.selectedMonitor?.primary === false
+      || (recordingWindow.win32?.selectedMonitor?.primary === true && recordingWindow.win32?.monitors?.length === 1))) {
+    throw new Error("Marketing capture requires preflighted Gifsmith and a native window contained on the preferred available display");
   }
   const entrypoint = path.join(path.resolve(gifsmithRoot), "dist", "index.js");
   const api = await import(pathToFileURL(entrypoint).href);
