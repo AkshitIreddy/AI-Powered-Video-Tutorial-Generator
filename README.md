@@ -35,7 +35,7 @@
   <img src="docs/media/ai-video-tutorial-demo.webp" alt="A short illustrated lesson with realistic, anime, and cartoon presenters, followed by the native resizable editor" width="960" />
 </p>
 <p align="center">
-  <a href="docs/media/ai-video-tutorial-demo.mp4"><strong>▶ Watch the full 46-second demo with sound (MP4)</strong></a>
+  <a href="docs/media/ai-video-tutorial-demo.mp4"><strong>▶ Watch the full 45-second demo with sound (MP4)</strong></a>
 </p>
 <p align="center"><sub>The 17-second loop previews a real lesson; the sound demo continues into the app.<br />Music: <a href="https://commons.wikimedia.org/wiki/File:Immersed_(ISRC_USUAN1600010).mp3">“Immersed” by Kevin MacLeod</a>, <a href="https://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>.</sub></p>
 

@@ -6,9 +6,9 @@
   "privateHeldOutTestAudioIncluded": false,
   "humanAuditionClaimed": false,
   "callSummary": {
-    "successfulSynthesisCalls": 3,
+    "successfulSynthesisCalls": 5,
     "successfulAsrCalls": 3,
-    "note": "Three source synthesis calls and three source ASR checks. No synthesis during native acceptance or editorial assembly; no additional final-mix ASR call."
+    "note": "Three earlier source synthesis calls plus new Leda and Aoede stems. Three earlier source ASR checks; new stems and final mix were not ASR-tested. No synthesis during native recording or assembly."
   },
   "assets": [
     {
@@ -79,13 +79,43 @@
       "successfulSynthesisCalls": 1,
       "successfulAsrCalls": 1,
       "termsUrl": "https://ai.google.dev/gemini-api/terms"
+    },
+    {
+      "id": "yuki",
+      "provider": "google-gemini-api",
+      "model": "gemini-3.1-flash-tts-preview",
+      "voice": "Leda",
+      "script": "In Earth's atmosphere, tiny molecules scatter shorter blue wavelengths much more strongly than red ones.",
+      "sourceAudio": {
+        "wavSha256": "fe1935fcfb5abec2f4417f4e34c7a257d5ca2650e25d92203a0e347b6b5e239d",
+        "durationSeconds": 7.52,
+        "sampleRateHz": 24000,
+        "channels": 1
+      },
+      "successfulSynthesisCalls": 1,
+      "successfulAsrCalls": 0
+    },
+    {
+      "id": "chloe",
+      "provider": "google-gemini-api",
+      "model": "gemini-3.1-flash-tts-preview",
+      "voice": "Aoede",
+      "script": "So the daytime sky looks blue.",
+      "sourceAudio": {
+        "wavSha256": "79a94640eef4a5106185ab116b7bf832afdeff510a0a33420052a8b65cde7ebe",
+        "durationSeconds": 3,
+        "sampleRateHz": 24000,
+        "channels": 1
+      },
+      "successfulSynthesisCalls": 1,
+      "successfulAsrCalls": 0
     }
   ],
   "teachingAssembly": {
-    "sha256": "2992a1b295abb035a2d25606d0a701470d3f2c020743d2393d604848c99b2629",
-    "durationSeconds": 22.18,
+    "sha256": "2331f7dc03d6a57ee819cd42a42386cf25d6d35102d61556c68dec3bb7ffda8c",
+    "durationSeconds": 21.41,
     "transcript": "Sunlight looks white, but it carries every visible color. In Earth's atmosphere, tiny molecules scatter shorter blue wavelengths much more strongly than red ones. That scattered blue reaches your eyes from every direction, so the daytime sky looks blue.",
-    "assemblyMethod": "PCM trim/concat only; no time-stretch, resynthesis, or lossy encoding"
+    "assemblyMethod": "Four voice-specific PCM stems concatenated without time stretching; new Yuki and Chloe stems were not ASR-tested."
   },
   "presenterSegments": [
     {
@@ -99,22 +129,22 @@
       "id": "yuki",
       "style": "anime-woman",
       "startSeconds": 5.69,
-      "endSeconds": 13.6,
-      "sourceAudioSha256": "d6a497fd6327d74e935d129ef6fa697f5de0974446259664da1f7ed7ae46eb42"
+      "endSeconds": 13.21,
+      "sourceAudioSha256": "fe1935fcfb5abec2f4417f4e34c7a257d5ca2650e25d92203a0e347b6b5e239d"
     },
     {
       "id": "noah",
       "style": "realistic-man",
-      "startSeconds": 13.6,
-      "endSeconds": 18.8,
+      "startSeconds": 13.21,
+      "endSeconds": 18.41,
       "sourceAudioSha256": "44f4d2e93c5ea600eaf8e8e260e2b16d94b6f680b30efdebfa8d048d28b6fc0b"
     },
     {
       "id": "chloe",
       "style": "cartoon-woman",
-      "startSeconds": 18.8,
-      "endSeconds": 22.18,
-      "sourceAudioSha256": "4cbe51c1bdbd105f8f86d454b2d902ad1ff192985d4b5ad21f3f00e6d94f49b7"
+      "startSeconds": 18.41,
+      "endSeconds": 21.41,
+      "sourceAudioSha256": "79a94640eef4a5106185ab116b7bf832afdeff510a0a33420052a8b65cde7ebe"
     }
   ],
   "music": {
@@ -127,19 +157,38 @@
     "attributionRequired": true
   },
   "finalMastering": {
-    "mp4Sha256": "a291157a5e71665a10a0c94e5f441f904bba82c931475d5710b7df4ddffa571f",
-    "measuredAudio": {
-      "integratedLufs": -16,
-      "loudnessRangeLu": 4.1,
-      "truePeakDbtp": -1.5
+    "mp4Sha256": "ae410283b36bf8d880336849683f5dabf2fabcc8c1d4cf4ab9adbb4212ff55bf",
+    "humanAuditionClaimed": false,
+    "note": "The finisher completed MP4 mastering and its internal loudness gate before the WebP timeout. Numeric measurements were not persisted; no further measurements were run at the owner's request."
+  },
+  "presenterVoiceAssignments": [
+    {
+      "presenter": "emma",
+      "voice": "Sulafat",
+      "startSeconds": 0,
+      "endSeconds": 5.69,
+      "sourceAudioSha256": "1a63591f7bff0ce14ec85e4a673dbcd8efffb0f1f851111e471114c04b0be7b4"
     },
-    "audioStream": {
-      "codec_name": "aac",
-      "codec_type": "audio",
-      "sample_rate": "48000",
-      "channels": 1,
-      "r_frame_rate": "0/0"
+    {
+      "presenter": "yuki",
+      "voice": "Leda",
+      "startSeconds": 5.69,
+      "endSeconds": 13.21,
+      "sourceAudioSha256": "fe1935fcfb5abec2f4417f4e34c7a257d5ca2650e25d92203a0e347b6b5e239d"
     },
-    "humanAuditionClaimed": false
-  }
+    {
+      "presenter": "noah",
+      "voice": "Sadaltager",
+      "startSeconds": 13.21,
+      "endSeconds": 18.41,
+      "sourceAudioSha256": "44f4d2e93c5ea600eaf8e8e260e2b16d94b6f680b30efdebfa8d048d28b6fc0b"
+    },
+    {
+      "presenter": "chloe",
+      "voice": "Aoede",
+      "startSeconds": 18.41,
+      "endSeconds": 21.41,
+      "sourceAudioSha256": "79a94640eef4a5106185ab116b7bf832afdeff510a0a33420052a8b65cde7ebe"
+    }
+  ]
 }

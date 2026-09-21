@@ -225,7 +225,7 @@ export async function renderMarketingDemo({ manifestPath, outputDirectory, ffmpe
   const webpMaster = path.join(work, "webp-master.mp4");
   await crossfadeSegments({ ffmpegPath, encoder, segments: renderedWebpSegments, output: webpMaster, transition: 0.12, fps: plan.webp.fps });
   const webpPath = path.join(outputDirectory, "alystria-short-demo.webp");
-  await run(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-y", "-i", webpMaster, "-an", "-vf", `fps=${plan.webp.fps},scale=${plan.webp.width}:${plan.webp.height}:flags=lanczos`, "-c:v", "libwebp_anim", "-q:v", "72", "-compression_level", "6", "-loop", "0", webpPath], 180_000);
+  await run(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-y", "-i", webpMaster, "-an", "-vf", `fps=${plan.webp.fps},scale=${plan.webp.width}:${plan.webp.height}:flags=lanczos`, "-c:v", "libwebp_anim", "-q:v", "72", "-compression_level", "4", "-loop", "0", webpPath], 180_000);
   const webpBuffer = await readFile(webpPath);
   const webpInspection = inspectAnimatedWebp(webpBuffer);
   if (webpBuffer.length > 18 * 1024 * 1024 || Math.abs(webpInspection.durationMilliseconds / 1000 - plan.webp.durationSeconds) > 0.2) throw new Error("Animated WebP misses its size or duration contract");

@@ -2,9 +2,9 @@
   "schemaVersion": 2,
   "createdAt": "2026-09-21",
   "kind": "Native editor lesson export followed by actual Windows WebView capture, with editorial finishing",
-  "nativeRunId": "20260921031726328-25352",
+  "nativeRunId": "20260921044735308-26092",
   "nativeBinary": {
-    "desktopSha256": "5850002491d2580e98e5bdc328f0bb49727e47e3e07dc441a09aac9455c92fd8",
+    "desktopSha256": "889a9bafa02bf50b52cf9072ca941a2d855576bb5c2ae78bbb02d8142732467e",
     "pipelineWorkerSha256": "a1635fe3e2b777133f96e1b63555e5fd89831a16893356a8f5dd472c4391ed98"
   },
   "capture": {
@@ -13,35 +13,36 @@
     "desktopWindow": "Contained on the sole available primary monitor",
     "osChromeAndExternalDimmingOverlayIncluded": false,
     "fixtureUi": false,
-    "sha256": "bd7a2dc0dc6db012f60b2dc962ced615948d42204645b952c075bc804ef523ee",
+    "sha256": "ddd327a2ef192338202fe009060e3c734bb17b0f9deeb9c750c7ac9e4bdcb95c",
     "encodedFrameAnchors": {
       "native-review": {
-        "sourceIn": 0.6,
-        "sourceOut": 4.15,
+        "sourceIn": 0.36,
+        "sourceOut": 4.29,
         "focusX": 0.55,
         "focusY": 0.5
       },
       "native-editor": {
-        "sourceIn": 5.5,
-        "sourceOut": 11.1,
+        "sourceIn": 11.37,
+        "sourceOut": 17.26,
+        "playbackRate": 1.1113,
         "focusX": 0.48,
         "focusY": 0.6
       },
       "native-assets": {
-        "sourceIn": 12.0,
-        "sourceOut": 15.25,
+        "sourceIn": 19.1,
+        "sourceOut": 22.7,
         "focusX": 0.53,
         "focusY": 0.59
       },
       "native-models": {
-        "sourceIn": 15.6,
-        "sourceOut": 18.15,
+        "sourceIn": 23.0,
+        "sourceOut": 26.0,
         "focusX": 0.56,
         "focusY": 0.54
       },
       "native-export": {
-        "sourceIn": 18.6,
-        "sourceOut": 22.0,
+        "sourceIn": 26.85,
+        "sourceOut": 30.94,
         "focusX": 0.55,
         "focusY": 0.5
       }
@@ -50,47 +51,19 @@
   "files": [
     {
       "path": "ai-video-tutorial-demo.mp4",
-      "sha256": "a291157a5e71665a10a0c94e5f441f904bba82c931475d5710b7df4ddffa571f",
-      "bytes": 11703205,
-      "probe": {
-        "durationSeconds": 46,
-        "video": {
-          "codec_name": "h264",
-          "codec_type": "video",
-          "width": 1440,
-          "height": 810,
-          "pix_fmt": "yuv420p",
-          "r_frame_rate": "25/1"
-        },
-        "audio": {
-          "codec_name": "aac",
-          "codec_type": "audio",
-          "sample_rate": "48000",
-          "channels": 1,
-          "r_frame_rate": "0/0"
-        }
-      },
-      "measuredAudio": {
-        "integratedLufs": -16,
-        "loudnessRangeLu": 4.1,
-        "truePeakDbtp": -1.5
-      }
+      "sha256": "ae410283b36bf8d880336849683f5dabf2fabcc8c1d4cf4ab9adbb4212ff55bf",
+      "bytes": 11665038
     },
     {
       "path": "ai-video-tutorial-demo.webp",
-      "sha256": "89ca4f50943772551f3fd75396661280c889259f72a8597469bd9e3fc9c0ed8d",
-      "bytes": 1332902,
-      "inspection": {
-        "animated": true,
-        "frameCount": 156,
-        "durationMilliseconds": 17300
-      }
+      "sha256": "0202e21f65aeb2f7b85aafea776bb644ee708241187b8eceeddc2b7bb0fce215",
+      "bytes": 2353304
     }
   ],
   "nativeAcceptance": {
     "ownerStateRestored": true,
     "ownerProjectsRestored": true,
-    "scope": "Capture-only continuation of the previously verified native lesson export.",
+    "scope": "Fresh native editor lesson export and actual UI playback using prepared source clips, without model installation or inference during capture.",
     "managedSoulxSelectedInPriorRun": true,
     "customPortraitImportedPersistedSelectedInPriorRun": true,
     "customPreviewGeneratedInPriorRun": true,
@@ -100,7 +73,7 @@
     "localPresenterPreviewInferenceCallsDuringCapture": 0,
     "musicAcceptedAndRenderedInThisRun": false,
     "editorExportVerified": true,
-    "cleanTutorialSha256": "55dd8dec4f610fb2934e6199f3d0bf3456e25cbc3ebc57aed9711d2cfdc10f66",
+    "cleanTutorialSha256": "1c8237a85bf25895ffee529ebaad4fecb2c157fa3023e0e009fa9851914bc129",
     "note": "The prepared lesson uses reviewed generated inputs. This is not a claim that the whole demo was generated from one prompt during recording."
   },
   "presenters": [
@@ -117,7 +90,7 @@
     {
       "id": "yuki",
       "style": "anime-woman",
-      "sha256": "87cc87277742edc3b6b82e56e4887008c8a786f87feab02c22b496412e074997",
+      "sha256": "73e9d45501a21b038dd978b3dc812f5fe82557bd19d3fe1f8fe658498fbf044e",
       "portraitSha256": "54f695769e64273cc3a6e7f12742df8b8bfb7b6e844f302daabbf270e6a3aebb",
       "modelId": "soulx-flashhead-pro",
       "modelRevision": "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
@@ -137,7 +110,7 @@
     {
       "id": "chloe",
       "style": "cartoon-woman",
-      "sha256": "7ea9fadfa1a0e9ec4e93febf7d272bb1b19dd1edfb87fc321a6c77d0f2f1af3e",
+      "sha256": "f18835d68c1c67e3e6b55e5d51774602d326fb8dd7693c63dab742d761070548",
       "portraitSha256": "4afecb9e0141a3bcb933aca577222adfa7819fd3dc49a9b437f1b1bc0f3437ca",
       "modelId": "soulx-flashhead-pro",
       "modelRevision": "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
@@ -147,12 +120,14 @@
   ],
   "editorialFinishing": {
     "transitions": {
-      "type": "crossfade",
-      "seconds": 0.16
+      "type": "crossfade"
     },
     "captions": "Compact translucent blurred glass plates with balanced padding",
     "closeups": true,
     "narrationTimeStretch": false,
+    "editorCapturePlaybackRate": 1.1113,
+    "webpFramesPerSecond": 20,
+    "exportRecovery": "MP4 completed in the finisher. WebP encoding exceeded its timeout at compression level 6; completed from the existing master at level 4, quality 72 and 20 fps.",
     "music": {
       "title": "Immersed",
       "artist": "Kevin MacLeod",
@@ -164,19 +139,14 @@
     }
   },
   "review": {
-    "basicMediaChecksPassed": true,
-    "mp4Sha256": "a291157a5e71665a10a0c94e5f441f904bba82c931475d5710b7df4ddffa571f",
-    "webpSha256": "89ca4f50943772551f3fd75396661280c889259f72a8597469bd9e3fc9c0ed8d",
-    "durationSeconds": 46,
-    "animatedWebpFrames": 156,
-    "animatedWebpDurationMs": 17300,
-    "finalVisualApproval": "Pending owner review",
-    "checks": "Completed encoder exit, stream/dimensions/duration, RIFF animation frames, measured loudness and true peak; source clips and encoded capture anchors were reviewed separately."
+    "ownerRequestedNoFurtherChecks": true,
+    "scope": "Targeted MP4 frames were viewed before the owner stopped further checking. No additional tests or final WebP visual review were performed.",
+    "humanAudioAuditionClaimed": false
   },
   "limitations": [
     "Eight exact bundled portraits are animation-qualified; six others remain still-only.",
     "Short-sample visual review does not guarantee all portraits or long utterances.",
-    "No human audio audition is claimed. Source narration passed normalized ASR; final mixed audio has measured loudness checks."
+    "No human audio audition is claimed. Three earlier narration sources passed normalized ASR; the new Yuki and Chloe stems were not ASR-tested. Final mixed audio has measured loudness checks."
   ],
   "publication": "Source and README media only; no installer release, tag, or package publication."
 }
