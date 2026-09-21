@@ -2,7 +2,7 @@ use crate::diagnostics;
 use crate::error::CommandError;
 use crate::presenter_library::{PresenterAnimationAcceptance, PresenterAnimationAcceptanceState};
 use crate::project_store::ProjectStore;
-use crate::sidecar::WorkerTransport;
+use crate::sidecar::{WorkerTransport, worker_method};
 use crate::state::AppState;
 use crate::types::*;
 use crate::validation;
@@ -526,7 +526,7 @@ pub fn music_search(
     if let Some(locale) = &mut input.locale {
         *locale = validation::locale(locale)?;
     }
-    control_action(input, "control.searchMusicCandidates", &state)
+    control_action(input, worker_method::MUSIC_SEARCH, &state)
 }
 
 #[tauri::command]
@@ -534,7 +534,7 @@ pub fn music_candidate_accept(
     input: MusicCandidateDecisionRequest,
     state: State<'_, AppState>,
 ) -> Result<MusicCandidateDecisionReceipt, CommandError> {
-    music_candidate_decision(input, "control.acceptMusicCandidate", "accepted", &state)
+    music_candidate_decision(input, worker_method::MUSIC_ACCEPT, "accepted", &state)
 }
 
 #[tauri::command]
@@ -545,7 +545,7 @@ pub fn music_candidate_reject(
     if let Some(reason) = &mut input.reason {
         *reason = validation::bounded_text(reason, "reason", 500)?;
     }
-    music_candidate_decision(input, "control.rejectMusicCandidate", "rejected", &state)
+    music_candidate_decision(input, worker_method::MUSIC_REJECT, "rejected", &state)
 }
 
 #[tauri::command]
@@ -560,7 +560,7 @@ pub fn presenter_animation_preview_start(
         &input.base_revision_id,
     )?;
     input.profile_id = validation::stable_id(&input.profile_id, "profileId")?;
-    control_action(input, "control.previewPresenterAnimation", &state)
+    control_action(input, worker_method::PRESENTER_PREVIEW_START, &state)
 }
 
 #[tauri::command]
@@ -570,7 +570,7 @@ pub fn presenter_animation_preview_accept(
 ) -> Result<PresenterAnimationPreviewDecisionReceipt, CommandError> {
     presenter_animation_preview_decision(
         input,
-        "control.acceptPresenterAnimationPreview",
+        worker_method::PRESENTER_PREVIEW_ACCEPT,
         "accepted",
         true,
         &state,
@@ -584,7 +584,7 @@ pub fn presenter_animation_preview_reject(
 ) -> Result<PresenterAnimationPreviewDecisionReceipt, CommandError> {
     presenter_animation_preview_decision(
         input,
-        "control.rejectPresenterAnimationPreview",
+        worker_method::PRESENTER_PREVIEW_REJECT,
         "rejected",
         false,
         &state,

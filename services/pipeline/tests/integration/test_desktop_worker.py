@@ -243,6 +243,12 @@ def test_real_worker_transport_exposes_native_media_bridge_methods() -> None:
         "control.searchVisualCandidates",
         "control.acceptVisualCandidate",
         "control.rejectVisualCandidate",
+        "control.searchMusicCandidates",
+        "control.acceptMusicCandidate",
+        "control.rejectMusicCandidate",
+        "control.previewPresenterAnimation",
+        "control.acceptPresenterAnimationPreview",
+        "control.rejectPresenterAnimationPreview",
     )
     with running_worker() as worker:
         for method in methods:

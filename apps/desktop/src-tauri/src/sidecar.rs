@@ -33,6 +33,24 @@ const CREDENTIAL_BROKER_POLL: Duration = Duration::from_millis(100);
 const CREDENTIAL_BROKER_STOP_TIMEOUT: Duration = Duration::from_millis(250);
 const MAX_RESPONSE_BYTES: u64 = 2 * 1024 * 1024;
 
+pub(crate) mod worker_method {
+    pub const MUSIC_SEARCH: &str = "control.searchMusicCandidates";
+    pub const MUSIC_ACCEPT: &str = "control.acceptMusicCandidate";
+    pub const MUSIC_REJECT: &str = "control.rejectMusicCandidate";
+    pub const PRESENTER_PREVIEW_START: &str = "control.previewPresenterAnimation";
+    pub const PRESENTER_PREVIEW_ACCEPT: &str = "control.acceptPresenterAnimationPreview";
+    pub const PRESENTER_PREVIEW_REJECT: &str = "control.rejectPresenterAnimationPreview";
+
+    pub const NATIVE_MEDIA_REVIEW: [&str; 6] = [
+        MUSIC_SEARCH,
+        MUSIC_ACCEPT,
+        MUSIC_REJECT,
+        PRESENTER_PREVIEW_START,
+        PRESENTER_PREVIEW_ACCEPT,
+        PRESENTER_PREVIEW_REJECT,
+    ];
+}
+
 #[derive(Debug, Clone)]
 pub struct PortableRuntimeVerification {
     pub root: PathBuf,
@@ -1158,7 +1176,7 @@ fn valid_method(method: &str) -> bool {
             | "editor.bindings.get"
             | "editor.waveform.get"
             | "job.status"
-    )
+    ) || worker_method::NATIVE_MEDIA_REVIEW.contains(&method)
 }
 
 fn sanitize_worker_text(value: &str, max: usize) -> String {
@@ -1225,6 +1243,26 @@ mod tests {
         assert!(valid_method("control.searchVisualCandidates"));
         assert!(!valid_method("shell.execute"));
         assert!(!valid_method("filesystem.read"));
+    }
+
+    #[test]
+    fn native_media_review_bridge_allows_only_the_exact_dispatch_methods() {
+        assert_eq!(
+            worker_method::NATIVE_MEDIA_REVIEW,
+            [
+                "control.searchMusicCandidates",
+                "control.acceptMusicCandidate",
+                "control.rejectMusicCandidate",
+                "control.previewPresenterAnimation",
+                "control.acceptPresenterAnimationPreview",
+                "control.rejectPresenterAnimationPreview",
+            ]
+        );
+        for method in worker_method::NATIVE_MEDIA_REVIEW {
+            assert!(valid_method(method), "missing worker method: {method}");
+        }
+        assert!(!valid_method("control.previewPresenterAnimation.*"));
+        assert!(!valid_method("control.acceptPresenterAnimation"));
     }
 
     #[test]
