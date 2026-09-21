@@ -87,3 +87,28 @@ download, activation, project routing, render/export, or capture flow. Those
 remain separate integrated acceptance steps. The public demo must use newly
 rendered, reviewed narration and actual native app capture; the old demo and
 static-portrait draft are not substitutes.
+
+## Final demo narration probes
+
+The four final demo clips use newly synthesized public-demo narration, rather
+than the private eight-second comparison WAV. They were rendered through the
+managed SoulX installation with seed 42, reviewed as decoded face/eye/mouth
+sequences, and checked against their exact source-audio hashes.
+
+| Presenter | Audio duration | Render time | Observed blink | Output SHA-256 |
+| --- | ---: | ---: | --- | --- |
+| Emma | 5.69 s | 147.890 s | Closure/reopening near 0.20, 0.96 and 2.48 s | `0a631e2f8205662510717b80ac7d752acb38767934c4574b6ae7d32ce7a64c35` |
+| Yuki | 7.91 s | 174.469 s | Full closure/reopening near 0.16 and 1.44 s | `87cc87277742edc3b6b82e56e4887008c8a786f87feab02c22b496412e074997` |
+| Noah | 5.20 s | 133.859 s | Closure/reopening near 4.68 s | `1a65106492236c226cfe4c012bf496134d7b40b0d3f3cfbd508edcfe46d03bf8` |
+| Chloe | 3.38 s | 119.891 s | Full closure at 1.56–1.60 s, then reopening | `7ea9fadfa1a0e9ec4e93febf7d272bb1b19dd1edfb87fc321a6c77d0f2f1af3e` |
+
+The reviewed sequences preserve the surroundings and coherent speaking-mouth
+anatomy. Some facial smoothing remains. These observations do not establish
+perfect lip synchronization or arbitrary-image compatibility. Visual frame
+inspection and stream/ASR checks are not a claim of human audio audition.
+
+A subsequent native reactivation exposed Numba caches written inside the
+immutable environment. The worker now routes Numba and other ML/compiler caches
+into its declared writable attempt directory. The installed-file ledger remains
+strict; mutable additions are still rejected. Repeat native activation and a
+fresh preview are separate regression gates from the clip review above.
