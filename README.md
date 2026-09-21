@@ -32,12 +32,12 @@
 <a id="see-it-in-action"></a>
 
 <p align="center">
-  <img src="docs/media/ai-video-tutorial-demo.webp" alt="Native Windows walkthrough of projects, models, teaching assets, presenters, the resizable editor, and four locally animated presenter styles" width="960" />
+  <img src="docs/media/ai-video-tutorial-demo.webp" alt="A short illustrated lesson with realistic, anime, and cartoon presenters, followed by the native resizable editor" width="960" />
 </p>
 <p align="center">
-  <a href="docs/media/ai-video-tutorial-demo.mp4"><strong>▶ Watch the same walkthrough with sound (MP4)</strong></a>
+  <a href="docs/media/ai-video-tutorial-demo.mp4"><strong>▶ Watch the full 46-second demo with sound (MP4)</strong></a>
 </p>
-<p align="center"><sub>Recorded from the native Windows app with <a href="https://www.npmjs.com/package/gifsmith">Gifsmith</a>.<br />Demo narration: Gemini Sulafat. Presenter samples: Sulafat and Sadaltager. <a href="docs/media/demo-audio-provenance.json">Audio notes</a> · <a href="docs/media/demo-video-provenance.json">Recording evidence</a>.</sub></p>
+<p align="center"><sub>The 17-second loop previews a real lesson; the sound demo continues into the app.<br />Music: <a href="https://commons.wikimedia.org/wiki/File:Immersed_(ISRC_USUAN1600010).mp3">“Immersed” by Kevin MacLeod</a>, <a href="https://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>.</sub></p>
 
 > **Current status:** 2.0 is a local release candidate. A public installer is not available yet.
 
@@ -76,28 +76,43 @@ and content-addressed media stay with the project rather than a hosted product a
 
 ### Presenters and multi-cast tutorials
 
-The included collection contains fourteen original fictional tutorial hosts across realistic,
+The casual presenter collection contains fourteen original fictional tutorial hosts across realistic,
 anime, cartoon, robot, cat, kitten, dog, puppy, tiger, and lion styles. Choose none, one, or up to
 four presenters; a cast takes turns across scenes, and each scene can have its own speaker and voice.
 
-Presenter animation is optional and runtime-gated. The current short-sample qualification covers
-three LivePortrait/MuseTalk portrait routes and nine exact-portrait JoyVASA human or animal routes.
-Poppy and Leo remain available as still portraits; their current animation routes are disabled
-because speech distorted the muzzle. The other animal and robot routes retain visible style limits.
-That evidence shows the reviewed portraits working with short narration clips; it is not a promise
-that arbitrary portraits or long recordings will animate well. See the
-[presenter qualification](docs/research/casual-presenter-qualification-2026-09-20.md) for the
-accepted routes, visible limits, and measured reuse behavior.
+Presenter animation is optional. Eight exact portraits have passed short-sample review with
+SoulX-FlashHead Pro, including realistic, anime, cartoon, and kitten hosts. Their clips were checked
+for mouth anatomy, full blinks, identity, and background stability on a 12 GB NVIDIA laptop GPU.
+The other six current portraits remain available for still-image use while their exact animation
+routes are pending or incompatible.
+See the [current comparison](docs/validation/presenter-model-comparison-2026-09-21.md) for measured
+results and rejected alternatives. A successful short sample does not guarantee every new image
+or long recording will animate well.
+
+You can upload a portrait or create one with a configured cloud or local image model, save it in
+the reusable presenter gallery, and add it to a tutorial cast. Custom animation stays blocked until
+you run, play, and accept a short local SoulX preview for that exact portrait and model revision.
 
 ### Models and downloads
 
-Onboarding and **Models & Providers** use the same native download queue. Selecting an available
-local package starts its verified download and opens a progress panel that can be minimized while
-you keep working. The queue reports bytes and phases, resumes supported transfers, reuses verified
-files, and keeps model installation separate from model readiness.
+Onboarding and **Models & Providers** use the same native download queue. Choosing a package during
+onboarding can queue it immediately; on the Models page, inspect the package and choose **Download**.
+Compatible image packs may first ask to install the shared ComfyUI runtime. The progress panel can
+be minimized while you keep working. The queue reports bytes and phases, resumes supported
+transfers, reuses verified files, and keeps model installation separate from model readiness.
 
 Local weights download separately from the desktop app. The app checks package integrity,
 runtime compatibility, and hardware before marking a model ready.
+
+The managed SoulX package downloads about 10.4 GB and assembles its pinned Windows environment
+offline. **Download** stages it; **Use model** verifies and activates it. No separate Python setup
+or terminal is required.
+
+### Music that fits the lesson
+
+Search free music by topic and mood, preview a track, and add the chosen recording to the project.
+The app preserves its source, license, and attribution. Timeline music can loop, use its own gain,
+and duck beneath narration; attribution follows the finished export.
 
 ### Local and cloud options
 
@@ -109,7 +124,7 @@ use an explicitly selected image route after you review the candidates.
 | --- | --- | --- |
 | Included assets | Slides, backgrounds, diagrams, and teaching elements without an API call | Works before a project exists and does not consume a provider quota |
 | Local image generation | Private, repeatable illustration through the managed ComfyUI/SDXL route | No API fee after download; uses local storage, power, and GPU time |
-| Local presenter animation | Reviewed bundled portraits through installed MuseTalk or JoyVASA routes | Optional large runtimes; compatibility is portrait-specific |
+| Local presenter animation | Eight exact bundled portraits through reviewed SoulX routes; custom portraits after an accepted SoulX preview | Optional large runtime; the other six current portraits remain still-only until an exact route passes review |
 | Cloud text and research | Writing and research with Groq, Gemini, Mistral, OpenRouter, NVIDIA NIM, or another reviewed profile | Uses your key and the exact provider/model you select; no silent fallback |
 | Cloud images and licensed media | Optional generation or discovery through reviewed image and stock-media routes | Every accepted asset still keeps provenance, rights, and attribution |
 

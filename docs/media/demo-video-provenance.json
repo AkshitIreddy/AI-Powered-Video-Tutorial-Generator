@@ -1,204 +1,182 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "createdAt": "2026-09-21",
-  "kind": "Actual native Windows WebView recording with separately aligned narration and native editor-export audio",
-  "nativeRunId": "20260920200625320-15156",
+  "kind": "Native editor lesson export followed by actual Windows WebView capture, with editorial finishing",
+  "nativeRunId": "20260921031726328-25352",
+  "nativeBinary": {
+    "desktopSha256": "5850002491d2580e98e5bdc328f0bb49727e47e3e07dc441a09aac9455c92fd8",
+    "pipelineWorkerSha256": "a1635fe3e2b777133f96e1b63555e5fd89831a16893356a8f5dd472c4391ed98"
+  },
   "capture": {
     "tool": "Gifsmith",
     "surface": "Tauri WebView2 through CDP",
-    "desktopWindow": "Contained on the secondary monitor",
+    "desktopWindow": "Contained on the sole available primary monitor",
     "osChromeAndExternalDimmingOverlayIncluded": false,
     "fixtureUi": false,
-    "newProviderCallsDuringRecording": 0,
-    "newLocalInferenceCallsDuringRecording": 0,
-    "outputFrameRate": 25,
-    "motionInterpolation": false
-  },
-  "nativeBinary": {
-    "desktopSha256": "c70d992ec7e416e096738df34065fd82e1917a35458caf2021eef6fea00c88dc",
-    "pipelineWorkerSha256": "432d71633c4d1de302a095fc4e89422adf602d289446058e5118221e8251eef8"
+    "sha256": "bd7a2dc0dc6db012f60b2dc962ced615948d42204645b952c075bc804ef523ee",
+    "encodedFrameAnchors": {
+      "native-review": {
+        "sourceIn": 0.6,
+        "sourceOut": 4.15,
+        "focusX": 0.55,
+        "focusY": 0.5
+      },
+      "native-editor": {
+        "sourceIn": 5.5,
+        "sourceOut": 11.1,
+        "focusX": 0.48,
+        "focusY": 0.6
+      },
+      "native-assets": {
+        "sourceIn": 12.0,
+        "sourceOut": 15.25,
+        "focusX": 0.53,
+        "focusY": 0.59
+      },
+      "native-models": {
+        "sourceIn": 15.6,
+        "sourceOut": 18.15,
+        "focusX": 0.56,
+        "focusY": 0.54
+      },
+      "native-export": {
+        "sourceIn": 18.6,
+        "sourceOut": 22.0,
+        "focusX": 0.55,
+        "focusY": 0.5
+      }
+    }
   },
   "files": [
     {
       "path": "ai-video-tutorial-demo.mp4",
-      "sha256": "899702371160b92c5d809d628c2e736b334f750dfe6db2ff00d062f947303332",
-      "bytes": 16709351,
-      "durationSeconds": 133.32,
-      "video": {
-        "codec": "H.264",
-        "width": 1440,
-        "height": 810,
-        "fps": 25
+      "sha256": "a291157a5e71665a10a0c94e5f441f904bba82c931475d5710b7df4ddffa571f",
+      "bytes": 11703205,
+      "probe": {
+        "durationSeconds": 46,
+        "video": {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 1440,
+          "height": 810,
+          "pix_fmt": "yuv420p",
+          "r_frame_rate": "25/1"
+        },
+        "audio": {
+          "codec_name": "aac",
+          "codec_type": "audio",
+          "sample_rate": "48000",
+          "channels": 1,
+          "r_frame_rate": "0/0"
+        }
       },
-      "audio": {
-        "codec": "AAC",
-        "sampleRate": 48000,
-        "channels": 1
+      "measuredAudio": {
+        "integratedLufs": -16,
+        "loudnessRangeLu": 4.1,
+        "truePeakDbtp": -1.5
       }
     },
     {
       "path": "ai-video-tutorial-demo.webp",
-      "sha256": "e245e6fec5dff627bb419094d31d294f8738f7d90822c3fcfda1a4c3b086010e",
-      "bytes": 18679300,
-      "durationSeconds": 133.375,
-      "width": 960,
-      "height": 540,
-      "frames": 1067,
-      "nominalFps": 8,
-      "loop": 0,
-      "validation": "All 1067 frames decoded using Pillow. Animated duration sums frame durations; ffprobe cannot report this build's animated WebP duration."
+      "sha256": "89ca4f50943772551f3fd75396661280c889259f72a8597469bd9e3fc9c0ed8d",
+      "bytes": 1332902,
+      "inspection": {
+        "animated": true,
+        "frameCount": 156,
+        "durationMilliseconds": 17300
+      }
     }
   ],
-  "content": {
-    "walkthrough": [
-      "Home",
-      "Projects",
-      "Models and downloads panel",
-      "Included teaching assets",
-      "Presenter gallery and animal filter",
-      "Previously generated local SDXL artwork",
-      "Editor with panel resizing",
-      "Four native rendered presenter clips",
-      "Projects outro"
-    ],
-    "presenterOrder": [
-      "Emma — realistic woman",
-      "Yuki — anime woman",
-      "Noah — realistic man",
-      "Chloe — cartoon woman"
-    ],
-    "presenterLine": "Watch your ideas become clear, engaging lessons.",
-    "sourceEvidence": "../research/casual-presenter-qualification-2026-09-20.md",
-    "fourClipComparisonSeconds": 18.3,
-    "narrationSource": "demo-audio-provenance.json",
-    "privateHeldOutAudioIncluded": false
+  "nativeAcceptance": {
+    "ownerStateRestored": true,
+    "ownerProjectsRestored": true,
+    "scope": "Capture-only continuation of the previously verified native lesson export.",
+    "managedSoulxSelectedInPriorRun": true,
+    "customPortraitImportedPersistedSelectedInPriorRun": true,
+    "customPreviewGeneratedInPriorRun": true,
+    "customPreviewPlayedAccepted": false,
+    "priorPreviewRunId": "20260921030118242-25248",
+    "providerCalls": 0,
+    "localPresenterPreviewInferenceCallsDuringCapture": 0,
+    "musicAcceptedAndRenderedInThisRun": false,
+    "editorExportVerified": true,
+    "cleanTutorialSha256": "55dd8dec4f610fb2934e6199f3d0bf3456e25cbc3ebc57aed9711d2cfdc10f66",
+    "note": "The prepared lesson uses reviewed generated inputs. This is not a claim that the whole demo was generated from one prompt during recording."
   },
-  "qualification": {
-    "currentStillPortraits": 14,
-    "reviewedAnimationRoutes": 12,
-    "staticOnly": [
-      "Poppy",
-      "Leo"
-    ],
-    "scope": "Short narration samples with exact reviewed portraits. Animal/robot anatomy limits remain; arbitrary portraits and long-form quality are not qualified."
+  "presenters": [
+    {
+      "id": "emma",
+      "style": "realistic-woman",
+      "sha256": "0a631e2f8205662510717b80ac7d752acb38767934c4574b6ae7d32ce7a64c35",
+      "portraitSha256": "27ac749dc0b30c2676d327e2a14fd05f873aee401d4b97bdd684eaab7c42a7f7",
+      "modelId": "soulx-flashhead-pro",
+      "modelRevision": "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+      "temporalReviewPassed": true,
+      "naturalBlinkVerified": true
+    },
+    {
+      "id": "yuki",
+      "style": "anime-woman",
+      "sha256": "87cc87277742edc3b6b82e56e4887008c8a786f87feab02c22b496412e074997",
+      "portraitSha256": "54f695769e64273cc3a6e7f12742df8b8bfb7b6e844f302daabbf270e6a3aebb",
+      "modelId": "soulx-flashhead-pro",
+      "modelRevision": "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+      "temporalReviewPassed": true,
+      "naturalBlinkVerified": true
+    },
+    {
+      "id": "noah",
+      "style": "realistic-man",
+      "sha256": "1a65106492236c226cfe4c012bf496134d7b40b0d3f3cfbd508edcfe46d03bf8",
+      "portraitSha256": "6f83257ec713c8d0df42ebb1506b9be32735bec9934aa5c2e946e24cbed8c0bd",
+      "modelId": "soulx-flashhead-pro",
+      "modelRevision": "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+      "temporalReviewPassed": true,
+      "naturalBlinkVerified": true
+    },
+    {
+      "id": "chloe",
+      "style": "cartoon-woman",
+      "sha256": "7ea9fadfa1a0e9ec4e93febf7d272bb1b19dd1edfb87fc321a6c77d0f2f1af3e",
+      "portraitSha256": "4afecb9e0141a3bcb933aca577222adfa7819fd3dc49a9b437f1b1bc0f3437ca",
+      "modelId": "soulx-flashhead-pro",
+      "modelRevision": "soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128",
+      "temporalReviewPassed": true,
+      "naturalBlinkVerified": true
+    }
+  ],
+  "editorialFinishing": {
+    "transitions": {
+      "type": "crossfade",
+      "seconds": 0.16
+    },
+    "captions": "Compact translucent blurred glass plates with balanced padding",
+    "closeups": true,
+    "narrationTimeStretch": false,
+    "music": {
+      "title": "Immersed",
+      "artist": "Kevin MacLeod",
+      "sha256": "870fa4f642816b2207cf74e48c36cbbbd147df99be24f08f29aa26ac0597a44b",
+      "license": "CC BY 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+      "sourceUrl": "https://commons.wikimedia.org/wiki/File:Immersed_(ISRC_USUAN1600010).mp3",
+      "attributionRequired": true
+    }
   },
   "review": {
-    "visualInspection": [
-      "Native Models cards and expanded technical details",
-      "Actual chapter frames across the full recording",
-      "Emma, Yuki, Noah and Chloe speaking frames",
-      "Natural-ended native Review frame without a loading ring",
-      "Sampled Gifsmith temporal strips show expected navigation and image loading",
-      "Adjacent encoded actor transition frames at112.36,116.84,121.64 seconds constrain comparison alignment within one25fps frame"
-    ],
-    "humanAudioAuditionClaimed": false,
-    "streamTimingIsNotSubjectiveAudioQuality": true
+    "basicMediaChecksPassed": true,
+    "mp4Sha256": "a291157a5e71665a10a0c94e5f441f904bba82c931475d5710b7df4ddffa571f",
+    "webpSha256": "89ca4f50943772551f3fd75396661280c889259f72a8597469bd9e3fc9c0ed8d",
+    "durationSeconds": 46,
+    "animatedWebpFrames": 156,
+    "animatedWebpDurationMs": 17300,
+    "finalVisualApproval": "Pending owner review",
+    "checks": "Completed encoder exit, stream/dimensions/duration, RIFF animation frames, measured loudness and true peak; source clips and encoded capture anchors were reviewed separately."
   },
-  "acceptanceBoundary": {
-    "originalHarnessState": "The original run failed after capture and initial mux because ffprobe could not report animated WebP duration. Subsequent independent review rejected that initial audio alignment: logical script time differed from captured frame timestamps. The final media reuses the valid native silent capture and remuxes reviewed audio against measured visual anchors. Original failures and rejected mux are retained locally; this is a separately validated postprocess recovery, not a claim that the original harness passed.",
-    "ownerAppDataRestored": true,
-    "ownerProjectsRestored": true,
-    "publication": "Local repository media only. No app release or remote media upload."
-  },
-  "audioAlignment": {
-    "method": "frame-accurate visible page cuts in the encoded 25 fps silent master; presenter start from measured Emma-to-Yuki cut minus persisted Emma duration",
-    "visualFrameResolutionMs": 40,
-    "anchorSeconds": {
-      "home": 0.0,
-      "projects": 8.96,
-      "models": 16.84,
-      "library": 30.44,
-      "presenters": 49.48,
-      "artwork": 64.52,
-      "editor": 78.12,
-      "comparison": 100.2,
-      "presenter-comparison": 107.84,
-      "outro": 126.36
-    },
-    "actorCutsSeconds": {
-      "emmaStart": 107.84,
-      "yukiStart": 112.36,
-      "noahStart": 116.84,
-      "chloeStart": 121.64,
-      "outroProjects": 126.36
-    },
-    "sourceMeasurement": "normalized FFT cross-correlation of the decoded final mono AAC against each exact trimmed reviewed WAV and exact native comparison export",
-    "correlationSampleRateHz": 8000,
-    "chapters": [
-      {
-        "id": "home",
-        "offsetSeconds": 0.0,
-        "durationSeconds": 6.88,
-        "normalizedCorrelation": 0.9958789197397042,
-        "sourceSha256": "ff700c65beb61062a4e32842bb8afde6c5aa64a43414a6f8ac1c3fe968b31245"
-      },
-      {
-        "id": "projects",
-        "offsetSeconds": 8.96,
-        "durationSeconds": 5.76,
-        "normalizedCorrelation": 0.9989579317636021,
-        "sourceSha256": "e9a66f832c75aebafaef41c2c1cb636b17b69630a2982fd5c273a5f93b3cddf0"
-      },
-      {
-        "id": "models",
-        "offsetSeconds": 16.84,
-        "durationSeconds": 6.98,
-        "normalizedCorrelation": 0.9995980897835665,
-        "sourceSha256": "fc0fc17e6e41f3243b4e25e683528d70098fa2bc80f52bfcc5b421f3d521e14b"
-      },
-      {
-        "id": "library",
-        "offsetSeconds": 30.44,
-        "durationSeconds": 9.62,
-        "normalizedCorrelation": 0.9998940690907188,
-        "sourceSha256": "cfd829f9be3545add17f977fd6871e11278946719d3ed081d150bb76bacba4f4"
-      },
-      {
-        "id": "presenters",
-        "offsetSeconds": 49.48,
-        "durationSeconds": 9.94,
-        "normalizedCorrelation": 0.9994879832855402,
-        "sourceSha256": "94e78734ea4a25592e1ad9deb0c5b99ace02155342d1d748b9627b48cc4c1bdb"
-      },
-      {
-        "id": "artwork",
-        "offsetSeconds": 64.52,
-        "durationSeconds": 6.24,
-        "normalizedCorrelation": 0.9992376278174802,
-        "sourceSha256": "498e781b48a82dc054554e038b7bed9e2847d42c7be2c0cb5d4af4771df5af69"
-      },
-      {
-        "id": "editor",
-        "offsetSeconds": 78.12,
-        "durationSeconds": 12.16,
-        "normalizedCorrelation": 0.9995154121812502,
-        "sourceSha256": "53a016143eb7e9c777de62944e50d1d343b3c7533c0399c2d860168d1567949b"
-      },
-      {
-        "id": "comparison",
-        "offsetSeconds": 100.2,
-        "durationSeconds": 6.02,
-        "normalizedCorrelation": 0.9994612921113156,
-        "sourceSha256": "9d7e4ee298d624c5669f0f9970fc37495127ab8752c99f7521a8be6bcfedb713"
-      },
-      {
-        "id": "outro",
-        "offsetSeconds": 126.36,
-        "durationSeconds": 5.18,
-        "normalizedCorrelation": 0.999568774101746,
-        "sourceSha256": "3a54147be79e41cbc8ce49791fac8eb6844f7f9a703dbbfa3a9a790dab779ae9"
-      },
-      {
-        "id": "presenter-comparison",
-        "offsetSeconds": 107.84,
-        "durationSeconds": 18.3,
-        "normalizedCorrelation": 0.995821349910414,
-        "sourceSha256": "eb105a0eecb5db3a4cf442486601dba7fdbc042bc275124d751aa4a92855ac92"
-      }
-    ],
-    "noAudioOverlap": true,
-    "integratedLufs": -15.97,
-    "truePeakDbtp": -1.73,
-    "boundary": "Visual anchors were inspected in actual encoded frames. Audio source positions were independently measured by correlation; 0.125ms numerical correlation resolution does not imply sub-frame visual precision or subjective human audition."
-  }
+  "limitations": [
+    "Eight exact bundled portraits are animation-qualified; six others remain still-only.",
+    "Short-sample visual review does not guarantee all portraits or long utterances.",
+    "No human audio audition is claimed. Source narration passed normalized ASR; final mixed audio has measured loudness checks."
+  ],
+  "publication": "Source and README media only; no installer release, tag, or package publication."
 }
