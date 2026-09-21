@@ -37,9 +37,6 @@
 <p align="center">
   <a href="#watch-the-full-demo"><strong>▶ Watch the full 45-second demo with sound</strong></a>
 </p>
-<p align="center"><sub>The 17-second loop previews a real lesson; the sound demo continues into the app.<br />Music: <a href="https://commons.wikimedia.org/wiki/File:Immersed_(ISRC_USUAN1600010).mp3">“Immersed” by Kevin MacLeod</a>, <a href="https://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>.</sub></p>
-
-> **Current status:** 2.0 is a local release candidate. A public installer is not available yet.
 
 ---
 
@@ -136,15 +133,7 @@ links. Local inference uses your hardware and has no per-generation API charge.
 
 ### Watch the full demo
 
-<p align="center">
-  <video src="https://raw.githubusercontent.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/main/docs/media/ai-video-tutorial-demo.mp4" poster="docs/media/ai-video-tutorial-demo.webp" controls playsinline width="960">
-    <a href="docs/media/ai-video-tutorial-demo.mp4">Play the 45-second demo with sound</a>
-  </video>
-</p>
-
-<p align="center">
-  <a href="docs/media/ai-video-tutorial-demo.mp4"><strong>Open the demo video directly</strong></a>
-</p>
+https://github.com/user-attachments/assets/7dcfda19-0bb2-4c7f-bcf6-85edffde6c36
 
 ### Installation and requirements
 
