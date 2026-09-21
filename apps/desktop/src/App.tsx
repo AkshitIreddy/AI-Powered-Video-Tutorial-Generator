@@ -2586,16 +2586,18 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
   const selectPortraitAnimation = (modelId: string) => mutateSetup((current) => ({ ...current, portraitAnimationModelId: modelId, selectedModelIds: [...new Set([...current.selectedModelIds, modelId])] }));
   const selectedDownload = downloadCatalog.find((entry) => entry.modelId === selectedDownloadModelId) ?? null;
   const selectedDownloadStatus = downloadStatuses.find((status) => status.modelId === selectedDownload?.modelId) ?? null;
+  const soulxDownloadStatus = presenterActivationStatus?.modelId === SOULX_PRESENTER_MODEL_ID
+    ? presenterActivationStatus
+    : downloadStatuses.find((status) => status.modelId === SOULX_PRESENTER_MODEL_ID) ?? null;
   const displayedDownloadStatus = presenterActivationStatus?.modelId === selectedDownload?.modelId
     ? presenterActivationStatus
     : selectedDownloadStatus;
   const selectedImageOption = localImageModelOptions.find((model) => model.id === selectedDownloadModelId) ?? null;
   const downloadComplete = displayedDownloadStatus?.phase === "ready" || displayedDownloadStatus?.phase === "inUse" || displayedDownloadStatus?.phase === "downloadedQuarantined";
-  const soulxDownloaded = selectedDownload?.modelId === SOULX_PRESENTER_MODEL_ID
-    && displayedDownloadStatus !== null
-    && displayedDownloadStatus.downloadedBytes === displayedDownloadStatus.totalBytes
-    && displayedDownloadStatus.totalBytes > 0
-    && (displayedDownloadStatus.phase === "ready" || displayedDownloadStatus.phase === "downloadedQuarantined");
+  const soulxDownloaded = soulxDownloadStatus !== null
+    && soulxDownloadStatus.downloadedBytes === soulxDownloadStatus.totalBytes
+    && soulxDownloadStatus.totalBytes > 0
+    && (soulxDownloadStatus.phase === "ready" || soulxDownloadStatus.phase === "downloadedQuarantined");
   const sdxlInstallReceiptReady = comfyVersion !== null
     && selectedDownloadStatus?.modelId === "local/sdxl-base-1.0"
     && selectedDownloadStatus.phase === "ready"
@@ -2671,8 +2673,8 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     if (!setup || !activeProfile || !soulxDownloaded || presenterActivationBusy) return;
     setPresenterActivationBusy(true);
     setPresenterActivationError(null);
-    setPresenterActivationStatus(displayedDownloadStatus ? {
-      ...displayedDownloadStatus,
+    setPresenterActivationStatus(soulxDownloadStatus ? {
+      ...soulxDownloadStatus,
       phase: "verifying",
       detail: "Verifying the complete SoulX runtime ledger before selecting this presenter engine.",
       updatedAt: new Date().toISOString(),
@@ -2729,9 +2731,9 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       const message = errorMessage(error);
       try {
         const statuses = await localModelDownloadStatus();
-        setPresenterActivationStatus(statuses.find((status) => status.modelId === SOULX_PRESENTER_MODEL_ID) ?? selectedDownloadStatus);
+        setPresenterActivationStatus(statuses.find((status) => status.modelId === SOULX_PRESENTER_MODEL_ID) ?? soulxDownloadStatus);
       } catch {
-        setPresenterActivationStatus(selectedDownloadStatus);
+        setPresenterActivationStatus(soulxDownloadStatus);
       }
       setPresenterActivationError(message);
       onNotify("SoulX could not be selected", message, "warning");
@@ -2739,6 +2741,22 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
       window.clearInterval(poll);
       setPresenterActivationBusy(false);
     }
+  };
+  const soulxCatalogActivationState = (item: CatalogItem) => {
+    const entry = findModelDownloadEntry(item, downloadCatalog);
+    if (entry?.modelId !== SOULX_PRESENTER_MODEL_ID) return null;
+    if (presenterActivationBusy) return { label: "Verifying model…", disabled: true, busy: true };
+    if (setup?.portraitAnimationModelId === SOULX_PRESENTER_MODEL_ID && setup?.lipSyncModelId === SOULX_PRESENTER_MODEL_ID) {
+      return { label: "Model in use", disabled: true };
+    }
+    if (!soulxDownloaded) return null;
+    if (!setup || !activeProfile) return { label: setupLoading ? "Loading setup…" : "Choose a profile first", disabled: true };
+    return { label: "Use model", disabled: false, ...(presenterActivationError ? { error: presenterActivationError } : {}) };
+  };
+  const activateCatalogModel = (item: CatalogItem) => {
+    const entry = findModelDownloadEntry(item, downloadCatalog);
+    if (entry?.modelId !== SOULX_PRESENTER_MODEL_ID) return;
+    void activateVerifiedSoulxForPresenters();
   };
   const saveSetup = async () => {
     if (!setup) return;
@@ -2823,7 +2841,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
         const hasMore = syncable ? Boolean(catalogCursors[syncable]) : false;
         return <article key={source.id} className={!source.catalogUrl ? "local-source" : ""}><ProviderMark providerId={source.brandAssetId} compact /><strong>{source.label}</strong><small>{count ? `${count} live rows · ` : ""}{source.discovery.replaceAll("-", " ")} · {source.authentication.replaceAll("-", " ")}</small><span>{source.catalogUrl && <a href={source.catalogUrl} target="_blank" rel="noreferrer">Explore</a>}{syncable && <button type="button" disabled={catalogSyncing !== null || ((syncable === "nvidia-nim" || syncable === "cohere") && secretRefs[syncable]?.availability !== "present")} onClick={() => { void syncCatalog(syncable); }}><RefreshCw size={11} className={catalogSyncing === syncable ? "spinning" : ""} />{catalogSyncing === syncable ? "Syncing…" : hasMore ? "Load more" : "Sync"}</button>}</span></article>;
       })}</div></details>
-      <CatalogIntegrationExample hardware={catalogHardwareWithConnections} items={catalogItems} onModelDownload={downloadCatalogModel} downloadState={downloadState} writingProfileProviderIds={profileProviderIds} {...(setup && activeProfile ? { onUseForWritingProfile: stageWritingProfileModel } : {})} />
+      <CatalogIntegrationExample hardware={catalogHardwareWithConnections} items={catalogItems} onModelDownload={downloadCatalogModel} downloadState={downloadState} onModelActivate={activateCatalogModel} activationState={soulxCatalogActivationState} writingProfileProviderIds={profileProviderIds} {...(setup && activeProfile ? { onUseForWritingProfile: stageWritingProfileModel } : {})} />
     </section>
     <div className="provider-heading"><div><span className="section-kicker">Configured capabilities</span><h2>Provider connections</h2></div><span className="environment-note"><ShieldCheck size={15} /> {environment === "native" ? "OS credential vault" : "Browser demo · values discarded"}</span></div>
     <div className="provider-grid">{providers.map(({ id, name, icon: Icon, detail, tone, local }) => {

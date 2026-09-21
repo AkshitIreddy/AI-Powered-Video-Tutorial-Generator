@@ -5,7 +5,7 @@ import {
 } from "./defaults";
 import { resourcePolicyPresets } from "./resourcePolicy";
 import type { CatalogItem, HardwareSnapshot } from "./types";
-import { ModelLibrary, type CatalogDownloadActionState } from "./ModelLibrary";
+import { ModelLibrary, type CatalogActivationActionState, type CatalogDownloadActionState } from "./ModelLibrary";
 import "./catalog.css";
 
 export interface CatalogIntegrationExampleProps {
@@ -13,6 +13,8 @@ export interface CatalogIntegrationExampleProps {
   items?: readonly CatalogItem[];
   onModelDownload?: (item: CatalogItem) => void;
   downloadState?: (item: CatalogItem) => CatalogDownloadActionState;
+  onModelActivate?: (item: CatalogItem) => void;
+  activationState?: (item: CatalogItem) => CatalogActivationActionState | null;
   onUseForWritingProfile?: (item: CatalogItem) => void;
   writingProfileProviderIds?: readonly string[];
 }
@@ -27,6 +29,8 @@ export function CatalogIntegrationExample({
   items = defaultCatalogItems,
   onModelDownload,
   downloadState,
+  onModelActivate,
+  activationState,
   onUseForWritingProfile,
   writingProfileProviderIds,
 }: CatalogIntegrationExampleProps) {
@@ -41,6 +45,8 @@ export function CatalogIntegrationExample({
       compatibilityContext={baseContext}
       {...(onModelDownload === undefined ? {} : { onDownload: onModelDownload })}
       {...(downloadState === undefined ? {} : { downloadState })}
+      {...(onModelActivate === undefined ? {} : { onActivate: onModelActivate })}
+      {...(activationState === undefined ? {} : { activationState })}
       {...(onUseForWritingProfile === undefined
         ? {}
         : { onUseForWritingProfile, writingProfileProviderIds })}

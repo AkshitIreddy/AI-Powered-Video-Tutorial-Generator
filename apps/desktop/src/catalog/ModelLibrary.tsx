@@ -33,6 +33,8 @@ export interface ModelLibraryProps {
   compatibilityContext: CompatibilityContext;
   onDownload?: (item: CatalogItem) => void;
   downloadState?: (item: CatalogItem) => CatalogDownloadActionState;
+  onActivate?: (item: CatalogItem) => void;
+  activationState?: (item: CatalogItem) => CatalogActivationActionState | null;
   onSelect?: (item: CatalogItem) => void;
   onUseForWritingProfile?: (item: CatalogItem) => void;
   writingProfileProviderIds?: readonly string[];
@@ -46,6 +48,13 @@ export interface CatalogDownloadActionState {
   detail?: string;
   progressPercent?: number;
   phase?: ModelDownloadPhase | "queued" | "starting";
+}
+
+export interface CatalogActivationActionState {
+  label: string;
+  disabled: boolean;
+  busy?: boolean;
+  error?: string;
 }
 
 const compatibilityLabels: Readonly<Record<CompatibilityLevel, string>> = {
@@ -106,6 +115,8 @@ export function ModelLibrary({
   compatibilityContext,
   onDownload,
   downloadState,
+  onActivate,
+  activationState,
   onSelect,
   onUseForWritingProfile,
   writingProfileProviderIds,
@@ -258,7 +269,9 @@ export function ModelLibrary({
             const resolvedDownloadState = isLocalModel && (onDownload || downloadState)
               ? downloadState?.(item) ?? defaultDownloadState(item)
               : null;
+            const resolvedActivationState = activationState?.(item) ?? null;
             const primaryAction = choosePrimaryAction({
+              resolvedActivationState,
               resolvedDownloadState,
               canStageWritingProfile,
               canSelect: compatibility.canSelect,
@@ -271,7 +284,7 @@ export function ModelLibrary({
             const hasTechnicalDetails = technicalFacts.length > 0 || Boolean(compatibility.reasons[0] || resolvedDownloadState?.detail);
             const showDownloadStatus = Boolean(resolvedDownloadState
               && (resolvedDownloadState.disabled || resolvedDownloadState.progressPercent !== undefined));
-            const hasVisibleActions = Boolean((resolvedDownloadState && !resolvedDownloadState.disabled) || onAddToRoute || canStageWritingProfile || onSelect);
+            const hasVisibleActions = Boolean(resolvedActivationState || (resolvedDownloadState && !resolvedDownloadState.disabled) || onAddToRoute || canStageWritingProfile || onSelect);
             return (
             <li className="aly-catalog-card" key={`${item.identity.source}:${item.identity.sourceId}@${item.identity.revision ?? "latest"}`}>
               <div className="aly-catalog-card__topline">
@@ -316,10 +329,12 @@ export function ModelLibrary({
               )}
               {hasVisibleActions && (
                 <div className="aly-catalog-card__actions">
-                  {resolvedDownloadState && !resolvedDownloadState.disabled && <button type="button" className={actionClass("download")} disabled={!onDownload} onClick={() => onDownload?.(item)}>{downloadActionLabel(resolvedDownloadState)}</button>}
+                  {resolvedActivationState && <button type="button" className={actionClass("activate")} disabled={resolvedActivationState.disabled || !onActivate} aria-busy={resolvedActivationState.busy || undefined} onClick={() => onActivate?.(item)}>{resolvedActivationState.label}</button>}
+                  {!resolvedActivationState && resolvedDownloadState && !resolvedDownloadState.disabled && <button type="button" className={actionClass("download")} disabled={!onDownload} onClick={() => onDownload?.(item)}>{downloadActionLabel(resolvedDownloadState)}</button>}
                   {onAddToRoute && <button type="button" className={actionClass("route")} disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Add this ready item to a capability route" : "Resolve compatibility checks before routing this item"} onClick={() => onAddToRoute(selectionFromCatalogItem(item))}>Add to route</button>}
                   {canStageWritingProfile && <button type="button" className={actionClass("writing")} disabled={!compatibility.canSelect} title={compatibility.canSelect ? "Stage this exact model in the active writing profile; use Save setup below to keep it" : "Connect the provider and resolve its compatibility checks before using it"} onClick={() => onUseForWritingProfile?.(item)}>Use in writing profile</button>}
                   {onSelect && <button type="button" className={actionClass("select")} disabled={!compatibility.canSelect} onClick={() => onSelect(item)}>Select model</button>}
+                  {resolvedActivationState?.error && <p className="aly-catalog-card__action-error" role="alert">{resolvedActivationState.error}</p>}
                 </div>
               )}
             </li>
@@ -342,7 +357,7 @@ export function ModelLibrary({
   );
 }
 
-type CatalogCardAction = "download" | "route" | "writing" | "select";
+type CatalogCardAction = "activate" | "download" | "route" | "writing" | "select";
 type CatalogCardFact = { label: string; value: string; icon?: "cloud" | "local" };
 
 function catalogCardFacts(item: CatalogItem, compatibilityLevel: CompatibilityLevel, isLocalModel: boolean): CatalogCardFact[] {
@@ -375,18 +390,21 @@ function catalogTechnicalFacts(item: CatalogItem, isLocalModel: boolean): Catalo
 }
 
 function choosePrimaryAction({
+  resolvedActivationState,
   resolvedDownloadState,
   canStageWritingProfile,
   canSelect,
   hasRouteAction,
   hasSelectAction,
 }: {
+  resolvedActivationState: CatalogActivationActionState | null;
   resolvedDownloadState: CatalogDownloadActionState | null;
   canStageWritingProfile: boolean;
   canSelect: boolean;
   hasRouteAction: boolean;
   hasSelectAction: boolean;
 }): CatalogCardAction | null {
+  if (resolvedActivationState) return "activate";
   if (resolvedDownloadState && !resolvedDownloadState.disabled) return "download";
   if (canStageWritingProfile && canSelect) return "writing";
   if (hasSelectAction && canSelect) return "select";

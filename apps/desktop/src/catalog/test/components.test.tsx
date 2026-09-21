@@ -120,6 +120,39 @@ describe("catalog selection controls", () => {
     expect(screen.queryByRole("button", { name: "Select model" })).not.toBeInTheDocument();
   });
 
+  it("replaces a completed package action with one explicit activation action", async () => {
+    const user = userEvent.setup();
+    const item = catalogFixture({ name: "Downloaded presenter model", availability: "installed" });
+    const onActivate = vi.fn();
+    const { rerender } = render(
+      <ModelLibrary
+        items={[item]}
+        compatibilityContext={contextFixture()}
+        onDownload={vi.fn()}
+        downloadState={() => ({ label: "Files downloaded", disabled: false })}
+        onActivate={onActivate}
+        activationState={() => ({ label: "Use model", disabled: false })}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Files downloaded" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Use model" }));
+    expect(onActivate).toHaveBeenCalledWith(item);
+
+    rerender(
+      <ModelLibrary
+        items={[item]}
+        compatibilityContext={contextFixture()}
+        onDownload={vi.fn()}
+        downloadState={() => ({ label: "Installed", disabled: false })}
+        onActivate={onActivate}
+        activationState={() => ({ label: "Model in use", disabled: true })}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Model in use" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Installed" })).not.toBeInTheDocument();
+  });
+
   it("keeps managed progress compact and moves long package notes into technical details", async () => {
     const user = userEvent.setup();
     const longPackageNote = "Verified artifact C:\\Users\\Akshit\\AppData\\Local\\Alystria\\models\\stable-diffusion-xl-base-1.0\\sd_xl_base_1.0_0.9vae.safetensors is ready.";

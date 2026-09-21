@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { exampleSnapshot } from "../data";
@@ -106,13 +106,13 @@ it("activates the complete SoulX install before selecting its presenter routes",
   await user.click(screen.getByRole("button", { name: /models & providers/i }));
   const search = await screen.findByRole("searchbox", { name: /search models/i });
   await user.type(search, "SoulX-FlashHead");
-  await user.click(await screen.findByRole("button", { name: "Files downloaded" }));
-  const useModel = await screen.findByRole("button", { name: "Use model" });
+  const card = (await screen.findByRole("heading", { name: "SoulX-FlashHead Pro" })).closest<HTMLElement>(".aly-catalog-card")!;
+  const useModel = await within(card).findByRole("button", { name: "Use model" });
   expect(useModel).toBeEnabled();
 
   await user.click(useModel);
   expect(localModelPresenterActivate).toHaveBeenCalledWith({ modelId: soulxEntry.modelId });
-  expect(await screen.findByRole("button", { name: "Verifying model…" })).toBeDisabled();
+  expect(await within(card).findByRole("button", { name: "Verifying model…" })).toBeDisabled();
   expect(localModelSetupSave).not.toHaveBeenCalled();
 
   const ready = {
@@ -137,7 +137,7 @@ it("activates the complete SoulX install before selecting its presenter routes",
       }),
     })]),
   })));
-  expect(await screen.findByRole("button", { name: "SoulX selected" })).toBeDisabled();
+  expect(await within(card).findByRole("button", { name: "Model in use" })).toBeDisabled();
   expect(screen.getByRole("radio", { name: /SoulX-FlashHead Pro/i })).toBeChecked();
   expect(screen.getByLabelText(/^portrait animation model$/i)).toHaveValue(soulxEntry.modelId);
   expect(screen.getByLabelText(/^lip-sync model$/i)).toHaveValue(soulxEntry.modelId);
@@ -151,11 +151,11 @@ it("keeps the current presenter engine when verified activation fails", async ()
   await user.click(screen.getByRole("button", { name: /models & providers/i }));
   const search = await screen.findByRole("searchbox", { name: /search models/i });
   await user.type(search, "SoulX-FlashHead");
-  await user.click(await screen.findByRole("button", { name: "Files downloaded" }));
-  await user.click(await screen.findByRole("button", { name: "Use model" }));
+  const card = (await screen.findByRole("heading", { name: "SoulX-FlashHead Pro" })).closest<HTMLElement>(".aly-catalog-card")!;
+  await user.click(await within(card).findByRole("button", { name: "Use model" }));
 
-  expect(await screen.findByRole("alert")).toHaveTextContent("The installed SoulX ledger changed.");
+  expect(await within(card).findByRole("alert")).toHaveTextContent("The installed SoulX ledger changed.");
   expect(localModelSetupSave).not.toHaveBeenCalled();
   expect(screen.getByRole("radio", { name: /SoulX-FlashHead Pro/i })).not.toBeChecked();
-  expect(screen.getByRole("button", { name: "Use model" })).toBeEnabled();
+  expect(within(card).getByRole("button", { name: "Use model" })).toBeEnabled();
 });

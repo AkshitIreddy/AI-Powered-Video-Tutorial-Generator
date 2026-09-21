@@ -141,6 +141,7 @@ body .federated-catalog-panel .aly-catalog-shell { border-radius: 0; background:
 .aly-catalog-card__actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: auto; padding: 12px 17px 16px; }
 .aly-catalog-card__actions .aly-catalog-button { flex: 1 1 120px; min-width: 0; font-size: 11px; }
 .aly-catalog-card__actions .aly-catalog-button:not(.aly-catalog-button--quiet) { flex-basis: 100%; }
+.aly-catalog-card__action-error { flex: 1 0 100%; margin: 2px 0 0; color: var(--rose, #ee6d9f); font-size: 10px; line-height: 1.45; }
 .aly-catalog-empty { display: grid; justify-items: center; padding: 60px 24px; border: 1px dashed var(--line-strong, #cec7dc); border-radius: 16px; background: var(--surface, #fff); text-align: center; }
 .aly-catalog-empty h3 { margin: 13px 0 5px; }
 .aly-catalog-empty p { max-width: 560px; margin: 0; color: var(--aly-catalog-muted); }
