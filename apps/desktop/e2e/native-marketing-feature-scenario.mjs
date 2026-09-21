@@ -2,7 +2,7 @@ import { expect } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, readFile, stat } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -270,6 +270,7 @@ export async function runNativeMarketingFeatureScenario({
     actionTimeoutMs,
     jobTimeoutMs,
   });
+  const cleanEditorExport = await preserveCaptionFreeTutorialExport({ tutorial, runRoot });
   const presenter = await exerciseCustomPresenter({
     page,
     invokeNative,
@@ -339,25 +340,62 @@ export async function runNativeMarketingFeatureScenario({
       id: tutorial.identity.projectId,
       directory: tutorial.identity.projectDirectory,
       title: tutorial.title,
-      cleanEditorRenderPath: finalEditorExport.outputPath,
-      cleanEditorRenderSha256: finalEditorExport.outputSha256,
+      cleanEditorRenderPath: cleanEditorExport.outputPath,
+      cleanEditorRenderSha256: cleanEditorExport.outputSha256,
+      captionsBurnedIn: false,
       captionsPreservedInProject: tutorial.captionsPreservedInProject,
+      reviewEditorRenderPath: finalEditorExport.outputPath,
+      reviewEditorRenderSha256: finalEditorExport.outputSha256,
     },
     soulx,
     managedPackageActivation: activation,
     modelEvidence,
     presenter,
     music,
+    cleanEditorExport,
     finalEditorExport,
     capture,
     captureHook: {
       projectTitle: tutorial.title,
-      cleanEditorRenderPath: finalEditorExport.outputPath,
+      cleanEditorRenderPath: cleanEditorExport.outputPath,
       nativeProjectId: tutorial.identity.projectId,
       nativeProjectDirectory: tutorial.identity.projectDirectory,
       requiredViews: ["Review", "Studio advanced editor", "Plan presenters", "Models & providers", "Export"],
       note: "Pass this receipt and the validated final asset manifest to buildMarketingNativeCaptureTimeline. It is not a recorded or published final by itself.",
     },
+  };
+}
+
+export async function preserveCaptionFreeTutorialExport({ tutorial, runRoot }) {
+  if (tutorial?.actualNativeEditorRender !== true || tutorial.captionsBurnedIn !== false
+    || tutorial.captionsPreservedInProject !== true || !tutorial.outputPath
+    || !/^[0-9a-f]{64}$/u.test(tutorial.outputSha256 ?? "")
+    || !tutorial.probe?.video || !tutorial.probe?.audio || !Number.isFinite(tutorial.probe?.durationSeconds)) {
+    throw new Error("The first native tutorial export is not a verified caption-free render");
+  }
+  const sourcePath = path.resolve(tutorial.outputPath);
+  const source = await stat(sourcePath);
+  if (!source.isFile() || source.size <= 0 || await sha256File(sourcePath) !== tutorial.outputSha256) {
+    throw new Error("The first native caption-free render changed before preservation");
+  }
+  await mkdir(runRoot, { recursive: true });
+  const extension = path.extname(sourcePath) || ".webm";
+  const outputPath = path.join(runRoot, `native-tutorial.caption-free${extension}`);
+  await copyFile(sourcePath, outputPath);
+  const preserved = await stat(outputPath);
+  const outputSha256 = await sha256File(outputPath);
+  if (!preserved.isFile() || preserved.size !== source.size || outputSha256 !== tutorial.outputSha256) {
+    throw new Error("The preserved native caption-free render does not match its source bytes");
+  }
+  return {
+    operation: "preserve_caption_free_native_tutorial_export",
+    outputPath,
+    outputSha256,
+    outputBytes: preserved.size,
+    probe: tutorial.probe,
+    actualNativeEditorRender: true,
+    captionsBurnedIn: false,
+    captionsPreservedInProject: true,
   };
 }
 
@@ -496,9 +534,10 @@ async function renderAcceptedMusicTimeline({ page, invokeNative, identity, proje
   }
   const saved = await invokeNative(page, "project_snapshot_get", identity);
   const musicClips = saved.snapshot?.editorDocument?.tracks?.find((track) => track.kind === "music")?.clips ?? [];
+  const captionTrack = saved.snapshot?.editorDocument?.tracks?.find((track) => track.kind === "captions");
   const persisted = musicClips.find((entry) => entry.name === music.title);
   if (!persisted || persisted.timelineRange?.startFrame !== 0 || persisted.timelineRange?.durationFrames !== durationFrames
-    || persisted.audio?.muted || persisted.audio?.volumeDb !== -18) {
+    || persisted.audio?.muted || persisted.audio?.volumeDb !== -18 || !captionTrack || captionTrack.hidden === true) {
     throw new Error("The accepted music did not persist as the exact audible full-timeline editor clip");
   }
   const screenshot = path.join(runRoot, "feature-05-music-track-exported.png");
@@ -513,6 +552,8 @@ async function renderAcceptedMusicTimeline({ page, invokeNative, identity, proje
     outputPath,
     outputSha256: await sha256File(outputPath),
     probe,
+    captionsBurnedIn: true,
+    musicBurnedIn: true,
     musicClip: { id: persisted.id, assetId: persisted.assetId, startFrame: 0, durationFrames, volumeDb: -18 },
     screenshot,
   };

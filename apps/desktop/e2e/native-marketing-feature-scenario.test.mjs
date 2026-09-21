@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   assertSoulxManagedStart,
   assertSoulxNativeReadiness,
+  preserveCaptionFreeTutorialExport,
   preflightSoulxHydratedCache,
   soulxInstallContract,
   soulxModelContract,
@@ -60,6 +61,38 @@ test("SoulX readiness mirrors the native download, setup, and presenter-status D
   assert.equal(receipt.selectedForPortraitAnimation, true);
   assert.equal(receipt.selectedForLipSync, true);
   assert.equal(receipt.runtimeStatusCount, 1);
+});
+
+test("preserves the first caption-free native export before the feature render can overwrite it", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "alystria-clean-native-export-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const sourcePath = path.join(root, "project", "exports", "timeline.webm");
+  await mkdir(path.dirname(sourcePath), { recursive: true });
+  const original = Buffer.from("first-real-caption-free-native-render");
+  await writeFile(sourcePath, original);
+  const receipt = await preserveCaptionFreeTutorialExport({
+    tutorial: {
+      actualNativeEditorRender: true,
+      captionsBurnedIn: false,
+      captionsPreservedInProject: true,
+      outputPath: sourcePath,
+      outputSha256: sha256(original),
+      probe: { durationSeconds: 22.18, video: { codec_name: "vp9" }, audio: { codec_name: "opus" } },
+    },
+    runRoot: path.join(root, "evidence"),
+  });
+  await writeFile(sourcePath, "later music and caption render");
+  assert.equal(receipt.captionsBurnedIn, false);
+  assert.equal(receipt.captionsPreservedInProject, true);
+  assert.equal(receipt.outputSha256, sha256(original));
+  assert.deepEqual(await readFile(receipt.outputPath), original);
+});
+
+test("refuses to relabel a captioned native export as clean", async () => {
+  await assert.rejects(() => preserveCaptionFreeTutorialExport({
+    tutorial: { actualNativeEditorRender: true, captionsBurnedIn: true },
+    runRoot: "unused",
+  }), /not a verified caption-free render/);
 });
 
 test("SoulX readiness rejects an installed package whose primary runtime identity differs", () => {

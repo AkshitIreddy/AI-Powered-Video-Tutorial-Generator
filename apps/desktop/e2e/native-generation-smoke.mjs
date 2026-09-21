@@ -299,13 +299,14 @@ try {
       modelDownloadsStarted: feature.modelDownloadsStarted,
       projectId: feature.project.id,
       relativeProjectDirectory: containedRelativePath(projectsPath, feature.project.directory, "native marketing feature project"),
-      relativeMediaPath: containedRelativePath(feature.project.directory, feature.project.cleanEditorRenderPath, "native marketing feature render"),
+      relativeMediaPath: containedRelativePath(feature.project.directory, feature.project.reviewEditorRenderPath, "native marketing feature Review render"),
+      cleanMediaEvidencePath: feature.project.cleanEditorRenderPath,
       featureScenario: {
         ...feature,
         project: {
           ...feature.project,
           directory: undefined,
-          cleanEditorRenderPath: undefined,
+          reviewEditorRenderPath: undefined,
         },
       },
       packageManifest: {
