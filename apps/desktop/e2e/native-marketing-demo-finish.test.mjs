@@ -1,6 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { balanceMarketingCaption, buildMarketingFinishPlan, inspectAnimatedWebp, wrapMarketingCaption } from "./native-marketing-demo-finish.mjs";
+import { execFile } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import { balanceMarketingCaption, buildMarketingFinishPlan, inspectAnimatedWebp, renderVideoSegment, wrapMarketingCaption } from "./native-marketing-demo-finish.mjs";
+
+test("30 fps actor cuts retain wall-clock timing at MP4 and WebP frame rates", { skip: !process.env.MARKETING_TEST_FFMPEG }, async () => {
+  const ffmpegPath = process.env.MARKETING_TEST_FFMPEG;
+  const exec = promisify(execFile);
+  const { stdout: encoders } = await exec(ffmpegPath, ["-hide_banner", "-encoders"], { windowsHide: true });
+  const encoder = /\blibx264\b/u.test(encoders) ? "libx264" : "libopenh264";
+  const directory = await mkdtemp(path.join(os.tmpdir(), "marketing-timebase-"));
+  try {
+    const source = path.join(directory, "thirty-fps.mkv");
+    const args = ["-hide_banner", "-loglevel", "error", "-y"];
+    for (const color of ["red", "lime", "blue"]) args.push("-f", "lavfi", "-i", `color=c=${color}:s=64x64:r=30:d=1`);
+    args.push("-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]", "-map", "[v]", "-c:v", "ffv1", source);
+    await exec(ffmpegPath, args, { windowsHide: true });
+    for (const fps of [25, 10]) {
+      const output = path.join(directory, `output-${fps}.mp4`);
+      await renderVideoSegment({ ffmpegPath, encoder, manifest: { assets: { nativeTutorialExport: { path: source } } }, segment: { id: "tutorial", source: "nativeTutorialExport", sourceIn: 0, sourceOut: 3, durationSeconds: 3, editorialZoom: 1 }, output, width: 64, height: 64, fps });
+      for (const [seconds, channel] of [[1.15, 1], [2.15, 2]]) {
+        const { stdout } = await exec(ffmpegPath, ["-v", "error", "-ss", String(seconds), "-i", output, "-frames:v", "1", "-vf", "scale=1:1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"], { windowsHide: true, encoding: "buffer" });
+        assert.ok(stdout[channel] > 200, `${fps} fps cut at ${seconds}s must retain the source color: ${[...stdout]}`);
+      }
+    }
+  } finally {
+    if (path.dirname(directory) === path.resolve(os.tmpdir()) && path.basename(directory).startsWith("marketing-timebase-")) await rm(directory, { recursive: true, force: true });
+  }
+});
 
 function fixtureManifest(overrides = {}) {
   const manifest = {

@@ -309,7 +309,7 @@ async function renderCaptionOverlays({ plan, directory, browserType }) {
   }
 }
 
-async function renderVideoSegment({ ffmpegPath, encoder, manifest, segment, output, captionLayers = [], width, height, fps, draftWatermark }) {
+export async function renderVideoSegment({ ffmpegPath, encoder, manifest, segment, output, captionLayers = [], width, height, fps, draftWatermark }) {
   const source = segment.source === "nativeTutorialExport" ? manifest.assets.nativeTutorialExport.path : manifest.assets.nativeUiCapture.path;
   const inputArgs = segment.source === "nativeUiCaptureStill"
     ? ["-ss", String(segment.sourceSeconds), "-i", source]
@@ -324,7 +324,10 @@ async function renderVideoSegment({ ffmpegPath, encoder, manifest, segment, outp
   filters.push(`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`);
   // Extend the decoded range before zoompan. When tpad followed zoompan, the
   // filter stopped with the source and short segments by up to one hold.
-  filters.push(`tpad=stop_mode=clone:stop_duration=${segment.durationSeconds},trim=duration=${segment.durationSeconds},setpts=PTS-STARTPTS`);
+  // zoompan d=1 consumes one input frame per output frame. Resample by timestamps
+  // first, otherwise 30 fps native footage runs 1.2x slow at 25 fps and 3x slow
+  // in the 10 fps WebP, moving presenter cuts away from their narration.
+  filters.push(`fps=${fps},tpad=stop_mode=clone:stop_duration=${segment.durationSeconds},trim=duration=${segment.durationSeconds},setpts=PTS-STARTPTS`);
   filters.push(`zoompan=z='${zoomExpression}':x='max(0,min(iw-iw/zoom,${focusX}*iw-iw/zoom/2))':y='max(0,min(ih-ih/zoom,${focusY}*ih-ih/zoom/2))':d=1:s=${width}x${height}:fps=${fps}`);
   const args = ["-hide_banner", "-loglevel", "error", "-y", ...inputArgs];
   for (const layer of captionLayers) {
