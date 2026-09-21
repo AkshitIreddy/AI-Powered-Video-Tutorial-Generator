@@ -1,20 +1,25 @@
-<p align="center">
-  <img src="docs/media/ai-video-tutorial-banner.png" alt="AI Video Tutorial Generator — a polished tutorial studio with illustrated lessons, presenters, narration, and a multitrack editor" width="960" />
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Platform-Windows-8C78C5?style=flat-square&amp;labelColor=30273F" alt="Windows" />
-  <img src="https://img.shields.io/badge/Status-local%20RC-D9A85F?style=flat-square&amp;labelColor=30273F" alt="Local release candidate" />
-  <a href="#local-and-cloud-options"><img src="https://img.shields.io/badge/AI-local%20%2B%20BYOK-8FB5A0?style=flat-square&amp;labelColor=30273F" alt="Local and bring-your-own-key AI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-C9B5ED?style=flat-square&amp;labelColor=30273F" alt="MIT License" /></a>
-</p>
-
 <h1 align="center">AI Video Tutorial Generator</h1>
+
+<a id="see-it-in-action"></a>
+
+<p align="center">
+  <img src="docs/media/ai-video-tutorial-demo.webp" alt="A short illustrated lesson with realistic, anime, and cartoon presenters, followed by the native resizable editor" width="960" />
+</p>
+<p align="center">
+  <a href="#watch-the-full-demo"><strong>▶ Watch the full 45-second demo with sound</strong></a>
+</p>
 
 <p align="center">
   <strong>Turn a question, topic, or source into a tutorial you can inspect and edit.</strong><br />
   Research, script, storyboard, narrate, animate presenters, refine the timeline,<br />
   and export from one Windows desktop workspace.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Windows-8C78C5?style=flat-square&amp;labelColor=30273F" alt="Windows" />
+  <a href="https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest"><img src="https://img.shields.io/badge/Download-v1.8.0-D9A85F?style=flat-square&amp;labelColor=30273F" alt="Download version 1.8.0" /></a>
+  <a href="#local-and-cloud-options"><img src="https://img.shields.io/badge/AI-local%20%2B%20BYOK-8FB5A0?style=flat-square&amp;labelColor=30273F" alt="Local and bring-your-own-key AI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-C9B5ED?style=flat-square&amp;labelColor=30273F" alt="MIT License" /></a>
 </p>
 
 <p align="center">
@@ -25,17 +30,6 @@
   <a href="#local-and-cloud-options"><strong>▸ AI options</strong></a>
   &nbsp;·&nbsp;
   <a href="#for-developers"><strong>▸ For developers</strong></a>
-  &nbsp;·&nbsp;
-  <a href="docs/README.md"><strong>▸ Documentation</strong></a>
-</p>
-
-<a id="see-it-in-action"></a>
-
-<p align="center">
-  <img src="docs/media/ai-video-tutorial-demo.webp" alt="A short illustrated lesson with realistic, anime, and cartoon presenters, followed by the native resizable editor" width="960" />
-</p>
-<p align="center">
-  <a href="#watch-the-full-demo"><strong>▶ Watch the full 45-second demo with sound</strong></a>
 </p>
 
 ---
@@ -82,8 +76,7 @@ SoulX-FlashHead Pro, including realistic, anime, cartoon, and kitten hosts. Thei
 for mouth anatomy, full blinks, identity, and background stability on a 12 GB NVIDIA laptop GPU.
 The other six current portraits remain available for still-image use while their exact animation
 routes are pending or incompatible.
-See the [current comparison](docs/validation/presenter-model-comparison-2026-09-21.md) for measured
-results and rejected alternatives. A successful short sample does not guarantee every new image
+Successful short samples do not guarantee every new image
 or long recording will animate well.
 
 You can upload a portrait or create one with a configured cloud or local image model, save it in
@@ -125,9 +118,8 @@ use an explicitly selected image route after you review the candidates.
 | Cloud text and research | Writing and research with Groq, Gemini, Mistral, OpenRouter, NVIDIA NIM, or another reviewed profile | Uses your key and the exact provider/model you select; no silent fallback |
 | Cloud images and licensed media | Optional generation or discovery through reviewed image and stock-media routes | Every accepted asset still keeps provenance, rights, and attribution |
 
-Several providers offer free or evaluation allowances. See the dated
-[free and trial provider guide](docs/providers/free-and-trial.md) for options and current-source
-links. Local inference uses your hardware and has no per-generation API charge.
+Several providers offer free or evaluation allowances. Local inference uses your hardware and has
+no per-generation API charge.
 
 <a id="watch-the-full-demo"></a>
 
@@ -137,18 +129,26 @@ https://github.com/user-attachments/assets/7dcfda19-0bb2-4c7f-bcf6-85edffde6c36
 
 ### Installation and requirements
 
-There is no public 2.0 installer yet. The current build is available only for local
-release-candidate evaluation; installation artifacts have not been published.
+**[Download the Windows installer](https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest/download/AI-Video-Tutorial-Generator_1.8.0_x64-setup.exe)** from the [latest release](https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest).
 
-The planned Windows baseline is:
+Run the installer and open **AI Video Tutorial Generator** from the Start menu. The core Python,
+Node, Chromium, and FFmpeg tools are bundled. Onboarding offers optional model downloads and cloud
+provider setup; no terminal or developer tools are required.
+
+The Windows baseline is:
 
 - 64-bit Windows 10 or 11 with Microsoft Edge WebView2;
 - 8 GB RAM minimum for desktop/cloud work, with 16 GB or more recommended;
 - about 25 GB free for the application and working files, plus any optional model packs;
 - an optional NVIDIA GPU for supported local generation and presenter runtimes.
 
-The final installer must not require Node.js, Python, Rust, Git, or a manually started model server.
-Contributors building the current candidate should use the setup below.
+The app checks for updates automatically on launch and every six hours. When one is available,
+choose **Update and restart**; pending edits are saved before the signed installer runs.
+You can also check manually in **Settings & diagnostics**. Project files and downloaded models
+live separately from the installed application and remain in place during updates.
+
+The installer is not Authenticode-signed, so Windows may show an unknown-publisher prompt.
+Update packages and the bundled runtime have separate cryptographic signatures.
 
 ## For developers
 
@@ -180,7 +180,7 @@ Python pipeline — sole project database writer
 | `packages/themes` | Theme packs, starter kits, and the bundled presenter catalog |
 | `services/pipeline` | Projects, evidence, generation workflows, providers, presenter routing, QA, and exports |
 | `services/renderer` | Deterministic Chromium frames and media render planning |
-| `docs` | Architecture decisions, setup, provider policy, research, and acceptance evidence |
+| `docs/media` | README artwork, demo video, and media provenance |
 
 The renderer does not receive unrestricted filesystem, process, network, or credential authority.
 The Rust host supervises private workers, and the Python pipeline is the only writer to a project's
@@ -220,29 +220,19 @@ Default tests use deterministic fixtures and do not prove a live provider, GPU r
 WebView2 flow, clean installation, or final media quality. Changes to those surfaces need their
 corresponding bounded native or live acceptance run and direct visual or audio inspection.
 
-### Build a local Windows candidate
+### Build a Windows installer
 
 ```powershell
 .\scripts\build-windows-sidecar.ps1
 corepack pnpm package:desktop
 ```
 
-This creates local artifacts only. It does not publish a release, bundle model weights, or authorize
-distribution. Runtime packs and model downloads stay separately pinned and verified.
-
-### Documentation
-
-- [Documentation map](docs/README.md)
-- [Architecture overview](docs/architecture/overview.md)
-- [Project format](docs/architecture/project-format.md)
-- [Windows setup](docs/setup/windows.md)
-- [Rendering](docs/architecture/rendering.md)
-- [Provider and model policy](docs/providers/provider-and-model-policy.md)
-- [Security and privacy](docs/security/security-and-privacy.md)
-- [Accessibility](docs/accessibility.md)
-- [Testing and evaluation](docs/testing/evaluation.md)
-- [Contributing](docs/contributing.md)
-- [Release policy](docs/release-policy.md)
+The commands above build the desktop shell. For a standalone installer, first build the renderer
+and run `scripts/stage-windows-release.mjs` with the hash-pinned runtime root, staging directory,
+private signing-key directory, and built worker. Set `TAURI_SIGNING_PRIVATE_KEY` to the existing
+updater key, then build with `tauri build --bundles nsis --config <staging>/tauri.release.json`.
+The runtime and updater public keys are tracked; private keys must be retained securely outside
+the repository for future updates. Optional model weights remain separate downloads.
 
 ### License
 
