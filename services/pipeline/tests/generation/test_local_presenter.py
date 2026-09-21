@@ -43,6 +43,8 @@ from alystria.generation.local_presenter import (
     PresenterProcessResult,
     PresenterWorkerContract,
     SubprocessPresenterCommandRunner,
+    _ordinary_windows_worker_path,
+    _presenter_worker_path,
     _subprocess_environment_path,
     load_local_presenter_media_client,
 )
@@ -459,6 +461,48 @@ def test_presenter_environment_path_normalizes_windows_extended_prefixes() -> No
     assert (
         _subprocess_environment_path(Path(r"\\?\UNC\server\share\home")) == r"\\server\share\home"
     )
+
+
+def test_soulx_worker_paths_drop_only_supported_windows_namespace_prefixes() -> None:
+    assert (
+        _ordinary_windows_worker_path(r"\\?\E:\temp\Alystria Models\Presenter", "runtime")
+        == r"E:\temp\Alystria Models\Presenter"
+    )
+    assert (
+        _ordinary_windows_worker_path(r"\\?\UNC\server\share\Alystria Models", "runtime")
+        == r"\\server\share\Alystria Models"
+    )
+    assert _ordinary_windows_worker_path(r"E:\Alystria Models", "runtime") == (
+        r"E:\Alystria Models"
+    )
+    with pytest.raises(LocalPresenterPolicyError, match="unsupported device path"):
+        _ordinary_windows_worker_path(r"\\.\PhysicalDrive0", "runtime")
+    with pytest.raises(LocalPresenterPolicyError, match="absolute drive or UNC"):
+        _ordinary_windows_worker_path(
+            r"\\?\Volume{00000000-0000-0000-0000-000000000000}\Models",
+            "runtime",
+        )
+    with pytest.raises(LocalPresenterPolicyError, match="shorter directory"):
+        _ordinary_windows_worker_path("E:\\" + "nested\\" * 40 + "model.bin", "runtime")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended paths are platform-specific")
+def test_soulx_worker_path_opens_upstream_style_mixed_join(tmp_path: Path) -> None:
+    weights = tmp_path / "SoulX-FlashHead-1_3B" / "VAE_Wan" / "Wan2.1_VAE.pth"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"reviewed-vae")
+    checkpoint_root = weights.parents[1]
+    verbatim_root = Path("\\\\?\\" + str(checkpoint_root.resolve()))
+
+    ordinary = _presenter_worker_path(verbatim_root, "soulx-flashhead-pro", "checkpoint root")
+    upstream_spelling = ordinary + "/VAE_Wan/Wan2.1_VAE.pth"
+    invalid_prefixed_spelling = str(verbatim_root) + "/VAE_Wan/Wan2.1_VAE.pth"
+
+    assert not ordinary.startswith("\\\\?\\")
+    with pytest.raises(OSError), open(invalid_prefixed_spelling, "rb") as stream:
+        stream.read()
+    with open(upstream_spelling, "rb") as stream:
+        assert stream.read() == b"reviewed-vae"
 
 
 def test_managed_worker_returns_ffprobe_validated_video_generated_media(tmp_path: Path) -> None:

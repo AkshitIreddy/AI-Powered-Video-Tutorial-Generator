@@ -21,7 +21,7 @@ from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Protocol, cast
 
 from alystria.gpu_guard import GpuExecutionGuard, GpuGuardError
@@ -839,20 +839,35 @@ class LocalPresenterMediaClient:
                 "seed": seed,
                 "inputs": {
                     "portrait": {
-                        "path": str(portrait_path),
+                        "path": _presenter_worker_path(
+                            portrait_path, self.runtime.model_id, "portrait input"
+                        ),
                         "sha256": profile.portrait_artifact_hash,
                         "mediaType": portrait["mediaType"],
                     },
                     "audio": {
-                        "path": str(narration_path),
+                        "path": _presenter_worker_path(
+                            narration_path, self.runtime.model_id, "narration input"
+                        ),
                         "sha256": narration_hash,
                         "mediaType": narration["mediaType"],
                     },
                 },
-                "workspace": {"path": str(workspace_root)},
-                "output": {"path": str(output_path), "mediaType": "video/mp4"},
+                "workspace": {
+                    "path": _presenter_worker_path(
+                        workspace_root, self.runtime.model_id, "attempt workspace"
+                    )
+                },
+                "output": {
+                    "path": _presenter_worker_path(
+                        output_path, self.runtime.model_id, "presenter output"
+                    ),
+                    "mediaType": "video/mp4",
+                },
                 "progress": {
-                    "path": str(progress_path),
+                    "path": _presenter_worker_path(
+                        progress_path, self.runtime.model_id, "progress receipt"
+                    ),
                     "mediaType": "application/x-ndjson",
                     "schemaVersion": 1,
                 },
@@ -861,9 +876,15 @@ class LocalPresenterMediaClient:
                 contract = self.runtime.worker_contract
                 job_manifest["workerContract"] = {
                     "contractId": contract.contract_id,
-                    "entrypoint": _pin_manifest(contract.entrypoint),
+                    "entrypoint": _pin_manifest(
+                        contract.entrypoint, model_id=self.runtime.model_id
+                    ),
                     "files": [
-                        {"role": item.role, **_pin_manifest(item.pin)} for item in contract.files
+                        {
+                            "role": item.role,
+                            **_pin_manifest(item.pin, model_id=self.runtime.model_id),
+                        }
+                        for item in contract.files
                     ],
                 }
             if self.runtime.gpu_lease is not None:
@@ -874,7 +895,11 @@ class LocalPresenterMediaClient:
                     raise LocalPresenterRuntimeError("Presenter encoder policy disappeared")
                 job_manifest["encoding"] = {
                     **encoder_selection.as_manifest(),
-                    "ffmpegPath": str(encoder_policy.ffmpeg_path),
+                    "ffmpegPath": _presenter_worker_path(
+                        encoder_policy.ffmpeg_path,
+                        self.runtime.model_id,
+                        "presenter FFmpeg",
+                    ),
                     "ffmpegSha256": encoder_policy.ffmpeg_sha256,
                 }
             manifest_path = _guarded_child(attempt_root, attempt_root / "presenter-job.json")
@@ -913,7 +938,13 @@ class LocalPresenterMediaClient:
                     try:
                         result = self.runner.run(
                             argv,
-                            cwd=runtime_root,
+                            cwd=Path(
+                                _presenter_worker_path(
+                                    runtime_root,
+                                    self.runtime.model_id,
+                                    "presenter runtime root",
+                                )
+                            ),
                             environment=self._safe_environment(workspace_root),
                             timeout_seconds=self.runtime.timeout_seconds,
                             cancelled=self._is_cancelled,
@@ -1393,11 +1424,17 @@ class LocalPresenterMediaClient:
         seed: int,
     ) -> tuple[str, ...]:
         replacements = {
-            "{portrait}": str(portrait),
-            "{audio}": str(audio),
-            "{output}": str(output),
-            "{workspace}": str(workspace),
-            "{job_manifest}": str(job_manifest),
+            "{portrait}": _presenter_worker_path(
+                portrait, self.runtime.model_id, "portrait argument"
+            ),
+            "{audio}": _presenter_worker_path(audio, self.runtime.model_id, "narration argument"),
+            "{output}": _presenter_worker_path(output, self.runtime.model_id, "output argument"),
+            "{workspace}": _presenter_worker_path(
+                workspace, self.runtime.model_id, "workspace argument"
+            ),
+            "{job_manifest}": _presenter_worker_path(
+                job_manifest, self.runtime.model_id, "job manifest argument"
+            ),
             "{seed}": str(seed),
         }
         arguments: list[str] = []
@@ -1408,7 +1445,12 @@ class LocalPresenterMediaClient:
             if not value or any(character in value for character in ("\x00", "\r", "\n")):
                 raise LocalPresenterPolicyError("Expanded presenter argument is invalid")
             arguments.append(value)
-        return (str(self.runtime.executable.path.resolve(strict=True)), *arguments)
+        executable = _presenter_worker_path(
+            self.runtime.executable.path.resolve(strict=True),
+            self.runtime.model_id,
+            "worker executable",
+        )
+        return (executable, *arguments)
 
     def _safe_environment(self, writable_workspace: Path | None = None) -> dict[str, str]:
         environment = {
@@ -1990,6 +2032,44 @@ def _subprocess_environment_path(path: Path) -> str:
     return value
 
 
+def _presenter_worker_path(path: Path, model_id: str, label: str) -> str:
+    r"""Pass SoulX verified paths to third-party libraries as ordinary Win32 paths.
+
+    The desktop broker canonicalizes its portable root with the ``\\?\``
+    namespace. SoulX dependencies append POSIX separators to model paths, which
+    produces an invalid mixed spelling such as ``\\?\E:\models/VAE_Wan``.
+    Integrity and containment checks run before this conversion; this function
+    changes only the spelling passed across the worker process boundary.
+    """
+
+    value = str(path)
+    if os.name != "nt" or model_id not in SOULX_MODELS:
+        return value
+    return _ordinary_windows_worker_path(value, label)
+
+
+def _ordinary_windows_worker_path(value: str, label: str) -> str:
+    """Normalize one already-verified path without resolving or touching I/O."""
+
+    if value.startswith("\\\\?\\UNC\\"):
+        ordinary = "\\\\" + value[8:]
+    elif value.startswith("\\\\?\\"):
+        ordinary = value[4:]
+    elif value.startswith("\\\\.\\"):
+        raise LocalPresenterPolicyError(f"SoulX {label} uses an unsupported device path")
+    else:
+        ordinary = value
+    parsed = PureWindowsPath(ordinary)
+    if not parsed.is_absolute() or not parsed.drive:
+        raise LocalPresenterPolicyError(f"SoulX {label} is not an absolute drive or UNC path")
+    if len(ordinary) >= 260:
+        raise LocalPresenterPolicyError(
+            f"SoulX {label} exceeds the supported Windows path length; move the portable "
+            "installation or project to a shorter directory"
+        )
+    return ordinary
+
+
 def _safe_name(value: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_-]+", "-", value).strip("-_")
     return (safe or hashlib.sha256(value.encode()).hexdigest()[:16])[:96]
@@ -2032,8 +2112,13 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _pin_manifest(pin: PinnedPresenterFile) -> dict[str, str]:
-    return {"path": str(pin.path.resolve(strict=True)), "sha256": pin.sha256}
+def _pin_manifest(pin: PinnedPresenterFile, *, model_id: str) -> dict[str, str]:
+    return {
+        "path": _presenter_worker_path(
+            pin.path.resolve(strict=True), model_id, "pinned runtime file"
+        ),
+        "sha256": pin.sha256,
+    }
 
 
 def _write_json_atomic(path: Path, value: Mapping[str, object]) -> None:
