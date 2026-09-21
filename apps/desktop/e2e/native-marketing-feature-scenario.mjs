@@ -660,6 +660,7 @@ async function captureSoulxModelEvidence(page, runRoot, soulx, timeout) {
 
 async function exerciseCustomPresenter({ page, invokeNative, invokeNativeWithoutInput, identity, projectTitle, portraitPath, portraitSha256, displayName, runRoot, actionTimeoutMs, jobTimeoutMs }) {
   await openExactProject(page, projectTitle, identity, actionTimeoutMs, false);
+  await returnFromNativeEditorIfOpen(page, actionTimeoutMs);
   const projectNavigation = page.getByRole("navigation", { name: /project workspace/iu });
   await projectNavigation.getByRole("button", { name: /^Plan$/iu }).click();
   await page.getByRole("button", { name: /^Presenters$/u }).click();
@@ -698,6 +699,15 @@ async function exerciseCustomPresenter({ page, invokeNative, invokeNativeWithout
     throw new Error("The exact custom portrait did not retain an accepted SoulX animation receipt");
   }
   return { entryId: accepted.id, displayName, portraitSha256, playback, previewScreenshot, animationReview: accepted.animationReview };
+}
+
+export async function returnFromNativeEditorIfOpen(page, timeout) {
+  const editor = page.getByRole("dialog", { name: "Integrated advanced video editor" });
+  if (!await editor.isVisible()) return { editorWasOpen: false, returnedThroughUi: false };
+  const returnButton = editor.getByRole("button", { name: /^Return to scene/iu });
+  await returnButton.click();
+  await editor.waitFor({ state: "hidden", timeout });
+  return { editorWasOpen: true, returnedThroughUi: true };
 }
 
 async function exerciseMusicBrowser({ page, invokeNative, identity, query, mood, runRoot, actionTimeoutMs, jobTimeoutMs }) {

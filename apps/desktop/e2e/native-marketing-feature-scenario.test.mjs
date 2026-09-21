@@ -11,6 +11,7 @@ import {
   assertSoulxNativeReadiness,
   preserveCaptionFreeTutorialExport,
   preflightSoulxHydratedCache,
+  returnFromNativeEditorIfOpen,
   soulxInstallContract,
   soulxModelContract,
 } from "./native-marketing-feature-scenario.mjs";
@@ -72,6 +73,29 @@ test("music evidence separates one user search from every durable Openverse HTTP
   assert.equal(receipt.searchOperationCount, 1);
   assert.equal(receipt.httpQueryCount, 3);
   assert.deepEqual(receipt.queriesAttempted, ["Rayleigh scattering", "curious", "instrumental"]);
+});
+
+test("workspace navigation exits the real full-screen editor before clicking Plan", async () => {
+  const calls = [];
+  const editor = {
+    async isVisible() { calls.push("editor-visible"); return true; },
+    getByRole(role, options) {
+      assert.equal(role, "button");
+      assert.match(String(options.name), /Return to scene/u);
+      return { async click() { calls.push("return-click"); } };
+    },
+    async waitFor(options) { calls.push(`editor-${options.state}-${options.timeout}`); },
+  };
+  const page = {
+    getByRole(role, options) {
+      assert.equal(role, "dialog");
+      assert.equal(options.name, "Integrated advanced video editor");
+      return editor;
+    },
+  };
+  const result = await returnFromNativeEditorIfOpen(page, 45_000);
+  assert.deepEqual(result, { editorWasOpen: true, returnedThroughUi: true });
+  assert.deepEqual(calls, ["editor-visible", "return-click", "editor-hidden-45000"]);
 });
 
 test("SoulX readiness mirrors the native download, setup, and presenter-status DTOs", () => {
