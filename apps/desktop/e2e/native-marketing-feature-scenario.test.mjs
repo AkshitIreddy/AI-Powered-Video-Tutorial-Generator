@@ -14,6 +14,7 @@ import {
   returnFromNativeEditorIfOpen,
   soulxInstallContract,
   soulxModelContract,
+  waitForPresenterAnimationReview,
 } from "./native-marketing-feature-scenario.mjs";
 
 function readyInput() {
@@ -96,6 +97,50 @@ test("workspace navigation exits the real full-screen editor before clicking Pla
   const result = await returnFromNativeEditorIfOpen(page, 45_000);
   assert.deepEqual(result, { editorWasOpen: true, returnedThroughUi: true });
   assert.deepEqual(calls, ["editor-visible", "return-click", "editor-hidden-45000"]);
+});
+
+test("presenter preview fails immediately on the actionable native warning toast", async () => {
+  let waits = 0;
+  const failure = {
+    async isVisible() { return true; },
+    async innerText() { return "Animation preview unavailable\nInvalid worker method: is not allow-listed"; },
+  };
+  const page = {
+    locator(selector) {
+      assert.equal(selector, ".toast.warning");
+      return {
+        filter(options) {
+          assert.equal(options.hasText, "Animation preview unavailable");
+          return { last() { return failure; } };
+        },
+      };
+    },
+    async waitForTimeout() { waits += 1; },
+  };
+  await assert.rejects(() => waitForPresenterAnimationReview({
+    page,
+    review: { async isVisible() { return false; } },
+    timeoutMs: 20_000,
+  }), /Animation preview unavailable Invalid worker method: is not allow-listed/u);
+  assert.equal(waits, 0);
+});
+
+test("presenter preview keeps waiting while a real native job is still running", async () => {
+  let reviewChecks = 0;
+  let waits = 0;
+  const page = {
+    locator() {
+      return { filter() { return { last() { return { async isVisible() { return false; } }; } }; } };
+    },
+    async waitForTimeout() { waits += 1; },
+  };
+  await waitForPresenterAnimationReview({
+    page,
+    review: { async isVisible() { reviewChecks += 1; return reviewChecks === 3; } },
+    timeoutMs: 20_000,
+    pollMs: 1,
+  });
+  assert.equal(waits, 2);
 });
 
 test("SoulX readiness mirrors the native download, setup, and presenter-status DTOs", () => {

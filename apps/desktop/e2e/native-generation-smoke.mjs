@@ -34,6 +34,7 @@ import {
   marketingDemoTitle,
 } from "./native-marketing-demo-edit.mjs";
 import { summarizeNativeWindowPlacement } from "./native-generation-report.mjs";
+import { canTolerateWmCloseHelperFailure, waitForSpawnExit } from "./native-process-lifecycle.mjs";
 
 // Opt-in real native acceptance. The cloud path uses the product's smallest
 // one-minute duration, stops before media unless planning produced three scenes,
@@ -3708,16 +3709,25 @@ async function closeBootstrapNative(current) {
 async function closeNative(current) {
   let closeError;
   try {
+    let wmCloseError = null;
     if (current.child.exitCode === null) {
-      await postWmClose(current.child.pid);
-      await Promise.race([new Promise((resolve) => current.child.once("exit", resolve)), delay(15_000)]);
+      try {
+        await postWmClose(current.child.pid);
+      } catch (error) {
+        wmCloseError = error;
+      }
+      await waitForSpawnExit(current.child, 15_000);
     }
     if (current.child.exitCode === null) {
       current.child.kill();
       throw new Error("Native app did not exit within 15 seconds of WM_CLOSE");
     }
     if (current.child.exitCode !== 0) throw new Error(`Native app exited with code ${current.child.exitCode}`);
-    if (!await waitForProcessExit(current.workerPid, 10_000)) throw new Error(`Native worker ${current.workerPid} remained alive after WM_CLOSE`);
+    const workerExited = await waitForProcessExit(current.workerPid, 10_000);
+    if (!workerExited) throw new Error(`Native worker ${current.workerPid} remained alive after WM_CLOSE`);
+    if (wmCloseError && !canTolerateWmCloseHelperFailure({ desktopExitCode: current.child.exitCode, workerExited })) {
+      throw wmCloseError;
+    }
     await waitForPortableWebViewExit(30_000);
   } catch (error) {
     closeError = error;

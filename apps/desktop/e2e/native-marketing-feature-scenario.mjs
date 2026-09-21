@@ -698,7 +698,7 @@ async function exerciseCustomPresenter({ page, invokeNative, invokeNativeWithout
   await persistedSelect.click();
   await page.getByRole("button", { name: "Preview animation", exact: true }).click();
   const review = page.getByRole("region", { name: `Animation preview for ${displayName}` });
-  await expect(review).toBeVisible({ timeout: jobTimeoutMs });
+  await waitForPresenterAnimationReview({ page, review, timeoutMs: jobTimeoutMs });
   const video = review.getByLabel(`Play ${displayName} animation preview`);
   await expect(video).toBeVisible();
   const playback = await verifyShortPreviewPlayback(video, soulxModelContract.minimumPreviewMs, soulxModelContract.maximumPreviewMs);
@@ -712,6 +712,20 @@ async function exerciseCustomPresenter({ page, invokeNative, invokeNativeWithout
     throw new Error("The exact custom portrait did not retain an accepted SoulX animation receipt");
   }
   return { entryId: accepted.id, displayName, portraitSha256, playback, previewScreenshot, animationReview: accepted.animationReview };
+}
+
+export async function waitForPresenterAnimationReview({ page, review, timeoutMs, pollMs = 150 }) {
+  const deadline = Date.now() + timeoutMs;
+  const failure = page.locator(".toast.warning").filter({ hasText: "Animation preview unavailable" }).last();
+  while (Date.now() < deadline) {
+    if (await review.isVisible()) return;
+    if (await failure.isVisible()) {
+      const detail = (await failure.innerText()).replace(/\s+/gu, " ").trim();
+      throw new Error(`Native presenter animation preview failed: ${detail}`);
+    }
+    await page.waitForTimeout(Math.min(pollMs, Math.max(1, deadline - Date.now())));
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for the native presenter animation review`);
 }
 
 export async function returnFromNativeEditorIfOpen(page, timeout) {
