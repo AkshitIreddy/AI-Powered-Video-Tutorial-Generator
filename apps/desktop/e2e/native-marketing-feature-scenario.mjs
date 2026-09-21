@@ -13,6 +13,7 @@ import {
   marketingFrameRate,
   openExactNativeProject,
   prepareMarketingTutorialInNativeEditor,
+  waitForDurableMarketingTimeline,
   validateMarketingAssetManifest,
 } from "./native-marketing-demo-edit.mjs";
 
@@ -302,6 +303,7 @@ export async function runNativeMarketingFeatureScenario({
     identity: tutorial.identity,
     projectTitle: tutorial.title,
     music,
+    timelineContract: tutorial.timelineContract,
     durationFrames: tutorial.timing.durationFrames,
     expectedDurationSeconds: tutorial.timing.durationSeconds,
     ffprobePath,
@@ -507,7 +509,7 @@ async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, ru
   };
 }
 
-async function renderAcceptedMusicTimeline({ page, invokeNative, identity, projectTitle, music, durationFrames, expectedDurationSeconds, ffprobePath, runRoot, actionTimeoutMs, jobTimeoutMs }) {
+async function renderAcceptedMusicTimeline({ page, invokeNative, identity, projectTitle, music, timelineContract, durationFrames, expectedDurationSeconds, ffprobePath, runRoot, actionTimeoutMs, jobTimeoutMs }) {
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator(".runtime-badge")).toContainText("Worker ready", { timeout: actionTimeoutMs });
   await openExactProject(page, projectTitle, identity, actionTimeoutMs, true);
@@ -528,6 +530,12 @@ async function renderAcceptedMusicTimeline({ page, invokeNative, identity, proje
   await editor.getByRole("button", { name: "Inspector", exact: true }).click();
   await setEditorNumber(editor, "End frame", durationFrames);
   await setEditorNumber(editor, "Volume dB", -18);
+  const saved = await waitForDurableMarketingTimeline({
+    page, editor, invokeNative, identity,
+    contract: { ...timelineContract, captionsHidden: false, music: { name: music.title, durationFrames, volumeDb: -18 } },
+    timeoutMs: actionTimeoutMs,
+    label: "Music-backed marketing tutorial timeline",
+  });
   await editor.getByRole("button", { name: "Render timeline", exact: true }).click();
   const statusText = await waitForEditorRender(editor.locator(".aly-editor-shell__status"), jobTimeoutMs);
   const outputPath = statusText.match(/^Timeline rendered to (.+?)(?: ·|$)/u)?.[1];
@@ -536,7 +544,6 @@ async function renderAcceptedMusicTimeline({ page, invokeNative, identity, proje
   if (!probe.video || !probe.audio || Math.abs(probe.durationSeconds - expectedDurationSeconds) > 0.12) {
     throw new Error(`Music-backed native editor export has invalid streams or duration: ${JSON.stringify(probe)}`);
   }
-  const saved = await invokeNative(page, "project_snapshot_get", identity);
   const musicClips = saved.snapshot?.editorDocument?.tracks?.find((track) => track.kind === "music")?.clips ?? [];
   const captionTrack = saved.snapshot?.editorDocument?.tracks?.find((track) => track.kind === "captions");
   const persisted = musicClips.find((entry) => entry.name === music.title);
@@ -558,6 +565,7 @@ async function renderAcceptedMusicTimeline({ page, invokeNative, identity, proje
     probe,
     captionsBurnedIn: true,
     musicBurnedIn: true,
+    durableRevisionNumber: saved.revisionNumber,
     musicClip: { id: persisted.id, assetId: persisted.assetId, startFrame: 0, durationFrames, volumeDb: -18 },
     screenshot,
   };

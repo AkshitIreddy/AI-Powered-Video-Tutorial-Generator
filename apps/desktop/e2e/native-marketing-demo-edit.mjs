@@ -432,6 +432,79 @@ export function deriveMarketingPresenterTransform({
   return { x: round3(x), y: round3(y), scaleX: scale, scaleY: scale, desiredCenterX, desiredCenterY, renderedWidth: round3(width), renderedHeight: round3(height), bounds: Object.fromEntries(Object.entries(bounds).map(([key, value]) => [key, round3(value)])) };
 }
 
+export function inspectMarketingTimelineDocument(document, contract) {
+  const tracks = Array.isArray(document?.tracks) ? document.tracks : [];
+  const clipsFor = (kind) => tracks.find((track) => track.kind === kind)?.clips ?? [];
+  const ordered = (clips) => [...clips].sort((left, right) => left.timelineRange.startFrame - right.timelineRange.startFrame);
+  const exactRanges = (clips, ranges) => clips.length === ranges.length && ordered(clips).every((clip, index) => (
+    clip.timelineRange?.startFrame === ranges[index].startFrame
+    && clip.timelineRange?.durationFrames === ranges[index].durationFrames
+  ));
+  const overlapCount = (clips) => {
+    const sorted = ordered(clips);
+    return sorted.slice(1).filter((clip, index) => (
+      sorted[index].timelineRange.startFrame + sorted[index].timelineRange.durationFrames > clip.timelineRange.startFrame
+    )).length;
+  };
+  const sceneRanges = contract.timing.scenes.map((scene) => ({ startFrame: scene.startFrame, durationFrames: scene.endFrame - scene.startFrame }));
+  const presenterRanges = contract.presenters.map((presenter) => ({ startFrame: presenter.startFrame, durationFrames: presenter.endFrame - presenter.startFrame }));
+  const slides = clipsFor("slides");
+  const presenters = clipsFor("presenter");
+  const captions = clipsFor("captions");
+  const narration = clipsFor("narration");
+  const music = clipsFor("music");
+  const captionTrack = tracks.find((track) => track.kind === "captions");
+  const presenterDetailsMatch = presenters.length === contract.presenters.length && presenters.every((clip) => {
+    const expected = contract.presenters.find((candidate) => candidate.name === clip.name);
+    return expected && clip.timelineRange?.startFrame === expected.startFrame
+      && clip.timelineRange?.durationFrames === expected.endFrame - expected.startFrame
+      && clip.audio?.muted === true
+      && clip.transform?.x === contract.presenterTransform.x && clip.transform?.y === contract.presenterTransform.y
+      && clip.transform?.scaleX === contract.presenterTransform.scaleX && clip.transform?.scaleY === contract.presenterTransform.scaleY;
+  });
+  const captionsMatch = exactRanges(captions, sceneRanges) && ordered(captions).every((clip, index) => clip.text === contract.captions[index]);
+  const musicMatch = contract.music
+    ? music.length === 1 && music[0].name === contract.music.name && music[0].timelineRange?.startFrame === 0
+      && music[0].timelineRange?.durationFrames === contract.music.durationFrames
+      && music[0].audio?.muted !== true && music[0].audio?.volumeDb === contract.music.volumeDb
+    : music.length === 0;
+  const overlaps = Object.fromEntries(["slides", "presenter", "captions", "narration", "music"].map((kind) => [kind, overlapCount(clipsFor(kind))]));
+  const diagnostic = {
+    counts: Object.fromEntries(["slides", "presenter", "captions", "narration", "music"].map((kind) => [kind, clipsFor(kind).length])),
+    overlaps,
+    captionsHidden: captionTrack?.hidden ?? null,
+    exactSceneRanges: exactRanges(slides, sceneRanges),
+    exactPresenterRanges: exactRanges(presenters, presenterRanges),
+    presenterDetailsMatch,
+    captionsMatch,
+    narrationMatch: narration.length === 1 && narration[0].timelineRange?.startFrame === 0 && narration[0].timelineRange?.durationFrames === contract.timing.durationFrames,
+    musicMatch,
+  };
+  return {
+    matches: diagnostic.exactSceneRanges && diagnostic.exactPresenterRanges && diagnostic.presenterDetailsMatch
+      && diagnostic.captionsMatch && diagnostic.narrationMatch && diagnostic.musicMatch
+      && diagnostic.captionsHidden === contract.captionsHidden
+      && Object.values(overlaps).every((count) => count === 0),
+    diagnostic,
+  };
+}
+
+export async function waitForDurableMarketingTimeline({ page, editor, invokeNative, identity, contract, timeoutMs, label }) {
+  const saveStatus = editor.locator(".editor-save-status");
+  const deadline = Date.now() + timeoutMs;
+  let last = { saveStatus: null, diagnostic: null, revisionNumber: null };
+  while (Date.now() < deadline) {
+    const status = (await saveStatus.textContent().catch(() => null))?.trim() ?? null;
+    if (status?.startsWith("Save failed")) throw new Error(`${label} failed to save: ${status}`);
+    const saved = await invokeNative(page, "project_snapshot_get", identity);
+    const inspection = inspectMarketingTimelineDocument(saved.snapshot?.editorDocument, contract);
+    last = { saveStatus: status, diagnostic: inspection.diagnostic, revisionNumber: saved.revisionNumber ?? null };
+    if (status === "Timeline saved" && inspection.matches) return saved;
+    await page.waitForTimeout(150);
+  }
+  throw new Error(`${label} did not reach a settled durable editor revision: ${JSON.stringify(last)}`);
+}
+
 export async function prepareMarketingTutorialInNativeEditor({
   page,
   projectsPath,
@@ -508,6 +581,16 @@ export async function prepareMarketingTutorialInNativeEditor({
     await setInspectorNumber(editor, "End frame", scene.endFrame);
   }
   const presenterTransform = deriveMarketingPresenterTransform();
+  const timelineContract = {
+    timing,
+    presenters: presenterSources.map((presenter) => ({
+      name: path.basename(presenter.path),
+      startFrame: Math.round(presenter.startSeconds * marketingFrameRate),
+      endFrame: Math.round(presenter.endSeconds * marketingFrameRate),
+    })),
+    presenterTransform,
+    captions: assetManifest.teachingCaptions.map((caption) => caption.text),
+  };
   for (const presenter of presenterSources) {
     const startFrame = Math.round(presenter.startSeconds * marketingFrameRate);
     const endFrame = Math.round(presenter.endSeconds * marketingFrameRate);
@@ -560,6 +643,12 @@ export async function prepareMarketingTutorialInNativeEditor({
   const hideCaptions = editor.getByRole("button", { name: "Hide Captions", exact: true });
   await hideCaptions.click();
   await expect(hideCaptions).toHaveAttribute("aria-pressed", "true");
+  const captionFreeSaved = await waitForDurableMarketingTimeline({
+    page, editor, invokeNative, identity,
+    contract: { ...timelineContract, captionsHidden: true, music: null },
+    timeoutMs: actionTimeoutMs,
+    label: "Caption-free marketing tutorial timeline",
+  });
   await editor.getByRole("button", { name: "Render timeline" }).click();
   const statusText = await waitForEditorRender(editor.locator(".aly-editor-shell__status"), jobTimeoutMs);
   const outputPath = statusText.match(/^Timeline rendered to (.+?)(?: ·|$)/u)?.[1];
@@ -568,20 +657,18 @@ export async function prepareMarketingTutorialInNativeEditor({
   if (!probe.video || !probe.audio || Math.abs(probe.durationSeconds - timing.durationSeconds) > 0.12) throw new Error(`Marketing tutorial render has an invalid duration or streams: ${JSON.stringify(probe)}`);
   await hideCaptions.click();
   await expect(hideCaptions).toHaveAttribute("aria-pressed", "false");
-  await page.waitForTimeout(450);
-  const saved = await invokeNative(page, "project_snapshot_get", identity);
-  const document = saved.snapshot?.editorDocument;
-  const clips = document?.tracks?.flatMap((track) => track.clips ?? []) ?? [];
-  const captionTrack = document?.tracks?.find((track) => track.kind === "captions");
-  const presenterClips = clips.filter((clip) => clip.kind === "presenter");
-  if (clips.filter((clip) => clip.kind === "slides").length !== 3 || clips.filter((clip) => clip.kind === "captions").length !== 3
-    || presenterClips.length !== presenterSources.length || presenterClips.some((clip) => clip.audio?.muted !== true
-      || clip.transform?.x !== presenterTransform.x || clip.transform?.y !== presenterTransform.y
-      || clip.transform?.scaleX !== presenterTransform.scaleX || clip.transform?.scaleY !== presenterTransform.scaleY)
-    || clips.filter((clip) => clip.kind === "narration").length !== 1 || captionTrack?.hidden === true) {
-    throw new Error("Persisted marketing tutorial does not contain the three-scene presenter/narration/caption timeline");
-  }
-  return { identity, title: initialSnapshot.title, outputPath, outputSha256: await sha256File(outputPath), probe, timing, presenterTransform, actualNativeEditorRender: true, captionsBurnedIn: false, captionsPreservedInProject: true, fixtureUi: false };
+  const restoredCaptionSaved = await waitForDurableMarketingTimeline({
+    page, editor, invokeNative, identity,
+    contract: { ...timelineContract, captionsHidden: false, music: null },
+    timeoutMs: actionTimeoutMs,
+    label: "Restored-caption marketing tutorial timeline",
+  });
+  return {
+    identity, title: initialSnapshot.title, outputPath, outputSha256: await sha256File(outputPath), probe, timing, presenterTransform, timelineContract,
+    captionFreeRenderRevisionNumber: captionFreeSaved.revisionNumber,
+    restoredCaptionRevisionNumber: restoredCaptionSaved.revisionNumber,
+    actualNativeEditorRender: true, captionsBurnedIn: false, captionsPreservedInProject: true, fixtureUi: false,
+  };
 }
 
 export function buildMarketingNativeCaptureTimeline({ timeline, edit, projectTitle, state = {} }) {

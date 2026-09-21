@@ -10,6 +10,7 @@ import {
   deriveMarketingPresenterTransform,
   deriveSentenceSegmentsFromAsr,
   deriveAdaptiveMarketingEdit,
+  inspectMarketingTimelineDocument,
   marketingCaptionStyle,
   marketingTeachingScript,
   nativeProjectCardIdentityToken,
@@ -38,6 +39,46 @@ test("native project reopening prefers the exact persisted identity and rejects 
   assert.equal(resolveNativeProjectCardChoice({ identityMatches: 0, titleMatches: 1 }), "title");
   assert.throws(() => resolveNativeProjectCardChoice({ identityMatches: 0, titleMatches: 2 }), /title fallback matched 2/u);
   assert.throws(() => nativeProjectCardIdentityToken('project"unsafe'), /not safe/u);
+});
+
+test("durable marketing timeline inspection requires exact ranges, presenter transforms, and no overlap", () => {
+  const transform = { x: 550, y: 110, scaleX: 0.68, scaleY: 0.68 };
+  const contract = {
+    timing: {
+      durationFrames: 300,
+      scenes: [
+        { startFrame: 0, endFrame: 90 },
+        { startFrame: 90, endFrame: 180 },
+        { startFrame: 180, endFrame: 300 },
+      ],
+    },
+    presenters: [
+      { name: "emma.mp4", startFrame: 0, endFrame: 70 },
+      { name: "yuki.mp4", startFrame: 70, endFrame: 145 },
+      { name: "noah.mp4", startFrame: 145, endFrame: 225 },
+      { name: "chloe.mp4", startFrame: 225, endFrame: 300 },
+    ],
+    presenterTransform: transform,
+    captions: ["First", "Second", "Third"],
+    captionsHidden: false,
+    music: null,
+  };
+  const rangeClip = (kind, startFrame, endFrame, extra = {}) => ({ kind, timelineRange: { startFrame, durationFrames: endFrame - startFrame }, ...extra });
+  const document = {
+    tracks: [
+      { kind: "slides", clips: contract.timing.scenes.map((scene) => rangeClip("slides", scene.startFrame, scene.endFrame)) },
+      { kind: "presenter", clips: contract.presenters.map((presenter) => rangeClip("presenter", presenter.startFrame, presenter.endFrame, { name: presenter.name, transform, audio: { muted: true } })) },
+      { kind: "captions", hidden: false, clips: contract.timing.scenes.map((scene, index) => rangeClip("captions", scene.startFrame, scene.endFrame, { text: contract.captions[index] })) },
+      { kind: "narration", clips: [rangeClip("narration", 0, 300)] },
+      { kind: "music", clips: [] },
+    ],
+  };
+  assert.equal(inspectMarketingTimelineDocument(document, contract).matches, true);
+  document.tracks[1].clips[1].timelineRange.startFrame = 69;
+  const invalid = inspectMarketingTimelineDocument(document, contract);
+  assert.equal(invalid.matches, false);
+  assert.equal(invalid.diagnostic.overlaps.presenter, 1);
+  assert.equal(invalid.diagnostic.exactPresenterRanges, false);
 });
 
 test("adaptive edit follows verified narration durations and covers 35–50 seconds without a gap", () => {
