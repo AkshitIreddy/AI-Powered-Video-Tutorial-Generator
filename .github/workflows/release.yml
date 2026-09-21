@@ -1,0 +1,148 @@
+name: Release Windows installer
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build (for example v1.8.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Build, sign, and publish Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GH_REPO: ${{ github.repository }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_BUILD_JOBS: '3'
+      RELEASE_ROOT: ${{ runner.temp }}/release
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Validate requested tag
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw 'A stable vMAJOR.MINOR.PATCH tag is required.' }
+          git config --global core.longpaths true
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path $env:RELEASE_ROOT | Out-Null
+          $existing = gh release view $env:RELEASE_TAG --json body,isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if (-not $release.isDraft) { throw 'This version is already published. Choose a new version.' }
+            $body = $release.body
+          } else {
+            $previous = gh release view --json body,tagName | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot load the preceding release notes. Create a draft with notes first.' }
+            $body = $previous.body.Replace($previous.tagName, $env:RELEASE_TAG).Replace($previous.tagName.TrimStart('v'), $env:RELEASE_TAG.TrimStart('v'))
+            $body = $body -replace '(?m)^# AI Video Tutorial Generator v[\d.]+$', "# AI Video Tutorial Generator $env:RELEASE_TAG"
+          }
+          if ([string]::IsNullOrWhiteSpace($body)) { throw 'Release notes must not be empty.' }
+          [IO.File]::WriteAllText((Join-Path $env:RELEASE_ROOT 'release-notes.md'), $body)
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.15.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.12.7
+          python-version: 3.12.13
+          enable-cache: true
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-release-${{ hashFiles('rust-toolchain.toml', 'apps/desktop/src-tauri/Cargo.lock') }}
+      - name: Install locked dependencies and build renderer
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          node scripts/set-release-version.mjs $env:RELEASE_TAG --check
+          rustup show
+          pnpm install --frozen-lockfile
+          uv sync --frozen --project services/pipeline
+          pnpm --filter @alystria/scenes build
+          pnpm --filter @alystria/renderer build
+      - name: Build Python worker and bundled tools
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          ./scripts/build-windows-sidecar.ps1 -OutputDirectory "$env:RELEASE_ROOT/sidecar" -BuildRootDirectory "$env:RUNNER_TEMP/sidecar-build"
+          ./scripts/download-release-tools.ps1 -Destination "$env:RELEASE_ROOT/tools"
+          node scripts/assemble-release-runtime.mjs "$env:RELEASE_ROOT/tools" "$env:RELEASE_ROOT/sidecar" "$env:RELEASE_ROOT/source-runtime"
+      - name: Sign runtime and generate notices
+        env:
+          RUNTIME_SIGNING_PRIVATE_KEY: ${{ secrets.RUNTIME_SIGNING_PRIVATE_KEY }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not $env:RUNTIME_SIGNING_PRIVATE_KEY) { throw 'RUNTIME_SIGNING_PRIVATE_KEY is not configured.' }
+          $keys = Join-Path $env:RUNNER_TEMP 'release-signing'
+          New-Item -ItemType Directory -Path $keys | Out-Null
+          try {
+            [IO.File]::WriteAllText((Join-Path $keys 'runtime-signing.key'), $env:RUNTIME_SIGNING_PRIVATE_KEY)
+            node scripts/stage-windows-release.mjs "$env:RELEASE_ROOT/source-runtime" "$env:RELEASE_ROOT/bundle" $keys "$env:RELEASE_ROOT/sidecar/alystria-pipeline.exe"
+          } finally {
+            Remove-Item -LiteralPath (Join-Path $keys 'runtime-signing.key') -Force
+          }
+          node scripts/generate-third-party-notices.mjs --output "$env:RELEASE_ROOT/bundle/runtime/notices/THIRD_PARTY_NOTICES.md"
+          node scripts/generate-sbom.mjs --output "$env:RELEASE_ROOT/sbom.spdx.json"
+      - name: Build installer and updater signature
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw 'TAURI_SIGNING_PRIVATE_KEY is not configured.' }
+          pnpm --filter @alystria/desktop exec tauri build --bundles nsis --config "$env:RELEASE_ROOT/bundle/tauri.release.json" -- --locked
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          $installer = "$env:CARGO_TARGET_DIR/release/bundle/nsis/AI Video Tutorial Generator_${version}_x64-setup.exe"
+          node scripts/prepare-release-assets.mjs $installer "$env:RELEASE_ROOT/publish" "$env:RELEASE_ROOT/sbom.spdx.json"
+      - name: Preserve installer artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-${{ env.RELEASE_TAG }}
+          path: ${{ env.RELEASE_ROOT }}/publish/*
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+      - name: Publish release and updater feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $existing = gh release view $env:RELEASE_TAG --json isDraft 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:RELEASE_TAG --verify-tag --draft --title "AI Video Tutorial Generator $env:RELEASE_TAG" --notes-file "$env:RELEASE_ROOT/release-notes.md"
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot create draft release.' }
+          } elseif (-not ($existing | ConvertFrom-Json).isDraft) { throw 'Refusing to replace a published release.' }
+          $PSNativeCommandUseErrorActionPreference = $true
+          $assets = @(Get-ChildItem -LiteralPath "$env:RELEASE_ROOT/publish" -File | ForEach-Object FullName)
+          gh release upload $env:RELEASE_TAG @assets --clobber
+          gh release edit $env:RELEASE_TAG --draft=false --latest
+          "Published [$env:RELEASE_TAG](https://github.com/$env:GH_REPO/releases/tag/$env:RELEASE_TAG) with installer, update signature, feed and checksums." >> $env:GITHUB_STEP_SUMMARY

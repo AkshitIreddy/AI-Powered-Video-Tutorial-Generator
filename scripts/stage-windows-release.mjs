@@ -30,7 +30,10 @@ catch (error) {
   await writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }), { flag: "wx", mode: 0o600 });
 }
 const publicKey = createPublicKey(privateKey).export({ format: "jwk" });
-await writeFile(path.join(repo, "apps/desktop/src-tauri/runtime-release-public-key.txt"), Buffer.from(publicKey.x, "base64url").toString("base64") + "\n");
+const expectedPublicKey = (await readFile(path.join(repo, "apps/desktop/src-tauri/runtime-release-public-key.txt"), "utf8")).trim();
+if (Buffer.from(publicKey.x, "base64url").toString("base64") !== expectedPublicKey) {
+  throw new Error("Runtime signing key does not match the application's trusted public key");
+}
 const ledger = await readJson(path.join(sourceRoot, "runtime-manifest.json"));
 const runtimeRoot = path.join(outputRoot, "runtime");
 await mkdir(runtimeRoot, { recursive: true });

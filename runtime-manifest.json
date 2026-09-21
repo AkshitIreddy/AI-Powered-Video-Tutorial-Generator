@@ -5,6 +5,7 @@
   "toolchains": {
     "node": {
       "version": "24.20.0",
+      "windowsExecutableSha256": "5c976096e04e5c2c1f091938926234cc9fbebfe9787ddd149351b3b0ecc707b5",
       "releaseLine": "Krypton LTS"
     },
     "pnpm": {
