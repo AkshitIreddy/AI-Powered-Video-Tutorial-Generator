@@ -389,6 +389,13 @@ impl AppState {
         }
 
         let runtimes = RuntimeManager::load_at(paths.runtimes.clone())?;
+        if portable.is_none() {
+            let bundled = app.path().resource_dir()
+                .map_err(|_| CommandError::unavailable("Application resources"))?.join("runtime");
+            if bundled.join("runtime-manifest.json").is_file() {
+                runtimes.use_bundled_pack(&bundled)?;
+            }
+        }
         // Provider values deliberately remain in the operating-system
         // Credential Manager. Alystria files contain opaque keyring references
         // only; this is the portable sandbox's documented external exception.
@@ -421,6 +428,21 @@ impl AppState {
             .map(|verification| verification.root.clone())
             .or_else(|| runtimes.active_pack().map(|pack| pack.root));
         let worker = if let Some(mut config) = worker_config {
+            if portable.is_none() {
+                for (key, path) in [
+                    ("ALYSTRIA_APP_DATA_DIR", paths.app_data.clone()),
+                    ("ALYSTRIA_MODELS_DIR", paths.models.clone()),
+                    ("ALYSTRIA_CACHE_DIR", paths.cache.clone()),
+                    ("ALYSTRIA_TEMP_DIR", paths.temp.clone()),
+                    ("ALYSTRIA_LOCAL_PRESENTER_CONFIG_PATH", paths.models.join("presenter-runtime.json")),
+                    ("ALYSTRIA_FORCED_ALIGNER_CONFIG_PATH", paths.models.join("alignment-runtime.json")),
+                    ("ALYSTRIA_COMFYUI_RUNTIME_ROOT", paths.models.join("comfyui-local")),
+                    ("TEMP", paths.temp.clone()),
+                    ("TMP", paths.temp.clone()),
+                ] {
+                    config.environment.insert(key.into(), path.into_os_string());
+                }
+            }
             if let Some(layout) = &portable {
                 config.environment.extend(layout.worker_environment());
             }

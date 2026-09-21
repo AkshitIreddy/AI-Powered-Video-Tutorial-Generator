@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AI Video Tutorial Generator",
-  "version": "2.0.0-rc.0",
+  "version": "1.8.0",
   "identifier": "studio.alystria.desktop",
   "build": {
     "beforeDevCommand": "node ../../scripts/run-pnpm.mjs --filter @alystria/desktop dev",
@@ -36,6 +36,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -43,7 +44,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "targets": ["nsis", "msi"],
+    "targets": ["nsis"],
     "category": "Education",
     "shortDescription": "Local-first educational video creation",
     "longDescription": "AI Video Tutorial Generator creates and edits source-grounded educational video projects on your computer.",
@@ -52,6 +53,13 @@
       "nsis": {
         "installMode": "currentUser"
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVENTU4QkM5QUU0NzVGNTgKUldSWVgwZXV5WXRWN1ZqRGlSVkZmUG5WZHhsb09aWFY0TmhXRzBzRFJvZzJxWDFZbUUySWJnQ2gK",
+      "endpoints": ["https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
     }
   }
 }

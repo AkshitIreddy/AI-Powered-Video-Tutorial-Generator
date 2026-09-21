@@ -121,7 +121,7 @@ function Copy-AlystriaStarterAudioRoot {
     }
     New-Item -ItemType Directory -Path $ResolvedDestination -Force | Out-Null
 
-    foreach ($Name in @("catalog.json", "verification.json", "README.md")) {
+    foreach ($Name in @("catalog.json", "verification.json")) {
         $SourceFile = Join-Path $SourceProof.Root $Name
         if (Test-Path -LiteralPath $SourceFile -PathType Leaf) {
             Copy-Item -LiteralPath $SourceFile -Destination (Join-Path $ResolvedDestination $Name)

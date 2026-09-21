@@ -1,0 +1,10 @@
+.app-update-anchor { position: fixed; right: 24px; bottom: 24px; z-index: 90; max-width: calc(100vw - 48px); }
+.app-update-card { width: 420px; max-width: 100%; padding: 20px; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg); }
+.app-update-heading { display: flex; align-items: center; gap: 10px; }
+.app-update-heading > svg { color: var(--indigo); flex-shrink: 0; }
+.app-update-heading button { margin-left: auto; padding: 4px; background: transparent; }
+.app-update-card p { margin: 12px 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.app-update-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.app-update-card small { display: block; margin-top: 10px; color: var(--muted); }
+.app-update-card progress { width: 100%; accent-color: var(--indigo); }
+.app-update-shade { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; z-index: 10000; background: rgb(10 12 24 / .6); backdrop-filter: blur(5px); }

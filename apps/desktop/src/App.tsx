@@ -1,4 +1,5 @@
 import { CommandPalette } from "./CommandPalette";
+import { AppUpdates } from "./AppUpdates";
 import { InspectorSection } from "./InspectorSection";
 import { LocalRuntimePanel, RuntimeDownloadPrompt } from "./LocalRuntimePanel";
 import { fitStudioCanvas } from "./studioCanvasFit";
@@ -2161,6 +2162,7 @@ function AppWorkbench() {
       <div className="toast-stack" role="status" aria-live="polite">
         {toasts.map((toast) => <Toast key={toast.id} toast={toast} onClose={() => setToasts((items) => items.filter((item) => item.id !== toast.id))} />)}
       </div>
+      <AppUpdates beforeInstall={flushPendingDurableChanges} busy={snapshot.jobs.some((job) => job.status === "running" || job.status === "queued")} settingsVisible={area === "diagnostics" && !workspace} />
     </div>
   );
 }

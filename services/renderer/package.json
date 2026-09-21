@@ -1,6 +1,6 @@
 {
   "name": "@alystria/renderer",
-  "version": "2.0.0-rc.0",
+  "version": "1.8.0",
   "private": true,
   "description": "Deterministic frame-driven renderer and FFmpeg planner for Alystria Studio.",
   "license": "MIT",
@@ -16,8 +16,7 @@
     "alystria-renderer": "./dist/src/cli.js"
   },
   "files": [
-    "dist",
-    "README.md"
+    "dist"
   ],
   "dependencies": {
     "@alystria/scenes": "workspace:*",

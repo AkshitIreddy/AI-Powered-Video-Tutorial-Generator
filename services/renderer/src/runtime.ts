@@ -35,7 +35,7 @@ import {
 } from "./scene-view.js";
 import { frameToTick, tickToFrameCeil, ticksPerFrame } from "./timebase.js";
 
-export const RENDERER_VERSION = "2.0.0-rc.0";
+export const RENDERER_VERSION = "1.8.0";
 
 export interface SceneRenderInput {
   readonly scene: ResolvedScene;

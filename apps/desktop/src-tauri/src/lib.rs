@@ -17,6 +17,7 @@ pub mod starter_kit;
 mod state;
 mod types;
 mod validation;
+mod updates;
 
 use commands::*;
 use presenter_library::*;
@@ -144,6 +145,7 @@ pub fn run() {
     });
     configure_headless_webview_debugging();
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let state = AppState::initialize(app.handle()).map_err(|error| {
                 std::io::Error::other(format!("{}: {}", error.code, error.message))
@@ -171,6 +173,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            updates::app_update_check,
+            updates::app_update_install,
             app_bootstrap,
             project_create,
             project_open,

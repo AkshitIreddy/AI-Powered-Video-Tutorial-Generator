@@ -21,7 +21,7 @@ class Manifest:
     sources_path: str = "sources/original"
     staging_path: str = "staging"
     exports_path: str = "exports"
-    minimum_app_version: str = "2.0.0-rc.0"
+    minimum_app_version: str = "1.8.0"
     read_only_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:

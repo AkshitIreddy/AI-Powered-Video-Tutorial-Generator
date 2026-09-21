@@ -11,11 +11,12 @@ fn main() {
 
     // The context macro independently resolves the default window icon. Feed it
     // a build-scoped config overlay pointing at the same generated resource.
-    let escaped_icon_path = icon_path
-        .to_string_lossy()
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"");
-    println!("cargo:rustc-env=TAURI_CONFIG={{\"bundle\":{{\"icon\":[\"{escaped_icon_path}\"]}}}}");
+    let mut config: serde_json::Value = std::env::var("TAURI_CONFIG")
+        .ok().map(|value| serde_json::from_str(&value).expect("valid Tauri config overlay"))
+        .unwrap_or_else(|| serde_json::json!({}));
+    if config.get("bundle").is_none() { config["bundle"] = serde_json::json!({}); }
+    config["bundle"]["icon"] = serde_json::json!([icon_path.to_string_lossy()]);
+    println!("cargo:rustc-env=TAURI_CONFIG={config}");
 
     let windows = tauri_build::WindowsAttributes::new().window_icon_path(icon_path);
     let attributes = tauri_build::Attributes::new().windows_attributes(windows);

@@ -19,12 +19,8 @@ const EMBEDDED_MANIFEST: &str = include_str!("../runtime-manifest.json");
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 const MAX_COMPONENT_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const MANIFEST_FILE: &str = "runtime-manifest.json";
-const RELEASE_KEY_ID: &str = "alystria-runtime-release-unconfigured-v1";
-// This is deliberately an unconfigured public key whose private half was discarded.
-// Release engineering must replace it with the offline release key before enabling
-// downloads. The embedded development manifest contains no components and cannot
-// activate a pack.
-const RELEASE_PUBLIC_KEY_BASE64: &str = "CSHzk3EPRsmDBUUneS8S04e0F3GoEEeHXU/6Dzk3mq8=";
+const RELEASE_KEY_ID: &str = "ai-video-tutorial-runtime-v1";
+const RELEASE_PUBLIC_KEY_BASE64: &str = include_str!("../runtime-release-public-key.txt");
 
 const PIPELINE_WORKER: &str = "pipeline-worker";
 const NODE: &str = "node";
@@ -101,7 +97,7 @@ impl std::fmt::Debug for Ed25519ManifestVerifier {
 
 impl Ed25519ManifestVerifier {
     pub fn release() -> Result<Self, CommandError> {
-        Self::from_base64_keys([(RELEASE_KEY_ID, RELEASE_PUBLIC_KEY_BASE64)])
+        Self::from_base64_keys([(RELEASE_KEY_ID, RELEASE_PUBLIC_KEY_BASE64.trim())])
     }
 
     pub fn from_base64_keys<'a>(
@@ -503,13 +499,28 @@ impl RuntimeManager {
         self.resolved.read().clone()
     }
 
+    /// A release installer carries a complete signed pack beside the executable.
+    /// Prefer that matching pack over any older separately activated runtime.
+    pub fn use_bundled_pack(&self, root: &Path) -> Result<(), CommandError> {
+        let bytes = fs::read(root.join(MANIFEST_FILE))
+            .map_err(|_| runtime_io("read bundled runtime manifest"))?;
+        if bytes.len() as u64 > MAX_MANIFEST_BYTES {
+            return Err(runtime_error("INVALID_RUNTIME_MANIFEST", "The bundled runtime manifest is too large."));
+        }
+        let manifest: RuntimeManifest = serde_json::from_slice(&bytes)
+            .map_err(|_| runtime_error("INVALID_RUNTIME_MANIFEST", "The bundled runtime manifest is invalid."))?;
+        let pack = verify_pack_at(root, &manifest_id(&manifest)?, self.verifier.as_ref())?;
+        *self.resolved.write() = Some(pack);
+        Ok(())
+    }
+
     pub fn updater_status(&self) -> UpdaterStatus {
         let manifest = self.manifest();
         UpdaterStatus {
-            enabled: false,
+            enabled: manifest.channel == "stable",
             channel: manifest.channel,
             current_version: env!("CARGO_PKG_VERSION").into(),
-            reason: "Runtime downloads remain disabled until release engineering configures an offline Ed25519 signing key and HTTPS fetcher.".into(),
+            reason: "Application updates verify signed installers. The core runtime is included in each update; optional models remain separate.".into(),
         }
     }
 

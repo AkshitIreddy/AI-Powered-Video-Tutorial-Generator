@@ -618,7 +618,6 @@ Copy-Item -LiteralPath $FfmpegLicenseSource -Destination (Join-Path $FfmpegDesti
 $RendererDestination = Join-Path $RuntimeDirectory "renderer"
 Copy-DirectoryContents (Join-Path $RepoRoot "services\renderer\dist") (Join-Path $RendererDestination "dist")
 Copy-Item -LiteralPath (Join-Path $RepoRoot "services\renderer\package.json") -Destination $RendererDestination -Force
-Copy-Item -LiteralPath (Join-Path $RepoRoot "services\renderer\README.md") -Destination $RendererDestination -Force
 $ScenesDestination = Join-Path $RendererDestination "node_modules\@alystria\scenes"
 Copy-DirectoryContents (Join-Path $RepoRoot "packages\scenes\dist") (Join-Path $ScenesDestination "dist")
 Copy-Item -LiteralPath (Join-Path $RepoRoot "packages\scenes\package.json") -Destination $ScenesDestination -Force
