@@ -85,6 +85,9 @@ export async function preflightNativeMarketingFeatureScenario({
 export async function runNativeMarketingCaptureOnly({
   page,
   invokeNative,
+  projectsPath,
+  ffprobePath,
+  jobTimeoutMs = 600_000,
   assetManifest,
   preflight,
   runRoot,
@@ -95,24 +98,30 @@ export async function runNativeMarketingCaptureOnly({
   if (!preflight?.captureOnly || preflight.assetManifest !== assetManifest || !preflight.capture?.validated) {
     throw new Error("Capture-only marketing evidence requires its exact validated final manifest and Gifsmith preflight");
   }
-  if (!resumeTutorial || resumeTutorial.title !== marketingDemoTitle || resumeTutorial.identity?.projectDirectory == null
+  if (resumeTutorial && (resumeTutorial.title !== marketingDemoTitle || resumeTutorial.identity?.projectDirectory == null
     || resumeTutorial.actualNativeEditorRender !== true || resumeTutorial.captionsBurnedIn !== false
     || resumeTutorial.captionsPreservedInProject !== true || resumeTutorial.resumedFromRunId == null
-    || resumeTutorial.requiresRoutingPolicyMigration !== true) {
+    || (!resumeTutorial.preparedProductPlayback && resumeTutorial.requiresRoutingPolicyMigration !== true))) {
     throw new Error("Capture-only marketing evidence requires the exact verified caption-free native tutorial continuation");
   }
   if (!recording?.cdpPort || !recording?.gifsmithRoot || !recording?.recordingWindow) {
     throw new Error("Capture-only marketing evidence requires the real visible native recording session");
   }
   await mkdir(runRoot, { recursive: true });
-  const routingPolicyMigration = await migrateLegacyMarketingRoutingPolicy({
+  const tutorial = resumeTutorial ?? await prepareMarketingTutorialInNativeEditor({ page, projectsPath, invokeNative, ffprobePath, assetManifest, presenterRouteModel: soulxModelContract.modelId, actionTimeoutMs, jobTimeoutMs });
+  const cleanEditorExport = await preserveCaptionFreeTutorialExport({ tutorial, runRoot });
+  const routingPolicyMigration = resumeTutorial?.requiresRoutingPolicyMigration ? await migrateLegacyMarketingRoutingPolicy({
     page,
     invokeNative,
     identity: resumeTutorial.identity,
     timelineContract: resumeTutorial.timelineContract,
     presenterRouteModel: soulxModelContract.modelId,
-  });
-  await openExactProject(page, resumeTutorial.title, resumeTutorial.identity, actionTimeoutMs, true);
+  }) : null;
+  await returnFromNativeEditorIfOpen(page, actionTimeoutMs);
+  await openExactProject(page, tutorial.title, tutorial.identity, actionTimeoutMs, true);
+  const productPlayback = resumeTutorial?.preparedProductPlayback ?? (assetManifest.assets.productPlayback
+    ? await prepareProductPlayback({ page, invokeNative, identity: tutorial.identity, asset: assetManifest.assets.productPlayback, segments: assetManifest.productSegments, actionTimeoutMs, jobTimeoutMs })
+    : null);
   await returnFromNativeEditorIfOpen(page, actionTimeoutMs);
   const projectNavigation = page.getByRole("navigation", { name: /project workspace/iu });
   await projectNavigation.getByRole("button", { name: /^Review$/iu }).click();
@@ -123,7 +132,8 @@ export async function runNativeMarketingCaptureOnly({
     gifsmithRoot: recording.gifsmithRoot,
     runRoot,
     edit: preflight.marketingValidation.edit,
-    projectTitle: resumeTutorial.title,
+    projectTitle: tutorial.title,
+    productSegments: productPlayback ? assetManifest.productSegments : null,
     recordingWindow: recording.recordingWindow,
     preflight: preflight.capture,
   });
@@ -136,17 +146,69 @@ export async function runNativeMarketingCaptureOnly({
     networkModelDownloads: 0,
     localPresenterPreviewInferenceCalls: 0,
     musicSearchOperations: 0,
-    resumedFromRunId: resumeTutorial.resumedFromRunId,
-    resumedTutorialEvidence: resumeTutorial.resumeReceipt,
+    resumedFromRunId: resumeTutorial?.resumedFromRunId ?? null,
+    resumedTutorialEvidence: resumeTutorial?.resumeReceipt ?? null,
+    cleanEditorExport,
+    productPlayback,
     routingPolicyMigration,
     project: {
-      id: resumeTutorial.identity.projectId,
-      directory: resumeTutorial.identity.projectDirectory,
-      title: resumeTutorial.title,
+      id: tutorial.identity.projectId,
+      directory: tutorial.identity.projectDirectory,
+      title: tutorial.title,
+      cleanEditorRenderPath: cleanEditorExport.outputPath,
+      cleanEditorRenderSha256: cleanEditorExport.outputSha256,
     },
     capture,
     qualificationBoundary: "Capture-only UI evidence. It does not claim a custom-presenter acceptance, music search, model activation, or full feature-scenario pass.",
   };
+}
+
+async function prepareProductPlayback({ page, invokeNative, identity, asset, segments, actionTimeoutMs, jobTimeoutMs }) {
+  if (await sha256File(asset.path) !== asset.sha256) throw new Error("Product playback media changed");
+  await returnFromNativeEditorIfOpen(page, actionTimeoutMs);
+  await page.getByRole("navigation", { name: /project workspace/iu }).getByRole("button", { name: /^Studio$/iu }).click();
+  await page.getByRole("button", { name: /^Edit tracks & timing/iu }).click();
+  const editor = page.getByRole("dialog", { name: "Integrated advanced video editor" });
+  await expect(editor).toBeVisible({ timeout: actionTimeoutMs });
+  for (const kind of ["slides", "presenter", "titles", "captions", "narration", "music", "sfx"]) {
+    const clips = editor.locator(`.aly-editor-clip--${kind}`);
+    while (await clips.count()) { await clips.first().click(); await editor.getByRole("button", { name: "Lift", exact: true }).click(); }
+  }
+  const empty = editor.getByRole("button", { name: "Hide empty tracks", exact: true });
+  if (await empty.getAttribute("aria-pressed") === "true") await empty.click();
+  await editor.getByLabel("Rights for new editor media").selectOption("owned");
+  await editor.getByLabel("Import media files").setInputFiles(asset.path);
+  const name = path.basename(asset.path);
+  const card = editor.getByRole("listitem").filter({ hasText: name });
+  await expect(card).toContainText("ready", { timeout: actionTimeoutMs });
+  await setEditorPlayhead(editor, 0);
+  await editor.getByRole("button", { name: "Slides", exact: true }).click();
+  await card.getByRole("button", { name: `Place ${name} at playhead` }).click();
+  await editor.locator(".aly-editor-clip--slides").filter({ hasText: name }).click();
+  await editor.getByRole("button", { name: "Inspector", exact: true }).click();
+  await setEditorNumber(editor, "End frame", Math.round(asset.durationSeconds * marketingFrameRate));
+  await empty.click();
+  await expect(editor.locator(".editor-save-status")).toHaveText("Timeline saved", { timeout: actionTimeoutMs });
+  const saved = await invokeNative(page, "project_snapshot_get", identity);
+  if (saved.snapshot?.editorDocument?.tracks?.flatMap((track) => track.clips ?? []).length !== 1) throw new Error("Product playback timeline must contain exactly its imported speaking video");
+  for (const segment of segments) {
+    await setEditorPlayhead(editor, Math.round(segment.startSeconds * marketingFrameRate));
+    await editor.getByRole("button", { name: "Add caption", exact: true }).click();
+    await editor.getByLabel("On-screen text").fill(segment.text);
+    await setEditorNumber(editor, "End frame", Math.round(segment.endSeconds * marketingFrameRate));
+  }
+  const hideCaptions = editor.getByRole("button", { name: "Hide Captions", exact: true });
+  await hideCaptions.click();
+  await expect(hideCaptions).toHaveAttribute("aria-pressed", "true");
+  await expect(editor.locator(".editor-save-status")).toHaveText("Timeline saved", { timeout: actionTimeoutMs });
+  await editor.getByRole("button", { name: "Render timeline", exact: true }).click();
+  const result = await waitForEditorRender(editor.locator(".aly-editor-shell__status"), jobTimeoutMs);
+  const outputPath = result.match(/^Timeline rendered to (.+?)(?: ·|$)/u)?.[1];
+  if (!outputPath) throw new Error(`Product playback render failed: ${result}`);
+  await hideCaptions.click();
+  await expect(hideCaptions).toHaveAttribute("aria-pressed", "false");
+  await expect(editor.locator(".editor-save-status")).toHaveText("Timeline saved", { timeout: actionTimeoutMs });
+  return { sourceSha256: asset.sha256, durationSeconds: asset.durationSeconds, outputSha256: await sha256File(outputPath), actualNativeEditorRender: true };
 }
 
 export function assertSoulxNativeReadiness({ catalog, statuses, setup, runtimeStatuses }) {
@@ -718,7 +780,7 @@ async function renderAcceptedMusicTimeline({ page, invokeNative, identity, proje
   };
 }
 
-export async function recordNativeMarketingCapture({ page, cdpPort, gifsmithRoot, runRoot, edit, projectTitle, recordingWindow, preflight }) {
+export async function recordNativeMarketingCapture({ page, cdpPort, gifsmithRoot, runRoot, edit, projectTitle, recordingWindow, preflight, productSegments = null }) {
   if (!preflight?.validated || recordingWindow?.win32?.contained !== true
     || !(recordingWindow.win32?.selectedMonitor?.primary === false
       || (recordingWindow.win32?.selectedMonitor?.primary === true && recordingWindow.win32?.monitors?.length === 1))) {
@@ -728,7 +790,7 @@ export async function recordNativeMarketingCapture({ page, cdpPort, gifsmithRoot
   const api = await import(pathToFileURL(entrypoint).href);
   for (const name of ["assertConfig", "render", "timeline", "tauri"]) if (typeof api[name] !== "function") throw new Error(`Gifsmith is missing ${name}`);
   const state = {};
-  const timeline = buildMarketingNativeCaptureTimeline({ timeline: api.timeline, edit, projectTitle, state });
+  const timeline = buildMarketingNativeCaptureTimeline({ timeline: api.timeline, edit, projectTitle, state, productSegments });
   const output = path.join(runRoot, "native-marketing-product-capture.mp4");
   const config = {
     target: api.tauri({ port: cdpPort }),

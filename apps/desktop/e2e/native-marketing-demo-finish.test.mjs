@@ -19,7 +19,7 @@ test("30 fps actor cuts retain wall-clock timing at MP4 and WebP frame rates", {
     for (const color of ["red", "lime", "blue"]) args.push("-f", "lavfi", "-i", `color=c=${color}:s=64x64:r=30:d=1`);
     args.push("-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]", "-map", "[v]", "-c:v", "ffv1", source);
     await exec(ffmpegPath, args, { windowsHide: true });
-    for (const fps of [25, 10]) {
+    for (const fps of [25, 20, 10]) {
       const output = path.join(directory, `output-${fps}.mp4`);
       await renderVideoSegment({ ffmpegPath, encoder, manifest: { assets: { nativeTutorialExport: { path: source } } }, segment: { id: "tutorial", source: "nativeTutorialExport", sourceIn: 0, sourceOut: 3, durationSeconds: 3, editorialZoom: 1 }, output, width: 64, height: 64, fps });
       for (const [seconds, channel] of [[1.15, 1], [2.15, 2]]) {

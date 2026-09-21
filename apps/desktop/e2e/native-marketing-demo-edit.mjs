@@ -229,7 +229,7 @@ export function deriveAdaptiveMarketingEdit({ teachingDurationSeconds, teachingS
       durationSeconds: webpDurationSeconds,
       width: 960,
       height: 540,
-      fps: 10,
+      fps: 20,
       startsWithVisibleMotion: true,
       beats: presenterWebp ? [...presenterWebp.beats, { id: "actual-native-editor", in: webpEditorStart, out: webpDurationSeconds }] : [
         { id: "tutorial-speaking-hook", in: 0, out: webpTutorialCuts[0] },
@@ -723,7 +723,7 @@ export async function prepareMarketingTutorialInNativeEditor({
   };
 }
 
-export function buildMarketingNativeCaptureTimeline({ timeline, edit, projectTitle, state = {} }) {
+export function buildMarketingNativeCaptureTimeline({ timeline, edit, projectTitle, state = {}, productSegments = null }) {
   if (typeof timeline !== "function") throw new Error("Gifsmith timeline() is required");
   if (!edit?.mp4?.beats || typeof projectTitle !== "string" || !projectTitle.trim()) throw new Error("A validated marketing edit and exact project title are required");
   const productBeats = new Map(edit.mp4.beats.filter((beat) => beat.id.startsWith("native-")).map((beat) => [beat.id, beat]));
@@ -754,6 +754,7 @@ export function buildMarketingNativeCaptureTimeline({ timeline, edit, projectTit
       await clickByAria(gifPage, ctx, "Studio");
       await clickByText(gifPage, ctx, /^Edit tracks & timing/iu);
       await ctx.settle(gifPage.waitForSelector('[role="dialog"][aria-label="Integrated advanced video editor"]', { visible: true }), { label: "marketing tutorial editor" });
+      await clickByAria(gifPage, ctx, "Reset panel layout");
     }, { name: "Open actual tutorial editor", seconds: 0.8 });
     t.cue("Edit every word and beat");
     t.call(async (gifPage, ctx) => { await clickByAria(gifPage, ctx, "Transcript"); }, { name: "Open transcript panel", seconds: 0.35 });
@@ -767,7 +768,40 @@ export function buildMarketingNativeCaptureTimeline({ timeline, edit, projectTit
         return { dockWidth: Number(dock?.getAttribute("aria-valuenow")), timelineHeight: Number(timeline?.getAttribute("aria-valuenow")) };
       }), { label: "measure resized marketing editor" });
     }, { name: "Verify editor resize", seconds: 0 });
-    t.hold(Math.max(0.2, beatDuration(productBeats.get("native-editor")) - 3));
+    if (productSegments) {
+      t.call(async (gifPage, ctx) => {
+        const start = Math.max(0, productSegments.find((part) => part.id === "native-editor").startSeconds - 2);
+        await ctx.settle(gifPage.evaluate((seconds) => {
+          const input = document.querySelector('input[aria-label="Playhead timecode"]');
+          if (!(input instanceof HTMLInputElement)) throw new Error("Editor timecode is missing");
+          const frame = Math.round(seconds * 30);
+          const value = `00:00:${String(Math.floor(frame / 30)).padStart(2, "0")}:${String(frame % 30).padStart(2, "0")}`;
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        }, start), { label: "set narration-matched editor playhead" });
+        await gifPage.focus('input[aria-label="Playhead timecode"]');
+        await gifPage.keyboard.press("Enter");
+        // A trusted pointer click grants media playback permission in WebView2.
+        // DOM button.click() can advance transport while audible video stays paused.
+        await ctx.settle(gifPage.click('button[aria-label="Play"]'), { label: "play editor media with a real user gesture" });
+        await gifPage.mouse.move(900, 65);
+        state.editorPlayback = await ctx.settle(gifPage.evaluate(async (sourceStartSeconds) => {
+          const video = document.querySelector('.aly-editor-canvas-stage video');
+          if (!(video instanceof HTMLVideoElement)) throw new Error("Editor video preview is missing");
+          const before = video.currentTime;
+          const deadline = performance.now() + 10000;
+          while (video.paused || video.seeking || video.readyState < 2 || video.currentTime - before < 0.2) {
+            if (video.error || performance.now() > deadline) throw new Error(`Editor video did not play: ${JSON.stringify({before,after:video.currentTime,paused:video.paused,readyState:video.readyState,error:video.error?.message})}`);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          const after = video.currentTime;
+          return { sourceStartSeconds, actualTransportPlayInvoked: true, mediaBefore: before, mediaAfter: after };
+        }, start), { label: "verify editor video clock advances" });
+      }, { name: "Play synchronized presenter in editor", seconds: 0.3 });
+      t.hold(beatDuration(productBeats.get("native-editor")) + 2.3);
+      t.call(async (gifPage, ctx) => { await clickByAria(gifPage, ctx, "Pause playback"); }, { name: "Pause editor before changing panels", seconds: 0.1 });
+    } else t.hold(Math.max(0.2, beatDuration(productBeats.get("native-editor")) - 3));
     t.call(async (gifPage, ctx) => {
       await clickByAriaPrefix(gifPage, ctx, "Return to scene");
       await clickByAria(gifPage, ctx, "Plan");
@@ -800,9 +834,25 @@ export function buildMarketingNativeCaptureTimeline({ timeline, edit, projectTit
       await openProjectByTitle(gifPage, ctx, projectTitle);
       await clickByAria(gifPage, ctx, "Review");
       await ctx.settle(gifPage.waitForSelector('video[aria-label="Authoritative generated tutorial media"]', { visible: true }), { label: "finished tutorial Review" });
+      if (productSegments) {
+        const start = productSegments.find((part) => part.id === "native-export").startSeconds;
+        state.exportPlayback = await ctx.settle(gifPage.evaluate(async (seconds) => {
+          const video = document.querySelector('video[aria-label="Authoritative generated tutorial media"]');
+          video.muted = true;
+          if (video.readyState < 2) await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error("Review playback not ready")), 10000);
+            video.addEventListener("loadeddata", () => { clearTimeout(timer); resolve(); }, { once: true });
+            video.load();
+          });
+          video.currentTime = seconds;
+          await new Promise((resolve) => video.addEventListener("seeked", resolve, { once: true }));
+          await video.play();
+          return { sourceStartSeconds: seconds, currentTime: video.currentTime };
+        }, start), { label: "play narration-matched closing Review" });
+      }
     }, { name: "Return to finished tutorial", seconds: 1.1 });
     t.cue("Review and export the finished tutorial");
-    t.hold(Math.max(0.4, beatDuration(productBeats.get("native-export")) - 1.1));
+    t.hold(productSegments ? beatDuration(productBeats.get("native-export")) + 0.2 : Math.max(0.4, beatDuration(productBeats.get("native-export")) - 1.1));
   });
 }
 

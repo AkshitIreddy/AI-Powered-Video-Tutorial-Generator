@@ -61,6 +61,7 @@ export function buildMarketingFinishPlan(manifest) {
       source: "nativeUiCapture",
       sourceIn: Number(sourceSegments[beat.id].sourceIn),
       sourceOut: Number(sourceSegments[beat.id].sourceOut),
+      sourcePlaybackRate: Number(sourceSegments[beat.id].playbackRate ?? 1),
       editorialZoom: Number(beat.editorialZoom),
       focusX: Number(sourceSegments[beat.id].focusX ?? focusFor(beat.id).x),
       focusY: Number(sourceSegments[beat.id].focusY ?? focusFor(beat.id).y),
@@ -85,7 +86,7 @@ export function buildMarketingFinishPlan(manifest) {
       durationSeconds: Number(edit.webp.durationSeconds), width: 960, height: 540, fps: Number(edit.webp.fps),
       segments: [
         ...webpBeats.slice(0, 4).map((beat) => ({ id: beat.id, presenterStyle: beat.presenterStyle, durationSeconds: round3(beat.out - beat.in), source: "nativeTutorialExport", sourceIn: Number(beat.sourceIn), sourceOut: Number(beat.sourceOut), editorialZoom: 1.035, focusX: 0.5, focusY: 0.5 })),
-        { id: "actual-native-editor", durationSeconds: round3(webpBeats[4].out - webpBeats[4].in), source: "nativeUiCapture", sourceIn: Number(sourceSegments["native-editor"].sourceIn), sourceOut: Number(sourceSegments["native-editor"].sourceOut), editorialZoom: 1.34, focusX: Number(sourceSegments["native-editor"].focusX ?? 0.48), focusY: Number(sourceSegments["native-editor"].focusY ?? 0.58), captionText: "Edit every word and beat." },
+        { id: "actual-native-editor", durationSeconds: round3(webpBeats[4].out - webpBeats[4].in), source: "nativeUiCapture", sourceIn: Number(sourceSegments["native-editor"].sourceIn), sourceOut: Number(sourceSegments["native-editor"].sourceOut), sourcePlaybackRate: Number(sourceSegments["native-editor"].playbackRate ?? 1), editorialZoom: 1.34, focusX: Number(sourceSegments["native-editor"].focusX ?? 0.48), focusY: Number(sourceSegments["native-editor"].focusY ?? 0.58), captionText: "Edit every word and beat." },
       ],
     },
     audio: {
@@ -327,7 +328,9 @@ export async function renderVideoSegment({ ffmpegPath, encoder, manifest, segmen
   // zoompan d=1 consumes one input frame per output frame. Resample by timestamps
   // first, otherwise 30 fps native footage runs 1.2x slow at 25 fps and 3x slow
   // in the 10 fps WebP, moving presenter cuts away from their narration.
-  filters.push(`fps=${fps},tpad=stop_mode=clone:stop_duration=${segment.durationSeconds},trim=duration=${segment.durationSeconds},setpts=PTS-STARTPTS`);
+  const sourcePlaybackRate = segment.sourcePlaybackRate ?? 1;
+  if (!Number.isFinite(sourcePlaybackRate) || sourcePlaybackRate < 0.25 || sourcePlaybackRate > 4) throw new Error("Invalid source capture playback rate");
+  filters.push(`setpts=(PTS-STARTPTS)/${sourcePlaybackRate},fps=${fps},tpad=stop_mode=clone:stop_duration=${segment.durationSeconds},trim=duration=${segment.durationSeconds},setpts=PTS-STARTPTS`);
   filters.push(`zoompan=z='${zoomExpression}':x='max(0,min(iw-iw/zoom,${focusX}*iw-iw/zoom/2))':y='max(0,min(ih-ih/zoom,${focusY}*ih-ih/zoom/2))':d=1:s=${width}x${height}:fps=${fps}`);
   const args = ["-hide_banner", "-loglevel", "error", "-y", ...inputArgs];
   for (const layer of captionLayers) {

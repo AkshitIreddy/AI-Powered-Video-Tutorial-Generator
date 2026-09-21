@@ -297,6 +297,9 @@ try {
       ? await runNativeMarketingCaptureOnly({
         page,
         invokeNative,
+        projectsPath,
+        ffprobePath,
+        jobTimeoutMs: parsed.jobTimeoutMs,
         assetManifest: marketingFeaturePreflight.assetManifest,
         preflight: marketingFeaturePreflight,
         runRoot,
@@ -2264,8 +2267,8 @@ function parseArguments(arguments_) {
     if (!result.marketingManifest || (!result.marketingCaptureOnly && (!result.customPortrait || !result.customPortraitSha256 || !result.gpuCoordinationPath))) {
       throw new Error("--marketing-feature-scenario requires --marketing-manifest and, unless capture-only, --custom-portrait, --custom-portrait-sha256, and --gpu-coordination-path");
     }
-    if (result.marketingCaptureOnly && (!result.recordMarketingDemo || !result.resumeMarketingRun)) {
-      throw new Error("--marketing-capture-only requires --resume-marketing-run and always records the real native app");
+    if (result.marketingCaptureOnly && !result.recordMarketingDemo) {
+      throw new Error("--marketing-capture-only always records the real native app");
     }
     if (result.resumeMarketingRun && !/^[0-9]{17}-[1-9][0-9]*$/u.test(result.resumeMarketingRun)) {
       throw new Error("--resume-marketing-run must be one native generation evidence run ID");
@@ -3155,6 +3158,44 @@ async function inspectMarketingResumeSource(sourceRunId, assetManifest) {
   const failurePath = path.join(sourceRunRoot, "failure.json");
   const sourceAppDataPath = path.join(sourceRunRoot, "isolated-app-data");
   const sourceProjectsPath = path.join(sourceRunRoot, "isolated-projects");
+  const completed = await readJson(path.join(sourceRunRoot, "report.json"), null);
+  if (completed?.state === "passed" && completed.featureScenario?.productPlayback) {
+    if (!completed.ownerStateRestored || !completed.ownerProjectsRestored || completed.runId !== sourceRunId
+      || completed.featureScenario.productPlayback.sourceSha256 !== assetManifest.assets.productPlayback?.sha256) throw new Error("Prepared marketing capture source does not match its restored project and playback asset");
+    const appDataEntries = ["WebView2", "model-setup.json", "Presenters"];
+    for (const entry of appDataEntries) await assertSafeCopyTree(path.join(sourceAppDataPath, entry), `prepared capture App Data ${entry}`);
+    await assertSafeCopyTree(sourceProjectsPath, "prepared capture Projects");
+    const preparedProjects = [];
+    for (const entry of await readdir(sourceProjectsPath, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const candidate = await readJson(path.join(sourceProjectsPath, entry.name, "manifest.json"), null);
+      if (candidate?.projectId === completed.featureScenario.project.id) preparedProjects.push(entry.name);
+    }
+    if (preparedProjects.length !== 1) throw new Error("Prepared capture requires one exact preserved project");
+    const relativeProjectDirectory = preparedProjects[0];
+    const sourceProjectDirectory = path.join(sourceProjectsPath, relativeProjectDirectory);
+    const manifest = await readJson(path.join(sourceProjectDirectory, "manifest.json"));
+    if (manifest.projectId !== completed.featureScenario.project.id || manifest.title !== marketingDemoTitle) throw new Error("Prepared capture project identity changed");
+    const snapshot = readHeadSnapshot(sourceProjectDirectory);
+    const visual = snapshot.editorDocument?.tracks?.find((track) => track.kind === "slides")?.clips;
+    if (visual?.length !== 1 || snapshot.editorDocument.assets.find((asset) => asset.id === visual[0].assetId)?.hash !== assetManifest.assets.productPlayback.sha256) throw new Error("Prepared capture timeline does not contain the verified speaking media");
+    const clean = completed.featureScenario.cleanEditorExport;
+    const retainedHashes = new Set(snapshot.editorDocument.assets.map((asset) => asset.hash));
+    if (Math.abs(clean.probe.durationSeconds - assetManifest.assets.teachingVoice.durationSeconds) > 0.12
+      || [assetManifest.assets.teachingVoice, ...assetManifest.assets.presenterClips].some((asset) => !retainedHashes.has(asset.sha256))) throw new Error("Prepared capture lesson inputs differ from the requested narration or presenters");
+    const preservedPath = path.join(sourceRunRoot, "native-tutorial.caption-free.webm");
+    if (await sha256File(preservedPath) !== clean.outputSha256) throw new Error("Prepared capture lesson export changed");
+    const sourceProjectDatabasePath = path.join(sourceProjectDirectory, "project.sqlite3");
+    const baselineUsage = readUsageRecords(sourceProjectDirectory);
+    if (baselineUsage.length) throw new Error("Prepared capture source unexpectedly contains provider usage");
+    return { runId: sourceRunId, runRoot: sourceRunRoot, sourceAppDataPath, appDataEntries, sourceProjectsPath, sourceProjectDirectory, sourceProjectDatabasePath,
+      sourceProjectDatabaseSha256: await sha256File(sourceProjectDatabasePath), relativeProjectDirectory, projectId: manifest.projectId, baselineUsage,
+      failureSha256: await sha256File(path.join(sourceRunRoot, "report.json")),
+      tutorial: { title: marketingDemoTitle, outputPath: preservedPath, outputSha256: clean.outputSha256, probe: clean.probe,
+        actualNativeEditorRender: true, captionsBurnedIn: false, captionsPreservedInProject: true, fixtureUi: false,
+        resumedFromRunId: sourceRunId, requiresRoutingPolicyMigration: false, preparedProductPlayback: completed.featureScenario.productPlayback },
+    };
+  }
   const failure = await readJson(failurePath);
   if (failure?.schemaVersion !== 1 || failure.state !== "failed" || failure.runId !== sourceRunId
     || failure.evidenceClass !== "actual-native-marketing-feature-scenario"
@@ -3296,6 +3337,7 @@ async function hydrateResumeSource(source) {
     if (await sha256File(path.join(copiedProject, "project.sqlite3")) !== source.sourceProjectDatabaseSha256) {
       throw new Error("Hydrated marketing project database differs from its preserved source bytes");
     }
+    if (source.tutorial.preparedProductPlayback) return copiedProject;
     const inspection = inspectMarketingTimelineDocument(readHeadSnapshot(copiedProject).editorDocument, {
       ...source.tutorial.timelineContract,
       captionsHidden: false,
