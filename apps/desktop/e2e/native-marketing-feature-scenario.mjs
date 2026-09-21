@@ -258,13 +258,14 @@ export async function runNativeMarketingFeatureScenario({
   actionTimeoutMs = 60_000,
   jobTimeoutMs = 900_000,
   recording = null,
+  resumeTutorial = null,
 }) {
   if (!preflight?.portrait || preflight.assetManifest !== assetManifest) throw new Error("Run the exact marketing feature preflight before native work");
   await mkdir(runRoot, { recursive: true });
   const activation = await activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, runRoot, cachePreflight, actionTimeoutMs, jobTimeoutMs });
   const soulx = activation.soulx;
   const modelEvidence = await captureSoulxModelEvidence(page, runRoot, soulx, actionTimeoutMs);
-  const tutorial = await prepareMarketingTutorialInNativeEditor({
+  const tutorial = resumeTutorial ?? await prepareMarketingTutorialInNativeEditor({
     page,
     projectsPath,
     invokeNative,
@@ -274,6 +275,14 @@ export async function runNativeMarketingFeatureScenario({
     actionTimeoutMs,
     jobTimeoutMs,
   });
+  if (resumeTutorial && (tutorial?.title !== marketingDemoTitle || tutorial?.identity?.projectDirectory == null
+    || tutorial?.actualNativeEditorRender !== true || tutorial?.captionsBurnedIn !== false
+    || tutorial?.captionsPreservedInProject !== true || tutorial?.resumedFromRunId == null
+    || tutorial?.resumeReceipt?.sourceRunId !== tutorial.resumedFromRunId
+    || !/^[0-9a-f]{64}$/u.test(tutorial?.resumeReceipt?.sourceFailureSha256 ?? "")
+    || !/^[0-9a-f]{64}$/u.test(tutorial?.resumeReceipt?.sourceProjectDatabaseSha256 ?? ""))) {
+    throw new Error("Marketing continuation omitted its exact verified native tutorial receipt");
+  }
   const cleanEditorExport = await preserveCaptionFreeTutorialExport({ tutorial, runRoot });
   const presenter = await exerciseCustomPresenter({
     page,
@@ -343,6 +352,9 @@ export async function runNativeMarketingFeatureScenario({
     networkModelDownloads: 0,
     cachePreflight,
     localPresenterPreviewInferenceCalls: 1,
+    resumedVerifiedTutorial: Boolean(resumeTutorial),
+    resumedFromRunId: resumeTutorial?.resumedFromRunId ?? null,
+    resumedTutorialEvidence: resumeTutorial?.resumeReceipt ?? null,
     project: {
       id: tutorial.identity.projectId,
       directory: tutorial.identity.projectDirectory,

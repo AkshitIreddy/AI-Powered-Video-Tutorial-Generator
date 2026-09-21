@@ -28,6 +28,11 @@ import {
   runNativeMarketingFeatureScenario,
   runSoulxSetupOnly,
 } from "./native-marketing-feature-scenario.mjs";
+import {
+  buildMarketingTimelineContract,
+  inspectMarketingTimelineDocument,
+  marketingDemoTitle,
+} from "./native-marketing-demo-edit.mjs";
 import { summarizeNativeWindowPlacement } from "./native-generation-report.mjs";
 
 // Opt-in real native acceptance. The cloud path uses the product's smallest
@@ -145,6 +150,9 @@ const marketingFeaturePreflight = parsed.marketingFeatureScenario
     recordCapture: parsed.recordMarketingDemo,
   })
   : null;
+const marketingResumeSource = parsed.resumeMarketingRun
+  ? await inspectMarketingResumeSource(parsed.resumeMarketingRun, marketingFeaturePreflight.assetManifest)
+  : null;
 const soulxCachePreflight = parsed.soulxSetupOnly || parsed.marketingFeatureScenario
   ? await preflightSoulxHydratedCache({
     modelsRoot: modelsPath,
@@ -159,7 +167,10 @@ try {
   await assertRegularFile(ffmpegPath, "packaged ffmpeg");
   await assertRegularFile(ffprobePath, "packaged ffprobe");
   isolation = await isolateOwnerDirectories();
-  if (resumeSource || resumeLocalImageSource) await hydrateResumeSource(resumeSource ?? resumeLocalImageSource);
+  let hydratedResumeProjectDirectory = null;
+  if (resumeSource || resumeLocalImageSource || marketingResumeSource) {
+    hydratedResumeProjectDirectory = await hydrateResumeSource(resumeSource ?? resumeLocalImageSource ?? marketingResumeSource);
+  }
   const walkthroughLocalProjectDirectory = walkthroughLocalImageSource
     ? await copySupplementalProject({ source: walkthroughLocalImageSource, projectsPath })
     : null;
@@ -192,7 +203,7 @@ try {
     : null;
   const recordingWindowPlacement = recordingWindow ? summarizeNativeWindowPlacement(recordingWindow) : null;
 
-  if (!resumeSource && !resumeLocalImageSource) {
+  if (!resumeSource && !resumeLocalImageSource && !marketingResumeSource) {
     await page.evaluate(({ onboarding, workspace }) => {
       localStorage.clear();
       localStorage.setItem("alystria-onboarding-v1", JSON.stringify(onboarding));
@@ -260,6 +271,19 @@ try {
       finishedAtUtc: new Date().toISOString(),
     };
   } else if (parsed.marketingFeatureScenario) {
+    const resumedTutorial = marketingResumeSource ? {
+      ...marketingResumeSource.tutorial,
+      identity: {
+        projectId: marketingResumeSource.projectId,
+        projectDirectory: hydratedResumeProjectDirectory,
+      },
+      resumeReceipt: {
+        sourceRunId: marketingResumeSource.runId,
+        sourceFailureSha256: marketingResumeSource.failureSha256,
+        sourceProjectDatabaseSha256: marketingResumeSource.sourceProjectDatabaseSha256,
+        relativeProjectDirectory: marketingResumeSource.relativeProjectDirectory,
+      },
+    } : null;
     const feature = await runNativeMarketingFeatureScenario({
       page,
       projectsPath,
@@ -280,6 +304,7 @@ try {
         gifsmithRoot: parsed.gifsmithRoot,
         recordingWindow,
       } : null,
+      resumeTutorial: resumedTutorial,
     });
     activeProjectIdentity = { projectId: feature.project.id, projectDirectory: feature.project.directory };
     if (pageErrors.length || consoleErrors.length) {
@@ -2061,6 +2086,7 @@ function parseArguments(arguments_) {
     resumeCreativeRun: null,
     resumeCompletedRun: null,
     resumeLocalImageRun: null,
+    resumeMarketingRun: null,
     editorSmoke: false,
     recoverySmoke: false,
     recordWalkthrough: false,
@@ -2127,6 +2153,10 @@ function parseArguments(arguments_) {
     else if (name === "--resume-creative-run") result.resumeCreativeRun = requiredText(value, name, 80);
     else if (name === "--resume-completed-run") result.resumeCompletedRun = requiredText(value, name, 80);
     else if (name === "--resume-local-image-run") result.resumeLocalImageRun = requiredText(value, name, 80);
+    else if (name === "--resume-marketing-run") {
+      result.resumeMarketingRun = requiredText(value, name, 80);
+      result.marketingFeatureScenario = true;
+    }
     else if (name === "--walkthrough-local-image-run") result.walkthroughLocalImageRun = requiredText(value, name, 80);
     else if (name === "--presenter-emma-root") result.presenterAcceptanceRoots.emma = path.resolve(requiredText(value, name, 500));
     else if (name === "--presenter-yuki-root") result.presenterAcceptanceRoots.yuki = path.resolve(requiredText(value, name, 500));
@@ -2207,6 +2237,9 @@ function parseArguments(arguments_) {
     if (!result.marketingManifest || !result.customPortrait || !result.customPortraitSha256 || !result.gpuCoordinationPath) {
       throw new Error("--marketing-feature-scenario requires --marketing-manifest, --custom-portrait, --custom-portrait-sha256, and --gpu-coordination-path");
     }
+    if (result.resumeMarketingRun && !/^[0-9]{17}-[1-9][0-9]*$/u.test(result.resumeMarketingRun)) {
+      throw new Error("--resume-marketing-run must be one native generation evidence run ID");
+    }
     if (!/^[0-9a-f]{64}$/u.test(result.customPortraitSha256)) throw new Error("--custom-portrait-sha256 must be one lowercase SHA-256");
     if (!["curious", "focused", "calm", "hopeful", "playful", "reflective", "energetic"].includes(result.musicMood)) {
       throw new Error("--music-mood must be one MusicBrowser mood");
@@ -2215,7 +2248,7 @@ function parseArguments(arguments_) {
   if (result.soulxSetupOnly) {
     if (result.marketingFeatureScenario || result.localImageOnly || result.creativeOnly || result.recordWalkthrough
       || result.recordMarketingDemo || result.editorSmoke || result.recoverySmoke || result.resumeCreativeRun
-      || result.resumeCompletedRun || result.resumeLocalImageRun) {
+      || result.resumeCompletedRun || result.resumeLocalImageRun || result.resumeMarketingRun) {
       throw new Error("--soulx-setup-only cannot be combined with generation, marketing, walkthrough, editor, or recovery modes");
     }
   }
@@ -3083,6 +3116,119 @@ async function inspectAcceptedLocalImageSource(sourceRunId) {
   };
 }
 
+async function inspectMarketingResumeSource(sourceRunId, assetManifest) {
+  const runsRoot = path.join(evidenceRoot, "runs");
+  const sourceRunRoot = path.join(runsRoot, sourceRunId);
+  if (path.dirname(sourceRunRoot) !== runsRoot || sourceRunRoot === runRoot) {
+    throw new Error("Marketing continuation source must be one prior contained generation-smoke run");
+  }
+  const failurePath = path.join(sourceRunRoot, "failure.json");
+  const sourceAppDataPath = path.join(sourceRunRoot, "isolated-app-data");
+  const sourceProjectsPath = path.join(sourceRunRoot, "isolated-projects");
+  const failure = await readJson(failurePath);
+  if (failure?.schemaVersion !== 1 || failure.state !== "failed" || failure.runId !== sourceRunId
+    || failure.evidenceClass !== "actual-native-marketing-feature-scenario"
+    || !failure.reason?.includes("name: /^Presenters$/u")
+    || failure.ownerStateRestored !== true || failure.ownerProjectsRestored !== true
+    || !sameWindowsPath(failure.isolatedAppDataEvidencePath, sourceAppDataPath)
+    || !sameWindowsPath(failure.isolatedProjectsEvidencePath, sourceProjectsPath)) {
+    throw new Error(`Run ${sourceRunId} is not the safely restored post-render marketing selector failure`);
+  }
+  const appDataEntries = ["WebView2", "model-setup.json", "Presenters"];
+  for (const entry of appDataEntries) await assertSafeCopyTree(path.join(sourceAppDataPath, entry), `marketing continuation App Data ${entry}`);
+  if ((await readdir(path.join(sourceAppDataPath, "Presenters"), { recursive: true })).length !== 0) {
+    throw new Error("Marketing continuation source unexpectedly contains an imported custom presenter");
+  }
+  await assertSafeCopyTree(sourceProjectsPath, "marketing continuation Projects");
+  const projectEntries = [];
+  for (const entry of await readdir(sourceProjectsPath, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+    const directory = path.join(sourceProjectsPath, entry.name);
+    const manifest = await readJson(path.join(directory, "manifest.json"), null);
+    if (manifest?.title === marketingDemoTitle) projectEntries.push({ directory, manifest });
+  }
+  if (projectEntries.length !== 1) throw new Error(`Marketing continuation requires one exact tutorial project, found ${projectEntries.length}`);
+  const [{ directory: sourceProjectDirectory, manifest }] = projectEntries;
+  if (manifest.schemaVersion !== 1 || manifest.locale !== "en-US" || manifest.groundingMode !== "creative"
+    || typeof manifest.projectId !== "string" || !manifest.projectId.trim()) {
+    throw new Error("Marketing continuation project manifest identity is invalid");
+  }
+  const sourceProjectDatabasePath = path.join(sourceProjectDirectory, "project.sqlite3");
+  const snapshot = readHeadSnapshot(sourceProjectDirectory);
+  const timelineContract = buildMarketingTimelineContract(assetManifest);
+  const inspection = inspectMarketingTimelineDocument(snapshot.editorDocument, {
+    ...timelineContract,
+    captionsHidden: false,
+    music: null,
+  });
+  if (!inspection.matches || snapshot.title !== marketingDemoTitle
+    || snapshot.marketingDemo?.mode !== "final" || snapshot.providerRoutingPolicy?.routes?.[0]?.model !== "local/soulx-flashhead-pro"
+    || (snapshot.musicCandidates?.length ?? 0) !== 0) {
+    throw new Error(`Marketing continuation project does not match its exact rendered timeline contract: ${JSON.stringify(inspection.diagnostic)}`);
+  }
+  const database = new DatabaseSync(sourceProjectDatabasePath, { readOnly: true });
+  let exportJobs;
+  let revisionNumber;
+  try {
+    exportJobs = database.prepare("SELECT job_id, state, result_json FROM jobs WHERE kind = 'native.editor_timeline_export' ORDER BY created_at").all();
+    revisionNumber = database.prepare("SELECT revisions.revision_number FROM project_meta JOIN revisions ON revisions.revision_id = project_meta.head_revision_id WHERE project_meta.singleton = 1").get()?.revision_number;
+  } finally {
+    database.close();
+  }
+  if (exportJobs.length !== 1 || exportJobs[0].state !== "SUCCEEDED") throw new Error("Marketing continuation source does not have exactly one successful native editor export");
+  const exportResult = JSON.parse(exportJobs[0].result_json);
+  const preservedPath = path.join(sourceRunRoot, "native-tutorial.caption-free.webm");
+  const sourceExportPath = path.join(sourceProjectDirectory, "exports", "editor", path.basename(normalizeWindowsAbsolutePath(exportResult.outputPath, "marketing source export")));
+  const [preservedDetails, sourceExportDetails] = await Promise.all([
+    assertRegularFile(preservedPath, "preserved caption-free marketing tutorial"),
+    assertRegularFile(sourceExportPath, "source caption-free marketing tutorial"),
+  ]);
+  const [preservedSha256, sourceExportSha256, probe] = await Promise.all([
+    sha256File(preservedPath),
+    sha256File(sourceExportPath),
+    probeMedia(preservedPath),
+  ]);
+  if (!/^[0-9a-f]{64}$/u.test(exportResult.artifactHash ?? "") || preservedSha256 !== exportResult.artifactHash
+    || sourceExportSha256 !== exportResult.artifactHash || preservedDetails.size !== sourceExportDetails.size
+    || !probe.video || !probe.audio || Math.abs(probe.durationSeconds - timelineContract.timing.durationSeconds) > 0.12) {
+    throw new Error("Marketing continuation caption-free export no longer matches its durable render receipt");
+  }
+  const baselineUsage = readUsageRecords(sourceProjectDirectory);
+  if (baselineUsage.length !== 0) throw new Error("Marketing continuation source unexpectedly contains provider usage");
+  const relativeProjectDirectory = containedRelativePath(sourceProjectsPath, sourceProjectDirectory, "marketing continuation source project");
+  return {
+    runId: sourceRunId,
+    runRoot: sourceRunRoot,
+    failurePath,
+    failureSha256: await sha256File(failurePath),
+    sourceAppDataPath,
+    appDataEntries,
+    sourceProjectsPath,
+    sourceProjectDirectory,
+    sourceProjectDatabasePath,
+    sourceProjectDatabaseSha256: await sha256File(sourceProjectDatabasePath),
+    relativeProjectDirectory,
+    projectId: manifest.projectId,
+    baselineUsage,
+    tutorial: {
+      title: marketingDemoTitle,
+      outputPath: preservedPath,
+      outputSha256: preservedSha256,
+      probe,
+      timing: timelineContract.timing,
+      presenterTransform: timelineContract.presenterTransform,
+      timelineContract,
+      captionFreeRenderRevisionNumber: exportResult.revisionNumber,
+      restoredCaptionRevisionNumber: revisionNumber,
+      actualNativeEditorRender: true,
+      captionsBurnedIn: false,
+      captionsPreservedInProject: true,
+      fixtureUi: false,
+      resumedFromRunId: sourceRunId,
+    },
+  };
+}
+
 async function hydrateResumeSource(source) {
   if ((await readdir(appDataPath)).length !== 0 || (await readdir(projectsPath)).length !== 0) {
     throw new Error("Fresh isolated App Data and Projects must be empty before resume hydration");
@@ -3107,6 +3253,18 @@ async function hydrateResumeSource(source) {
   const manifest = await readJson(path.join(copiedProject, "manifest.json"));
   if (manifest?.projectId !== source.projectId) throw new Error("Hydrated resume project identity differs from its preserved source");
   assertUsageRecordsMatch(source.baselineUsage, readUsageRecords(copiedProject), "copied resume baseline");
+  if (source.tutorial) {
+    if (await sha256File(path.join(copiedProject, "project.sqlite3")) !== source.sourceProjectDatabaseSha256) {
+      throw new Error("Hydrated marketing project database differs from its preserved source bytes");
+    }
+    const inspection = inspectMarketingTimelineDocument(readHeadSnapshot(copiedProject).editorDocument, {
+      ...source.tutorial.timelineContract,
+      captionsHidden: false,
+      music: null,
+    });
+    if (!inspection.matches) throw new Error(`Hydrated marketing project changed its exact timeline: ${JSON.stringify(inspection.diagnostic)}`);
+  }
+  return copiedProject;
 }
 
 async function assertSafeCopyTree(root, label) {

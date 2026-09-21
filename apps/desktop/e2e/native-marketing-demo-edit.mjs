@@ -433,6 +433,24 @@ export function deriveMarketingPresenterTransform({
   return { x: round3(x), y: round3(y), scaleX: scale, scaleY: scale, desiredCenterX, desiredCenterY, renderedWidth: round3(width), renderedHeight: round3(height), bounds: Object.fromEntries(Object.entries(bounds).map(([key, value]) => [key, round3(value)])) };
 }
 
+export function buildMarketingTimelineContract(assetManifest) {
+  if (!assetManifest?.assets?.teachingVoice || !Array.isArray(assetManifest?.assets?.presenterClips)
+    || !Array.isArray(assetManifest?.teachingCaptions)) {
+    throw new Error("Marketing timeline contract requires validated teaching voice, presenter clips, and captions");
+  }
+  const timing = deriveNativeSceneTiming(assetManifest.teachingCaptions, assetManifest.assets.teachingVoice.durationSeconds);
+  return {
+    timing,
+    presenters: assetManifest.assets.presenterClips.map((presenter) => ({
+      name: path.basename(presenter.path),
+      startFrame: Math.round(presenter.startSeconds * marketingFrameRate),
+      endFrame: Math.round(presenter.endSeconds * marketingFrameRate),
+    })),
+    presenterTransform: deriveMarketingPresenterTransform(),
+    captions: assetManifest.teachingCaptions.map((caption) => caption.text),
+  };
+}
+
 export function inspectMarketingTimelineDocument(document, contract) {
   const tracks = Array.isArray(document?.tracks) ? document.tracks : [];
   const clipsFor = (kind) => tracks.find((track) => track.kind === kind)?.clips ?? [];
@@ -516,7 +534,8 @@ export async function prepareMarketingTutorialInNativeEditor({
   actionTimeoutMs = 45_000,
   jobTimeoutMs = 600_000,
 }) {
-  const timing = deriveNativeSceneTiming(assetManifest.teachingCaptions, assetManifest.assets.teachingVoice.durationSeconds);
+  const timelineContract = buildMarketingTimelineContract(assetManifest);
+  const { timing, presenterTransform } = timelineContract;
   const initialSnapshot = buildMarketingTutorialProjectDocument({
     teachingDurationSeconds: timing.durationSeconds,
     captions: assetManifest.teachingCaptions,
@@ -581,17 +600,6 @@ export async function prepareMarketingTutorialInNativeEditor({
     await editor.getByRole("button", { name: "Inspector", exact: true }).click();
     await setInspectorNumber(editor, "End frame", scene.endFrame);
   }
-  const presenterTransform = deriveMarketingPresenterTransform();
-  const timelineContract = {
-    timing,
-    presenters: presenterSources.map((presenter) => ({
-      name: path.basename(presenter.path),
-      startFrame: Math.round(presenter.startSeconds * marketingFrameRate),
-      endFrame: Math.round(presenter.endSeconds * marketingFrameRate),
-    })),
-    presenterTransform,
-    captions: assetManifest.teachingCaptions.map((caption) => caption.text),
-  };
   for (const presenter of presenterSources) {
     const startFrame = Math.round(presenter.startSeconds * marketingFrameRate);
     const endFrame = Math.round(presenter.endSeconds * marketingFrameRate);
@@ -830,7 +838,7 @@ export async function writeMarketingPreparationReceipt({ manifestPath, outputPat
   return receipt;
 }
 
-function deriveNativeSceneTiming(captions, durationSeconds) {
+export function deriveNativeSceneTiming(captions, durationSeconds) {
   const durationFrames = Math.max(1, Math.round(durationSeconds * marketingFrameRate));
   const scenes = captions.map((cue, index) => {
     const startFrame = Math.round(cue.startSeconds * marketingFrameRate);

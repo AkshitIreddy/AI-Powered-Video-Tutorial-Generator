@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   buildMarketingTutorialProjectDocument,
   buildMarketingNativeCaptureTimeline,
+  buildMarketingTimelineContract,
   deriveMarketingPresenterTransform,
   deriveSentenceSegmentsFromAsr,
   deriveAdaptiveMarketingEdit,
@@ -85,6 +86,29 @@ test("durable marketing timeline inspection requires exact ranges, presenter tra
   assert.equal(invalid.matches, false);
   assert.equal(invalid.diagnostic.overlaps.presenter, 1);
   assert.equal(invalid.diagnostic.exactPresenterRanges, false);
+});
+
+test("marketing continuation derives the same exact timeline contract from the final asset manifest", () => {
+  const contract = buildMarketingTimelineContract({
+    assets: {
+      teachingVoice: { durationSeconds: 12.4 },
+      presenterClips: [
+        { path: "C:\\accepted\\emma.mp4", startSeconds: 0, endSeconds: 3.2 },
+        { path: "C:\\accepted\\yuki.mp4", startSeconds: 3.2, endSeconds: 8.4 },
+        { path: "C:\\accepted\\chloe.mp4", startSeconds: 8.4, endSeconds: 12.4 },
+      ],
+    },
+    teachingCaptions,
+  });
+  assert.equal(contract.timing.durationFrames, 372);
+  assert.deepEqual(contract.timing.scenes.map(({ startFrame, endFrame }) => [startFrame, endFrame]), [[0, 96], [96, 252], [252, 372]]);
+  assert.deepEqual(contract.presenters.map(({ name, startFrame, endFrame }) => [name, startFrame, endFrame]), [
+    ["emma.mp4", 0, 96],
+    ["yuki.mp4", 96, 252],
+    ["chloe.mp4", 252, 372],
+  ]);
+  assert.deepEqual(contract.presenterTransform, deriveMarketingPresenterTransform());
+  assert.deepEqual(contract.captions, teachingCaptions.map((caption) => caption.text));
 });
 
 test("adaptive edit follows verified narration durations and covers 35–50 seconds without a gap", () => {
