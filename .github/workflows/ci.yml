@@ -92,14 +92,14 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - name: Doctor
         run: node scripts/doctor.mjs
+      - name: Build workspace dependencies
+        run: pnpm build
       - name: Lint
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
         run: pnpm test
-      - name: Build
-        run: pnpm build
       - name: Compile native desktop shell without packaging
         run: pnpm --filter @alystria/desktop tauri build --debug --no-bundle
       - name: Rust formatting
@@ -131,6 +131,8 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build scene package consumed by renderer fixtures
+        run: pnpm --filter @alystria/scenes build
       - name: Validate fixtures and render snapshots
         run: node scripts/test-fixtures.mjs --require-fixtures --require-renderer
 

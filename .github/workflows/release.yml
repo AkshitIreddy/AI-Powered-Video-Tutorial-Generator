@@ -89,8 +89,7 @@ jobs:
           rustup show
           pnpm install --frozen-lockfile
           uv sync --frozen --project services/pipeline
-          pnpm --filter @alystria/scenes build
-          pnpm --filter @alystria/renderer build
+          pnpm build
       - name: Build Python worker and bundled tools
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
