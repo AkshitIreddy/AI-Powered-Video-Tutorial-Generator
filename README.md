@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/media/tutorial-studio-banner.png" alt="A creative tutorial studio with realistic and anime hosts, a kitten, and flowing illustrated lessons" width="960" />
-</p>
-
 <h1 align="center">AI Video Tutorial Generator</h1>
 
 <p align="center">
@@ -37,6 +33,10 @@
 </p>
 
 ---
+
+<p align="center">
+  <img src="docs/media/tutorial-studio-banner.png" alt="A creative tutorial studio with realistic and anime hosts, a kitten, and flowing illustrated lessons" width="960" />
+</p>
 
 ## For users
 
