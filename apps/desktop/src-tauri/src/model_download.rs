@@ -1049,7 +1049,7 @@ impl ModelDownloadManager {
             match observed {
                 Ok(Some(status)) => break status,
                 Ok(None) => {
-                    self.record_presenter_progress(spec, None);
+                    self.record_presenter_installer_heartbeat(spec, operation);
                     std::thread::sleep(MANAGED_PROGRESS_POLL_INTERVAL);
                 }
                 Err(_) => {
@@ -1522,6 +1522,20 @@ impl ModelDownloadManager {
             );
             status.updated_at = Utc::now();
             self.update(status);
+        }
+    }
+
+    fn record_presenter_installer_heartbeat(&self, spec: &PackageSpec, operation: &str) {
+        if operation == "activate" {
+            let mut status = self.current(spec);
+            status.phase = ModelDownloadPhase::Verifying;
+            status.detail =
+                "Verifying the complete SoulX runtime ledger before selecting this presenter engine."
+                    .into();
+            status.updated_at = Utc::now();
+            self.update(status);
+        } else {
+            self.record_presenter_progress(spec, None);
         }
     }
 
@@ -4344,5 +4358,34 @@ mod tests {
         let (phase, detail) = presenter_completed_download_phase(75, 75);
         assert_eq!(phase, ModelDownloadPhase::Installing);
         assert!(detail.contains("Building the portable SoulX environment"));
+    }
+
+    #[test]
+    fn presenter_activation_heartbeat_preserves_ledger_verification_state() {
+        let directory = tempdir().expect("tempdir");
+        let manager = ModelDownloadManager::at(directory.path().to_path_buf()).expect("manager");
+        let mut checking = manifest_status(&SOULX_FLASHHEAD);
+        checking.phase = ModelDownloadPhase::Verifying;
+        checking.downloaded_bytes = checking.total_bytes;
+        checking.verified_artifacts = checking.artifact_count;
+        checking.detail =
+            "Verifying the complete SoulX runtime ledger before selecting this presenter engine."
+                .into();
+        manager.update(checking.clone());
+
+        manager.record_presenter_installer_heartbeat(&SOULX_FLASHHEAD, "activate");
+
+        let refreshed = manager.current(&SOULX_FLASHHEAD);
+        assert_eq!(refreshed.phase, ModelDownloadPhase::Verifying);
+        assert_eq!(refreshed.downloaded_bytes, refreshed.total_bytes);
+        assert_eq!(refreshed.verified_artifacts, refreshed.artifact_count);
+        assert_eq!(refreshed.detail, checking.detail);
+        let persisted: ModelDownloadStatus = serde_json::from_slice(
+            &fs::read(manager.package_root(&SOULX_FLASHHEAD).join(STATUS_FILE))
+                .expect("persisted status"),
+        )
+        .expect("status JSON");
+        assert_eq!(persisted.phase, ModelDownloadPhase::Verifying);
+        assert_eq!(persisted.detail, checking.detail);
     }
 }
