@@ -9,13 +9,13 @@ checks AI Horde, Pollinations, Hugging Face, Together, Gemini image generation,
 and Cloudflare against current official terms. It distinguishes recurring free
 access, earned credits, conditional promotions, and paid-only image routes.
 
-The latest bounded live checks succeeded for Groq structured writing and Cloudflare FLUX.1 Schnell image generation. Mistral returned a rate limit; Gemini's selected stable endpoint returned HTTP 404 for the tested account; OpenRouter was not used for generation. These observations do not establish a general provider outage or a guaranteed free quota. Hosted NVIDIA narration and illustration, stock search, and optional rendered-frame review have separate evidence and limitations in the linked audits.
+The dated September 5 checks succeeded for Groq structured writing and Cloudflare FLUX.1 Schnell image generation. Mistral returned a rate limit, and the then-selected Gemini 2.5 Flash endpoint returned HTTP 404 for the tested account; that result does not describe the current Gemini 3.8 Flash default or 3.7 Flash alternate. The app retains 2.5 only for compatible saved profiles. OpenRouter was not used for generation. These observations do not establish a general provider outage or a guaranteed free quota. Hosted NVIDIA narration and illustration, stock search, and optional rendered-frame review have separate evidence and limitations in the linked audits.
 
 This page is a signup guide, not a promise that an adapter is already shipped.
 Provider offers, model access, quotas, data-use terms, and licenses change often.
 Check the linked official page again before creating a key or sending project
-content. Alystria must also apply the approval, budget, privacy, and catalog
-freshness rules in [Provider and model policy](provider-and-model-policy.md).
+content. Alystria must also apply the approval, routing, usage-accounting, and
+catalog-freshness rules in [Provider and model policy](provider-and-model-policy.md).
 
 ## Quick recommendations
 

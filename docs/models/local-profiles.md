@@ -1,9 +1,9 @@
 # Local model profiles for the 12 GB RTX 4080 Laptop target
 
-Research snapshot: **2026-08-28**. These are evidence-backed candidates and
-installation policies, not a claim that every model is already pinned,
-downloadable, or benchmarked in Alystria. No model weights are bundled in the
-installer or downloaded by this worktree.
+Research candidates were first surveyed on **2026-08-28**. The executable RC
+surface below was reconciled with the native catalog on **2026-09-21**. Model
+weights are not bundled in the installer; only packages with an immutable
+native declaration can be downloaded.
 
 The workload-specific native-Windows runtime decision, current RTX 4080 laptop
 probe, LM Studio CUDA 12 verdict, and confirmed NVENC API mismatch are recorded
@@ -11,19 +11,21 @@ in [Windows + NVIDIA runtime audit](windows-nvidia-runtime-audit.md).
 
 ## Recommendation in one sentence
 
-Ship a small Alystria installer, then offer a first-run **Local model setup**
-assistant with hardware/storage checks, a curated profile selector, an existing
-folder option, and a skip/cloud option. API-backed LLM, TTS, ASR, research, and
-image stages remain usable without local weights; the only prominent optional
-download is a user-selected talking-head/LipSync pack. Downloaded weights
-belong in the managed app-data model cache, not the project repository or
-installer.
+Ship a small Alystria installer, then let the first-run setup and **Models &
+Providers** share one native download queue. The current catalog offers the
+standalone ComfyUI runtime, executable SDXL and SoulX packs, advanced
+download-only FLUX.2 Klein and Z-Image packs, and quarantine-only MuseTalk.
+Cloud routes and authored slides remain usable without local weights.
+Downloaded weights belong in the managed app-data model cache, not the project
+repository or installer.
 
 Bundling weights would make the installer multi-gigabyte, couple every user to
 one GPU/runtime/license combination, and make updates and revocations unsafe.
-The model manager already has the required primitives: signed manifests,
-license acceptance, resumable `.part` downloads, byte/hash verification,
-atomic activation, rollback, health checks, and one-heavy-family scheduling.
+The native model manager uses embedded, hash-pinned declarations, license
+acceptance, resumable `.part` downloads, exact byte/hash verification, isolated
+staging, and full-ledger revalidation before executable activation. These
+manifests are integrity-pinned but are not represented as cryptographically
+signed metadata.
 
 ## Candidate matrix
 
@@ -55,22 +57,22 @@ license hash, and target fixture benchmark before activation.
 | Fast draft image | [SDXL-Turbo](https://huggingface.co/stabilityai/sdxl-turbo) | 3B model, 1–4-step generation, 512×512 preferred; the model card carries Stability's noncommercial/community license boundary | **Preview-only candidate until rights are accepted.** Do not use it for export-cleared assets by default. |
 | NVIDIA local LipSync | [NVIDIA LipSync](https://build.nvidia.com/nvidia/lipsync/modelcard) | Downloadable NIM; AI for Media Private Access, NGC key, NVIDIA container stack, and NVIDIA Open Model License | **Separate gated candidate.** Not unlocked by the ordinary NIM hosted key; target RTX 4080 Laptop verification is still open. |
 
-## LipSync decision for Alystria
+## Current presenter-animation decision
 
-The local default should be **EchoMimicV3 Flash if the 12 GB benchmark passes**;
-otherwise use **MuseTalk 1.5** for fast face-only presenter shots, with
-LatentSync 1.5 as a quality comparison and NVIDIA LipSync as an optional
-private-access sidecar. The director should generate a clean portrait/short
-presenter clip, synthesize final dry narration, align it, then run lip-sync
-only for selected presenter scenes. It must not lip-sync every scene.
+The executable local default is **SoulX-FlashHead Pro** at exact revision
+`soulx-9bc03de0+pro-59119b6c+wav2vec-22aad52d+py3106+cu128`. Eight exact bundled
+portraits passed the current short-sample mouth, blink, identity, and background
+review. Other bundled portraits remain still-only until their exact route passes
+the same review. A custom fictional/generated portrait must be added to a cast,
+rendered with the managed short preview, played by the user, and explicitly
+accepted before animated generation is allowed for its portrait hash and model
+revision.
 
-EchoMimicV3 is the strongest evidence-backed first test for this laptop: its
-official repository reports a 12G-VRAM Flash profile, 1.3B parameters, 8-step
-high-quality generation, up to 768×768, partial-video controls for reducing
-VRAM, Apache-2.0 licensing, and a quantified Windows package. Its tested GPUs
-are still A100/RTX4090D/V100, so the RTX 4080 Laptop result must be measured
-locally. It should be installed as an optional presenter pack, not loaded beside
-the LLM or image generator.
+MuseTalk remains a quarantine-only download and is not activated by the model
+manager. EchoMimicV3 exceeded the reference machine's practical memory budget
+before producing a first frame, so it is not the default or an executable RC
+choice. LatentSync and NVIDIA LipSync remain research candidates rather than
+silent fallbacks.
 
 NVIDIA LipSync is technically interesting for this laptop: its model card lists
 Lovelace/Ada compatibility and Windows 10/11, and it requires NVENC/NVDEC. The
@@ -96,10 +98,11 @@ catalog—not model weights. On first launch:
    hashes where known, license metadata, runtime compatibility, and symlink/path
    safety. Store a project-independent model identity, not executable code or a
    fragile absolute path.
-5. For managed downloads, stage resumable `.part` files, verify every hash and
-   signature, require license acceptance, atomically promote the complete pack,
-   and retain rollback history. A failed or interrupted download never becomes
-   active.
+5. For managed downloads, stage resumable `.part` files, verify every declared
+   byte count and SHA-256 hash, require license acceptance, atomically promote
+   the complete pack, and retain rollback history. A failed or interrupted
+   download never becomes active. These are embedded, hash-pinned declarations;
+   the current manifests are not cryptographically signed.
 6. Schedule one GPU-heavy family at a time. If a selected model does not fit,
    explain the exact reason and offer a smaller approved profile; never silently
    move project content to a cloud provider.
@@ -122,76 +125,72 @@ open; an interrupted transfer can resume from retained partial files.
 
 Available packages and existing installations appear first. Entries without a
 verified installer are disabled in onboarding rather than saving a choice that
-cannot download. The currently declared packages are SDXL, FLUX.2 Klein,
-Z-Image Turbo, and MuseTalk. SDXL has an execution-ready recipe; the other
-packages retain their explicit runtime/hardware activation restrictions.
+cannot download. The native catalog currently declares six packages:
+
+- `runtime/comfyui-0.9.2`, the reusable standalone ComfyUI runtime;
+- `local/sdxl-base-1.0`, an executable, reviewed image-generation pack;
+- `local/flux.2-klein-4b-fp8` and `local/z-image-turbo-int8`, advanced
+  download-only image packs whose inference routes remain unavailable;
+- `local/musetalk-1.5`, a downloaded, verified, quarantine-only pack which
+  cannot be activated; and
+- `local/soulx-flashhead-pro`, an executable presenter pack whose download is
+  staged until **Use model** completes full-ledger verification and activates
+  the pinned runtime.
 
 The local RC now includes the first, deliberately non-destructive part of this
 assistant in **Models & Providers**:
 
 - a broad no-secret chooser for LLM/VLM, code, embedding/reranking, image,
   TTS, ASR/alignment, pose, talking-head, and LipSync candidates;
-- a separate presenter/LipSync selector that can prefer EchoMimicV3 Flash,
-  MuseTalk 1.5, LatentSync 1.5, NVIDIA LipSync Private Access, or a future
-  verified external pack;
+- a presenter-model preference list which distinguishes executable managed
+  packages from research-only candidates such as EchoMimicV3 Flash,
+  LatentSync 1.5, and NVIDIA LipSync Private Access;
 - a local existing-folder field which proves only that a directory exists. It
   does not read, execute, copy, trust, or activate its contents; and
 - named, switchable provider/model preference profiles per writing, research,
   images, motion, voice, transcription, presenter, and LipSync medium.
 
-The preference file lives under application data, contains no credentials, and
-is not a project routing approval. API keys remain in the OS credential vault;
-every project still needs a separate payload/privacy/retention/region
-approval before a cloud request can occur. Multiple packs may remain selected
-or eventually installed. Disk and safe system-RAM caching are acceptable for
-this non-latency-critical product, while the scheduler keeps one GPU-heavy
-family active at a time.
+The preference file lives under application data and contains no credentials.
+API keys remain in the OS credential vault. Multiple packs may coexist on disk,
+but a presenter engine changes only after a successful **Use model** activation.
+Disk and safe system-RAM caching are acceptable for this non-latency-critical
+product, while the scheduler keeps one GPU-heavy family active at a time.
 
-The screen now offers one deliberately narrower managed path for the exact
-MuseTalk 1.5 artifact set verified during the RC spike. It records the pinned
-revisions, exact byte counts and SHA-256 hashes, requires acceptance of the
-main repository's immutable MIT license hash, resumes `.part` files, and stops
-in a **downloaded, verified, quarantined** state. Several upstream `.pth` files
-remain unsafe to load, and dependency licenses still need final review, so this
-path cannot activate a model or start inference. Other candidates remain
-blocked when no exact declaration is available; Alystria never substitutes a
-mutable upstream snapshot.
-
-The Python model manager remains the only activation owner. It can make a pack
-active only after a signed manifest, every required license acceptance, hashes,
-hardware preflight, atomic promotion, and rollback record pass.
+The manager records pinned revisions, exact byte counts and SHA-256 hashes,
+requires the declared license acceptances, resumes `.part` files, and publishes
+only complete verified packs. The Rust download manager owns the durable queue,
+receipts, staging, activation ledger, and rollback. A supervised Python
+installer performs the package-specific filesystem work. MuseTalk deliberately
+stops in **downloaded, verified, quarantined** state; its upstream checkpoint
+format and remaining dependency review prevent activation. The manager never
+substitutes a mutable upstream snapshot.
 
 ### Presenter/LipSync model chooser
 
-The setup assistant must present these as separate user choices, with the
-hardware probe's recommendation highlighted but never silently selected:
+The executable managed choice is **SoulX-FlashHead Pro**. Downloading stages its
+pinned runtime; **Use model** verifies the complete ledger and switches the
+active presenter engine only after a `Ready` result. Eight bundled portraits
+have exact portrait-hash and model-revision animation qualifications. A custom
+fictional portrait becomes eligible only after the user adds it to the cast,
+runs the short local SoulX preview, plays the result, and accepts that exact
+portrait hash, engine, model revision, and output hash.
 
-- **EchoMimicV3 Flash** — expressive talking head/upper-body motion; official
-  12G-VRAM Flash profile; first benchmark target for this laptop.
-- **MuseTalk 1.5** — fast face-region lip-sync specialist; recommended fallback
-  when EchoMimicV3 does not fit or the user wants shorter presenter clips.
-- **LatentSync 1.5** — slower diffusion quality comparison; its official README
-  states an 8 GB inference minimum, while 1.6 requires 18 GB and is excluded
-  from this target profile.
-- **NVIDIA LipSync** — only after AI for Media Private Access and local NIM
-  runtime checks; it is not unlocked by the normal hosted NIM key.
-- **Use an existing folder** — validate the selected pack's manifest, revision,
-  hashes, license, runtime and path safety before it can be activated.
+MuseTalk 1.5 remains visible as quarantine-only and cannot run. EchoMimicV3
+Flash, LatentSync 1.5, and NVIDIA LipSync remain research or preference entries,
+not installed execution routes. An existing-folder entry records a path for
+future validation; it does not trust or activate arbitrary model files.
 
-The user can keep multiple verified packs installed and switch the active pack
-per project, lesson, or presenter profile. Switching a pack creates a new
-candidate revision and invalidates only presenter clips, alignment/timing
-descendants, scene renders, and final composition; it preserves narration and
-accepted scenes. The selector shows disk size, VRAM estimate, supported locales,
-rights/consent requirements, and exact reasons a pack is unavailable.
+Packages can coexist on disk. Only a verified activation changes the active
+presenter engine, and a failed activation leaves the previous working engine in
+place. Model-dependent presenter outputs remain tied to their exact engine and
+revision so a later accepted change can invalidate only affected descendants.
 
-### MuseTalk delivery encoder policy
+### Historical MuseTalk delivery encoder policy
 
 MuseTalk 1.5 upstream currently hard-codes `libx264` for its final video/audio
-mux. Alystria does not carry that choice into its MIT/LGPL-first managed
-runtime. The signed Alystria worker receives a brokered encoder selection in
-its attempt manifest and must use the fixed mux helper rather than upstream's
-direct mux call.
+mux. The quarantine spike designed a brokered encoder selection rather than
+carrying that choice into an MIT/LGPL-first managed runtime. This remains a
+non-executable design record while MuseTalk is quarantined.
 
 Selection is based on a real, pinned-FFmpeg one-frame encode—not the encoder
 name merely appearing in `ffmpeg -encoders`—and has one immutable priority:
@@ -223,6 +222,7 @@ background load, driver, runtime, model revision, quantization, context, and
 seed. Peak characterization requires a separate approved power profile; Alystria
 does not change it automatically.
 
-The current repository therefore leaves all local profiles `pin-required` or
-`benchmark-required`, even where the model is likely to fit. That is deliberate:
-download convenience must not become an unverified binary supply chain.
+Unlisted research candidates remain `pin-required` or `benchmark-required`.
+That boundary does not apply to the reviewed SDXL and SoulX managed routes
+described above; their availability is still conditional on an exact successful
+install, hardware/runtime checks, and durable activation receipts.

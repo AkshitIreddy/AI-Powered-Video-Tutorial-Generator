@@ -38,4 +38,4 @@ The principal external references are maintained next to the relevant decisions.
 
 ## Release boundary
 
-All 2.0 work remains local. No push, merge, package publication, production deployment, public release, or release announcement is authorized by implementation completion, passing tests, or silence. A release candidate must stop for explicit user inspection and approval.
+Source pushes require explicit owner authorization and do not authorize package publication, production deployment, a public release, or a release announcement. Passing tests, a source push, or silence never grants those later permissions. A release candidate must stop for explicit user inspection and approval.

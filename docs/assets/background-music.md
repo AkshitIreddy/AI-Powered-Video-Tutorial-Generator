@@ -2,7 +2,7 @@
 
 Alystria can search Openverse for an optional instrumental music bed from the
 Studio **Design → Media** panel. Search never replaces the current soundtrack.
-It downloads up to four bounded candidates into the project CAS, shows the
+It downloads up to three bounded candidates into the project CAS, shows the
 creator, source, license, attribution and duration, and waits for an explicit
 **Use** or **Skip** decision.
 

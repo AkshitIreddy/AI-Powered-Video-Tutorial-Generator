@@ -35,18 +35,32 @@ The core catalog describes ten coordinated theme packs and includes:
 - deterministic procedural backgrounds, overlays, transitions, lower thirds, and caption styles that can render without external files;
 - fourteen OFL-licensed local font families, with renderer-safe fallbacks and no remote font fetches;
 - twelve presenter direction styles, including voice-only and user-supplied modes;
-- fifty-two bundled fictional synthetic presenter portraits, of which forty-six are in the curated picker, plus three bundled theme backgrounds; every file is bound to its exact bytes by SHA-256 and records its available generator, synthetic-origin, C2PA, owner-rights, and license evidence;
+- fifty-two bundled fictional synthetic presenter portraits, with fourteen current casual hosts offered for new casts and older IDs retained only to reopen existing projects, plus three bundled theme backgrounds; every file is bound to its exact bytes by SHA-256 and records its available generator, synthetic-origin, C2PA, owner-rights, and license evidence;
 - explicit presenter filters for realistic, anime, cartoon, illustration, character, and animal designs; the featured gallery begins with Emma, Yuki, Noah, and Chloe while retained portrait IDs continue to open existing projects;
 - two seamless music loops, four intro/outro stingers, and ten semantic sound-effect variants; all sixteen are deterministic 48 kHz/24-bit PCM masters, hash-bound, verified, MIT-licensed, and authored without third-party samples or generative AI;
-- separate import slots for backgrounds, overlays, fonts, music, effects, synthetic portraits, real-person portraits, presenter video, logos, lower thirds, and caption styles.
+- project import controls for backgrounds, fonts, music, effects, and consented presenter media, plus a reusable **My presenters** gallery for fictional or generated portraits.
 
 Music and sound effects remain off by default. Enabling them is an explicit project choice, narration ducking remains active, meaningful sounds receive caption labels, and any asset with unknown or pending rights blocks export.
 
-Static portrait readiness and lip-sync readiness are separate. A verified portrait can be selected, placed, and exported as a still image while its animation compatibility remains under review. The app must only advertise or route lip-sync when the exact portrait and runtime combination has passed the relevant runtime check; the fourteen casual, character, and animal portraits added on 2026-09-20 remain explicitly pending until that qualification is recorded.
+Static portrait readiness and lip-sync readiness are separate. A verified portrait can be selected, placed, and exported as a still image while its animation compatibility remains under review. The app must only advertise or route lip-sync when the exact portrait and runtime combination has passed the relevant runtime check.
+
+The current new-cast collection has eight exact SoulX-qualified portraits:
+Emma, Yuki, Noah, Chloe, Maya, Finn v2, Lena, and Peaches v2. Pip, Milo,
+Buddy, and Tavi are pending and remain still-only. Poppy and Leo are
+incompatible with their reviewed animation route and also remain still-only.
+Hidden legacy Peaches v1 remains pending for existing-project compatibility.
 
 ## Presenter imports and consent
 
-Synthetic and real-person portraits use separate import slots. A synthetic portrait needs origin and generation provenance but not human likeness consent. A real-person portrait or clip requires immutable consent that covers the selected operations—such as portrait animation, lip-sync, likeness generation, and distribution—and the app must enforce the required synthetic-media disclosure. User-supplied media is quarantined, decoded outside the privileged UI, normalized to sRGB/Rec.709, stored in the project CAS, and referenced by hash rather than its original path.
+The reusable **My presenters** gallery accepts only portraits the user attests
+are fictional or generated. The app renders the exact selected file for review,
+validates its declared PNG, JPEG, or WebP type in the native host, and stores
+the original bytes by SHA-256 in the reusable library. Adding that presenter to
+a tutorial copies the verified portrait into the project CAS and creates a
+project-local profile. A separate project Media import supports real-person
+portraits with consent and distribution scope. The current gallery import does
+not normalize arbitrary uploads to sRGB/Rec.709, so this document does not claim
+that conversion as shipped behavior.
 
 ## Adding shipped media safely
 
