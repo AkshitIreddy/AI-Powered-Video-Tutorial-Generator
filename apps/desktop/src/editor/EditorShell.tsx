@@ -33,7 +33,7 @@ import { EDITOR_DOCK_MIN, EDITOR_LAYOUT_DEFAULTS, EDITOR_TIMELINE_MIN, clampDock
 import { createEditorState, selectedClips } from "./model";
 import { exportOtioLike, parseEditorProject, parseOtioLike } from "./otio";
 import { editorReducer } from "./reducer";
-import { formatTimecode, nominalFramesPerSecond, parseTimecode } from "./timecode";
+import { formatTimecode, nominalFramesPerSecond, parseTimecode, rateAsNumber } from "./timecode";
 import type { EditorWaveformPreview } from "./waveform";
 import type { EditProposal, EditorClip, EditorImportBatch, EditorMediaAsset, EditorProject, OtioLikeTimeline } from "./types";
 
@@ -300,9 +300,17 @@ export function AdvancedVideoEditor({
 
   useEffect(() => {
     if (state.transport.status !== "playing") return;
-    const timer = window.setInterval(() => dispatch({ type: "TRANSPORT_TICK", elapsedSeconds: 0.1 }), 100);
+    const startedAt = performance.now();
+    const framesPerSecond = rateAsNumber(state.project.frameRate) * state.transport.playbackRate;
+    let deliveredFrames = 0;
+    const timer = window.setInterval(() => {
+      const elapsedFrames = Math.round((performance.now() - startedAt) / 1000 * framesPerSecond);
+      const delta = elapsedFrames - deliveredFrames;
+      deliveredFrames = elapsedFrames;
+      if (delta > 0) dispatch({ type: "TRANSPORT_TICK", elapsedSeconds: delta / framesPerSecond });
+    }, 100);
     return () => window.clearInterval(timer);
-  }, [state.transport.status]);
+  }, [state.transport.status, state.transport.playbackRate, state.project.frameRate]);
 
   useEffect(() => () => browserImport.current?.dispose(), []);
 

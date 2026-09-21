@@ -19,6 +19,8 @@ describe("editor preview parity", () => {
   });
 
   it("lets playing media run continuously until drift exceeds the sync tolerance", () => {
+    expect(previewMediaShouldSeek(2, 8, { playing: true, enteringPlayback: false, clipChanged: false, seeking: true, secondsSinceLastSeek: 3 })).toBe(false);
+    expect(previewMediaShouldSeek(2, 8, { playing: true, enteringPlayback: false, clipChanged: true, seeking: true })).toBe(true);
     expect(previewMediaShouldSeek(2.06, 2.12, { playing: true, enteringPlayback: false, clipChanged: false, secondsSinceLastSeek: 1 })).toBe(false);
     expect(previewMediaShouldSeek(1.9, 2.12, { playing: true, enteringPlayback: false, clipChanged: false, secondsSinceLastSeek: 1 })).toBe(true);
     expect(previewMediaShouldSeek(1.9, 2.12, { playing: true, enteringPlayback: false, clipChanged: false, secondsSinceLastSeek: 0.3 })).toBe(false);

@@ -13,8 +13,10 @@ export function previewCanvasScale(canvas: Pick<EditorCanvasSettings, "width" | 
   };
 }
 
-export function previewMediaShouldSeek(currentTime: number, expectedTime: number, options: { playing: boolean; enteringPlayback: boolean; clipChanged: boolean; secondsSinceLastSeek?: number }): boolean {
+export function previewMediaShouldSeek(currentTime: number, expectedTime: number, options: { playing: boolean; enteringPlayback: boolean; clipChanged: boolean; seeking?: boolean; secondsSinceLastSeek?: number }): boolean {
   if (!options.playing || options.enteringPlayback || options.clipChanged) return true;
+  // A new drift correction must not cancel the decode of an outstanding seek.
+  if (options.seeking) return false;
   return Math.abs(currentTime - expectedTime) > PREVIEW_MEDIA_SYNC_TOLERANCE_SECONDS
     && (options.secondsSinceLastSeek ?? Number.POSITIVE_INFINITY) >= PREVIEW_MEDIA_SEEK_COOLDOWN_SECONDS;
 }

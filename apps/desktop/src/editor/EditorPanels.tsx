@@ -123,7 +123,7 @@ function MediaPreview({ state, clip, className, canvasScale, muted = true }: { s
     const clipChanged = previousSync?.sourceKey !== sourceKey;
     const now = performance.now();
     const secondsSinceLastSeek = lastSeekAtRef.current === null ? Number.POSITIVE_INFINITY : (now - lastSeekAtRef.current) / 1000;
-    if (previewMediaShouldSeek(media.currentTime, boundedTime, { playing, enteringPlayback, clipChanged, secondsSinceLastSeek })) {
+    if (previewMediaShouldSeek(media.currentTime, boundedTime, { playing, enteringPlayback, clipChanged, seeking: media.seeking, secondsSinceLastSeek })) {
       media.currentTime = boundedTime;
       lastSeekAtRef.current = now;
     }
