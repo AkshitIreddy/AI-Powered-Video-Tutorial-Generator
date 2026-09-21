@@ -89,6 +89,33 @@ accepted animal solution. The official LivePortrait animal path currently
 using its human eye checkpoint cannot be represented as a generally qualified
 animal blink implementation.
 
+### Private VACE eye-only experiment
+
+An isolated eye-region pilot used the official
+[Wan2.1-VACE-1.3B Diffusers checkpoint](https://huggingface.co/Wan-AI/Wan2.1-VACE-1.3B-diffusers)
+at revision `ec4d2cb062b548996b179d493fdd05340de702a1` under its
+Apache-2.0 model-card license metadata. All 17 runtime files were size/hash
+verified (19,037,105,642 bytes). The exact Milo v2 SoulX clip, fixed 81-frame
+window, fixed eye masks, seed 20260921 and 30-step settings were used privately;
+the experiment was never integrated into the product.
+
+The first guarded attempt exposed a missing prompt-cleaning dependency before
+generation. After pinning `ftfy==6.3.1` and `wcwidth==0.8.4` and adding hidden
+stdout/stderr capture, the single diagnostic rerun loaded all five pipeline
+components but did not reach denoising step 1 or emit a frame. It held about
+11,934 MiB of GPU memory at full utilization during conditioning. Per the
+bounded viability gate, it was cancelled after 600 seconds without denoising;
+the guard receipt recorded 630.250 seconds including polling/termination and a
+22,750,035,968-byte peak process-tree resident set. The guard released cleanly.
+
+There is no generated clip or anatomy board to qualify. The receipt SHA-256 is
+`f9d3463a32daec9fdc141c394693f40e34cc7dc7581e57cf7d1a2c2ea589c769`;
+the captured stderr log SHA-256 is
+`905e4af9d3efdccf2ecac7761a68445f09d5b11634755fcfed0f5501e029c91a1`.
+This rejects the exact 512×512/81-frame CPU-offloaded configuration for routine
+preview performance on the reference laptop. It does not establish that VACE
+cannot work on other hardware, settings, or workloads.
+
 ## Acceptance boundary
 
 Candidate inference and visual review do not prove the packaged Windows app's
