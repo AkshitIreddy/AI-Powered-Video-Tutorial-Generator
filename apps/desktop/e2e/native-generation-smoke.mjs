@@ -28,6 +28,7 @@ import {
   runNativeMarketingFeatureScenario,
   runSoulxSetupOnly,
 } from "./native-marketing-feature-scenario.mjs";
+import { summarizeNativeWindowPlacement } from "./native-generation-report.mjs";
 
 // Opt-in real native acceptance. The cloud path uses the product's smallest
 // one-minute duration, stops before media unless planning produced three scenes,
@@ -189,6 +190,7 @@ try {
   const recordingWindow = parsed.recordWalkthrough || parsed.recordMarketingDemo || parsed.soulxSetupOnly
     ? await prepareNativeRecordingWindow({ page, desktopPid: launch.child.pid })
     : null;
+  const recordingWindowPlacement = recordingWindow ? summarizeNativeWindowPlacement(recordingWindow) : null;
 
   if (!resumeSource && !resumeLocalImageSource) {
     await page.evaluate(({ onboarding, workspace }) => {
@@ -237,7 +239,7 @@ try {
       state: "passed",
       evidenceClass: setup.evidenceClass,
       actualNativeWebView: true,
-      visibleSecondaryMonitorWindow: true,
+      ...recordingWindowPlacement,
       realProviderCalls: false,
       networkModelDownloads: 0,
       localGpuGeneration: false,
