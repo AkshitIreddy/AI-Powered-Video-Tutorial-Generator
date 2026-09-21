@@ -200,6 +200,7 @@ export function AdvancedVideoEditor({
   returning = false,
 }: AdvancedVideoEditorProps) {
   const [state, dispatch] = useReducer(editorReducer, undefined, () => createEditorState(project, proposals));
+  const shellRef = useRef<HTMLDivElement>(null);
   const [projectImportError, setProjectImportError] = useState("");
   const [renderStatus, setRenderStatus] = useState("");
   const [rendering, setRendering] = useState(false);
@@ -300,10 +301,18 @@ export function AdvancedVideoEditor({
 
   useEffect(() => {
     if (state.transport.status !== "playing") return;
-    const startedAt = performance.now();
+    let startedAt: number | null = null;
     const framesPerSecond = rateAsNumber(state.project.frameRate) * state.transport.playbackRate;
     let deliveredFrames = 0;
     const timer = window.setInterval(() => {
+      // Start the timeline clock with decoded media, not with the Play click.
+      // Otherwise an initial seek leaves the media permanently behind the clock,
+      // and every drift correction starts another expensive seek.
+      if (startedAt === null) {
+        const media = [...(shellRef.current?.querySelectorAll<HTMLMediaElement>(".aly-editor-canvas-stage video, .aly-editor-canvas-stage audio") ?? [])];
+        if (media.some((element) => !element.error && (element.seeking || element.readyState < 2))) return;
+        startedAt = performance.now();
+      }
       const elapsedFrames = Math.round((performance.now() - startedAt) / 1000 * framesPerSecond);
       const delta = elapsedFrames - deliveredFrames;
       deliveredFrames = elapsedFrames;
@@ -424,7 +433,7 @@ export function AdvancedVideoEditor({
   const frameRateValue = state.project.frameRate.numerator / state.project.frameRate.denominator;
 
   return (
-    <div className={`aly-editor-shell${className ? ` ${className}` : ""}`} role="application" aria-label={editorLabel} aria-describedby={statusId} tabIndex={0} onKeyDown={onEditorKeyDown}>
+    <div ref={shellRef} className={`aly-editor-shell${className ? ` ${className}` : ""}`} role="application" aria-label={editorLabel} aria-describedby={statusId} tabIndex={0} onKeyDown={onEditorKeyDown}>
       <header className="aly-editor-shell__topbar">
         <div className="aly-editor-shell__identity">
           {onReturn ? (

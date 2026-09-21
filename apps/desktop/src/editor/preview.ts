@@ -3,7 +3,9 @@ import type { EditorCanvasSettings, EditorClip, InspectorProperty, TextStyle } f
 
 export interface PreviewCanvasSize { width: number; height: number }
 export interface PreviewCanvasScale { x: number; y: number }
-export const PREVIEW_MEDIA_SYNC_TOLERANCE_SECONDS = 0.1;
+// Transport paints every 100 ms. Normal scheduling/decode jitter must not
+// trigger repeated backwards seeks in otherwise continuous playback.
+export const PREVIEW_MEDIA_SYNC_TOLERANCE_SECONDS = 0.25;
 export const PREVIEW_MEDIA_SEEK_COOLDOWN_SECONDS = 0.75;
 
 export function previewCanvasScale(canvas: Pick<EditorCanvasSettings, "width" | "height">, preview: PreviewCanvasSize): PreviewCanvasScale {

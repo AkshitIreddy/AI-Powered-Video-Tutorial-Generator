@@ -22,8 +22,9 @@ describe("editor preview parity", () => {
     expect(previewMediaShouldSeek(2, 8, { playing: true, enteringPlayback: false, clipChanged: false, seeking: true, secondsSinceLastSeek: 3 })).toBe(false);
     expect(previewMediaShouldSeek(2, 8, { playing: true, enteringPlayback: false, clipChanged: true, seeking: true })).toBe(true);
     expect(previewMediaShouldSeek(2.06, 2.12, { playing: true, enteringPlayback: false, clipChanged: false, secondsSinceLastSeek: 1 })).toBe(false);
-    expect(previewMediaShouldSeek(1.9, 2.12, { playing: true, enteringPlayback: false, clipChanged: false, secondsSinceLastSeek: 1 })).toBe(true);
-    expect(previewMediaShouldSeek(1.9, 2.12, { playing: true, enteringPlayback: false, clipChanged: false, secondsSinceLastSeek: 0.3 })).toBe(false);
+    expect(previewMediaShouldSeek(1.9, 2.12, { playing: true, enteringPlayback: false, clipChanged: false, secondsSinceLastSeek: 1 })).toBe(false);
+    expect(previewMediaShouldSeek(1.8, 2.12, { playing: true, enteringPlayback: false, clipChanged: false, secondsSinceLastSeek: 1 })).toBe(true);
+    expect(previewMediaShouldSeek(1.8, 2.12, { playing: true, enteringPlayback: false, clipChanged: false, secondsSinceLastSeek: 0.3 })).toBe(false);
     expect(previewMediaShouldSeek(2.12, 2.12, { playing: true, enteringPlayback: true, clipChanged: false })).toBe(true);
     expect(previewMediaShouldSeek(2.12, 2.12, { playing: true, enteringPlayback: false, clipChanged: true })).toBe(true);
     expect(previewMediaShouldSeek(2.12, 2.12, { playing: false, enteringPlayback: false, clipChanged: false })).toBe(true);
