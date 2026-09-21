@@ -260,6 +260,7 @@ import { PresenterAnimationPreviewReview } from "./PresenterAnimationPreviewRevi
 import {
   buildPresenterGenerationRequest,
   materializeLibraryPresenters,
+  mergeMaterializedPresenterAssets,
   presenterAnimationPreviewFromJob,
   presenterChoicesForProject,
   useCustomPresenterLibrary,
@@ -3074,8 +3075,15 @@ function PlanWorkspace({ project, activeScene, environment, presenterLibrary, on
           nativeHeadRevisionId: imported.headRevisionId,
           nativeRevisionNumber: imported.revisionNumber,
         });
-        const choices = presenterChoicesForProject(PRESENTER_CHOICES, presenterLibrary.entries, hydrated.customization?.assets ?? [], materialized.selection);
-        const customization = presenterCustomizationForSelection(hydrated, materialized.selection, choices);
+        const durableCustomization = canvasCustomization(hydrated);
+        const materializedAssets = mergeMaterializedPresenterAssets(
+          durableCustomization.assets,
+          presenterLibrary.entries,
+          materialized.receipts,
+        );
+        const withMaterializedAssets = { ...hydrated, customization: { ...durableCustomization, assets: materializedAssets } };
+        const choices = presenterChoicesForProject(PRESENTER_CHOICES, presenterLibrary.entries, materializedAssets, materialized.selection);
+        const customization = presenterCustomizationForSelection(withMaterializedAssets, materialized.selection, choices);
         const saved = await projectSnapshotSave({
           ...identity,
           expectedHeadRevisionId: imported.headRevisionId,

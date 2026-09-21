@@ -120,6 +120,41 @@ export async function materializeLibraryPresenters(
   };
 }
 
+export function mergeMaterializedPresenterAssets(
+  existing: readonly StudioAssetReference[],
+  entries: readonly ResolvedPresenterLibraryEntry[],
+  receipts: readonly ProjectAssetImportReceipt[],
+): StudioAssetReference[] {
+  const imported = receipts.map((receipt): StudioAssetReference => {
+    const entry = entries.find((candidate) => candidate.sha256 === receipt.artifact.sha256);
+    if (!entry || receipt.artifact.kind !== "presenterPortrait" || !receipt.presenterProfile
+      || receipt.presenterProfile.portraitArtifactId !== receipt.artifact.id
+      || receipt.artifact.sha256 !== entry.sha256) {
+      throw new Error("The imported presenter receipt does not match its reusable portrait.");
+    }
+    return {
+      id: receipt.artifact.id,
+      kind: "presenter",
+      label: receipt.presenterProfile.displayName || entry.displayName,
+      source: entry.source.kind === "generated" ? "generated" : "user-upload",
+      filename: receipt.artifact.originalFilename,
+      mediaType: receipt.artifact.mediaType,
+      byteSize: receipt.artifact.byteSize,
+      sha256: receipt.artifact.sha256,
+      creator: receipt.provenance.creator ?? entry.rights.creator ?? "Project owner",
+      license: receipt.provenance.license ?? entry.rights.license ?? (entry.rights.status === "owned" ? "User owned" : "Rights recorded"),
+      attribution: receipt.provenance.attribution ?? entry.rights.attribution ?? (entry.rights.status === "owned" ? "No attribution required" : "Attribution recorded with source"),
+      rightsStatus: receipt.provenance.exportEligible ? "cleared" : "review",
+    };
+  });
+  const importedIds = new Set(imported.map((asset) => asset.id));
+  const importedHashes = new Set(imported.map((asset) => asset.sha256));
+  return [
+    ...existing.filter((asset) => !importedIds.has(asset.id) && (!asset.sha256 || !importedHashes.has(asset.sha256))),
+    ...imported,
+  ];
+}
+
 export function buildPresenterGenerationRequest(input: ProjectIdentityRequest & {
   headRevisionId: string;
   baseJobId?: string;

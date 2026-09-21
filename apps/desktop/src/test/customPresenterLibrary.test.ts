@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildPresenterGenerationRequest,
   materializeLibraryPresenters,
+  mergeMaterializedPresenterAssets,
   presenterAnimationPreviewFromJob,
   presenterLibraryChoice,
   presenterChoicesForProject,
@@ -130,5 +131,68 @@ describe("custom presenter library", () => {
       sceneAssignments: [],
     });
     expect(choices).toEqual([expect.objectContaining({ id: "asset-nova", presenterId: "profile-nova", src: entry.previewUrl })]);
+  });
+
+  it("persists a materialized library portrait as one project alias without importing it again", async () => {
+    const receipt = {
+      projectId: "project-1",
+      headRevisionId: "revision-2",
+      revisionNumber: 2,
+      artifact: {
+        id: "asset-nova",
+        kind: "presenterPortrait" as const,
+        sha256: entry.sha256,
+        byteSize: entry.byteSize,
+        mediaType: entry.mediaType,
+        originalFilename: entry.originalFilename,
+        state: "promoted",
+      },
+      provenance: {
+        id: "provenance-nova",
+        origin: "userImport",
+        rightsStatus: "owned" as const,
+        creator: "Project owner",
+        license: "User owned",
+        attribution: "No attribution required",
+        exportEligible: true,
+        blockers: [],
+        modelInputEligible: true,
+        modelInputBlockers: [],
+      },
+      presenterProfile: {
+        profileId: "profile-nova",
+        displayName: "Nova",
+        portraitArtifactId: "asset-nova",
+        identityType: "synthetic" as const,
+        disclosureRequired: true,
+        authorizedDistributionScope: "publicCommercial" as const,
+      },
+    };
+    const assets = mergeMaterializedPresenterAssets([], [entry], [receipt]);
+    expect(assets).toEqual([expect.objectContaining({
+      id: "asset-nova",
+      kind: "presenter",
+      label: "Nova",
+      source: "user-upload",
+      sha256: entry.sha256,
+      rightsStatus: "cleared",
+    })]);
+    const selection = {
+      schemaVersion: 1 as const,
+      mode: "on" as const,
+      presenters: [{ presenterId: "profile-nova", portraitAssetId: "asset-nova" }],
+      sceneAssignments: [],
+    };
+    expect(presenterChoicesForProject([], [entry], assets, selection)).toEqual([
+      expect.objectContaining({ id: "asset-nova", presenterId: "profile-nova", customPortrait: { libraryEntryId: entry.id, animationReview: "notReviewed", source: "upload" } }),
+    ]);
+    const importer = vi.fn();
+    const repeated = await materializeLibraryPresenters(selection, {
+      projectId: "project-1",
+      projectDirectory: "C:/Projects/One",
+      headRevisionId: "revision-2",
+    }, new Set([entry.id]), importer);
+    expect(importer).not.toHaveBeenCalled();
+    expect(repeated).toMatchObject({ selection, receipts: [], headRevisionId: "revision-2" });
   });
 });
