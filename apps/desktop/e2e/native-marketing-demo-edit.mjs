@@ -15,6 +15,7 @@ export const marketingDemoTitle = "Why the daytime sky looks blue";
 export const marketingTeachingScript = "Sunlight looks white, but it carries every visible color. In Earth's atmosphere, tiny molecules scatter shorter blue wavelengths much more strongly than red ones. That scattered blue reaches your eyes from every direction, so the daytime sky looks blue.";
 export const marketingProductScript = "This is a real lesson, ready to refine. Edit the script, timing, captions, and layout in one timeline. Choose a presenter, or start with included teaching visuals. Use cloud providers or downloadable local models. Then review and export the finished tutorial.";
 export const marketingFrameRate = 30;
+export const presentersPlanSectionPattern = /Presenters$/u;
 export const marketingCaptionStyle = Object.freeze({
   fontFamily: "Segoe UI Semibold",
   fontSizeAt1440x810: 34,
@@ -719,7 +720,7 @@ export function buildMarketingNativeCaptureTimeline({ timeline, edit, projectTit
     t.call(async (gifPage, ctx) => {
       await clickByAriaPrefix(gifPage, ctx, "Return to scene");
       await clickByAria(gifPage, ctx, "Plan");
-      await clickByText(gifPage, ctx, /^Presenters$/u);
+      await clickByText(gifPage, ctx, presentersPlanSectionPattern);
       await ctx.settle(gifPage.waitForSelector(".presenter-picker__gallery", { visible: true }), { label: "presenter gallery" });
     }, { name: "Open presenter gallery", seconds: 0.8 });
     t.cue("Presenters and included teaching visuals");

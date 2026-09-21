@@ -13,6 +13,7 @@ import {
   marketingFrameRate,
   openExactNativeProject,
   prepareMarketingTutorialInNativeEditor,
+  presentersPlanSectionPattern,
   waitForDurableMarketingTimeline,
   validateMarketingAssetManifest,
 } from "./native-marketing-demo-edit.mjs";
@@ -663,7 +664,7 @@ async function exerciseCustomPresenter({ page, invokeNative, invokeNativeWithout
   await returnFromNativeEditorIfOpen(page, actionTimeoutMs);
   const projectNavigation = page.getByRole("navigation", { name: /project workspace/iu });
   await projectNavigation.getByRole("button", { name: /^Plan$/iu }).click();
-  await page.getByRole("button", { name: /^Presenters$/u }).click();
+  await page.getByRole("button", { name: presentersPlanSectionPattern }).click();
   await expect(page.getByRole("region", { name: "Custom presenter library" })).toBeVisible({ timeout: actionTimeoutMs });
   await page.getByTitle("Import a portrait you own").click();
   await page.getByLabel("Portrait file").setInputFiles(portraitPath);
@@ -679,7 +680,7 @@ async function exerciseCustomPresenter({ page, invokeNative, invokeNativeWithout
   await expect(page.locator(".runtime-badge")).toContainText("Worker ready", { timeout: actionTimeoutMs });
   await openExactProject(page, projectTitle, identity, actionTimeoutMs, true);
   await page.getByRole("navigation", { name: /project workspace/iu }).getByRole("button", { name: /^Plan$/iu }).click();
-  await page.getByRole("button", { name: /^Presenters$/u }).click();
+  await page.getByRole("button", { name: presentersPlanSectionPattern }).click();
   const persistedSelect = page.getByRole("button", { name: `Select ${displayName}`, exact: true });
   await expect(persistedSelect).toBeVisible({ timeout: actionTimeoutMs });
   await persistedSelect.click();

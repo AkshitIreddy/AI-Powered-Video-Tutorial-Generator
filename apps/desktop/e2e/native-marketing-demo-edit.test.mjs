@@ -14,6 +14,7 @@ import {
   marketingCaptionStyle,
   marketingTeachingScript,
   nativeProjectCardIdentityToken,
+  presentersPlanSectionPattern,
   rayleighVisuals,
   resolveNativeProjectCardChoice,
   validateMarketingAssetManifest,
@@ -39,6 +40,11 @@ test("native project reopening prefers the exact persisted identity and rejects 
   assert.equal(resolveNativeProjectCardChoice({ identityMatches: 0, titleMatches: 1 }), "title");
   assert.throws(() => resolveNativeProjectCardChoice({ identityMatches: 0, titleMatches: 2 }), /title fallback matched 2/u);
   assert.throws(() => nativeProjectCardIdentityToken('project"unsafe'), /not safe/u);
+});
+
+test("Plan presenter selector matches the current numbered section button", () => {
+  assert.equal(presentersPlanSectionPattern.test("5 Presenters"), true);
+  assert.equal(presentersPlanSectionPattern.test("5 Script"), false);
 });
 
 test("durable marketing timeline inspection requires exact ranges, presenter transforms, and no overlap", () => {
