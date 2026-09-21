@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   assertSoulxManagedStart,
+  assertMusicSearchJobReceipt,
   assertSoulxNativeReadiness,
   preserveCaptionFreeTutorialExport,
   preflightSoulxHydratedCache,
@@ -53,6 +54,25 @@ function readyInput() {
     }],
   };
 }
+
+test("music evidence separates one user search from every durable Openverse HTTP query", () => {
+  const receipt = assertMusicSearchJobReceipt({
+    job_id: "job-music-1",
+    state: "SUCCEEDED",
+    parameters_json: JSON.stringify({ topic: "Rayleigh scattering", mood: "curious", alternatives: 3 }),
+    result_json: JSON.stringify({
+      operation: "search_music_candidates",
+      providerId: "openverse",
+      topic: "Rayleigh scattering",
+      mood: "curious",
+      queriesAttempted: ["Rayleigh scattering", "curious", "instrumental"],
+      candidateIds: ["music-a", "music-b"],
+    }),
+  }, { topic: "Rayleigh scattering", mood: "curious", acceptedCandidateId: "music-b" });
+  assert.equal(receipt.searchOperationCount, 1);
+  assert.equal(receipt.httpQueryCount, 3);
+  assert.deepEqual(receipt.queriesAttempted, ["Rayleigh scattering", "curious", "instrumental"]);
+});
 
 test("SoulX readiness mirrors the native download, setup, and presenter-status DTOs", () => {
   const receipt = assertSoulxNativeReadiness(readyInput());

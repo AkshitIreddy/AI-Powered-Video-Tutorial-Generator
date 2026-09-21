@@ -69,7 +69,8 @@ export async function preflightNativeMarketingFeatureScenario({
     permitsNetworkModelDownload: false,
     permitsLocalInference: true,
     expectedLocalInferenceCalls: 1,
-    expectedMusicSearches: 1,
+    expectedMusicSearchOperations: 1,
+    expectedOpenverseHttpQueryRange: [1, 3],
     capture,
   };
 }
@@ -331,8 +332,10 @@ export async function runNativeMarketingFeatureScenario({
     actualNativeWebView: true,
     fixtureUi: false,
     providerCalls: 0,
-    openverseSearches: 1,
-    externalMediaDownloadBound: "one search with at most three rights-eligible candidates",
+    openverseSearchOperations: music.search.searchOperationCount,
+    openverseHttpQueriesAttempted: music.search.httpQueryCount,
+    openverseQueriesAttempted: music.search.queriesAttempted,
+    externalMediaDownloadBound: "one user search operation; the durable job receipt records each of up to three Openverse HTTP queries and at most three rights-eligible candidates",
     modelDownloadsStarted: activation.modelDownloadStartInvoked ? 1 : 0,
     networkModelDownloads: 0,
     cachePreflight,
@@ -721,7 +724,49 @@ async function exerciseMusicBrowser({ page, invokeNative, identity, query, mood,
   await expect(selected).not.toHaveValue("music-none");
   const screenshot = path.join(runRoot, "feature-04-music-preview-accepted.png");
   await page.screenshot({ path: screenshot, fullPage: true });
-  return { candidateId: accepted.id, title, artifactHash: accepted.artifactHash, license: accepted.license, sourceUrl: accepted.sourceUrl, licenseUrl: accepted.licenseUrl, attribution: accepted.attribution, screenshot };
+  const search = await readMusicSearchJobReceipt(identity.projectDirectory, {
+    topic: query,
+    mood,
+    acceptedCandidateId: accepted.id,
+  });
+  return { candidateId: accepted.id, title, artifactHash: accepted.artifactHash, license: accepted.license, sourceUrl: accepted.sourceUrl, licenseUrl: accepted.licenseUrl, attribution: accepted.attribution, screenshot, search };
+}
+
+export function assertMusicSearchJobReceipt(row, { topic, mood, acceptedCandidateId }) {
+  const parameters = typeof row?.parameters_json === "string" ? JSON.parse(row.parameters_json) : row?.parameters;
+  const result = typeof row?.result_json === "string" ? JSON.parse(row.result_json) : row?.result;
+  const queriesAttempted = result?.queriesAttempted;
+  if (row?.state !== "SUCCEEDED" || result?.operation !== "search_music_candidates" || result.providerId !== "openverse"
+    || parameters?.topic !== topic || parameters?.mood !== mood || result.topic !== topic || result.mood !== mood
+    || !Array.isArray(queriesAttempted) || queriesAttempted.length < 1 || queriesAttempted.length > 3
+    || queriesAttempted.some((query) => typeof query !== "string" || !query.trim())
+    || new Set(queriesAttempted).size !== queriesAttempted.length
+    || !Array.isArray(result.candidateIds) || !result.candidateIds.includes(acceptedCandidateId)) {
+    throw new Error("Durable Openverse search receipt does not match the accepted music operation");
+  }
+  return {
+    searchOperationCount: 1,
+    jobId: row.job_id,
+    providerId: result.providerId,
+    topic: result.topic,
+    mood: result.mood,
+    httpQueryCount: queriesAttempted.length,
+    queriesAttempted: [...queriesAttempted],
+    candidateCount: result.candidateIds.length,
+    acceptedCandidateId,
+  };
+}
+
+async function readMusicSearchJobReceipt(projectDirectory, expected) {
+  const { DatabaseSync } = await import("node:sqlite");
+  const database = new DatabaseSync(path.join(projectDirectory, "project.sqlite3"), { readOnly: true });
+  try {
+    const rows = database.prepare("SELECT job_id, state, parameters_json, result_json FROM jobs WHERE kind = 'native.search_music_candidates' ORDER BY created_at").all();
+    if (rows.length !== 1) throw new Error(`Expected one user music-search operation, found ${rows.length}`);
+    return assertMusicSearchJobReceipt(rows[0], expected);
+  } finally {
+    database.close();
+  }
 }
 
 async function openExactProject(page, fallbackLabel, identity, timeout, forceHome) {
