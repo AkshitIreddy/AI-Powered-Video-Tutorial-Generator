@@ -11,6 +11,7 @@ import {
   buildMarketingNativeCaptureTimeline,
   marketingDemoTitle,
   marketingFrameRate,
+  openExactNativeProject,
   prepareMarketingTutorialInNativeEditor,
   validateMarketingAssetManifest,
 } from "./native-marketing-demo-edit.mjs";
@@ -724,16 +725,12 @@ async function exerciseMusicBrowser({ page, invokeNative, identity, query, mood,
 }
 
 async function openExactProject(page, fallbackLabel, identity, timeout, forceHome) {
-  const navigation = page.getByRole("navigation", { name: /project workspace/iu });
-  if (!forceHome && await navigation.isVisible()) return;
-  const projects = page.getByRole("button", { name: "Projects", exact: true });
-  if (await projects.isVisible()) await projects.click();
-  const exact = page.locator("button.project-card").filter({ hasText: identity.projectId });
-  const fallback = page.locator("button.project-card").filter({ hasText: fallbackLabel });
-  const card = await exact.count() === 1 ? exact : fallback;
-  await expect(card).toBeVisible({ timeout });
-  await card.click();
-  await expect(navigation).toBeVisible({ timeout });
+  await openExactNativeProject(page, {
+    identity,
+    fallbackLabel,
+    timeout,
+    forceProjects: forceHome,
+  });
 }
 
 async function verifyShortPreviewPlayback(locator, minimumMs, maximumMs) {

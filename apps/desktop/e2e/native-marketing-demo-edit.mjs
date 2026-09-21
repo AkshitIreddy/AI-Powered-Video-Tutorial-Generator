@@ -53,6 +53,45 @@ export const rayleighVisuals = Object.freeze([
   },
 ]);
 
+export function nativeProjectCardIdentityToken(projectId) {
+  if (typeof projectId !== "string" || !/^[A-Za-z0-9_-]+$/u.test(projectId)) {
+    throw new Error("Native project identity is not safe for an exact project-card class lookup");
+  }
+  return `art-${projectId}`;
+}
+
+export function resolveNativeProjectCardChoice({ identityMatches, titleMatches }) {
+  if (identityMatches === 1) return "identity";
+  if (identityMatches !== 0) throw new Error(`Native project identity matched ${identityMatches} project cards`);
+  if (titleMatches === 1) return "title";
+  throw new Error(`Native project title fallback matched ${titleMatches} project cards`);
+}
+
+export async function openExactNativeProject(page, { identity, fallbackLabel, timeout, forceProjects = false }) {
+  const navigation = page.getByRole("navigation", { name: /project workspace/iu });
+  if (!forceProjects && await navigation.isVisible()) return navigation;
+  const projects = page.getByRole("button", { name: "Projects", exact: true });
+  await expect(projects).toBeVisible({ timeout });
+  await projects.click();
+  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible({ timeout });
+  const identityToken = nativeProjectCardIdentityToken(identity?.projectId);
+  const identityCard = page.locator("button.project-card").filter({
+    has: page.locator(`.project-card-art[class~="${identityToken}"]`),
+  });
+  const titleCard = page.locator("button.project-card").filter({
+    has: page.getByRole("heading", { name: fallbackLabel, exact: true }),
+  });
+  const choice = resolveNativeProjectCardChoice({
+    identityMatches: await identityCard.count(),
+    titleMatches: await titleCard.count(),
+  });
+  const card = choice === "identity" ? identityCard : titleCard;
+  await expect(card).toBeVisible({ timeout });
+  await card.click();
+  await expect(navigation).toBeVisible({ timeout });
+  return navigation;
+}
+
 const productBeatContract = Object.freeze([
   { id: "native-review", minimumSeconds: 2.4, source: "actual-native-tutorial-review", motion: "context-pull-1.08-to-1.00", editorialZoom: 1.08, focusRegion: "review-player" },
   { id: "native-editor", minimumSeconds: 4.2, source: "actual-native-ui-capture", motion: "ease-into-transcript-dock-and-timeline-resize", editorialZoom: 1.34, focusRegion: "editor-transcript-dock-timeline" },
@@ -427,12 +466,12 @@ export async function prepareMarketingTutorialInNativeEditor({
   }, project);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator(".runtime-badge")).toContainText("Worker ready", { timeout: actionTimeoutMs });
-  const navigation = page.getByRole("navigation", { name: /project workspace/i });
-  if (!await navigation.isVisible()) {
-      const projectCard = page.locator("button.project-card").filter({ has: page.getByRole("heading", { name: initialSnapshot.title, exact: true }) });
-      await expect(projectCard).toBeVisible({ timeout: actionTimeoutMs });
-      await projectCard.click();
-  }
+  const navigation = await openExactNativeProject(page, {
+    identity,
+    fallbackLabel: initialSnapshot.title,
+    timeout: actionTimeoutMs,
+    forceProjects: true,
+  });
   await navigation.getByRole("button", { name: /^studio$/iu }).click();
   await page.getByRole("button", { name: /^edit tracks & timing/iu }).click();
   const editor = page.getByRole("dialog", { name: "Integrated advanced video editor" });

@@ -12,7 +12,9 @@ import {
   deriveAdaptiveMarketingEdit,
   marketingCaptionStyle,
   marketingTeachingScript,
+  nativeProjectCardIdentityToken,
   rayleighVisuals,
+  resolveNativeProjectCardChoice,
   validateMarketingAssetManifest,
 } from "./native-marketing-demo-edit.mjs";
 
@@ -29,6 +31,14 @@ const teachingCaptions = [
   { id: "molecule-scattering", startSeconds: 3.2, endSeconds: 8.4, text: "In Earth's atmosphere, tiny molecules scatter shorter blue wavelengths much more strongly than red ones." },
   { id: "viewer-conclusion", startSeconds: 8.4, endSeconds: 12.4, text: "That scattered blue reaches your eyes from every direction, so the daytime sky looks blue." },
 ];
+
+test("native project reopening prefers the exact persisted identity and rejects ambiguous title fallbacks", () => {
+  assert.equal(nativeProjectCardIdentityToken("project-2f8b7a"), "art-project-2f8b7a");
+  assert.equal(resolveNativeProjectCardChoice({ identityMatches: 1, titleMatches: 2 }), "identity");
+  assert.equal(resolveNativeProjectCardChoice({ identityMatches: 0, titleMatches: 1 }), "title");
+  assert.throws(() => resolveNativeProjectCardChoice({ identityMatches: 0, titleMatches: 2 }), /title fallback matched 2/u);
+  assert.throws(() => nativeProjectCardIdentityToken('project"unsafe'), /not safe/u);
+});
 
 test("adaptive edit follows verified narration durations and covers 35–50 seconds without a gap", () => {
   const edit = deriveAdaptiveMarketingEdit({ teachingDurationSeconds: 12.4, teachingSegments: teachingCaptions, productSegments });
