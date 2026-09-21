@@ -107,6 +107,19 @@ class FakePresenterRunner:
                 )
             portrait = Path(call[call.index("--portrait") + 1])
             output = Path(call[call.index("--output") + 1])
+            if "--workspace" in call:
+                workspace = Path(call[call.index("--workspace") + 1]).resolve(strict=True)
+                for name in (
+                    "CUDA_CACHE_PATH",
+                    "HF_HOME",
+                    "MPLCONFIGDIR",
+                    "NUMBA_CACHE_DIR",
+                    "TORCH_HOME",
+                    "TRITON_CACHE_DIR",
+                    "XDG_CACHE_HOME",
+                ):
+                    cache = Path(environment[name]).resolve(strict=True)
+                    cache.relative_to(workspace)
             if "--job" in call:
                 manifest = Path(call[call.index("--job") + 1])
                 job = json.loads(manifest.read_text(encoding="utf-8"))
@@ -405,6 +418,37 @@ def test_presenter_environment_uses_project_contained_home_roots(
         assert environment["USERPROFILE"] == str(expected_home)
         assert expected_home.is_dir()
         assert "NVIDIA_API_KEY" not in environment
+    finally:
+        store.close()
+
+
+def test_presenter_worker_environment_uses_attempt_contained_cache_roots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, portrait_hash, _ = _store_with_inputs(tmp_path)
+    runtime, worker, ffprobe = _runtime(tmp_path / "runtime")
+    runner = FakePresenterRunner(worker, ffprobe)
+    workspace = store.root / "staging" / "presenter" / "attempt-test" / "workspace"
+    workspace.mkdir(parents=True)
+    monkeypatch.setenv("NUMBA_CACHE_DIR", str(tmp_path / "unsafe-host-numba-cache"))
+    try:
+        environment = _client(store, runtime, portrait_hash, runner)._safe_environment(workspace)
+        environment_root = workspace / "runtime-environment"
+        assert environment["HOME"] == str(environment_root / "home")
+        assert environment["USERPROFILE"] == str(environment_root / "home")
+        expected = {
+            "CUDA_CACHE_PATH": "cuda",
+            "HF_HOME": "huggingface",
+            "MPLCONFIGDIR": "matplotlib",
+            "NUMBA_CACHE_DIR": "numba",
+            "TORCH_HOME": "torch",
+            "TRITON_CACHE_DIR": "triton",
+            "XDG_CACHE_HOME": "xdg",
+        }
+        for name, directory in expected.items():
+            cache = Path(environment[name])
+            assert cache == environment_root / directory
+            assert cache.is_dir()
     finally:
         store.close()
 

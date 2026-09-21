@@ -62,6 +62,15 @@ SAFE_ENVIRONMENT_KEYS = frozenset(
         "WINDIR",
     }
 )
+WORKER_CACHE_DIRECTORIES = {
+    "CUDA_CACHE_PATH": "cuda",
+    "HF_HOME": "huggingface",
+    "MPLCONFIGDIR": "matplotlib",
+    "NUMBA_CACHE_DIR": "numba",
+    "TORCH_HOME": "torch",
+    "TRITON_CACHE_DIR": "triton",
+    "XDG_CACHE_HOME": "xdg",
+}
 PORTRAIT_SUFFIXES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -905,7 +914,7 @@ class LocalPresenterMediaClient:
                         result = self.runner.run(
                             argv,
                             cwd=runtime_root,
-                            environment=self._safe_environment(),
+                            environment=self._safe_environment(workspace_root),
                             timeout_seconds=self.runtime.timeout_seconds,
                             cancelled=self._is_cancelled,
                         )
@@ -1401,7 +1410,7 @@ class LocalPresenterMediaClient:
             arguments.append(value)
         return (str(self.runtime.executable.path.resolve(strict=True)), *arguments)
 
-    def _safe_environment(self) -> dict[str, str]:
+    def _safe_environment(self, writable_workspace: Path | None = None) -> dict[str, str]:
         environment = {
             key.upper(): value
             for key, value in os.environ.items()
@@ -1411,10 +1420,30 @@ class LocalPresenterMediaClient:
         # Some Python dependencies call Path.home() even when every model and
         # cache path is explicitly pinned.  Give the worker a contained home
         # instead of exposing the host profile (and its credentials/config).
-        presenter_home = _guarded_child(
-            self.store.root,
-            self.store.root / "staging" / "presenter" / "runtime-home",
-        )
+        if writable_workspace is None:
+            presenter_home = _guarded_child(
+                self.store.root,
+                self.store.root / "staging" / "presenter" / "runtime-home",
+            )
+        else:
+            if writable_workspace.is_symlink() or not writable_workspace.is_dir():
+                raise LocalPresenterPolicyError(
+                    "Presenter worker cache workspace must be an existing regular directory"
+                )
+            try:
+                workspace = writable_workspace.resolve(strict=True)
+                workspace.relative_to(self.store.root.resolve(strict=True))
+            except (OSError, ValueError) as error:
+                raise LocalPresenterPolicyError(
+                    "Presenter worker cache workspace must stay inside the project staging root"
+                ) from error
+            environment_root = _guarded_child(workspace, workspace / "runtime-environment")
+            environment_root.mkdir(exist_ok=True)
+            presenter_home = _guarded_child(environment_root, environment_root / "home")
+            for name, directory in WORKER_CACHE_DIRECTORIES.items():
+                cache = _guarded_child(environment_root, environment_root / directory)
+                cache.mkdir(exist_ok=True)
+                environment[name] = _subprocess_environment_path(cache)
         presenter_home.mkdir(parents=True, exist_ok=True)
         environment_home = _subprocess_environment_path(presenter_home)
         environment["HOME"] = environment_home

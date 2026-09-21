@@ -291,11 +291,13 @@ def test_runtime_hashing_is_bounded_ordered_and_propagates_failure(
 
 def test_runtime_ledger_reports_unexpected_cache_directory_path(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
-    cache = runtime / "venv" / "Lib" / "site-packages" / "numpy" / "__pycache__"
+    cache = runtime / "venv" / "Lib" / "site-packages" / "librosa" / "core" / "__pycache__"
     cache.mkdir(parents=True)
+    (cache / "audio._zc_wrapper-1154.py310.nbi").write_bytes(b"numba index")
+    (cache / "audio._zc_wrapper-1154.py310.1.nbc").write_bytes(b"numba cache")
     with pytest.raises(
         installer.PresenterRuntimeInstallError,
-        match=r"mutable directory: venv/Lib/site-packages/numpy/__pycache__",
+        match=r"mutable directory: venv/Lib/site-packages/librosa/core/__pycache__",
     ):
         installer._runtime_files(runtime)
 
