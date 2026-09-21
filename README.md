@@ -1,4 +1,15 @@
+<p align="center">
+  <img src="docs/media/tutorial-studio-banner.png" alt="A creative tutorial studio with realistic and anime hosts, a kitten, and flowing illustrated lessons" width="960" />
+</p>
+
 <h1 align="center">AI Video Tutorial Generator</h1>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Windows-8C78C5?style=flat-square&amp;labelColor=30273F" alt="Windows" />
+  <a href="https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest"><img src="https://img.shields.io/badge/Download-v1.8.0-D9A85F?style=flat-square&amp;labelColor=30273F" alt="Download version 1.8.0" /></a>
+  <a href="#local-and-cloud-options"><img src="https://img.shields.io/badge/AI-local%20%2B%20BYOK-8FB5A0?style=flat-square&amp;labelColor=30273F" alt="Local and bring-your-own-key AI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-C9B5ED?style=flat-square&amp;labelColor=30273F" alt="MIT License" /></a>
+</p>
 
 <a id="see-it-in-action"></a>
 
@@ -13,13 +24,6 @@
   <strong>Turn a question, topic, or source into a tutorial you can inspect and edit.</strong><br />
   Research, script, storyboard, narrate, animate presenters, refine the timeline,<br />
   and export from one Windows desktop workspace.
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Platform-Windows-8C78C5?style=flat-square&amp;labelColor=30273F" alt="Windows" />
-  <a href="https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest"><img src="https://img.shields.io/badge/Download-v1.8.0-D9A85F?style=flat-square&amp;labelColor=30273F" alt="Download version 1.8.0" /></a>
-  <a href="#local-and-cloud-options"><img src="https://img.shields.io/badge/AI-local%20%2B%20BYOK-8FB5A0?style=flat-square&amp;labelColor=30273F" alt="Local and bring-your-own-key AI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-C9B5ED?style=flat-square&amp;labelColor=30273F" alt="MIT License" /></a>
 </p>
 
 <p align="center">
