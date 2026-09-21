@@ -51,12 +51,13 @@ export async function preflightNativeMarketingFeatureScenario({
   gpuCoordinationPath,
   gifsmithRoot = null,
   recordCapture = false,
+  captureOnly = false,
 }) {
   const validation = await validateMarketingAssetManifest(manifestPath, { ffprobePath, stage: "preflight" });
   if (validation.manifest.mode !== "final") throw new Error("The native marketing feature scenario requires a final asset manifest");
-  const portrait = await inspectPortrait(customPortraitPath, customPortraitSha256);
-  const coordination = await stat(gpuCoordinationPath).catch(() => null);
-  if (!coordination?.isFile()) throw new Error("The native SoulX preview requires the explicit GPU coordination marker path");
+  const portrait = captureOnly ? null : await inspectPortrait(customPortraitPath, customPortraitSha256);
+  const coordination = captureOnly ? null : await stat(gpuCoordinationPath).catch(() => null);
+  if (!captureOnly && !coordination?.isFile()) throw new Error("The native SoulX preview requires the explicit GPU coordination marker path");
   const capture = recordCapture
     ? await preflightMarketingCapture({ gifsmithRoot, edit: validation.edit, projectTitle: marketingDemoTitle })
     : null;
@@ -67,16 +68,84 @@ export async function preflightNativeMarketingFeatureScenario({
     marketingValidation: { edit: validation.edit, stage: validation.stage },
     portrait,
     soulx: soulxModelContract,
-    gpuCoordinationPath: path.resolve(gpuCoordinationPath),
+    gpuCoordinationPath: captureOnly ? null : path.resolve(gpuCoordinationPath),
     permitsProviderCalls: false,
-    permitsManagedInstallationActivation: true,
-    requiresHydratedManagedPackage: true,
+    permitsManagedInstallationActivation: !captureOnly,
+    requiresHydratedManagedPackage: !captureOnly,
     permitsNetworkModelDownload: false,
-    permitsLocalInference: true,
-    expectedLocalInferenceCalls: 1,
-    expectedMusicSearchOperations: 1,
-    expectedOpenverseHttpQueryRange: [1, 3],
+    permitsLocalInference: !captureOnly,
+    expectedLocalInferenceCalls: captureOnly ? 0 : 1,
+    expectedMusicSearchOperations: captureOnly ? 0 : 1,
+    expectedOpenverseHttpQueryRange: captureOnly ? [0, 0] : [1, 3],
+    captureOnly,
     capture,
+  };
+}
+
+export async function runNativeMarketingCaptureOnly({
+  page,
+  invokeNative,
+  assetManifest,
+  preflight,
+  runRoot,
+  actionTimeoutMs = 60_000,
+  recording,
+  resumeTutorial,
+}) {
+  if (!preflight?.captureOnly || preflight.assetManifest !== assetManifest || !preflight.capture?.validated) {
+    throw new Error("Capture-only marketing evidence requires its exact validated final manifest and Gifsmith preflight");
+  }
+  if (!resumeTutorial || resumeTutorial.title !== marketingDemoTitle || resumeTutorial.identity?.projectDirectory == null
+    || resumeTutorial.actualNativeEditorRender !== true || resumeTutorial.captionsBurnedIn !== false
+    || resumeTutorial.captionsPreservedInProject !== true || resumeTutorial.resumedFromRunId == null
+    || resumeTutorial.requiresRoutingPolicyMigration !== true) {
+    throw new Error("Capture-only marketing evidence requires the exact verified caption-free native tutorial continuation");
+  }
+  if (!recording?.cdpPort || !recording?.gifsmithRoot || !recording?.recordingWindow) {
+    throw new Error("Capture-only marketing evidence requires the real visible native recording session");
+  }
+  await mkdir(runRoot, { recursive: true });
+  const routingPolicyMigration = await migrateLegacyMarketingRoutingPolicy({
+    page,
+    invokeNative,
+    identity: resumeTutorial.identity,
+    timelineContract: resumeTutorial.timelineContract,
+    presenterRouteModel: soulxModelContract.modelId,
+  });
+  await openExactProject(page, resumeTutorial.title, resumeTutorial.identity, actionTimeoutMs, true);
+  await returnFromNativeEditorIfOpen(page, actionTimeoutMs);
+  const projectNavigation = page.getByRole("navigation", { name: /project workspace/iu });
+  await projectNavigation.getByRole("button", { name: /^Review$/iu }).click();
+  await expect(page.getByLabel("Authoritative generated tutorial media")).toBeVisible({ timeout: actionTimeoutMs });
+  const capture = await recordNativeMarketingCapture({
+    page,
+    cdpPort: recording.cdpPort,
+    gifsmithRoot: recording.gifsmithRoot,
+    runRoot,
+    edit: preflight.marketingValidation.edit,
+    projectTitle: resumeTutorial.title,
+    recordingWindow: recording.recordingWindow,
+    preflight: preflight.capture,
+  });
+  return {
+    schemaVersion: 1,
+    evidenceClass: "actual-native-marketing-capture-only",
+    actualNativeWebView: true,
+    fixtureUi: false,
+    providerCalls: 0,
+    networkModelDownloads: 0,
+    localPresenterPreviewInferenceCalls: 0,
+    musicSearchOperations: 0,
+    resumedFromRunId: resumeTutorial.resumedFromRunId,
+    resumedTutorialEvidence: resumeTutorial.resumeReceipt,
+    routingPolicyMigration,
+    project: {
+      id: resumeTutorial.identity.projectId,
+      directory: resumeTutorial.identity.projectDirectory,
+      title: resumeTutorial.title,
+    },
+    capture,
+    qualificationBoundary: "Capture-only UI evidence. It does not claim a custom-presenter acceptance, music search, model activation, or full feature-scenario pass.",
   };
 }
 
@@ -888,26 +957,118 @@ async function openExactProject(page, fallbackLabel, identity, timeout, forceHom
   });
 }
 
-async function verifyShortPreviewPlayback(locator, minimumMs, maximumMs) {
-  return await locator.evaluate(async (video, limits) => {
-    if (!(video instanceof HTMLVideoElement)) throw new Error("Presenter preview is not a video element");
-    video.muted = true;
-    video.preload = "auto";
-    if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) await new Promise((resolve, reject) => {
-      const timer = window.setTimeout(() => reject(new Error("Presenter preview did not become playable")), 15_000);
-      video.addEventListener("canplay", () => { window.clearTimeout(timer); resolve(); }, { once: true });
-      video.load();
-    });
-    const durationMs = Math.round(video.duration * 1000);
-    if (durationMs < limits.minimumMs || durationMs > limits.maximumMs) throw new Error(`Presenter preview duration ${durationMs}ms is outside the reviewed bound`);
-    const start = video.currentTime;
-    await video.play();
-    await new Promise((resolve) => window.setTimeout(resolve, 500));
-    const advancedSeconds = video.currentTime - start;
-    video.pause();
-    if (advancedSeconds < 0.2) throw new Error("Presenter preview did not advance during actual playback");
-    return { durationMs, advancedSeconds, videoWidth: video.videoWidth, videoHeight: video.videoHeight, readyState: video.readyState };
+export async function verifyShortPreviewPlayback(locator, minimumMs, maximumMs) {
+  const evidence = await locator.evaluate(async (video, limits) => {
+    const result = {
+      durationMs: null,
+      startSeconds: null,
+      endSeconds: null,
+      advancedSeconds: 0,
+      videoWidth: 0,
+      videoHeight: 0,
+      readyState: null,
+      networkState: null,
+      resetFromEnded: false,
+      playResolved: false,
+      playingEvents: 0,
+      timeupdateEvents: 0,
+      decodedFrameCallbacks: 0,
+      decodedFrameAdvance: 0,
+      elapsedMs: 0,
+      ended: false,
+      paused: true,
+      seeking: false,
+      mediaError: null,
+      fatalError: null,
+    };
+    if (!(video instanceof HTMLVideoElement)) {
+      result.fatalError = "Presenter preview is not a video element";
+      return result;
+    }
+    const startedAt = performance.now();
+    const events = {
+      playing: () => { result.playingEvents += 1; },
+      timeupdate: () => { result.timeupdateEvents += 1; },
+    };
+    video.addEventListener("playing", events.playing);
+    video.addEventListener("timeupdate", events.timeupdate);
+    let frameRequest = null;
+    let keepFrames = true;
+    const frameCallback = (_now, metadata) => {
+      result.decodedFrameCallbacks += 1;
+      if (Number.isFinite(metadata?.mediaTime) && result.startSeconds != null && metadata.mediaTime > result.startSeconds + 0.01) {
+        result.decodedFrameAdvance += 1;
+      }
+      if (keepFrames) frameRequest = video.requestVideoFrameCallback(frameCallback);
+    };
+    try {
+      video.pause();
+      video.muted = true;
+      video.preload = "auto";
+      if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+        await new Promise((resolve, reject) => {
+          const timer = window.setTimeout(() => reject(new Error("Presenter preview did not become playable within 10 seconds")), 10_000);
+          const finish = (error) => {
+            window.clearTimeout(timer);
+            video.removeEventListener("canplay", onCanPlay);
+            video.removeEventListener("error", onError);
+            if (error) reject(error); else resolve();
+          };
+          const onCanPlay = () => finish();
+          const onError = () => finish(new Error("Presenter preview emitted a media error before playback"));
+          video.addEventListener("canplay", onCanPlay);
+          video.addEventListener("error", onError);
+          video.load();
+        });
+      }
+      result.durationMs = Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : null;
+      result.videoWidth = video.videoWidth;
+      result.videoHeight = video.videoHeight;
+      if (video.ended || (Number.isFinite(video.duration) && video.currentTime >= video.duration - 0.35)) {
+        result.resetFromEnded = true;
+        video.currentTime = 0;
+        if (video.seeking) await new Promise((resolve, reject) => {
+          const timer = window.setTimeout(() => reject(new Error("Presenter preview did not finish its reset seek")), 5_000);
+          video.addEventListener("seeked", () => { window.clearTimeout(timer); resolve(); }, { once: true });
+        });
+      }
+      result.startSeconds = video.currentTime;
+      if (typeof video.requestVideoFrameCallback === "function") frameRequest = video.requestVideoFrameCallback(frameCallback);
+      await video.play();
+      result.playResolved = true;
+      const deadline = performance.now() + 10_000;
+      while (performance.now() < deadline) {
+        result.endSeconds = video.currentTime;
+        result.advancedSeconds = Math.max(0, result.endSeconds - result.startSeconds);
+        if (result.playingEvents > 0 && result.advancedSeconds >= 0.2 && result.decodedFrameAdvance > 0) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+      }
+    } catch (error) {
+      result.fatalError = error instanceof Error ? error.message : String(error);
+    } finally {
+      keepFrames = false;
+      if (frameRequest != null && typeof video.cancelVideoFrameCallback === "function") video.cancelVideoFrameCallback(frameRequest);
+      video.pause();
+      video.removeEventListener("playing", events.playing);
+      video.removeEventListener("timeupdate", events.timeupdate);
+      result.endSeconds = video.currentTime;
+      result.advancedSeconds = result.startSeconds == null ? 0 : Math.max(0, result.endSeconds - result.startSeconds);
+      result.readyState = video.readyState;
+      result.networkState = video.networkState;
+      result.ended = video.ended;
+      result.paused = video.paused;
+      result.seeking = video.seeking;
+      result.mediaError = video.error ? { code: video.error.code, message: video.error.message } : null;
+      result.elapsedMs = Math.round(performance.now() - startedAt);
+    }
+    return result;
   }, { minimumMs, maximumMs });
+  if (evidence.fatalError || evidence.durationMs == null || evidence.durationMs < minimumMs || evidence.durationMs > maximumMs
+    || evidence.videoWidth <= 0 || evidence.videoHeight <= 0 || evidence.playResolved !== true
+    || evidence.playingEvents < 1 || evidence.advancedSeconds < 0.2 || evidence.decodedFrameAdvance < 1) {
+    throw new Error(`Presenter preview did not prove bounded decoded playback: ${JSON.stringify(evidence)}`);
+  }
+  return evidence;
 }
 
 async function setEditorPlayhead(editor, frame) {

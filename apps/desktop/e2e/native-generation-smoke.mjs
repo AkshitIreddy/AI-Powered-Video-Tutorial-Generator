@@ -25,6 +25,7 @@ import {
 import {
   preflightSoulxHydratedCache,
   preflightNativeMarketingFeatureScenario,
+  runNativeMarketingCaptureOnly,
   runNativeMarketingFeatureScenario,
   runSoulxSetupOnly,
 } from "./native-marketing-feature-scenario.mjs";
@@ -150,12 +151,13 @@ const marketingFeaturePreflight = parsed.marketingFeatureScenario
     gpuCoordinationPath: parsed.gpuCoordinationPath,
     gifsmithRoot: parsed.gifsmithRoot,
     recordCapture: parsed.recordMarketingDemo,
+    captureOnly: parsed.marketingCaptureOnly,
   })
   : null;
 const marketingResumeSource = parsed.resumeMarketingRun
   ? await inspectMarketingResumeSource(parsed.resumeMarketingRun, marketingFeaturePreflight.assetManifest)
   : null;
-const soulxCachePreflight = parsed.soulxSetupOnly || parsed.marketingFeatureScenario
+const soulxCachePreflight = parsed.soulxSetupOnly || (parsed.marketingFeatureScenario && !parsed.marketingCaptureOnly)
   ? await preflightSoulxHydratedCache({
     modelsRoot: modelsPath,
     manifestPath: soulxInstallManifestPath,
@@ -286,28 +288,40 @@ try {
         relativeProjectDirectory: marketingResumeSource.relativeProjectDirectory,
       },
     } : null;
-    const feature = await runNativeMarketingFeatureScenario({
-      page,
-      projectsPath,
-      invokeNative,
-      invokeNativeWithoutInput,
-      ffprobePath,
-      assetManifest: marketingFeaturePreflight.assetManifest,
-      preflight: marketingFeaturePreflight,
-      cachePreflight: soulxCachePreflight,
-      runRoot,
-      customPresenterName: parsed.customPresenterName,
-      musicQuery: parsed.musicQuery,
-      musicMood: parsed.musicMood,
-      actionTimeoutMs: parsed.actionTimeoutMs,
-      jobTimeoutMs: parsed.jobTimeoutMs,
-      recording: parsed.recordMarketingDemo ? {
-        cdpPort: launch.port,
-        gifsmithRoot: parsed.gifsmithRoot,
-        recordingWindow,
-      } : null,
-      resumeTutorial: resumedTutorial,
-    });
+    const recording = parsed.recordMarketingDemo ? {
+      cdpPort: launch.port,
+      gifsmithRoot: parsed.gifsmithRoot,
+      recordingWindow,
+    } : null;
+    const feature = parsed.marketingCaptureOnly
+      ? await runNativeMarketingCaptureOnly({
+        page,
+        invokeNative,
+        assetManifest: marketingFeaturePreflight.assetManifest,
+        preflight: marketingFeaturePreflight,
+        runRoot,
+        actionTimeoutMs: parsed.actionTimeoutMs,
+        recording,
+        resumeTutorial: resumedTutorial,
+      })
+      : await runNativeMarketingFeatureScenario({
+        page,
+        projectsPath,
+        invokeNative,
+        invokeNativeWithoutInput,
+        ffprobePath,
+        assetManifest: marketingFeaturePreflight.assetManifest,
+        preflight: marketingFeaturePreflight,
+        cachePreflight: soulxCachePreflight,
+        runRoot,
+        customPresenterName: parsed.customPresenterName,
+        musicQuery: parsed.musicQuery,
+        musicMood: parsed.musicMood,
+        actionTimeoutMs: parsed.actionTimeoutMs,
+        jobTimeoutMs: parsed.jobTimeoutMs,
+        recording,
+        resumeTutorial: resumedTutorial,
+      });
     activeProjectIdentity = { projectId: feature.project.id, projectDirectory: feature.project.directory };
     if (pageErrors.length || consoleErrors.length) {
       throw new Error(`Native WebView emitted errors: ${JSON.stringify({ pageErrors, consoleErrors })}`);
@@ -322,12 +336,14 @@ try {
       actualNativeWebView: true,
       hiddenLaunch: !parsed.recordMarketingDemo,
       realProviderCalls: false,
-      localGpuGeneration: true,
-      modelDownloadsStarted: feature.modelDownloadsStarted,
+      localGpuGeneration: !parsed.marketingCaptureOnly,
+      modelDownloadsStarted: feature.modelDownloadsStarted ?? 0,
       projectId: feature.project.id,
       relativeProjectDirectory: containedRelativePath(projectsPath, feature.project.directory, "native marketing feature project"),
-      relativeMediaPath: containedRelativePath(feature.project.directory, feature.project.reviewEditorRenderPath, "native marketing feature Review render"),
-      cleanMediaEvidencePath: feature.project.cleanEditorRenderPath,
+      relativeMediaPath: feature.project.reviewEditorRenderPath
+        ? containedRelativePath(feature.project.directory, feature.project.reviewEditorRenderPath, "native marketing feature Review render")
+        : null,
+      cleanMediaEvidencePath: feature.project.cleanEditorRenderPath ?? null,
       featureScenario: {
         ...feature,
         project: {
@@ -780,6 +796,8 @@ if (workError || cleanupError) {
     runEvidenceDirectory: runRoot,
     evidenceClass: parsed.recordWalkthrough
       ? "actual-native-gifsmith-walkthrough"
+      : parsed.marketingCaptureOnly
+      ? "actual-native-marketing-capture-only"
       : parsed.marketingFeatureScenario
       ? "actual-native-marketing-feature-scenario"
       : parsed.soulxSetupOnly
@@ -2093,6 +2111,7 @@ function parseArguments(arguments_) {
     recoverySmoke: false,
     recordWalkthrough: false,
     marketingFeatureScenario: false,
+    marketingCaptureOnly: false,
     soulxSetupOnly: false,
     recordMarketingDemo: false,
     marketingManifest: null,
@@ -2136,6 +2155,12 @@ function parseArguments(arguments_) {
     }
     if (name === "--marketing-feature-scenario") {
       result.marketingFeatureScenario = true;
+      continue;
+    }
+    if (name === "--marketing-capture-only") {
+      result.marketingCaptureOnly = true;
+      result.marketingFeatureScenario = true;
+      result.recordMarketingDemo = true;
       continue;
     }
     if (name === "--soulx-setup-only") {
@@ -2236,13 +2261,16 @@ function parseArguments(arguments_) {
       || result.recordWalkthrough || result.creativeOnly || result.editorSmoke || result.recoverySmoke) {
       throw new Error("--marketing-feature-scenario is an isolated native workflow and cannot be combined with generation, walkthrough, editor, or recovery modes");
     }
-    if (!result.marketingManifest || !result.customPortrait || !result.customPortraitSha256 || !result.gpuCoordinationPath) {
-      throw new Error("--marketing-feature-scenario requires --marketing-manifest, --custom-portrait, --custom-portrait-sha256, and --gpu-coordination-path");
+    if (!result.marketingManifest || (!result.marketingCaptureOnly && (!result.customPortrait || !result.customPortraitSha256 || !result.gpuCoordinationPath))) {
+      throw new Error("--marketing-feature-scenario requires --marketing-manifest and, unless capture-only, --custom-portrait, --custom-portrait-sha256, and --gpu-coordination-path");
+    }
+    if (result.marketingCaptureOnly && (!result.recordMarketingDemo || !result.resumeMarketingRun)) {
+      throw new Error("--marketing-capture-only requires --resume-marketing-run and always records the real native app");
     }
     if (result.resumeMarketingRun && !/^[0-9]{17}-[1-9][0-9]*$/u.test(result.resumeMarketingRun)) {
       throw new Error("--resume-marketing-run must be one native generation evidence run ID");
     }
-    if (!/^[0-9a-f]{64}$/u.test(result.customPortraitSha256)) throw new Error("--custom-portrait-sha256 must be one lowercase SHA-256");
+    if (!result.marketingCaptureOnly && !/^[0-9a-f]{64}$/u.test(result.customPortraitSha256)) throw new Error("--custom-portrait-sha256 must be one lowercase SHA-256");
     if (!["curious", "focused", "calm", "hopeful", "playful", "reflective", "energetic"].includes(result.musicMood)) {
       throw new Error("--music-mood must be one MusicBrowser mood");
     }
