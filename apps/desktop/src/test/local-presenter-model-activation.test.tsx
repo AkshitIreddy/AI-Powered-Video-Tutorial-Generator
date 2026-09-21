@@ -138,6 +138,9 @@ it("activates the complete SoulX install before selecting its presenter routes",
     })]),
   })));
   expect(await within(card).findByRole("button", { name: "Model in use" })).toBeDisabled();
+  expect(within(card).getByText("Ready")).toBeVisible();
+  expect(within(card).getByText("Installed")).toBeVisible();
+  expect(within(card).queryByText(/python is required but is not installed/i)).not.toBeInTheDocument();
   expect(screen.getByRole("radio", { name: /SoulX-FlashHead Pro/i })).toBeChecked();
   expect(screen.getByLabelText(/^portrait animation model$/i)).toHaveValue(soulxEntry.modelId);
   expect(screen.getByLabelText(/^lip-sync model$/i)).toHaveValue(soulxEntry.modelId);

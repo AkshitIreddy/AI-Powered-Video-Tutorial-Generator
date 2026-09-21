@@ -1,4 +1,4 @@
-import { evaluateCatalogCompatibility } from "./compatibility";
+import { evaluateCatalogCompatibility, hasVerifiedManagedPackage } from "./compatibility";
 import {
   emptyCatalogFilters,
   type CatalogFilterState,
@@ -231,13 +231,13 @@ function intersects<T extends string>(actual: readonly T[], selected: readonly T
   return selected.length === 0 || actual.some((value) => selected.includes(value));
 }
 
-function filtersMatch(item: CatalogItem, compatibility: CompatibilityResult, filters: CatalogFilterState): boolean {
+function filtersMatch(item: CatalogItem, compatibility: CompatibilityResult, filters: CatalogFilterState, context: CompatibilityContext): boolean {
   if (!intersects([item.identity.source], filters.sources)) return false;
   if (!intersects(item.classification.capabilities, filters.capabilities)) return false;
   if (!intersects(item.execution.boundaries, filters.boundaries)) return false;
   if (!intersects([compatibility.level], filters.compatibility)) return false;
   if (filters.license.length > 0 && !filters.license.includes(item.license.commercialUse)) return false;
-  if (filters.installedOnly && (item.localInstall === null || item.localInstall.status === "missing")) return false;
+  if (filters.installedOnly && !hasVerifiedManagedPackage(item, context) && (item.localInstall === null || item.localInstall.status === "missing")) return false;
   if (filters.safeTensorsOnly && item.trust.safetensors !== true) return false;
   if (filters.maxVramBytes !== null && (item.requirements.estimatedVramBytes === null || item.requirements.estimatedVramBytes > filters.maxVramBytes)) return false;
   if (filters.maxRamBytes !== null && (item.requirements.estimatedRamBytes === null || item.requirements.estimatedRamBytes > filters.maxRamBytes)) return false;
@@ -297,7 +297,7 @@ export function filterCatalogItems(items: readonly CatalogItem[], options: Catal
       const compatibility = evaluateCatalogCompatibility(item, options.context);
       return { item, compatibility, score: relevanceScore(item, parsed) };
     })
-    .filter(({ item, compatibility }) => filtersMatch(item, compatibility, filters)
+    .filter(({ item, compatibility }) => filtersMatch(item, compatibility, filters, options.context)
       && parsed.terms.every((term) => termMatches(item, compatibility, term)))
     .sort((left, right) => compareResults(left, right, sort));
 }

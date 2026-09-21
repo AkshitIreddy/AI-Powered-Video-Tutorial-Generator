@@ -106,6 +106,7 @@ interface ExecutionPathAssessment {
 
 function assessLocalPath(item: CatalogItem, context: CompatibilityContext, resource: ResourceFitResult): ExecutionPathAssessment {
   const reasons: CompatibilityReason[] = [];
+  const managedPackageVerified = hasVerifiedManagedPackage(item, context);
 
   if (!item.compatibility.supportedOperatingSystems.includes(context.hardware.operatingSystem)) {
     reasons.push(error("operating-system", `The local recipe does not list ${context.hardware.operatingSystem} as supported.`, "Choose a supported local runtime or use an eligible cloud route."));
@@ -114,24 +115,26 @@ function assessLocalPath(item: CatalogItem, context: CompatibilityContext, resou
     reasons.push(error("hardware-vendor", `This local deployment requires ${item.compatibility.requiredGpuVendors.join(" or ")} GPU hardware.`, "Use compatible hardware or an eligible cloud route."));
   }
 
-  const requiredRuntimes = context.requiredRuntime ? [context.requiredRuntime] : item.execution.runtimes;
-  for (const runtime of requiredRuntimes) {
-    const installed = context.hardware.installedRuntimes[runtime];
-    if (!installed) {
-      reasons.push(setup("runtime-missing", `${runtime} is required but is not installed.`, `Install and verify ${runtime}, then re-run preflight.`));
-      continue;
-    }
-    const minimum = item.requirements.minimumRuntimeVersions[runtime];
-    if (minimum && compareVersions(installed, minimum) < 0) {
-      reasons.push(setup("runtime-outdated", `${runtime} ${installed} is older than the required ${minimum}.`, `Update ${runtime} and verify the installation.`));
+  if (!managedPackageVerified) {
+    const requiredRuntimes = context.requiredRuntime ? [context.requiredRuntime] : item.execution.runtimes;
+    for (const runtime of requiredRuntimes) {
+      const installed = context.hardware.installedRuntimes[runtime];
+      if (!installed) {
+        reasons.push(setup("runtime-missing", `${runtime} is required but is not installed.`, `Install and verify ${runtime}, then re-run preflight.`));
+        continue;
+      }
+      const minimum = item.requirements.minimumRuntimeVersions[runtime];
+      if (minimum && compareVersions(installed, minimum) < 0) {
+        reasons.push(setup("runtime-outdated", `${runtime} ${installed} is older than the required ${minimum}.`, `Update ${runtime} and verify the installation.`));
+      }
     }
   }
 
-  if (item.requirements.requiredArtifacts.some((artifact) => !artifact.optional)) {
+  if (!managedPackageVerified && item.requirements.requiredArtifacts.some((artifact) => !artifact.optional)) {
     const names = item.requirements.requiredArtifacts.filter((artifact) => !artifact.optional).map((artifact) => artifact.identifier);
     reasons.push(setup("artifact-required", `Additional artifacts are required: ${names.join(", ")}.`, "Install a tested recipe that includes every required component."));
   }
-  if (!item.localInstall && item.availability !== "installed") {
+  if (!managedPackageVerified && !item.localInstall && item.availability !== "installed") {
     reasons.push(setup("local-install-required", "This catalog item has no verified local installation.", "Install an immutable revision, verify its files, and re-run preflight."));
   }
   if (item.localInstall && item.localInstall.status !== "verified") {
@@ -142,11 +145,22 @@ function assessLocalPath(item: CatalogItem, context: CompatibilityContext, resou
     reasons.push(error("resource-exceeded", resource.messages.join(" ") || "The model exceeds the selected resource policy.", "Choose a smaller variant, change policy deliberately, or use an eligible cloud route."));
   } else if (resource.level === "amber") {
     reasons.push(warning("resource-adaptation", resource.messages.join(" ") || "The model needs resource adaptations.", "Review and approve the proposed adaptations."));
-  } else if (resource.level === "unknown") {
+  } else if (resource.level === "unknown" && !managedPackageVerified) {
     reasons.push(warning("metadata-incomplete", resource.messages.join(" ") || "Resource requirements are incomplete.", "Run a low-cost estimate or probe before loading."));
   }
 
   return pathResult("local", reasons, resource);
+}
+
+export function hasVerifiedManagedPackage(item: CatalogItem, context: CompatibilityContext): boolean {
+  const receipt = context.verifiedManagedPackages?.[item.identity.sourceId];
+  return Boolean(
+    receipt
+    && item.identity.revision
+    && receipt.catalogRevision === item.identity.revision
+    && receipt.nativeRevision.trim()
+    && /^[a-f0-9]{64}$/u.test(receipt.installFingerprint),
+  );
 }
 
 function assessCloudPath(item: CatalogItem, context: CompatibilityContext, resource: ResourceFitResult): ExecutionPathAssessment {

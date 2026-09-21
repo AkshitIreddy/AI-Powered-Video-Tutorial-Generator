@@ -237,7 +237,7 @@ import {
   type RawHuggingFaceModel,
   type RawNvidiaCatalogEntry,
 } from "./catalog";
-import { alystriaCatalogItems, catalogHardwareFromDiagnostics } from "./appCatalog";
+import { alystriaCatalogItems, catalogHardwareFromDiagnostics, soulxFlashHeadCatalogItem } from "./appCatalog";
 import { AdvancedVideoEditor, BrowserMediaImportController, createEditorProjectFromAlystriaProject, editorTimelineExportResult, exportEditorTimelineNative, mergeAlystriaMediaBindings, prepareEditorProjectForPersistence, type EditorProject } from "./editor";
 import { exportNativeEditorDocument, importNativeEditorMedia, resolveNativeEditorMedia } from "./nativeEditorMedia";
 import { resolveEditorWaveformNative, type EditorMediaAsset } from "./editor";
@@ -2598,6 +2598,20 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
     && soulxDownloadStatus.downloadedBytes === soulxDownloadStatus.totalBytes
     && soulxDownloadStatus.totalBytes > 0
     && (soulxDownloadStatus.phase === "ready" || soulxDownloadStatus.phase === "downloadedQuarantined");
+  const soulxPackageEntry = downloadCatalog.find((entry) => entry.modelId === SOULX_PRESENTER_MODEL_ID) ?? null;
+  const soulxManagedPackageVerified = soulxDownloadStatus !== null
+    && soulxPackageEntry !== null
+    && (soulxDownloadStatus.phase === "ready" || soulxDownloadStatus.phase === "inUse")
+    && soulxDownloadStatus.activationBlocked === false
+    && soulxDownloadStatus.immutableRevision === soulxPackageEntry.immutableRevision
+    && Boolean(soulxDownloadStatus.runtimeRevision?.trim())
+    && /^[a-f0-9]{64}$/u.test(soulxDownloadStatus.installFingerprint ?? "");
+  const verifiedManagedPackages = useMemo(() => soulxManagedPackageVerified && soulxDownloadStatus?.runtimeRevision && soulxDownloadStatus.installFingerprint
+    ? { [SOULX_PRESENTER_MODEL_ID]: { catalogRevision: soulxFlashHeadCatalogItem.identity.revision!, nativeRevision: soulxDownloadStatus.runtimeRevision, installFingerprint: soulxDownloadStatus.installFingerprint } }
+    : {}, [soulxManagedPackageVerified, soulxDownloadStatus?.runtimeRevision, soulxDownloadStatus?.installFingerprint]);
+  const displayedCatalogItems = useMemo(() => soulxManagedPackageVerified
+    ? catalogItems.map((item) => item.identity.sourceId === SOULX_PRESENTER_MODEL_ID ? { ...item, availability: "installed" as const } : item)
+    : catalogItems, [catalogItems, soulxManagedPackageVerified]);
   const sdxlInstallReceiptReady = comfyVersion !== null
     && selectedDownloadStatus?.modelId === "local/sdxl-base-1.0"
     && selectedDownloadStatus.phase === "ready"
@@ -2841,7 +2855,7 @@ function ProvidersView({ environment, diagnosticReport, onNotify }: { environmen
         const hasMore = syncable ? Boolean(catalogCursors[syncable]) : false;
         return <article key={source.id} className={!source.catalogUrl ? "local-source" : ""}><ProviderMark providerId={source.brandAssetId} compact /><strong>{source.label}</strong><small>{count ? `${count} live rows · ` : ""}{source.discovery.replaceAll("-", " ")} · {source.authentication.replaceAll("-", " ")}</small><span>{source.catalogUrl && <a href={source.catalogUrl} target="_blank" rel="noreferrer">Explore</a>}{syncable && <button type="button" disabled={catalogSyncing !== null || ((syncable === "nvidia-nim" || syncable === "cohere") && secretRefs[syncable]?.availability !== "present")} onClick={() => { void syncCatalog(syncable); }}><RefreshCw size={11} className={catalogSyncing === syncable ? "spinning" : ""} />{catalogSyncing === syncable ? "Syncing…" : hasMore ? "Load more" : "Sync"}</button>}</span></article>;
       })}</div></details>
-      <CatalogIntegrationExample hardware={catalogHardwareWithConnections} items={catalogItems} onModelDownload={downloadCatalogModel} downloadState={downloadState} onModelActivate={activateCatalogModel} activationState={soulxCatalogActivationState} writingProfileProviderIds={profileProviderIds} {...(setup && activeProfile ? { onUseForWritingProfile: stageWritingProfileModel } : {})} />
+      <CatalogIntegrationExample hardware={catalogHardwareWithConnections} items={displayedCatalogItems} onModelDownload={downloadCatalogModel} downloadState={downloadState} onModelActivate={activateCatalogModel} activationState={soulxCatalogActivationState} verifiedManagedPackages={verifiedManagedPackages} writingProfileProviderIds={profileProviderIds} {...(setup && activeProfile ? { onUseForWritingProfile: stageWritingProfileModel } : {})} />
     </section>
     <div className="provider-heading"><div><span className="section-kicker">Configured capabilities</span><h2>Provider connections</h2></div><span className="environment-note"><ShieldCheck size={15} /> {environment === "native" ? "OS credential vault" : "Browser demo · values discarded"}</span></div>
     <div className="provider-grid">{providers.map(({ id, name, icon: Icon, detail, tone, local }) => {

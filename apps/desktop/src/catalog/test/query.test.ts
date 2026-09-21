@@ -62,6 +62,20 @@ describe("catalog filtering", () => {
     expect(results.map(({ item }) => item.identity.name)).toEqual(["Installed"]);
   });
 
+  it("includes an exact managed receipt in the installed filter without blessing sibling models", () => {
+    const managed = catalogFixture({ name: "Managed", sourceId: "local/managed", localInstall: null });
+    const sibling = catalogFixture({ name: "Sibling", sourceId: "local/sibling", localInstall: null });
+    const results = filterCatalogItems([managed, sibling], {
+      filters: { ...emptyCatalogFilters, installedOnly: true },
+      context: contextFixture({
+        verifiedManagedPackages: {
+          "local/managed": { catalogRevision: managed.identity.revision!, nativeRevision: "native-runtime-revision", installFingerprint: "c".repeat(64) },
+        },
+      }),
+    });
+    expect(results.map(({ item }) => item.identity.name)).toEqual(["Managed"]);
+  });
+
   it("sorts deterministically by a selected metric and then name", () => {
     const alpha = catalogFixture({ name: "Alpha", sourceId: "a", downloads: 50 });
     const beta = catalogFixture({ name: "Beta", sourceId: "b", downloads: 50 });

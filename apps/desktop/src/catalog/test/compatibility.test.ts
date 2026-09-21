@@ -28,6 +28,100 @@ describe("catalog compatibility", () => {
     expect(result.reasons).toEqual(expect.arrayContaining([expect.objectContaining({ code: "local-install-required" })]));
   });
 
+  it("accepts an exact verified managed receipt only for its own bundled runtimes", () => {
+    const managed = catalogFixture({
+      sourceId: "local/soulx-flashhead-pro",
+      runtimes: ["python", "pytorch", "cuda"],
+      availability: "downloadable",
+      localInstall: null,
+    });
+    const sibling = { ...managed, identity: { ...managed.identity, sourceId: "local/other-python-model", name: "Other Python model" } };
+    const context = contextFixture({
+      hardware: hardwareFixture({ installedRuntimes: {} }),
+      verifiedManagedPackages: {
+        "local/soulx-flashhead-pro": { catalogRevision: managed.identity.revision!, nativeRevision: "native-runtime-revision", installFingerprint: "b".repeat(64) },
+      },
+    });
+
+    const managedResult = evaluateCatalogCompatibility(managed, context);
+    expect(managedResult.level).toBe("ready");
+    expect(managedResult.reasons).toEqual([]);
+    const siblingResult = evaluateCatalogCompatibility(sibling, context);
+    expect(siblingResult.level).toBe("needs-setup");
+    expect(siblingResult.reasons).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "runtime-missing" }),
+      expect.objectContaining({ code: "local-install-required" }),
+    ]));
+  });
+
+  it("keeps hardware and license blocks active for verified managed packages", () => {
+    const item = catalogFixture({
+      sourceId: "local/soulx-flashhead-pro",
+      runtimes: ["python", "pytorch", "cuda"],
+      availability: "downloadable",
+      localInstall: null,
+      commercialUse: "restricted",
+    });
+    const receipt = {
+      catalogRevision: item.identity.revision!,
+      nativeRevision: "native-runtime-revision",
+      installFingerprint: "b".repeat(64),
+    };
+
+    const hardwareResult = evaluateCatalogCompatibility(item, contextFixture({
+      hardware: hardwareFixture({ gpuVendor: "amd", installedRuntimes: {} }),
+      verifiedManagedPackages: { "local/soulx-flashhead-pro": receipt },
+    }));
+    expect(hardwareResult.level).toBe("blocked");
+    expect(hardwareResult.reasons).toEqual(expect.arrayContaining([expect.objectContaining({ code: "hardware-vendor" })]));
+
+    const licenseResult = evaluateCatalogCompatibility(item, contextFixture({
+      distributionPurpose: "commercial",
+      verifiedManagedPackages: { "local/soulx-flashhead-pro": receipt },
+    }));
+    expect(licenseResult.level).toBe("blocked");
+    expect(licenseResult.reasons).toEqual(expect.arrayContaining([expect.objectContaining({ code: "license-blocked" })]));
+  });
+
+  it("does not downgrade a verified managed package when only live memory budgets are unavailable", () => {
+    const item = catalogFixture({ sourceId: "local/soulx-flashhead-pro", runtimes: ["python"], availability: "downloadable", localInstall: null });
+    const result = evaluateCatalogCompatibility(item, contextFixture({
+      hardware: hardwareFixture({
+        dedicatedVramFreeBytes: null,
+        dxgiBudgetBytes: null,
+        dxgiCurrentUsageBytes: null,
+        systemRamFreeBytes: null,
+        installedRuntimes: {},
+      }),
+      verifiedManagedPackages: {
+        "local/soulx-flashhead-pro": {
+          catalogRevision: item.identity.revision!,
+          nativeRevision: "native-runtime-revision",
+          installFingerprint: "b".repeat(64),
+        },
+      },
+    }));
+
+    expect(result.level).toBe("ready");
+    expect(result.reasons).toEqual([]);
+  });
+
+  it("rejects stale or malformed managed receipts", () => {
+    const item = catalogFixture({ sourceId: "local/soulx-flashhead-pro", runtimes: ["python"], availability: "downloadable", localInstall: null });
+    for (const receipt of [
+      { catalogRevision: "different-revision", nativeRevision: "native-runtime-revision", installFingerprint: "b".repeat(64) },
+      { catalogRevision: item.identity.revision!, nativeRevision: "native-runtime-revision", installFingerprint: "not-a-fingerprint" },
+      { catalogRevision: item.identity.revision!, nativeRevision: "", installFingerprint: "b".repeat(64) },
+    ]) {
+      const result = evaluateCatalogCompatibility(item, contextFixture({
+        hardware: hardwareFixture({ installedRuntimes: {} }),
+        verifiedManagedPackages: { "local/soulx-flashhead-pro": receipt },
+      }));
+      expect(result.level).toBe("needs-setup");
+      expect(result.reasons.map((reason) => reason.code)).toContain("runtime-missing");
+    }
+  });
+
   it("does not demand cloud credentials for a hybrid item with an eligible local path", () => {
     const item = catalogFixture({
       boundaries: ["local", "cloud"],

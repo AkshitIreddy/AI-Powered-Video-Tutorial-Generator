@@ -244,6 +244,11 @@ export interface CompatibilityContext {
   allowUnknownLicenseForPrivateUse: boolean;
   hardware: HardwareSnapshot;
   resourcePolicy: ResourcePolicy;
+  verifiedManagedPackages?: Readonly<Record<string, {
+    catalogRevision: string;
+    nativeRevision: string;
+    installFingerprint: string;
+  }>>;
 }
 
 export interface CompatibilityReason {

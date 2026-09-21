@@ -4,7 +4,7 @@ import {
   defaultCatalogItems,
 } from "./defaults";
 import { resourcePolicyPresets } from "./resourcePolicy";
-import type { CatalogItem, HardwareSnapshot } from "./types";
+import type { CatalogItem, CompatibilityContext, HardwareSnapshot } from "./types";
 import { ModelLibrary, type CatalogActivationActionState, type CatalogDownloadActionState } from "./ModelLibrary";
 import "./catalog.css";
 
@@ -17,6 +17,7 @@ export interface CatalogIntegrationExampleProps {
   activationState?: (item: CatalogItem) => CatalogActivationActionState | null;
   onUseForWritingProfile?: (item: CatalogItem) => void;
   writingProfileProviderIds?: readonly string[];
+  verifiedManagedPackages?: CompatibilityContext["verifiedManagedPackages"];
 }
 
 /**
@@ -33,10 +34,14 @@ export function CatalogIntegrationExample({
   activationState,
   onUseForWritingProfile,
   writingProfileProviderIds,
+  verifiedManagedPackages,
 }: CatalogIntegrationExampleProps) {
   const baseContext = useMemo(
-    () => createDefaultCompatibilityContext({ hardware, policy: resourcePolicyPresets.balanced }),
-    [hardware],
+    () => ({
+      ...createDefaultCompatibilityContext({ hardware, policy: resourcePolicyPresets.balanced }),
+      ...(verifiedManagedPackages ? { verifiedManagedPackages } : {}),
+    }),
+    [hardware, verifiedManagedPackages],
   );
 
   return (
