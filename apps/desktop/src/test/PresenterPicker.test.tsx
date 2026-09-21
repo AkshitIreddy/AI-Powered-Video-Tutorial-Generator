@@ -151,6 +151,31 @@ describe("PresenterPicker", () => {
     expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ id: "custom-nova", portraitArtifactHash: "d".repeat(64) }));
   });
 
+  it("waits for custom-presenter materialization before enabling animation preview", async () => {
+    const user = userEvent.setup();
+    const onPreview = vi.fn().mockResolvedValue(undefined);
+    const props = {
+      choices,
+      value: { ...value, presenters: [{ presenterId: "custom-nova", portraitAssetId: "custom-nova" }] },
+      onChange: vi.fn(),
+      onPreviewCustomPresenter: onPreview,
+      runtime: { activeEngineId: "soulx-flashhead-pro" as const, portraitStatuses: [{ portraitArtifactHash: null, modelId: "soulx-flashhead-pro", modelRevision: "soulx-code-a+weights-b", configured: true, reason: "Configured." }] },
+    };
+    const { rerender } = render(<PresenterPicker {...props} generatingPresenter />);
+
+    const busyPreview = screen.getByRole("button", { name: "Preview animation" });
+    expect(busyPreview).toBeDisabled();
+    expect(busyPreview).toHaveAttribute("title", expect.stringMatching(/finish saving this presenter/i));
+    await user.click(busyPreview);
+    expect(onPreview).not.toHaveBeenCalled();
+
+    rerender(<PresenterPicker {...props} generatingPresenter={false} />);
+    const readyPreview = screen.getByRole("button", { name: "Preview animation" });
+    expect(readyPreview).toBeEnabled();
+    await user.click(readyPreview);
+    expect(onPreview).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves a project-local presenter profile when choosing an imported library portrait", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
