@@ -16,6 +16,55 @@ export const marketingTeachingScript = "Sunlight looks white, but it carries eve
 export const marketingProductScript = "This is a real lesson, ready to refine. Edit the script, timing, captions, and layout in one timeline. Choose a presenter, or start with included teaching visuals. Use cloud providers or downloadable local models. Then review and export the finished tutorial.";
 export const marketingFrameRate = 30;
 export const presentersPlanSectionPattern = /Presenters$/u;
+
+export function buildMarketingPresenterRoutingPolicy(presenterRouteModel = "receipt-bound-reviewed-output") {
+  return {
+    version: 1,
+    privacyMode: "local",
+    dataClassification: "project",
+    approvals: [{
+      providerId: "local-runtime",
+      capabilities: ["lipsync.generate"],
+      credentialRef: null,
+      boundary: "local",
+      retention: "local_only",
+      regions: ["local"],
+      dataClasses: ["project"],
+      privacyApproved: true,
+      retentionApproved: true,
+      regionApproved: true,
+      termsApproved: false,
+      modelAccessCheckedAt: null,
+    }],
+    routes: [{ capability: "lipsync.generate", model: presenterRouteModel, providerIds: ["local-runtime"], voice: null }],
+  };
+}
+
+export function inspectMarketingPresenterRoutingPolicy(policy, presenterRouteModel = "receipt-bound-reviewed-output") {
+  const expected = buildMarketingPresenterRoutingPolicy(presenterRouteModel);
+  const routeMatches = stableJson(policy?.routes) === stableJson(expected.routes);
+  const approvalMatches = stableJson(policy?.approvals) === stableJson(expected.approvals);
+  const commonMatches = policy?.version === expected.version
+    && policy?.privacyMode === expected.privacyMode
+    && policy?.dataClassification === expected.dataClassification;
+  return {
+    valid: commonMatches && routeMatches && approvalMatches,
+    legacyMissingApproval: commonMatches && routeMatches && Array.isArray(policy?.approvals) && policy.approvals.length === 0,
+    routeMatches,
+    approvalMatches,
+  };
+}
+
+function stableJson(value) {
+  const normalize = (candidate) => {
+    if (Array.isArray(candidate)) return candidate.map(normalize);
+    if (candidate && typeof candidate === "object") {
+      return Object.fromEntries(Object.keys(candidate).sort().map((key) => [key, normalize(candidate[key])]));
+    }
+    return candidate;
+  };
+  return JSON.stringify(normalize(value));
+}
 export const marketingCaptionStyle = Object.freeze({
   fontFamily: "Segoe UI Semibold",
   fontSizeAt1440x810: 34,
@@ -400,13 +449,7 @@ export function buildMarketingTutorialProjectDocument({
     sources: [],
     presenterSelection: { schemaVersion: 1, mode: "on", presenters: [], sceneAssignments: [] },
     sceneCandidates: [],
-    providerRoutingPolicy: {
-      version: 1,
-      privacyMode: "local",
-      dataClassification: "project",
-      approvals: [],
-      routes: [{ capability: "lipsync.generate", model: presenterRouteModel, providerIds: ["local-runtime"], voice: null }],
-    },
+    providerRoutingPolicy: buildMarketingPresenterRoutingPolicy(presenterRouteModel),
     marketingDemo: { schemaVersion: 1, mode, exactTeachingScript: marketingTeachingScript, designedVisualIds: rayleighVisuals.map((visual) => visual.id) },
   };
 }

@@ -9,6 +9,7 @@ import {
   assertSoulxManagedStart,
   assertMusicSearchJobReceipt,
   assertSoulxNativeReadiness,
+  migrateLegacyMarketingRoutingPolicy,
   preserveCaptionFreeTutorialExport,
   preflightSoulxHydratedCache,
   returnFromNativeEditorIfOpen,
@@ -16,6 +17,7 @@ import {
   soulxModelContract,
   waitForPresenterAnimationReview,
 } from "./native-marketing-feature-scenario.mjs";
+import { buildMarketingPresenterRoutingPolicy } from "./native-marketing-demo-edit.mjs";
 
 function readyInput() {
   const fingerprint = "a".repeat(64);
@@ -141,6 +143,44 @@ test("presenter preview keeps waiting while a real native job is still running",
     pollMs: 1,
   });
   assert.equal(waits, 2);
+});
+
+test("legacy resume policy migrates through one native validated policy revision without changing the timeline", async () => {
+  const identity = { projectId: "project-1", projectDirectory: "E:\\isolated\\project-1" };
+  const timelineContract = {
+    timing: { durationFrames: 30, scenes: [{ startFrame: 0, endFrame: 30 }] },
+    presenters: [{ name: "emma.mp4", startFrame: 0, endFrame: 30 }],
+    presenterTransform: { x: 550, y: 110, scaleX: 0.68, scaleY: 0.68 },
+    captions: ["Exact teaching caption"],
+  };
+  const clip = (kind, extra = {}) => ({ kind, timelineRange: { startFrame: 0, durationFrames: 30 }, ...extra });
+  const editorDocument = { tracks: [
+    { kind: "slides", clips: [clip("slides")] },
+    { kind: "presenter", clips: [clip("presenter", { name: "emma.mp4", transform: timelineContract.presenterTransform, audio: { muted: true } })] },
+    { kind: "captions", hidden: false, clips: [clip("captions", { text: "Exact teaching caption" })] },
+    { kind: "narration", clips: [clip("narration")] },
+    { kind: "music", clips: [] },
+  ] };
+  const validPolicy = buildMarketingPresenterRoutingPolicy(soulxModelContract.modelId);
+  const legacyPolicy = { ...validPolicy, approvals: [] };
+  const before = { projectId: identity.projectId, headRevisionId: "rev-7", revisionNumber: 7, snapshot: { editorDocument, providerRoutingPolicy: legacyPolicy } };
+  let after = before;
+  const calls = [];
+  const invokeNative = async (_page, command, input) => {
+    calls.push(command);
+    if (command === "project_snapshot_get") return after;
+    assert.equal(command, "provider_routing_policy_save");
+    assert.equal(input.expectedHeadRevisionId, "rev-7");
+    assert.deepEqual(input.policy, validPolicy);
+    after = { ...before, headRevisionId: "rev-8", revisionNumber: 8, snapshot: { ...before.snapshot, providerRoutingPolicy: input.policy } };
+    return { policy: input.policy, headRevisionId: "rev-8", revisionNumber: 8 };
+  };
+  const receipt = await migrateLegacyMarketingRoutingPolicy({ page: {}, invokeNative, identity, timelineContract });
+  assert.deepEqual(calls, ["project_snapshot_get", "provider_routing_policy_save", "project_snapshot_get"]);
+  assert.equal(receipt.operation, "provider_routing_policy_save");
+  assert.equal(receipt.nativePolicyParserAccepted, true);
+  assert.equal(receipt.timelineUnchanged, true);
+  assert.equal(receipt.revisionNumber, 8);
 });
 
 test("SoulX readiness mirrors the native download, setup, and presenter-status DTOs", () => {

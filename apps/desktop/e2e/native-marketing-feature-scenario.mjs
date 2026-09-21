@@ -8,7 +8,10 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import {
+  buildMarketingPresenterRoutingPolicy,
   buildMarketingNativeCaptureTimeline,
+  inspectMarketingPresenterRoutingPolicy,
+  inspectMarketingTimelineDocument,
   marketingDemoTitle,
   marketingFrameRate,
   openExactNativeProject,
@@ -278,11 +281,21 @@ export async function runNativeMarketingFeatureScenario({
   if (resumeTutorial && (tutorial?.title !== marketingDemoTitle || tutorial?.identity?.projectDirectory == null
     || tutorial?.actualNativeEditorRender !== true || tutorial?.captionsBurnedIn !== false
     || tutorial?.captionsPreservedInProject !== true || tutorial?.resumedFromRunId == null
+    || tutorial?.requiresRoutingPolicyMigration !== true
     || tutorial?.resumeReceipt?.sourceRunId !== tutorial.resumedFromRunId
     || !/^[0-9a-f]{64}$/u.test(tutorial?.resumeReceipt?.sourceFailureSha256 ?? "")
     || !/^[0-9a-f]{64}$/u.test(tutorial?.resumeReceipt?.sourceProjectDatabaseSha256 ?? ""))) {
     throw new Error("Marketing continuation omitted its exact verified native tutorial receipt");
   }
+  const routingPolicyMigration = resumeTutorial
+    ? await migrateLegacyMarketingRoutingPolicy({
+      page,
+      invokeNative,
+      identity: tutorial.identity,
+      timelineContract: tutorial.timelineContract,
+      presenterRouteModel: soulxModelContract.modelId,
+    })
+    : null;
   const cleanEditorExport = await preserveCaptionFreeTutorialExport({ tutorial, runRoot });
   const presenter = await exerciseCustomPresenter({
     page,
@@ -355,6 +368,7 @@ export async function runNativeMarketingFeatureScenario({
     resumedVerifiedTutorial: Boolean(resumeTutorial),
     resumedFromRunId: resumeTutorial?.resumedFromRunId ?? null,
     resumedTutorialEvidence: resumeTutorial?.resumeReceipt ?? null,
+    routingPolicyMigration,
     project: {
       id: tutorial.identity.projectId,
       directory: tutorial.identity.projectDirectory,
@@ -382,6 +396,57 @@ export async function runNativeMarketingFeatureScenario({
       requiredViews: ["Review", "Studio advanced editor", "Plan presenters", "Models & providers", "Export"],
       note: "Pass this receipt and the validated final asset manifest to buildMarketingNativeCaptureTimeline. It is not a recorded or published final by itself.",
     },
+  };
+}
+
+export async function migrateLegacyMarketingRoutingPolicy({
+  page,
+  invokeNative,
+  identity,
+  timelineContract,
+  presenterRouteModel = soulxModelContract.modelId,
+}) {
+  const before = await invokeNative(page, "project_snapshot_get", identity);
+  const beforeTimeline = inspectMarketingTimelineDocument(before.snapshot?.editorDocument, {
+    ...timelineContract,
+    captionsHidden: false,
+    music: null,
+  });
+  const beforePolicy = inspectMarketingPresenterRoutingPolicy(before.snapshot?.providerRoutingPolicy, presenterRouteModel);
+  if (!beforeTimeline.matches || !beforePolicy.legacyMissingApproval || beforePolicy.valid) {
+    throw new Error(`Marketing continuation is not the exact approval-free legacy snapshot: ${JSON.stringify({ timeline: beforeTimeline.diagnostic, policy: beforePolicy })}`);
+  }
+  const policy = buildMarketingPresenterRoutingPolicy(presenterRouteModel);
+  const saved = await invokeNative(page, "provider_routing_policy_save", {
+    ...identity,
+    expectedHeadRevisionId: before.headRevisionId,
+    policy,
+    message: "Approve the selected verified local SoulX lip-sync route",
+  });
+  const after = await invokeNative(page, "project_snapshot_get", identity);
+  const afterTimeline = inspectMarketingTimelineDocument(after.snapshot?.editorDocument, {
+    ...timelineContract,
+    captionsHidden: false,
+    music: null,
+  });
+  const afterPolicy = inspectMarketingPresenterRoutingPolicy(after.snapshot?.providerRoutingPolicy, presenterRouteModel);
+  if (saved.headRevisionId !== after.headRevisionId || saved.revisionNumber !== after.revisionNumber
+    || after.revisionNumber !== before.revisionNumber + 1 || !afterTimeline.matches || !afterPolicy.valid) {
+    throw new Error(`Native marketing routing migration did not commit one exact valid policy revision: ${JSON.stringify({ beforeRevision: before.revisionNumber, savedRevision: saved.revisionNumber, afterRevision: after.revisionNumber, timeline: afterTimeline.diagnostic, policy: afterPolicy })}`);
+  }
+  return {
+    operation: "provider_routing_policy_save",
+    sourcePolicyState: "legacy-missing-local-runtime-approval",
+    previousHeadRevisionId: before.headRevisionId,
+    headRevisionId: after.headRevisionId,
+    previousRevisionNumber: before.revisionNumber,
+    revisionNumber: after.revisionNumber,
+    providerId: "local-runtime",
+    capability: "lipsync.generate",
+    model: presenterRouteModel,
+    credentialRef: null,
+    nativePolicyParserAccepted: true,
+    timelineUnchanged: true,
   };
 }
 

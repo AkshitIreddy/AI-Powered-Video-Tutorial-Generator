@@ -30,6 +30,7 @@ import {
 } from "./native-marketing-feature-scenario.mjs";
 import {
   buildMarketingTimelineContract,
+  inspectMarketingPresenterRoutingPolicy,
   inspectMarketingTimelineDocument,
   marketingDemoTitle,
 } from "./native-marketing-demo-edit.mjs";
@@ -3167,9 +3168,13 @@ async function inspectMarketingResumeSource(sourceRunId, assetManifest) {
     music: null,
   });
   if (!inspection.matches || snapshot.title !== marketingDemoTitle
-    || snapshot.marketingDemo?.mode !== "final" || snapshot.providerRoutingPolicy?.routes?.[0]?.model !== "local/soulx-flashhead-pro"
+    || snapshot.marketingDemo?.mode !== "final"
     || (snapshot.musicCandidates?.length ?? 0) !== 0) {
     throw new Error(`Marketing continuation project does not match its exact rendered timeline contract: ${JSON.stringify(inspection.diagnostic)}`);
+  }
+  const sourcePolicy = inspectMarketingPresenterRoutingPolicy(snapshot.providerRoutingPolicy, "local/soulx-flashhead-pro");
+  if (!sourcePolicy.legacyMissingApproval || sourcePolicy.valid) {
+    throw new Error(`Marketing continuation source is not the known approval-free legacy policy: ${JSON.stringify(sourcePolicy)}`);
   }
   const database = new DatabaseSync(sourceProjectDatabasePath, { readOnly: true });
   let exportJobs;
@@ -3230,6 +3235,7 @@ async function inspectMarketingResumeSource(sourceRunId, assetManifest) {
       captionsPreservedInProject: true,
       fixtureUi: false,
       resumedFromRunId: sourceRunId,
+      requiresRoutingPolicyMigration: true,
     },
   };
 }

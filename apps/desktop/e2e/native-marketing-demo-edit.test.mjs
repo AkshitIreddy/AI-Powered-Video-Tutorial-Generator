@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import {
+  buildMarketingPresenterRoutingPolicy,
   buildMarketingTutorialProjectDocument,
   buildMarketingNativeCaptureTimeline,
   buildMarketingTimelineContract,
@@ -12,6 +16,7 @@ import {
   deriveSentenceSegmentsFromAsr,
   deriveAdaptiveMarketingEdit,
   inspectMarketingTimelineDocument,
+  inspectMarketingPresenterRoutingPolicy,
   marketingCaptionStyle,
   marketingTeachingScript,
   nativeProjectCardIdentityToken,
@@ -20,6 +25,9 @@ import {
   resolveNativeProjectCardChoice,
   validateMarketingAssetManifest,
 } from "./native-marketing-demo-edit.mjs";
+
+const execFileAsync = promisify(execFile);
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 const productSegments = [
   { id: "native-review", durationSeconds: 2.6 },
@@ -181,7 +189,7 @@ test("native tutorial project uses three factual scenes and exact phrase caption
   assert.equal(project.marketingDemo.exactTeachingScript, marketingTeachingScript);
 });
 
-test("native marketing scenario can bind the exact selected SoulX route without changing the lesson", () => {
+test("native marketing scenario binds an approved local SoulX route without changing the lesson", async () => {
   const document = buildMarketingTutorialProjectDocument({
     teachingDurationSeconds: 12.4,
     captions: teachingCaptions,
@@ -193,7 +201,31 @@ test("native marketing scenario can bind the exact selected SoulX route without 
     providerIds: ["local-runtime"],
     voice: null,
   }]);
+  assert.deepEqual(document.providerRoutingPolicy.approvals, buildMarketingPresenterRoutingPolicy("local/soulx-flashhead-pro").approvals);
+  assert.equal(inspectMarketingPresenterRoutingPolicy(document.providerRoutingPolicy, "local/soulx-flashhead-pro").valid, true);
+  const python = [
+    "import json, sys",
+    "from alystria.providers import parse_routing_policy",
+    "print(json.dumps(parse_routing_policy(json.loads(sys.argv[1])).to_dict(), sort_keys=True))",
+  ].join("; ");
+  const { stdout } = await execFileAsync(process.env.PYTHON ?? "python", ["-c", python, JSON.stringify(document.providerRoutingPolicy)], {
+    cwd: repoRoot,
+    windowsHide: true,
+    env: { ...process.env, PYTHONPATH: path.join(repoRoot, "services", "pipeline", "src") },
+  });
+  assert.deepEqual(JSON.parse(stdout), document.providerRoutingPolicy);
   assert.equal(document.scenes.map((scene) => scene.narration).join(" "), marketingTeachingScript);
+});
+
+test("legacy marketing policies are identified for one native migration instead of treated as valid", () => {
+  const policy = buildMarketingPresenterRoutingPolicy("local/soulx-flashhead-pro");
+  const legacy = { ...policy, approvals: [] };
+  assert.deepEqual(inspectMarketingPresenterRoutingPolicy(legacy, "local/soulx-flashhead-pro"), {
+    valid: false,
+    legacyMissingApproval: true,
+    routeMatches: true,
+    approvalMatches: false,
+  });
 });
 
 test("project construction rejects caption gaps and paraphrases", () => {

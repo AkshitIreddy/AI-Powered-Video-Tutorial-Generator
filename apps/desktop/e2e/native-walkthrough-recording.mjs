@@ -12,6 +12,8 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
+import { buildMarketingPresenterRoutingPolicy } from "./native-marketing-demo-edit.mjs";
+
 const execFileAsync = promisify(execFile);
 const comparisonTitle = "Presenter style comparison";
 const presenterDemoPhrase = "Watch your ideas become clear, engaging lessons.";
@@ -873,13 +875,7 @@ function comparisonProjectDocument(timing) {
     sources: [],
     presenterSelection: { schemaVersion: 1, mode: "on", presenters: [], sceneAssignments: [] },
     sceneCandidates: [],
-    providerRoutingPolicy: {
-      version: 1,
-      privacyMode: "local",
-      dataClassification: "project",
-      approvals: [],
-      routes: [{ capability: "lipsync.generate", model: "local/presenter-runtime", providerIds: ["local-runtime"], voice: null }],
-    },
+    providerRoutingPolicy: buildMarketingPresenterRoutingPolicy("local/presenter-runtime"),
   };
 }
 
