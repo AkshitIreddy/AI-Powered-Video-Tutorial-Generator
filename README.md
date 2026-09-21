@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Windows-8C78C5?style=flat-square&amp;labelColor=30273F" alt="Windows" />
-  <a href="https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest"><img src="https://img.shields.io/badge/Download-v1.8.0-D9A85F?style=flat-square&amp;labelColor=30273F" alt="Download version 1.8.0" /></a>
+  <a href="https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest"><img src="https://img.shields.io/badge/Download-v1.8.1-D9A85F?style=flat-square&amp;labelColor=30273F" alt="Download version 1.8.1" /></a>
   <a href="#local-and-cloud-options"><img src="https://img.shields.io/badge/AI-local%20%2B%20BYOK-8FB5A0?style=flat-square&amp;labelColor=30273F" alt="Local and bring-your-own-key AI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-C9B5ED?style=flat-square&amp;labelColor=30273F" alt="MIT License" /></a>
 </p>
@@ -133,7 +133,7 @@ https://github.com/user-attachments/assets/7dcfda19-0bb2-4c7f-bcf6-85edffde6c36
 
 ### Installation and requirements
 
-**[Download the Windows installer](https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest/download/AI-Video-Tutorial-Generator_1.8.0_x64-setup.exe)** from the [latest release](https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest).
+**[Download the Windows installer](https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest/download/AI-Video-Tutorial-Generator_1.8.1_x64-setup.exe)** from the [latest release](https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/latest).
 
 Run the installer and open **AI Video Tutorial Generator** from the Start menu. The core Python,
 Node, Chromium, and FFmpeg tools are bundled. Onboarding offers optional model downloads and cloud
@@ -225,6 +225,18 @@ WebView2 flow, clean installation, or final media quality. Changes to those surf
 corresponding bounded native or live acceptance run and direct visual or audio inspection.
 
 ### Build a Windows installer
+
+The **Release Windows installer** GitHub Actions workflow builds and publishes each stable
+`vMAJOR.MINOR.PATCH` tag. It packages the Python worker, pinned rendering tools, and desktop app,
+then uploads the installer, signed updater feed, checksums, and dependency inventory.
+The existing signing keys are stored as repository secrets so installed copies can trust future updates.
+
+To prepare the next version, run `node scripts/set-release-version.mjs 1.8.2`, commit the changes,
+and push the corresponding `v1.8.2` tag. A draft release can supply new notes; otherwise the workflow
+reuses the preceding release notes with updated version links. Failed builds can be retried from
+Actions using the existing tag. Published versions are never overwritten.
+
+For local packaging:
 
 ```powershell
 .\scripts\build-windows-sidecar.ps1

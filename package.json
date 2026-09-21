@@ -1,6 +1,6 @@
 {
   "name": "alystria-studio",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "private": true,
   "description": "A local-first AI video tutorial generator.",
   "license": "MIT",

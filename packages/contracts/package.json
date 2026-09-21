@@ -1,6 +1,6 @@
 {
   "name": "@alystria/contracts",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "private": true,
   "description": "Canonical JSON contracts and TypeScript bindings for Alystria Studio.",
   "license": "MIT",

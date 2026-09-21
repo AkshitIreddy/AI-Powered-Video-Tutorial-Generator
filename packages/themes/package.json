@@ -1,6 +1,6 @@
 {
   "name": "@alystria/themes",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "private": true,
   "description": "Deterministic visual-bible, theme-pack, and brand-kit compiler for Alystria Studio.",
   "license": "MIT",

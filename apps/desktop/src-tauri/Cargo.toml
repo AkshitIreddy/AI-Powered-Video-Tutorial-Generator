@@ -1,6 +1,6 @@
 [package]
 name = "alystria-desktop"
-version = "1.8.0"
+version = "1.8.1"
 description = "Minimal-privilege desktop broker for AI Video Tutorial Generator"
 authors = ["AI Video Tutorial Generator contributors"]
 edition = "2024"

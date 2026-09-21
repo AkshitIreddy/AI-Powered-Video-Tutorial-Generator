@@ -1,6 +1,6 @@
 {
   "name": "@alystria/renderer",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "private": true,
   "description": "Deterministic frame-driven renderer and FFmpeg planner for Alystria Studio.",
   "license": "MIT",
