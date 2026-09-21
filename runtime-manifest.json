@@ -45,7 +45,8 @@
       "distribution": "signed-runtime-pack",
       "bundled": false,
       "windowsLgplShared": {
-        "archiveUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-07-15-39/ffmpeg-n8.1.2-51-g7ba069f4f1-win64-lgpl-shared-8.1.zip",
+        "archiveUrl": "https://github.com/AkshitIreddy/AI-Powered-Video-Tutorial-Generator/releases/download/v1.8.0/ffmpeg-n8.1.2-51-g7ba069f4f1-win64-lgpl-shared-8.1.zip",
+        "upstreamArchiveUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-07-15-39/ffmpeg-n8.1.2-51-g7ba069f4f1-win64-lgpl-shared-8.1.zip",
         "archiveSizeBytes": 70835200,
         "archiveSha256": "afb1c55ecdef6b80f6243984954dbfe350d44c7da2b64f30575c283b68214825",
         "extractedDirectory": "ffmpeg-n8.1.2-51-g7ba069f4f1-win64-lgpl-shared-8.1",

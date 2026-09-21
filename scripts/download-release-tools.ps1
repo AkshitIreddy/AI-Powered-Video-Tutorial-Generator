@@ -7,6 +7,7 @@ $Destination = [IO.Path]::GetFullPath($Destination)
 New-Item -ItemType Directory -Path $Destination -Force | Out-Null
 function Get-Archive([string]$Name, [string]$Url, [string]$Sha256 = '') {
     $archive = Join-Path $Destination "$Name.zip"
+    Write-Host "Downloading $Name from $Url"
     Invoke-WebRequest -Uri $Url -OutFile $archive
     if ($Sha256 -and (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Sha256) {
         throw "Archive checksum mismatch: $Name"
