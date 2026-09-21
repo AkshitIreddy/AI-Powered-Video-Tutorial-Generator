@@ -1,7 +1,10 @@
-import { CASUAL_PRESENTER_IDS } from "./casualPresenterLibrary";
+import {
+  CASUAL_PRESENTER_IDS,
+  CASUAL_PRESENTER_SELECTABLE_IDS,
+} from "./casualPresenterLibrary";
 import type { PresenterStyleGroup } from "./PresenterPicker";
 
-/** Current curated fictional presenter designs; retained legacy IDs can still open saved projects. */
+/** Retained portrait identities used only to resolve and edit existing projects. */
 export const LEGACY_PRESENTER_STYLE_GROUPS = Object.freeze({
   "presenter-portrait.software-daniel-v1": "Realistic",
   "presenter-portrait.language-sofia-v1": "Realistic",
@@ -41,3 +44,5 @@ export const presenterCollection = new Set<string>([
   ...CASUAL_PRESENTER_IDS,
   ...Object.keys(LEGACY_PRESENTER_STYLE_GROUPS),
 ]);
+
+export const newCastPresenterCollection = new Set<string>(CASUAL_PRESENTER_SELECTABLE_IDS);

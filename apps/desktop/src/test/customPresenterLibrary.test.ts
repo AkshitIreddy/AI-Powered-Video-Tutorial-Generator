@@ -72,6 +72,21 @@ describe("custom presenter library", () => {
     });
   });
 
+  it("keeps reusable custom presenters discoverable beside hidden legacy compatibility entries", () => {
+    const choices = presenterChoicesForProject([{
+      id: "presenter-portrait.software-daniel-v1",
+      label: "Daniel",
+      src: "asset://daniel.webp",
+      focalPoint: "50% 20%",
+      hiddenFromGallery: true,
+    }], [entry], [], { schemaVersion: 1, mode: "on", presenters: [], sceneAssignments: [] });
+    expect(choices).toEqual([
+      expect.objectContaining({ id: "presenter-portrait.software-daniel-v1", hiddenFromGallery: true }),
+      expect.objectContaining({ id: entry.id, customPortrait: expect.any(Object) }),
+    ]);
+    expect(choices[1]).not.toHaveProperty("hiddenFromGallery");
+  });
+
   it("imports reusable portraits sequentially and rewrites cast plus scene assignments", async () => {
     const importer = vi.fn()
       .mockResolvedValueOnce({

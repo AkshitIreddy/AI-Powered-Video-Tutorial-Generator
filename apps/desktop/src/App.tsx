@@ -254,7 +254,7 @@ import {
   type SceneEditFocus,
 } from "./sceneEdits";
 import { BundledAssetLibrary } from "./BundledAssetLibrary";
-import { LEGACY_PRESENTER_STYLE_GROUPS, presenterCollection } from "./presenterCollection";
+import { LEGACY_PRESENTER_STYLE_GROUPS, newCastPresenterCollection, presenterCollection } from "./presenterCollection";
 import { PresenterPicker, type PresenterChoice, type PresenterStyleGroup } from "./PresenterPicker";
 import { PresenterAnimationPreviewReview } from "./PresenterAnimationPreviewReview";
 import {
@@ -668,7 +668,7 @@ const PRESENTER_CHOICES = DEFAULT_CANVAS_CUSTOMIZATION.assets
       filterTags: persona.filterTags ?? [],
       ...(asset.sha256 ? { portraitArtifactHash: asset.sha256 } : {}),
       ...(persona.featuredRank === undefined ? {} : { featuredRank: persona.featuredRank }),
-      ...(persona.hiddenFromGallery ? { hiddenFromGallery: true } : {}),
+      ...(persona.hiddenFromGallery || !newCastPresenterCollection.has(asset.id) ? { hiddenFromGallery: true } : {}),
       ...(persona.background ? { background: persona.background } : {}),
       ...(persona.lipSync ? { lipSync: persona.lipSync } : {}),
     }] : [];

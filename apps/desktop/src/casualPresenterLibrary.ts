@@ -1,5 +1,6 @@
 import {
   CASUAL_PRESENTER_CATALOG,
+  CASUAL_PRESENTER_SELECTABLE_IDS as THEME_CASUAL_PRESENTER_SELECTABLE_IDS,
   type CasualPresenterId,
   type CasualPresenterLipSyncReview,
   type CasualPresenterStyleGroup,
@@ -93,3 +94,6 @@ export const CASUAL_PRESENTER_ASSETS: readonly StudioAssetReference[] = Object.f
 export const CASUAL_PRESENTER_IDS: readonly CasualPresenterId[] = Object.freeze(
   CASUAL_PRESENTER_CATALOG.map((presenter) => presenter.id),
 );
+
+export const CASUAL_PRESENTER_SELECTABLE_IDS: readonly CasualPresenterId[] =
+  THEME_CASUAL_PRESENTER_SELECTABLE_IDS;
