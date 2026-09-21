@@ -185,7 +185,54 @@ describe("pinned local image downloads", () => {
     expect(soulxFlashHeadCatalogItem.identity.immutableHash).toMatch(/^[a-f0-9]{64}$/);
     expect(soulxFlashHeadCatalogItem.localInstall).toBeNull();
     expect(soulxFlashHeadCatalogItem.requirements.estimatedVramBytes).toBe(12 * 1024 ** 3);
-    expect(soulxFlashHeadCatalogItem.requirements.estimatedRamBytes).toBe(24 * 1024 ** 3);
+    expect(soulxFlashHeadCatalogItem.requirements.estimatedRamBytes).toBe(12 * 1024 ** 3);
+  });
+
+  it("uses the bounded SoulX host-memory measurement without bypassing real capacity failures", () => {
+    const report = {
+      generatedAt: "2026-09-21T00:00:00.000Z",
+      overall: "pass",
+      checks: [],
+      system: {
+        os: "Windows 11",
+        osVersion: "11",
+        architecture: "x64",
+        cpu: "Reference CPU",
+        logicalCpuCount: 16,
+        totalMemoryBytes: 32 * 1024 ** 3,
+        availableMemoryBytes: 18 * 1024 ** 3,
+        gpu: [{
+          name: "NVIDIA RTX 4080 Laptop GPU",
+          driverVersion: "reference-driver",
+          dedicatedMemoryBytes: 12 * 1024 ** 3,
+        }],
+      },
+    } satisfies DiagnosticReport;
+    const receipt = {
+      catalogRevision: soulxFlashHeadCatalogItem.identity.revision!,
+      nativeRevision: "verified-native-runtime",
+      installFingerprint: "b".repeat(64),
+    };
+    const context = contextFixture({
+      capability: "presenter.generate",
+      allowedBoundaries: ["local"],
+      hardware: catalogHardwareFromDiagnostics(report),
+      verifiedManagedPackages: { [soulxFlashHeadCatalogItem.identity.sourceId]: receipt },
+    });
+
+    expect(evaluateCatalogCompatibility(soulxFlashHeadCatalogItem, context)).toMatchObject({
+      level: "ready",
+      canSelect: true,
+    });
+
+    const constrained = evaluateCatalogCompatibility(soulxFlashHeadCatalogItem, {
+      ...context,
+      hardware: { ...context.hardware, systemRamFreeBytes: 8 * 1024 ** 3 },
+    });
+    expect(constrained.level).toBe("blocked");
+    expect(constrained.reasons).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "resource-exceeded" }),
+    ]));
   });
 
   it("pins every multi-file Comfy bundle to the stable runtime and exact component hashes", () => {
