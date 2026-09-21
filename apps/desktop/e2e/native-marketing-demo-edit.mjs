@@ -858,6 +858,7 @@ async function openProjectByTitle(page, ctx, title) {
     if (!(button instanceof HTMLButtonElement)) throw new Error(`Project card ${expected} is missing`);
     button.click();
   }, title), { label: `open project ${title}` });
+  await ctx.settle(page.waitForSelector('nav[aria-label="Project workspace"]', { visible: true, timeout: 10_000 }), { label: "project workspace navigation" });
 }
 
 export async function writeMarketingPreparationReceipt({ manifestPath, outputPath, ffprobePath, stage = "preflight" }) {
