@@ -143,4 +143,4 @@ def test_catalog_covers_every_planned_local_capability_and_stays_unverified() ->
     assert presenter.license_id == "Apache-2.0"
     assert presenter.supported_backends == frozenset({ComputeBackend.NVIDIA_CUDA})
     assert presenter.resources.vram_bytes == 12 * 1024**3
-    assert presenter.resources.ram_bytes == 24 * 1024**3
+    assert presenter.resources.ram_bytes == 12 * 1024**3

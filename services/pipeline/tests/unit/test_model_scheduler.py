@@ -5,6 +5,7 @@ import threading
 import pytest
 
 from alystria.models import (
+    BUILTIN_CATALOG,
     ComputeBackend,
     ComputeDevice,
     HardwareInventory,
@@ -88,6 +89,49 @@ def test_headroom_prevents_ram_and_vram_overcommit() -> None:
         scheduler.try_acquire(too_much_ram)
     with pytest.raises(ResourceUnavailableError):
         scheduler.try_acquire(too_much_vram)
+
+
+def test_measured_soulx_profile_fits_reference_ram_without_removing_headroom() -> None:
+    inventory = HardwareInventory(
+        os_name="Windows",
+        architecture="AMD64",
+        cpu_name="Reference CPU",
+        cpu_threads=16,
+        ram_total_bytes=32 * GIB,
+        ram_available_bytes=18 * GIB,
+        disk_free_bytes=500 * GIB,
+        devices=(
+            ComputeDevice(
+                device_id="GPU-reference",
+                name="Reference NVIDIA GPU",
+                backend=ComputeBackend.NVIDIA_CUDA,
+                total_memory_bytes=16 * GIB,
+                free_memory_bytes=14 * GIB,
+            ),
+        ),
+    )
+    resources = BUILTIN_CATALOG.get("soulx-flashhead-pro").resources
+
+    lease = ResourceScheduler(inventory).try_acquire(
+        LeaseRequest("presenter-preview", "soulx@verified", resources)
+    )
+    assert lease.snapshot.ram_bytes == 12 * GIB
+    lease.release()
+
+    constrained = HardwareInventory(
+        os_name=inventory.os_name,
+        architecture=inventory.architecture,
+        cpu_name=inventory.cpu_name,
+        cpu_threads=inventory.cpu_threads,
+        ram_total_bytes=inventory.ram_total_bytes,
+        ram_available_bytes=16 * GIB,
+        disk_free_bytes=inventory.disk_free_bytes,
+        devices=inventory.devices,
+    )
+    with pytest.raises(ResourceUnavailableError):
+        ResourceScheduler(constrained).try_acquire(
+            LeaseRequest("presenter-preview", "soulx@verified", resources)
+        )
 
 
 def test_waiter_acquires_after_release_and_lease_context_cleans_up() -> None:
