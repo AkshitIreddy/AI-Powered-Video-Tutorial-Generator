@@ -18,6 +18,7 @@ import uuid
 import zipfile
 from collections import Counter
 from collections.abc import Iterable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -33,6 +34,7 @@ PRIMARY_CONFIG_NAME = "presenter-runtime.json"
 MAX_MANIFEST_BYTES = 256 * 1024
 MAX_RUNTIME_LEDGER_BYTES = 32 * 1024 * 1024
 MAX_ZIP_MEMBERS = 100_000
+RUNTIME_HASH_WORKERS = 8
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 EXACT_REQUIREMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9.!+_-]*$")
 PATCH_HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -816,17 +818,34 @@ def _runtime_files(root: Path) -> dict[PurePosixPath, Path]:
     return files
 
 
+def _hash_runtime_entry(item: tuple[PurePosixPath, Path]) -> tuple[PurePosixPath, int, str]:
+    relative, path = item
+    return relative, path.stat().st_size, _sha256(path)
+
+
+def _hash_runtime_files(
+    files: Mapping[PurePosixPath, Path],
+) -> list[tuple[PurePosixPath, int, str]]:
+    entries = list(files.items())
+    if not entries:
+        return []
+    workers = min(RUNTIME_HASH_WORKERS, len(entries))
+    with ThreadPoolExecutor(
+        max_workers=workers, thread_name_prefix="soulx-runtime-hash"
+    ) as executor:
+        return list(executor.map(_hash_runtime_entry, entries))
+
+
 def _write_runtime_ledger(stage: Path) -> dict[str, Any]:
     rows = []
     total_bytes = 0
-    for relative, path in _runtime_files(stage).items():
-        size = path.stat().st_size
+    for relative, size, digest in _hash_runtime_files(_runtime_files(stage)):
         total_bytes += size
         rows.append(
             {
                 "relativePath": relative.as_posix(),
                 "bytes": size,
-                "sha256": _sha256(path),
+                "sha256": digest,
             }
         )
     if not rows or len(rows) > MAX_ZIP_MEMBERS:
@@ -887,8 +906,14 @@ def _verify_runtime_ledger(runtime_root: Path, declaration: object) -> None:
     if set(actual) != set(expected):
         raise PresenterRuntimeInstallError("SoulX runtime files differ from the installed ledger")
     for relative_path, path in actual.items():
-        size, digest = expected[relative_path]
-        if path.stat().st_size != size or _sha256(path) != digest:
+        size, _ = expected[relative_path]
+        if path.stat().st_size != size:
+            raise PresenterRuntimeInstallError(
+                f"SoulX runtime file failed verification: {relative_path.as_posix()}"
+            )
+    for relative_path, actual_size, actual_digest in _hash_runtime_files(actual):
+        expected_size, expected_digest = expected[relative_path]
+        if actual_size != expected_size or actual_digest != expected_digest:
             raise PresenterRuntimeInstallError(
                 f"SoulX runtime file failed verification: {relative_path.as_posix()}"
             )

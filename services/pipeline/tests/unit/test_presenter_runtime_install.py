@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import threading
+import time
 import zipfile
 from copy import deepcopy
 from pathlib import Path
@@ -247,6 +249,44 @@ def test_runtime_ledger_rejects_unexpected_cache_file(tmp_path: Path) -> None:
         installer.PresenterRuntimeInstallError, match=r"mutable file: worker/stale\.pyc"
     ):
         installer._verify_runtime_ledger(runtime, declaration)
+
+
+def test_runtime_hashing_is_bounded_ordered_and_propagates_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    for index in range(12):
+        (runtime / f"file-{index:02}.h").write_bytes(f"header {index}".encode())
+    files = installer._runtime_files(runtime)
+    original_sha256 = installer._sha256
+    lock = threading.Lock()
+    observed_paths: set[Path] = set()
+    observed_threads: set[str] = set()
+
+    def delayed_digest(path: Path) -> str:
+        index = int(path.stem.split("-")[1])
+        time.sleep((12 - index) * 0.002)
+        with lock:
+            observed_paths.add(path)
+            observed_threads.add(threading.current_thread().name)
+        return original_sha256(path)
+
+    monkeypatch.setattr(installer, "_sha256", delayed_digest)
+    results = installer._hash_runtime_files(files)
+    assert [relative for relative, _, _ in results] == list(files)
+    assert observed_paths == set(files.values())
+    assert 1 < len(observed_threads) <= installer.RUNTIME_HASH_WORKERS
+    assert all(digest == original_sha256(files[relative]) for relative, _, digest in results)
+
+    def failed_digest(path: Path) -> str:
+        if path.name == "file-05.h":
+            raise installer.PresenterRuntimeInstallError("hash failed")
+        return original_sha256(path)
+
+    monkeypatch.setattr(installer, "_sha256", failed_digest)
+    with pytest.raises(installer.PresenterRuntimeInstallError, match="hash failed"):
+        installer._hash_runtime_files(files)
 
 
 def test_runtime_ledger_reports_unexpected_cache_directory_path(tmp_path: Path) -> None:
