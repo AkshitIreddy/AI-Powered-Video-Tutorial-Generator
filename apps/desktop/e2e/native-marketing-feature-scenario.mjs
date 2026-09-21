@@ -378,8 +378,11 @@ async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, ru
   if (startMode === "retry-failed-install") {
     await expect(managedAction).toHaveText(/^Resume download$/iu);
     await page.getByRole("button", { name: /^Downloads(?: \(\d+ active\))?$/u }).click();
+  } else if (startMode === "already-complete") {
+    await expect(card.getByRole("button", { name: "Use model", exact: true })).toBeEnabled({ timeout: actionTimeoutMs });
+    await page.getByRole("button", { name: /^Downloads(?: \(\d+ active\))?$/u }).click();
   } else {
-    await expect(managedAction).toHaveText(startMode === "initial-download" ? /^Download$/iu : /Files downloaded|Installed/iu);
+    await expect(managedAction).toHaveText(/^Download$/iu);
     await managedAction.click();
   }
   const downloads = page.getByRole("region", { name: "Model downloads" });
@@ -418,10 +421,11 @@ async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, ru
   const hydratedScreenshot = path.join(runRoot, "feature-00-soulx-hydrated-package.png");
   await page.screenshot({ path: hydratedScreenshot, fullPage: true });
   await page.getByRole("button", { name: "Minimize downloads", exact: true }).click();
-  const useModel = page.getByRole("button", { name: "Use model", exact: true });
+  const useModel = card.getByRole("button", { name: "Use model", exact: true });
   await useModel.scrollIntoViewIfNeeded();
   await expect(useModel).toBeEnabled({ timeout: actionTimeoutMs });
   await useModel.click();
+  await expect(card.getByRole("button", { name: "Verifying model…", exact: true })).toBeVisible({ timeout: actionTimeoutMs });
   const deadline = Date.now() + jobTimeoutMs;
   let finalStatus = initial;
   while (Date.now() < deadline) {
@@ -438,7 +442,7 @@ async function activateSoulxThroughModelsUi({ page, invokeNativeWithoutInput, ru
     || !/^[0-9a-f]{64}$/u.test(finalStatus.installFingerprint ?? "") || !finalStatus.runtimeRevision?.trim()) {
     throw new Error(`Timed out waiting for verified SoulX activation: ${JSON.stringify(finalStatus)}`);
   }
-  await expect(page.getByRole("button", { name: "SoulX selected", exact: true })).toBeVisible({ timeout: actionTimeoutMs });
+  await expect(card.getByRole("button", { name: "Model in use", exact: true })).toBeVisible({ timeout: actionTimeoutMs });
   const [statuses, setup, runtimeStatuses] = await Promise.all([
     invokeNativeWithoutInput(page, "local_model_download_status"),
     invokeNativeWithoutInput(page, "local_model_setup_get"),
