@@ -3136,7 +3136,11 @@ async function inspectMarketingResumeSource(sourceRunId, assetManifest) {
   }
   const appDataEntries = ["WebView2", "model-setup.json", "Presenters"];
   for (const entry of appDataEntries) await assertSafeCopyTree(path.join(sourceAppDataPath, entry), `marketing continuation App Data ${entry}`);
-  if ((await readdir(path.join(sourceAppDataPath, "Presenters"), { recursive: true })).length !== 0) {
+  // Native startup creates an empty objects directory even before the first import.
+  const presenterRoot = path.join(sourceAppDataPath, "Presenters");
+  const presenterEntries = await readdir(presenterRoot, { withFileTypes: true });
+  if (presenterEntries.some((entry) => entry.name !== "objects" || !entry.isDirectory())
+    || (presenterEntries.length > 0 && (await readdir(path.join(presenterRoot, "objects"))).length !== 0)) {
     throw new Error("Marketing continuation source unexpectedly contains an imported custom presenter");
   }
   await assertSafeCopyTree(sourceProjectsPath, "marketing continuation Projects");
