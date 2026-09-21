@@ -171,8 +171,9 @@ export function presenterAnimationReadiness(
     return {
       state: "pending-review",
       badge: "Review pending",
-      detail: `${qualification.displayName} is still under visual review for this portrait. Animated speech stays unavailable until that exact route is accepted and installed.`,
+      detail: `${qualification.notes} Animated speech stays unavailable until that exact route is accepted and installed.`,
       blocksSelection: true,
+      blocksAnimation: true,
     };
   }
   if (runtime.statusLoaded === false) {

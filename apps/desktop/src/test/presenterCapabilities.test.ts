@@ -169,14 +169,19 @@ describe("presenter animation capabilities", () => {
       label: "Milo",
       lipSync: {
         preferredEngineId: "joyvasa-animal",
-        qualifications: [{ engineId: "joyvasa-animal", displayName: "JoyVASA animal route", outcome: "pending-review", notes: "Pending." }],
+        qualifications: [{ engineId: "joyvasa-animal", displayName: "JoyVASA animal route", outcome: "pending-review", notes: "This exact bundled route has not passed the current mouth-and-blink review." }],
       },
     };
     const runtime = {
       activeEngineId: "joyvasa-animal" as const,
       portraitStatuses: [{ portraitArtifactHash: HASH, modelId: "joyvasa-animal", configured: true, reason: "Configured." }],
     };
-    expect(presenterAnimationReadiness(animal, runtime)).toMatchObject({ state: "pending-review", blocksSelection: true });
+    expect(presenterAnimationReadiness(animal, runtime)).toMatchObject({
+      state: "pending-review",
+      blocksSelection: true,
+      blocksAnimation: true,
+      detail: expect.stringMatching(/exact bundled route.+mouth-and-blink review.+animated speech stays unavailable/i),
+    });
     expect(presenterSelectionAnimationIssues([animal], {
       schemaVersion: 1,
       mode: "on",

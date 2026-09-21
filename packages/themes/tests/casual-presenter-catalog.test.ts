@@ -65,7 +65,7 @@ describe("casual presenter catalog", () => {
     expect(CASUAL_PRESENTER_STARTER_ASSETS.map((entry) => entry.id)).toEqual(CASUAL_PRESENTER_IDS);
     expect(CASUAL_PRESENTER_STARTER_ASSETS.every((entry) => entry.source.availability === "ready")).toBe(true);
     expect(CASUAL_PRESENTER_CATALOG.filter((entry) => entry.lipSync.qualifications.some((review) => review.outcome === "reviewed-compatible")).map((entry) => entry.displayName))
-      .toEqual(["Emma", "Yuki", "Noah", "Chloe", "Maya", "Finn", "Lena", "Pip", "Milo", "Peaches (legacy)", "Peaches", "Buddy", "Tavi"]);
+      .toEqual(["Emma", "Yuki", "Noah", "Chloe", "Maya", "Finn", "Lena", "Peaches"]);
     const yukiReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.casual-anime-yuki-v1")?.lipSync;
     expect(yukiReview?.preferredEngineId).toBe("soulx-flashhead-pro");
     expect(yukiReview?.qualifications).toEqual(expect.arrayContaining([
@@ -88,7 +88,12 @@ describe("casual presenter catalog", () => {
       entry.lipSync.preferredEngineId === "joyvasa-animal"
       && entry.lipSync.qualifications.some((review) => review.engineId === "liveportrait-musetalk-1.5" && review.outcome === "incompatible")
       && entry.lipSync.qualifications.some((review) => review.engineId === "joyvasa-animal"
-        && review.outcome === (["Poppy", "Leo"].includes(entry.displayName) ? "incompatible" : "reviewed-compatible"))
+        && review.outcome === (["Poppy", "Leo"].includes(entry.displayName) ? "incompatible" : "pending-review"))
+    ))).toBe(true);
+    expect(CASUAL_PRESENTER_CATALOG.filter((entry) => ["Pip", "Milo", "Peaches (legacy)", "Buddy", "Tavi"].includes(entry.displayName)).every((entry) => (
+      entry.lipSync.qualifications.some((review) => review.engineId === "joyvasa-animal"
+        && review.outcome === "pending-review"
+        && /exact bundled route.+mouth-and-blink review.+still-image use.+animation stays disabled/i.test(review.notes))
     ))).toBe(true);
     const legacyPeaches = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.animal-kitten-peaches-v1");
     const peachesReview = CASUAL_PRESENTER_CATALOG.find((entry) => entry.id === "presenter-portrait.animal-kitten-peaches-v2");

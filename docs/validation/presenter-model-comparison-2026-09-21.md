@@ -45,6 +45,15 @@ Peaches v2 is the first separately reviewed animal source to prefer this runtime
 it does not establish acceptance for other cats or animals.
 The reviewed legacy Finn v1 portrait remains hidden from new gallery choices.
 
+The bundled product catalog qualifies only these eight exact SoulX portraits for
+automatic animation. Pip v1, Milo, Buddy, Tavi, and hidden legacy Peaches v1
+remain usable as still portraits, but their exact JoyVASA overrides are marked
+pending and cannot enter automatic preview or generation. They have not passed
+the current combined mouth-and-blink review. Poppy and Leo remain still-only
+after incompatible animal-mouth results. Keeping the historical route files for
+project compatibility does not make those routes qualified, and the app does
+not silently fall back to a rejected SoulX or JoyVASA route.
+
 ## Evidence identities
 
 The private WAV and generated comparison clips are intentionally not bundled or

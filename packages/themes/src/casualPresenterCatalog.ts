@@ -269,6 +269,9 @@ const JOYVASA_REVIEWED_IDS = new Set<CasualPresenterId>([
   "presenter-portrait.casual-cartoon-chloe-v1",
   "presenter-portrait.casual-anime-lena-v1",
   "presenter-portrait.casual-anime-finn-v2",
+]);
+
+const JOYVASA_PENDING_ROUTE_IDS = new Set<CasualPresenterId>([
   "presenter-portrait.casual-cartoon-robot-pip-v1",
   "presenter-portrait.animal-cat-milo-v1",
   "presenter-portrait.animal-kitten-peaches-v1",
@@ -337,6 +340,8 @@ function legacyLipSyncReviewFor(plan: CasualPresenterPlan): CasualPresenterLipSy
     outcome: JOYVASA_REJECTED_IDS.has(plan.id) ? "incompatible" : joyVasaReviewed ? "reviewed-compatible" : "pending-review",
     notes: (JOYVASA_REJECTED_IDS.has(plan.id)
       ? "This portrait is available as a still image. Dense review rejected its current JoyVASA speech because repeated human-like lip and teeth strips distort the muzzle, even with reduced motion. Animation is disabled for this route."
+      : JOYVASA_PENDING_ROUTE_IDS.has(plan.id)
+        ? "This exact bundled route has not passed the current mouth-and-blink review. The portrait remains available for still-image use while animation stays disabled."
       : joyVasaReviewed
       ? plan.id === "presenter-portrait.casual-anime-finn-v2"
         ? "Primary and held-out short narration renders on the pinned installed route preserved the illustrated face, placed speech at the real mouth, and returned to a closed mouth during detected silence on 2026-09-20. This is bounded evidence, not a claim about every phoneme."
